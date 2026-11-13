@@ -1,0 +1,55 @@
+LZ5 1.5 — converted to C#
+
+Source:   lz5 by Przemyslaw Skibinski, based on LZ4 by Yann Collet,
+          https://github.com/inikep/lizard (the project was named lz5 up to
+          1.5 and renamed Lizard from 2.0), tag v1.5, commit
+          95a8be6aa9e9ffc3c5b72a468a4d4de2b3d0db65, directory lib/
+Licence:  BSD 2-Clause (lib/LICENSE, reproduced below)
+
+Conversions:
+
+  lib/lz5.c        LZ5_decompress_generic           -> Lz5Block.Decode
+  lib/lz5common.h  MINMATCH, LASTLITERALS, MFLIMIT,
+                   MAXD_LOG, ML_BITS, RUN_BITS(2),
+                   LZ5_SHORT/MID_OFFSET_BITS         -> Lz5Block constants
+  lib/lz5frame.c   LZ5F_decodeHeader, LZ5F_getBlockSize,
+                   LZ5F_headerChecksum, block and
+                   content checksum handling         -> Lz5Frame
+
+Lz5Block.Encode is this repository's own greedy encoder for the same block
+format; it keeps the parsing restrictions of lib/lz5common.h (the last 5
+bytes are literals, no match starts in the last 12 bytes).
+
+The converted files carry this header:
+
+   LZ5 - Fast LZ compression algorithm
+   Copyright (C) 2011-2015, Yann Collet.
+   Copyright (C) 2015, Przemyslaw Skibinski <inikep@gmail.com>
+   BSD 2-Clause License (http://www.opensource.org/licenses/bsd-license.php)
+
+---- lib/LICENSE ----
+
+LZ4 Library
+Copyright (c) 2011-2015, Yann Collet
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice, this
+  list of conditions and the following disclaimer in the documentation and/or
+  other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

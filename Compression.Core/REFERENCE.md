@@ -1381,6 +1381,33 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
+### Namespace `Compression.Core.Dictionary.Lz5`
+
+[`Lz5Block`](#lz5block) · [`Lz5Frame`](#lz5frame)
+
+#### `Lz5Block`
+
+The LZ5 1.5 block format (Przemysław Skibiński's LZ4 derivative, the coder 7-Zip-zstd registers as 04 F7 11 05): sequences of a token, literals, an offset and a match length, with three offset widths and a repeat-offset code.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MaxDistance` | `const int MaxDistance` | The farthest a match reaches back: 4 MiB − 1. |
+| `MinMatch` | `const int MinMatch` | The shortest match. |
+| `Decode` | `static int Decode(ReadOnlySpan<byte> source, Span<byte> window, int prefixLength)` | Decodes one block from `source` into `window` after its first `prefixLength` bytes, which hold the history matches may reach into. Returns the number of bytes decoded. |
+| `Encode` | `static int Encode(ReadOnlySpan<byte> source, Span<byte> destination)` | Encodes `source` as one independent block into `destination` (at least `MaxEncodedLength` bytes) and returns its length: a greedy parse over a hash of 4-byte prefixes, choosing the shortest offset code for every match. |
+| `MaxEncodedLength` | `static int MaxEncodedLength(int length)` | The largest block `Encode` can write for `length` input bytes. |
+
+#### `Lz5Frame`
+
+The LZ5 1.5 frame: the LZ4 frame layout under its own magic, with LZ5 blocks and LZ5's block sizes (identifier 1-7 for 64 KiB × 4^(id−1), up to 256 MiB).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Magic` | `const uint Magic` | The frame magic. |
+| `BlockSize` | `static int BlockSize(int id)` | The maximum block size of block size identifier `id` (1-7). |
+| `Decode` | `static void Decode(ReadOnlySpan<byte> data, Stream output)` | Decodes every frame in `data` (skippable frames passed over) to `output`. Memory holds one block and at most 4 MiB of history. |
+| `Write` | `static void Write(ReadOnlySpan<byte> data, Stream output)` | Writes `data` as one frame — independent blocks of at most 4 MiB, content size and content checksum present — to `output`. |
+
 ### Namespace `Compression.Core.Dictionary.Lz77`
 
 [`Lz77BuildingBlock`](#lz77buildingblock) · [`Lz77Compressor`](#lz77compressor) · [`Lz77Decompressor`](#lz77decompressor) · [`Lz77OptimalBuildingBlock`](#lz77optimalbuildingblock) · [`Lz77Token`](#lz77token)

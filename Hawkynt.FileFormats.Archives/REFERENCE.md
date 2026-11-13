@@ -29990,6 +29990,7 @@ Specifies the compression codec used when writing a 7z archive.
 | `Zstd` | `6` | Zstandard, as the 7-Zip-zstd coder 04 F7 11 01 writes it. |
 | `Brotli` | `7` | Brotli, as the 7-Zip-zstd coder 04 F7 11 02 writes it (3 MiB chunks behind skippable-frame headers). |
 | `Lz4` | `8` | LZ4, as the 7-Zip-zstd coder 04 F7 11 04 writes it (4 MiB chunks behind skippable-frame headers). |
+| `Lz5` | `9` | LZ5 1.5, as the 7-Zip-zstd coder 04 F7 11 05 writes it (4 MiB chunks behind skippable-frame headers). |
 
 #### `SevenZipEntry`
 

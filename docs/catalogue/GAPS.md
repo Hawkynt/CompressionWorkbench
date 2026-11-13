@@ -153,7 +153,7 @@ running real-world samples. The file named at the end of each row is where the l
 
 | Format | Ours | Sources | What is missing |
 | --- | --- | :---: | --- |
-| 7z | `SevenZip` | 7 | 7-Zip-zstd's LZ5 and Lizard coders (04 F7 11 05 / 06) unsupported; header data in an external stream refused, which 7-Zip never writes (SevenZipFolderDecoder.cs, SevenZipHeaderCodec.cs) |
+| 7z | `SevenZip` | 7 | 7-Zip-zstd's Lizard coder (04 F7 11 06) unsupported; header data in an external stream refused, which 7-Zip never writes (SevenZipFolderDecoder.cs, SevenZipHeaderCodec.cs) |
 | ISO 9660 (Joliet / Rock Ridge / El Torito) | `Iso` | 7 | Rock Ridge PX modes and TF times are not surfaced; interleaved files throw (IsoReader.cs) |
 | ZIP | `Zip` | 7 | methods xz (95), JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs) |
 | LHA / LZH | `Lzh` | 6 | every method and header level of lhasa's test suite reads except LHARK's lk7; lh2, lh3, lhx, pm1 and pm2 are read-only; self-extracting executables are not opened (LhaReader.cs) |

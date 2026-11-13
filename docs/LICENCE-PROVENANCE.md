@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 76 | |
+| A | 77 | |
 | B | 32 | FFmpeg alone covers 38 codec folders |
 | C | 0 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 14 | |
@@ -81,6 +81,7 @@ None open: every class C claim site has been rewritten and is listed under R.
 
 | Claim site | Upstream | Licence | Where the notice is |
 |---|---|---|---|
+| `Compression.Core/Dictionary/Lz5/` | lz5 1.5 (Przemysław Skibiński, after LZ4 by Yann Collet) `lib/lz5.c`, `lib/lz5common.h`, `lib/lz5frame.c`, inikep/lizard tag `v1.5`, commit `95a8be6aa9e9ffc3c5b72a468a4d4de2b3d0db65` | BSD-2-Clause | `Compression.Core/Dictionary/Lz5/THIRD-PARTY-NOTICE.lz5.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Bga/` | QBga32 0.06 (k.inaba), 2015-07-03 trunk tarball, `src/bga_melter.d` | NYSL 0.9982 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Bga/THIRD-PARTY-NOTICE.qbga32.txt` |
 | `Compression.Core/Entropy/Grzip/` | grzip 0.3.0 / libGRZip (Ilya Grebnov), compatible functions and exact file list pinned in the notice | LGPL-2.1-or-later | `Compression.Core/Entropy/Grzip/THIRD-PARTY-NOTICE.grzip.txt` |
 | `Compression.Core/Dictionary/Xpk/` | ancient (Teemu Suutari), revision `61cd9088a218ce43fd389f3f3c48f35fc70f7834`, XPK container and sub-library decoders | BSD-2-Clause | `Compression.Core/Dictionary/Xpk/THIRD-PARTY-NOTICE.ancient.txt` |

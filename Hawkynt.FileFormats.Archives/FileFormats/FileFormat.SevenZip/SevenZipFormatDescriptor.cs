@@ -20,7 +20,7 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("Method", "Compression method", FormatOptionKind.Enum, "lzma2",
-      AllowedValues: ["lzma2", "lzma", "ppmd", "bzip2", "deflate", "zstd", "brotli", "lz4", "copy"]),
+      AllowedValues: ["lzma2", "lzma", "ppmd", "bzip2", "deflate", "zstd", "brotli", "lz4", "lz5", "copy"]),
     new("Level", "Compression level", FormatOptionKind.Integer, "5",
       AllowedValues: ["1", "3", "5", "7", "9"]),
     new("DictSize", "Dictionary size", FormatOptionKind.Integer, "16777216",
@@ -260,7 +260,7 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("lzma2", "LZMA2"), new("lzma", "LZMA"), new("ppmd", "PPMd"),
     new("bzip2", "BZip2"), new("deflate", "Deflate"), new("zstd", "Zstd"), new("brotli", "Brotli"),
-    new("lz4", "LZ4"), new("copy", "Store")
+    new("lz4", "LZ4"), new("lz5", "LZ5"), new("copy", "Store")
   ];
   /// <summary>
   /// Gets the tar compression format id.
