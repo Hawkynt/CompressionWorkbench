@@ -25,7 +25,7 @@ public sealed record RebuildFilesystemEntry(
 /// an independently owned read stream, so its length is not constrained by
 /// managed byte-array indexing or the aggregate size of the namespace.
 /// </summary>
-public sealed record SpoolingRebuildFilesystemEntry(
+internal sealed record SpoolingRebuildFilesystemEntry(
   string Path,
   FilesystemNodeKind Kind,
   long Length,
@@ -152,11 +152,11 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
     Stream candidate,
     IReadOnlyList<RebuildFilesystemEntry> entries);
 
-  public delegate void RebuildImageFromStreams(
+  internal delegate void RebuildImageFromStreams(
     Stream output,
     IReadOnlyList<SpoolingRebuildFilesystemEntry> entries);
 
-  public delegate void ValidateImageFromStreams(
+  internal delegate void ValidateImageFromStreams(
     Stream candidate,
     IReadOnlyList<SpoolingRebuildFilesystemEntry> entries);
 
@@ -164,7 +164,7 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
   /// Optional explicitly qualified direct mutation publisher. The delegate
   /// MUST journal, validate and restore the entire source on failure.
   /// </summary>
-  public delegate void CommitImageInPlace(
+  internal delegate void CommitImageInPlace(
     Stream image,
     IReadOnlyList<SpoolingRebuildFilesystemEntry> entries);
 
@@ -254,7 +254,7 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
   /// payloads on disk. Streaming serializers consume independently opened
   /// streams; even a multi-gigabyte member never becomes one managed array.
   /// </summary>
-  public static MutableRebuildFilesystemSession OpenSpooling(
+  internal static MutableRebuildFilesystemSession OpenSpooling(
       FilesystemDriverProfile profile,
       Stream image,
       IEnumerable<SpoolingRebuildFilesystemEntry> entries,
