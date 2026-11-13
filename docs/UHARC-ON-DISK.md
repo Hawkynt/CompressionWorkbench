@@ -4,13 +4,14 @@ UHARC is Uwe Herklotz's closed-source archiver (1997–2005). No specification w
 published and no implementation exists under a licence this repository can take, so this
 document is the specification `FileFormat.Uharc` is implemented from. It covers the 0.6 format
 (0.6, 0.6a and 0.6b write the same archives; the documentation says so and the header carries
-version byte 6) and, in its own section, the 0.2 format, as far as they were established; what
+version byte 6) and, in their own sections, the 0.4 and 0.2 formats, as far as they were established; what
 is not covered is listed at the end.
 
 **Status: read, write-once.** Container, ciphers, every 0.6 mode — store, RLE, LZ78, LZP, PPM and ALZ
 with its nine multimedia predictors —, the executable and multimedia filters, passwords and SFX
-stubs are established and verified, and so is UHARC 0.2 (see its section). Archives of 0.3 and
-0.4 are not, and are refused. The writer produces stored and LZP-packed 0.6 archives (see
+stubs are established and verified, and so are UHARC 0.2 and the UHARC 0.4 container with its
+store, RLE, LZW, LZP and ALZ modes (see their sections). Archives of 0.3, and 0.4's PPM streams,
+are not, and are refused. The writer produces stored and LZP-packed 0.6 archives (see
 Writing).
 
 ## Evidence
@@ -584,10 +585,170 @@ exactly as well.
 dexvert samples), directory indices as two byte planes (subdirectories then point outside the
 name table), and the executable filter on stored archives (fails `v02-exe-m0`'s CRC).
 
+## UHARC 0.4
+
+UHARC 0.4 BETA (28 Dec 2001, Win32; `UHARC04.EXE`, MD5 `72fbcde29093186d9027a8ba2feac7f1`)
+was run on the fixture inputs in every mode it offers (`-m0`, `-m1`..`-m3`, `-mx`, `-mz`), with
+`-md1`, `-mm-` and `-pw`. Its own `t` accepts every archive, and so does the unpacker of
+unuharc_recon (revision `37f1953ac57609b95ab738bb45991d6d00415789`, built and run on our
+archives). unuharc_recon's `FORMAT.md` (same revision, §3 and §6) describes this container;
+every statement of it used here was checked against the archives above, and where it differs
+from measurement this section says so.
+
+    header(44)  packed stream  CRC table  name table  date/time table  size table
+
+**Header.** Bytes 4..39 are scrambled like 0.6's, with the key in byte 42; bytes 42..43 hold the
+low 16 bits of the CRC of the descrambled bytes 4..39.
+
+| Offset | Size | Field |
+| --- | --- | --- |
+| 0 | 4 | `55 48 41 04` |
+| 4 | 2 | archive DOS time |
+| 6 | 2 | archive DOS date |
+| 8 | 1 | flags: bit 1 tables and packed stream enciphered with the password |
+| 9 | 1 | filters: as 0.6 (bit 0 executable, bit 1 multimedia delta) |
+| 10 | 1 | stream method |
+| 11 | 2 | number of directory names |
+| 13 | 4 | unpacked size of the stream |
+| 17 | 4 | packed size of the stream |
+| 21 | 3 | number of files *N* |
+| 24 | 3 | unpacked size of the name table |
+| 27 | 3 | packed size of the name table |
+| 30 | 3 | packed size of the date/time table |
+| 33 | 3 | packed size of the size table |
+| 36 | 2 | low 16 bits of CRC(CRC table ‖ name table), both unpacked |
+| 38 | 2 | low 16 bits of CRC(date/time table), unpacked |
+| 40 | 2 | low 16 bits of CRC(size table), unpacked |
+| 42 | 2 | header check |
+
+`-pw` sets flags `0x02`; it changes nothing else in the header. Filters measured: `0x03` for
+`-mz`, `0x01` for ALZ and PPM, `0x00` for store — the same rule as 0.6.
+
+Methods: 0 store, 1 RLE (`-mr`), 2..7 LZW (`-mw`), 8..23 LZP (`-mz`), 24..39 PPM (`-mx`),
+40..55 / 56..71 / 72..87 ALZ:1..3,
+the offset in the band `log2(dictionary) − 10` as in 0.6 (the same smallest-power-of-two rule
+applies).
+
+**Tables.** Each is enciphered on its own with 0.6's table cipher (the user password with
+`-pw`, the default one otherwise). The CRC table (4*N*) is stored; the name table (directory
+names, then file names, as in 0.6) is a 0.4 LZP stream, method 17; the date/time table (*N*
+dates, then *N* times) is LZW method 2 and the size table LZW method 7, the LZW of 0.2. The size
+table holds planes of *N*: directory index low bytes, high bytes, size-delta bytes 0, 1, 2, 3 and
+the attribute byte. Sizes run backwards as in 0.6. The attribute byte is the file's Windows
+attribute set — measured `0x21` read-only, `0x22` hidden, `0x20` archive, `0x80` for a file
+with none — not a per-file method; the stream method is the header's alone. (`FORMAT.md` §1.3
+calls it a method/attribute byte shown as `m=`; measurement says attributes, and `uharc l`
+prints it as `R--A`, `-H-A`.) With `-pw` the packed stream is enciphered
+with the same cipher and the password as a single run. Fixture `v04-dates-mz` (five files dated
+1985 to 2024 in two directory levels) pins the date and time planes.
+
+**Filters.** The executable and multimedia filters are 0.6's, undone after decoding, executable
+filter first; 0.4 never stores operands swapped.
+
+### UHARC 0.4 LZP (methods 8..23)
+
+The prediction is 0.6's (same hash, candidates, decision indices, two-bit history and
+exclusion), with these differences:
+
+- **Copy lengths are symbols**, coded like literals in the frequency model. Their context is
+  chosen by the length the hash slot remembers — `318, 318, 319, 320, 321, 322, 323, 323, 324,
+  324, 324, 324` for 0..11 and 325 above — or 326, and 327 once three runs follow each other.
+  The value 0 copies 256 bytes, 255 copies 255 and continues the run; the remembered length lives
+  only in the hash slot (no pair table of lengths), and a miss clears it. No byte is excluded
+  while the length is decoded. After a copy the excluded position is `candidate + value` — the
+  candidate itself after a 256-byte copy.
+- **Two order-0 fallbacks**: context 328 serves the literal contexts (0..317), context 329 the
+  length contexts (318..327); both start at 8 per symbol.
+- **Decisions** are seeded and counted as in 0.6, but a total reaching 16384 rescales as
+  `split' = (split + 1) / 2`, `total' = split' + (total − split + 1) / 2`.
+- **Resets** start from a threshold of 64 KiB. After each step — a literal or a whole copy —
+  every file end the output has moved past (excluding the last) is visited in turn; one that lies
+  beyond the threshold resets the models and moves the threshold to the current output position
+  plus 64 KiB. A reset restores every frequency context and decision to its initial state (not
+  0.6's divided split); the hash, window and two-bit history survive. Tables never reset.
+
+The literal contexts, the escape and the rescaling are 0.6's. Fixtures `v04-basic-mz`,
+`v04-reset-mz`, `v04-reset-mz1` (1 KiB window), `v04-exe-mz`, `v04-mm-mz`, `v04-runs-mz`,
+`v04-dates-mz` and `v04-basic-mz-pw` decode byte for byte; so do every directory table of the
+0.4 archives in all modes.
+
+*Refuted:* 0.6's LZP coder as a whole fails every 0.4 fixture; a single order-0 context for
+literals and lengths fails already on the name tables; 0.6's reset rule (reset before the file end
+at or past `r + 64 KiB`, merging small files) and 0.6's divided decisions at a reset each fail
+`v04-reset-mz`, `v04-reset-mz1` and `v04-runs-mz`.
+
+### UHARC 0.4 ALZ (methods 40..87)
+
+The token model and its transition table, the twelve recent distances, the literal contexts and
+every multimedia predictor (selectors 1..9, and 10) are 0.6's — the predictor tables are the
+same byte for byte. Differences:
+
+- **Tokens** are seeded `[0,1,66,88,111,199]` and `[0,1,55,155,177,199]` (runs), but every
+  block start halves the rows first, so the first token is coded with 0.6's seeds.
+- **Blocks.** A block reaches from the previous block end 128 KiB on, extended to the next file
+  end (0.6's ALZ rule). At each block start contexts 0..768 are cleared (escape weights 1), the
+  token rows halved, every other context halved, the cost tracker restarted (each of the 256
+  slots 37440, their sum `255·37440`), and the selector read.
+- **Frequency model**: 1041 contexts. A seen symbol adds 33 to its context (10 in 1009..1016,
+  44 from 1017 on); a new one also adds that to the escape weight and 15 to the fallback
+  context (8 for contexts 993..1016, 6 for the order-0 context 768). A context halves
+  (rounding up, escape weight `/4 + 1`) when frequencies plus escape weight reach 16384, a
+  fallback when its frequencies do. Context 768 never counts symbols itself: order-0 coding
+  happens in its fallback 1029. Fallbacks start at 8 per symbol: 1027 for plain text, `1029 +
+  selector` for selectors 1..9, 1029 for order 0, 1039 for lengths, 1040 for distances. Escape
+  weights start at 1.
+- **Literals**: plain text uses the last byte (offset 256 when its top two bits equal the byte
+  before's, `0x200 +` last byte under selector 10) with fallback 1027. The cost tracker and its
+  thresholds are 0.6's; the order-0 model is context 768 through 1029.
+- **Copies**: a new distance is a symbol 0..43 of context 1017 giving the slot (0.6's bases and
+  spans, the same low-bit and uniform refinement); token 3's index 0..11 is a symbol of
+  context 1018. The length is a symbol 0..23 of a context by distance class (`0x3FB`..`0x3FF`
+  for new distances: < 256, < 4 Ki, < 64 Ki, < 1 Mi, larger), `0x400` for repeats, `0x401`
+  and `0x402` during runs; symbol *s* stands for `base[s]` plus a uniform value below
+  `extra[s]`:
+
+  | Symbols | 0..12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | base | 2..14 | 15 | 17 | 19 | 23 | 31 | 47 | 63 | 95 | 127 | 191 | 255 |
+  | extra | — | 2 | 2 | 4 | 8 | 16 | 16 | 32 | 32 | 64 | 64 | — |
+
+  255 is a run. Outside runs a length after a distance above 1 is predicted from the byte pair
+  at the copy source (separate tables for new distances and repeats): each pair remembers its
+  last length symbol and a confidence 0..63 (start 63). At confidence ≤ 50 a binary event of
+  `confidence/256` says "not the prediction" — then the symbol is coded with the predicted one
+  excluded — or else the prediction stands and nothing more is coded. Above 50 the symbol is
+  coded normally. The confidence then moves to `next[64·hit + confidence]`; the table holds a
+  value only where a confidence can occur, zeros elsewhere:
+
+      miss: 0 17 20 20 24 24 29 29 35 0 35 0 42 0 42 0  0 50 0 0 50 0 0 0 59 0 0 0 0 59 0 0
+            0 0 0 60 0 0 0 0 0 0 60 0 0 0 0 0  0 0 61 0 0 0 0 0 0 0 0 61 62 62 63 63
+      hit:  0 1 1 2 3 4 5 6 7 0 8 0 10 0 12 0  0 14 0 0 17 0 0 0 20 0 0 0 0 24 0 0
+            0 0 0 29 0 0 0 0 0 0 35 0 0 0 0 0  0 0 42 0 0 0 0 0 0 0 0 50 59 60 61 62
+- **Recent distances**: a copy with a distance above 1 that came from a new distance or from
+  recent slot 1..11 moves to the front (0.6 also admits distance 1 after two runs).
+
+Fixtures `v04-basic-m1` (selectors 10 and 6), `v04-basic-m2`, `v04-basic-m3`,
+`v04-basic-m2-pw`, `v04-reset-m2`, `v04-reset-m21` (1 KiB window), `v04-exe-m2`, `v04-mm-m1`
+(selectors 1, 2, 3, 4, 5, 7, 8 and 9) and `v04-runs-m2` decode byte for byte; so do 17 MB of text
+and a 6.7 MB DLL packed with `-m2`/`-m3 -md32768`, and the 0.4 ALZ archives of the
+unuharc_recon sample set (`uharc-rs-04`), including `alz2_md64` and `md1_m1`, which
+`UHARC04.EXE t` accepts and unuharc_recon's own unpacker rejects.
+
+*Refuted:* 0.6's ALZ coder decodes none of the 0.4 fixtures.
+
+### UHARC 0.4 RLE and LZW (methods 1..7)
+
+`UHARC04.EXE` also accepts `-mr` and `-mw`, which its help does not list. Method 1 is 0.6's RLE;
+methods 2..7 are 0.2's LZW (not 0.6's LZ78), the code count `2^(method+8)` (`-md` picks it as
+for 0.6's LZ78). Fixtures `v04-basic-mr`, `v04-runs-mr`, `v04-basic-mw`, `v04-runs-mw`,
+`v04-reset-mw1` and `v04-exe-mw` decode byte for byte, and so does the 17 MB set with each.
+
+PPM (`-mx`) streams of 0.4 do not decode with 0.6's PPM and are refused.
+
 ## What is not derived
 
-- **Versions 0.3 and 0.4** (`UHA` + 3 or 4): their headers, ciphers and coders differ from both
-  0.2 and 0.6; no samples are at hand; refused with the version named.
+- **Version 0.3** (`UHA` + 3): refused with the version named.
+- **UHARC 0.4's PPM streams** (`-mx`): the container reads, the stream is refused.
 - **UHARC 0.2's RLE stream method 1**: no archive the tool writes uses it; refused.
 - **Writing** any method other than store and LZP, passwords, filters and SFX stubs.
 
@@ -596,3 +757,7 @@ name table), and the executable filter on stored archives (fails `v02-exe-m0`'s 
 - UHARC 0.6b, `UHARC.DOC` — modes, switches, dictionary rule, SFX.
 - UHARC 0.2, `UHARC.DOC` (21 Dec 1997) — modes and switches of 0.2.
 - Archive Team, "UHARC", <http://fileformats.archiveteam.org/wiki/UHARC> — overview, samples.
+- unuharc_recon, `FORMAT.md` at revision `37f1953ac57609b95ab738bb45991d6d00415789`
+  (<https://github.com/roytam1/unuharc_recon>) — a write-up of the 0.2, 0.3, 0.4 and 0.6
+  containers; used as a cross-check where stated. Its unpacker, built from the same revision,
+  serves as a second oracle that is run on archives, nothing more.

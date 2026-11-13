@@ -78,7 +78,16 @@ public sealed class IsoReader : IDisposable {
     var rootExtendedAttributeBlocks = _data.ReadByte(rootRec + 1);
     var rootOffset = DataOffset(rootExtent, rootExtendedAttributeBlocks);
     ReadDirectory(rootOffset, rootLength, "");
+
+    // The folder relocated directories were moved into (rr_moved, as mkisofs names it, or
+    // .rr_moved) is bookkeeping once they are listed at their real places: like the
+    // relocated directories themselves it is not listed, as long as it holds nothing else.
+    if (_sawRelocation)
+      _entries.RemoveAll(e => e.IsDirectory && e.Name is "rr_moved" or ".rr_moved" or "RR_MOVED"
+        && !_entries.Any(x => x.Name.StartsWith(e.Name + "/", StringComparison.Ordinal)));
   }
+
+  private bool _sawRelocation;
 
   private readonly Dictionary<long, ZisofsInfo> _zisofsByExtent = [];
 
@@ -175,6 +184,7 @@ public sealed class IsoReader : IDisposable {
       // RE: a directory moved here (rr_moved) from deeper than ECMA-119 allows; it is
       // listed at its real place, where a CL entry points to it.
       if (rr is { Relocated: true } && isDir && pending is null) {
+        _sawRelocation = true;
         pos += recLen;
         continue;
       }

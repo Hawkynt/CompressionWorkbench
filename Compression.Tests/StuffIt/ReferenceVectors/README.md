@@ -15,4 +15,5 @@ tests hold the SHA-256 of every fork.
 | `testfile.stuffit7_dlx.mac9.sit` | StuffIt Deluxe 7.0, Mac OS 9 | StuffIt 5 (entry version 1) | 15 (Arsenic), 0 |
 | `testfile.stuffit7.win.sit` | StuffIt 7 for Windows | StuffIt 5 (entry version 3), folder `sources/` | 15 (Arsenic) |
 | `testfile.stuffit651_dlx.mac9.password.sit` | StuffIt Deluxe 6.5.1, Mac OS 9 | StuffIt 5, encrypted (RC4), password `password` | 15 (Arsenic), 0 |
+| `testfile.stuffit45_dlx.mac9.password.sit.bin` | StuffIt Deluxe 4.5, Mac OS 9 | classic `SIT!` in MacBinary (the resource fork holds the `MKey` key check), encrypted, password `password` | 13 (LZ+Huffman), 0 |
 | `testfile.stuffit7.win.password.sit` | StuffIt 7 for Windows | StuffIt 5, encrypted (RC4), password `password`, folder `sources/` | 15 (Arsenic) |

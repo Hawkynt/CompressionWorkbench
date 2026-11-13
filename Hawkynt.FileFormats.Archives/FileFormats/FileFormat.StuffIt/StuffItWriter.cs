@@ -17,14 +17,27 @@ namespace FileFormat.StuffIt;
 /// (folder end). The archive header counts only the entries at the root.
 /// </para>
 /// </remarks>
+///
+/// With a password the archive is encrypted the way classic StuffIt does it (see
+/// <see cref="StuffItClassicCrypto"/>). The key check lives in an <c>MKey</c> resource of the
+/// archive's own resource fork, so an encrypted archive is written as a MacBinary file that
+/// carries both forks. Each non-empty fork is padded to whole 8-byte blocks and encrypted. Its
+/// 16-byte entry key is appended, its method byte gains 0x80, and the header records the padding
+/// (byte 104 resource, 105 data), with a 4 in byte 107 (data) or 109 (resource), as StuffIt
+/// writes them.
 public sealed class StuffItWriter : IDisposable {
   private const byte FolderStart = 0x20;
   private const byte FolderEnd = 0x21;
+  private const byte EncryptedFlag = 0x80;
 
-  private readonly Stream _stream;
+  private Stream _stream;
   private readonly bool _leaveOpen;
   private readonly StuffItTree<PendingEntry> _tree = new();
   private readonly StuffItCompression _compression;
+  private readonly string? _password;
+  private readonly string _macBinaryName;
+  private byte[]? _archiveKey;
+  private byte[]? _archiveIv;
   private bool _disposed;
 
   /// <summary>
@@ -41,8 +54,21 @@ public sealed class StuffItWriter : IDisposable {
   /// <param name="stream">The stream to write the SIT archive to.</param>
   /// <param name="compression">How each fork is compressed.</param>
   /// <param name="leaveOpen">Whether to leave the stream open when this writer is disposed.</param>
-  public StuffItWriter(Stream stream, StuffItCompression compression, bool leaveOpen = false) {
+  public StuffItWriter(Stream stream, StuffItCompression compression, bool leaveOpen = false) : this(stream, compression, null, leaveOpen: leaveOpen) { }
+
+  /// <summary>
+  /// Initializes a new <see cref="StuffItWriter"/> that encrypts the archive with <paramref name="password"/>.
+  /// The output is then a MacBinary file, named <paramref name="macBinaryName"/>, whose resource fork holds the key check.
+  /// </summary>
+  /// <param name="stream">The stream to write to.</param>
+  /// <param name="compression">How each fork is compressed.</param>
+  /// <param name="password">The password, or <see langword="null"/> for an unencrypted archive.</param>
+  /// <param name="macBinaryName">The archive's file name inside the MacBinary wrapper.</param>
+  /// <param name="leaveOpen">Whether to leave the stream open when this writer is disposed.</param>
+  public StuffItWriter(Stream stream, StuffItCompression compression, string? password, string macBinaryName = "Archive.sit", bool leaveOpen = false) {
     this._compression = compression;
+    this._password = string.IsNullOrEmpty(password) ? null : password;
+    this._macBinaryName = macBinaryName;
     this._stream    = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
   }
@@ -143,11 +169,31 @@ public sealed class StuffItWriter : IDisposable {
   // ── Serialisation ────────────────────────────────────────────────────────
 
   private void Flush() {
+    byte[]? mKey = null;
+    if (this._password != null) {
+      this._archiveKey = StuffItClassicCrypto.ArchiveKey(StuffIt5Crypto.PasswordBytes(this._password));
+      (mKey, this._archiveIv) = StuffItClassicCrypto.NewMKey(this._archiveKey);
+    }
+    var target = this._stream;
+    using var archive = new MemoryStream();
+    if (mKey != null) this._stream = archive;
+    try {
+      this.WriteArchive();
+    } finally {
+      this._stream = target;
+    }
+    if (mKey != null)
+      FileFormat.MacBinary.MacBinaryWriter.Write(this._stream, this._macBinaryName, archive.ToArray(),
+        MacResourceFork.Single(StuffItClassicCrypto.MKeyType, 0, mKey), "SITD", "SIT!");
+    this._stream.Flush();
+  }
+
+  private void WriteArchive() {
     // Buffer all entry headers + data, then write the archive header (which needs the root
     // entry count and total length) followed by the buffered content.
     using var buffer = new MemoryStream();
     foreach (var node in this._tree.Root.Children)
-      WriteNode(buffer, node);
+      this.WriteNode(buffer, node);
 
     // Archive header (22 bytes):
     //   [0..4]   magic "SIT!"
@@ -174,13 +220,13 @@ public sealed class StuffItWriter : IDisposable {
     this._stream.Flush();
   }
 
-  private static void WriteNode(Stream output, StuffItTree<PendingEntry>.Node node) {
+  private void WriteNode(Stream output, StuffItTree<PendingEntry>.Node node) {
     if (node.File is { } file) {
-      WriteEntry(output, node.Name, node.Modified, file);
+      this.WriteEntry(output, node.Name, node.Modified, file);
       return;
     }
     WriteFolderMarker(output, node.Name, node.Modified, FolderStart);
-    foreach (var child in node.Children) WriteNode(output, child);
+    foreach (var child in node.Children) this.WriteNode(output, child);
     WriteFolderMarker(output, node.Name, node.Modified, FolderEnd);
   }
 
@@ -203,13 +249,40 @@ public sealed class StuffItWriter : IDisposable {
     nameBytes.CopyTo(hdr.Slice(StuffItConstants.FileNameOffset, nameBytes.Length));
   }
 
-  private static void WriteEntry(Stream output, string name, DateTime modified, PendingEntry entry) {
+  /// <summary>Pads, encrypts and keys one fork; returns the stored bytes and the padding.</summary>
+  private (byte[] Stored, int Padding) EncryptFork(byte[] packed) {
+    var padding = (StuffItClassicCrypto.BlockSize - packed.Length % StuffItClassicCrypto.BlockSize) % StuffItClassicCrypto.BlockSize;
+    var stored = new byte[packed.Length + padding + StuffItClassicCrypto.EntryKeyLength];
+    packed.CopyTo(stored, 0);
+    var (forkKey, entryKey) = StuffItClassicCrypto.NewForkKey(this._archiveKey!, this._archiveIv!);
+    StuffItClassicCrypto.EncryptFork(stored.AsSpan(0, packed.Length + padding), forkKey);
+    entryKey.CopyTo(stored, packed.Length + padding);
+    return (stored, padding);
+  }
+
+  private void WriteEntry(Stream output, string name, DateTime modified, PendingEntry entry) {
     Span<byte> hdr = stackalloc byte[StuffItConstants.EntryHeaderSize];
     hdr.Clear();
 
+    var storedResource = entry.CompressedResource;
+    var storedData = entry.CompressedData;
     // [0] resource fork method, [1] data fork method
     hdr[0] = entry.ResourceMethod;
     hdr[1] = entry.DataMethod;
+    if (this._archiveKey != null) {
+      if (entry.ResourceFork.Length > 0) {
+        (storedResource, var pad) = this.EncryptFork(entry.CompressedResource);
+        hdr[0] |= EncryptedFlag;
+        hdr[104] = (byte)pad;
+        hdr[109] = 4;
+      }
+      if (entry.DataFork.Length > 0) {
+        (storedData, var pad) = this.EncryptFork(entry.CompressedData);
+        hdr[1] |= EncryptedFlag;
+        hdr[105] = (byte)pad;
+        hdr[107] = 4;
+      }
+    }
 
     // [2] name length, [3..34] name (Latin-1, zero-padded)
     WriteName(hdr, name);
@@ -226,10 +299,10 @@ public sealed class StuffItWriter : IDisposable {
     // [84..100] fork sizes: resource, data, compressed resource, compressed data
     BinaryPrimitives.WriteUInt32BigEndian(hdr[84..], (uint)entry.ResourceFork.Length);
     BinaryPrimitives.WriteUInt32BigEndian(hdr[88..], (uint)entry.DataFork.Length);
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[92..], (uint)entry.CompressedResource.Length);
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[96..], (uint)entry.CompressedData.Length);
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[92..], (uint)storedResource.Length);
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[96..], (uint)storedData.Length);
 
-    // [100..104] fork CRC-16s; [104..110] reserved; [110..112] header CRC-16 over bytes 0..110
+    // [100..104] fork CRC-16s; [104..110] encryption padding and markers; [110..112] header CRC-16 over bytes 0..110
     BinaryPrimitives.WriteUInt16BigEndian(hdr[100..], ComputeCrc16(entry.ResourceFork));
     BinaryPrimitives.WriteUInt16BigEndian(hdr[102..], ComputeCrc16(entry.DataFork));
     BinaryPrimitives.WriteUInt16BigEndian(hdr[110..], ComputeCrc16(hdr[..110]));
@@ -237,10 +310,10 @@ public sealed class StuffItWriter : IDisposable {
     output.Write(hdr);
 
     // Resource fork data, then data fork data.
-    if (entry.CompressedResource.Length > 0)
-      output.Write(entry.CompressedResource);
-    if (entry.CompressedData.Length > 0)
-      output.Write(entry.CompressedData);
+    if (storedResource.Length > 0)
+      output.Write(storedResource);
+    if (storedData.Length > 0)
+      output.Write(storedData);
   }
 
   // ── Compression ──────────────────────────────────────────────────────────

@@ -22,6 +22,8 @@ internal static class ZfsAccountingProbe {
     public readonly Dictionary<string, long> UsersCounted = new(StringComparer.Ordinal);
     public readonly Dictionary<string, long> GroupsRecorded = new(StringComparer.Ordinal);
     public readonly Dictionary<string, long> GroupsCounted = new(StringComparer.Ordinal);
+    public readonly Dictionary<string, long> ProjectsRecorded = new(StringComparer.Ordinal);
+    public readonly Dictionary<string, long> ProjectsCounted = new(StringComparer.Ordinal);
   }
 
   private static ulong U64(ReadOnlySpan<byte> b, int at) => BinaryPrimitives.ReadUInt64LittleEndian(b[at..]);
@@ -41,7 +43,7 @@ internal static class ZfsAccountingProbe {
         var ds = mos.RequireDnode(head, "dataset");
         var ledger = new Ledger { Recorded = new((long)U64(ds.Bonus, 72), (long)U64(ds.Bonus, 80), (long)U64(ds.Bonus, 88)) };
         var bp = ZfsBlockPointer.Read(ds.Bonus.AsSpan(128));
-        if (!bp.IsHole) {
+        if (!bp.IsHole && !bp.IsEncrypted) {
           ledger.Counted = CountObjset(pool, bp, ledger);
           result[path] = ledger;
         }
@@ -76,7 +78,12 @@ internal static class ZfsAccountingProbe {
     long used = 0, compressed = 0, uncompressed = 0;
     var ratio = DeflateRatio(pool);
     void Count(ZfsBlockPointer bp) {
-      if (bp.IsHole || bp.IsEmbedded) return;
+      if (bp.IsHole) return;
+      if (bp.IsEmbedded) {
+        // an embedded block takes no space: data is charged its logical size only
+        if (bp.Type is 19 or 23 or 25 or 26 or 49) uncompressed += bp.LogicalSize;
+        return;
+      }
       foreach (var dva in bp.Dvas)
         if (!dva.IsEmpty) used += dva.AllocatedSectors * ratio;
       compressed += bp.PhysicalSize;
@@ -84,9 +91,9 @@ internal static class ZfsAccountingProbe {
       uncompressed += metadata ? bp.PhysicalSize : bp.LogicalSize;
     }
     void Tree(ZfsBlockPointer bp) {
-      if (bp.IsHole || bp.IsEmbedded) return;
+      if (bp.IsHole) return;
       Count(bp);
-      if (bp.Level == 0) return;
+      if (bp.IsEmbedded || bp.Level == 0) return;
       var data = pool.ReadBlock(bp, cache: false);
       for (var at = 0; at + 128 <= data.Length; at += 128)
         Tree(ZfsBlockPointer.Read(data.AsSpan(at)));
@@ -112,14 +119,14 @@ internal static class ZfsAccountingProbe {
         }
         var d = ZfsDnode.Read(dnodes.AsSpan(at))!;
         Object(d);
-        if (ledger != null && (d.Flags & 2) != 0 && d.BonusType is 17 or 44)
-          Charge(ledger, d);
+        if (ledger != null && d.BonusType is 17 or 44)
+          Charge(ledger, d, projects: block.Length >= 0x800 + 512 && block[0x800] != 0);
         i += 1 + dnodes[at + 0x0C];
       }
     }
     if (block.Length >= 2048) {
-      foreach (var (at, into) in new[] { (0x400, ledger?.UsersRecorded), (0x600, ledger?.GroupsRecorded) }) {
-        if (block[at] == 0) continue;
+      foreach (var (at, into) in new[] { (0x400, ledger?.UsersRecorded), (0x600, ledger?.GroupsRecorded), (0x800, ledger?.ProjectsRecorded) }) {
+        if (block.Length < at + 512 || block[at] == 0) continue;
         var special = ZfsDnode.Read(block.AsSpan(at))!;
         Object(special);
         if (into != null)
@@ -129,8 +136,9 @@ internal static class ZfsAccountingProbe {
     return new(used, compressed, uncompressed);
   }
 
-  private static void Charge(Ledger ledger, ZfsDnode d) {
-    ulong uid, gid;
+  /// <summary>An object's charge: 512 + its used bytes when user-accounted (flag 2), one object when object-accounted (flag 8).</summary>
+  private static void Charge(Ledger ledger, ZfsDnode d, bool projects) {
+    ulong uid, gid, project = 0;
     if (d.BonusType == 17) {
       uid = U64(d.Bonus, 128);
       gid = U64(d.Bonus, 136);
@@ -138,10 +146,20 @@ internal static class ZfsAccountingProbe {
       var header = ((BinaryPrimitives.ReadUInt16LittleEndian(d.Bonus.AsSpan(4)) >> 10) & 0x3F) * 8;
       uid = U64(d.Bonus, header + 24);
       gid = U64(d.Bonus, header + 32);
+      if ((U64(d.Bonus, header + 48) & 0x0000800000000000UL) != 0) project = U64(d.Bonus, header + 128);
     }
-    var amount = 512 + (long)d.UsedBytes;
-    ledger.UsersCounted[uid.ToString("x")] = ledger.UsersCounted.GetValueOrDefault(uid.ToString("x")) + amount;
-    ledger.GroupsCounted[gid.ToString("x")] = ledger.GroupsCounted.GetValueOrDefault(gid.ToString("x")) + amount;
+    void Add(Dictionary<string, long> into, string key, long amount) => into[key] = into.GetValueOrDefault(key) + amount;
+    if ((d.Flags & 2) != 0) {
+      var amount = 512 + (long)d.UsedBytes;
+      Add(ledger.UsersCounted, uid.ToString("x"), amount);
+      Add(ledger.GroupsCounted, gid.ToString("x"), amount);
+      if (projects) Add(ledger.ProjectsCounted, project.ToString("x"), amount);
+    }
+    if ((d.Flags & 8) != 0) {
+      Add(ledger.UsersCounted, "obj-" + uid.ToString("x"), 1);
+      Add(ledger.GroupsCounted, "obj-" + gid.ToString("x"), 1);
+      if (projects) Add(ledger.ProjectsCounted, "obj-" + project.ToString("x"), 1);
+    }
   }
 
   /// <summary>Every ledger moved its records by exactly what its trees moved by.</summary>
@@ -153,7 +171,8 @@ internal static class ZfsAccountingProbe {
         Assert.That(a.Recorded - b.Recorded, Is.EqualTo(a.Counted - b.Counted), $"{key}: space");
         foreach (var (recorded, counted, what) in new[] {
                    (Diff(a.UsersRecorded, b.UsersRecorded), Diff(a.UsersCounted, b.UsersCounted), "users"),
-                   (Diff(a.GroupsRecorded, b.GroupsRecorded), Diff(a.GroupsCounted, b.GroupsCounted), "groups") })
+                   (Diff(a.GroupsRecorded, b.GroupsRecorded), Diff(a.GroupsCounted, b.GroupsCounted), "groups"),
+                   (Diff(a.ProjectsRecorded, b.ProjectsRecorded), Diff(a.ProjectsCounted, b.ProjectsCounted), "projects") })
           Assert.That(recorded, Is.EquivalentTo(counted), $"{key}: {what}");
       }
     });
