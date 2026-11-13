@@ -35,19 +35,21 @@ internal static class SpoolingArchiveMountSession {
         : SpoolingRebuildFilesystemEntry.File(Normalize(item.Name), item.OriginalSize,
             () => OpenEntry(archive, snapshot, item.Name, password))).ToArray();
 
-      MutableRebuildFilesystemSession.RebuildImageFromStreams rebuild = (candidate, current) => {
+      void ApplyNativeEdits(Stream candidate,
+          IReadOnlyList<SpoolingRebuildFilesystemEntry> current, bool copyOriginal) {
         var after = current.ToDictionary(static e => e.Path, StringComparer.Ordinal);
-        var files = current.Where(static e => e.Kind == FilesystemNodeKind.RegularFile).ToArray();
 
         if (modifier is null) {
           Recreate(candidate, current, originals, creator!);
           return;
         }
 
-        candidate.SetLength(0);
-        candidate.Position = 0;
-        using (var original = snapshot.OpenRead())
+        if (copyOriginal) {
+          candidate.SetLength(0);
+          candidate.Position = 0;
+          using var original = snapshot.OpenRead();
           original.CopyTo(candidate);
+        }
         candidate.Position = 0;
 
         var removed = originals
@@ -103,7 +105,10 @@ internal static class SpoolingArchiveMountSession {
             temp.Dispose();
         }
         candidate.Position = 0;
-      };
+      }
+
+      MutableRebuildFilesystemSession.RebuildImageFromStreams rebuild =
+        (candidate, current) => ApplyNativeEdits(candidate, current, copyOriginal: true);
 
       MutableRebuildFilesystemSession.ValidateImageFromStreams validate = (candidate, current) => {
         candidate.Position = 0;
@@ -152,8 +157,22 @@ internal static class SpoolingArchiveMountSession {
         }
       };
 
+      // Native central-directory edits are the only qualified live path.
+      // Journal + rollback are mandatory, even when a format supports direct
+      // seek writes. A creator-only or memory-backed archive uses the ordinary
+      // immutable candidate path instead.
+      var canEditLive = modifier is not null && source is FileStream &&
+        descriptor is IArchiveInPlaceMountWriter inPlaceProfile &&
+        inPlaceProfile.CanEditInPlace(source);
+      MutableRebuildFilesystemSession.CommitImageInPlace? journalled = canEditLive
+        ? (live, current) => JournaledArchiveWriteback.Apply((FileStream)live,
+          image => ApplyNativeEdits(image, current, copyOriginal: false),
+          image => validate(image, current))
+        : null;
+
       var session = MutableRebuildFilesystemSession.OpenSpooling(
-        profile, source, entries, rebuild, validate, leaveOpen: true);
+        profile, source, entries, rebuild, validate, leaveOpen: true,
+        journalledInPlaceCommit: journalled);
       return new OwnedFilesystemSession(session, snapshot);
     } catch {
       snapshot.Dispose();
