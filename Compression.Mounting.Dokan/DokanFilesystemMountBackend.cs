@@ -25,6 +25,7 @@ public sealed class DokanFilesystemMountBackend : IFilesystemMountBackend {
     if (!this._runtime.IsAvailable)
       limitations.Add(this._runtime.UnavailableReason ?? "Dokany 2 runtime is unavailable.");
     limitations.Add("Optional namespace mutations are exposed only when the filesystem profile advertises them.");
+    limitations.Add("Security descriptors, alternate data streams, arbitrary Win32 attributes, and exact free-space reporting are not represented by the neutral filesystem contract.");
 
     return new(
       Id: "dokan",
