@@ -73,6 +73,56 @@ public sealed class FormatFamilyMountTests {
   }
 
   [Test]
+  public void ZipWithSixtyFiveMiBUncompressedMemberMountsWritableUsingDiskSpooling() {
+    const int sourceMiB = 65;
+    using var image = new MemoryStream();
+    using (var zip = new System.IO.Compression.ZipArchive(
+      image, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true)) {
+      var entry = zip.CreateEntry("large.bin", System.IO.Compression.CompressionLevel.Fastest);
+      using var data = entry.Open();
+      var oneMiB = new byte[1024 * 1024];
+      for (var i = 0; i < sourceMiB; ++i)
+        data.Write(oneMiB);
+    }
+
+    image.Position = 0;
+    var profile = MountNamespaceResolver.Probe("Zip", image);
+    Assert.Multiple(() => {
+      Assert.That(profile.Profile.CanMountWritable, Is.True,
+        string.Join("; ", profile.Profile.Limitations));
+      Assert.That(profile.Profile.Limitations, Has.Some.Contains("disk-spooled"));
+    });
+
+    image.Position = 0;
+    using (var mount = MountNamespaceResolver.Open(
+      "Zip", image, new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true))) {
+      var initial = mount.Lookup(mount.RootNodeId, "large.bin")!.Value;
+      using (var handle = mount.OpenFile(initial, FileAccess.Read)) {
+        Assert.That(handle.Length, Is.EqualTo(65L * 1024 * 1024));
+        Span<byte> read = stackalloc byte[8];
+        Assert.That(handle.Read(handle.Length - 8, read), Is.EqualTo(8));
+        Assert.That(read.ToArray(), Is.All.Zero);
+      }
+
+      var added = mount.CreateFile(mount.RootNodeId, "small.txt");
+      using (var handle = mount.OpenFile(added, FileAccess.ReadWrite))
+        handle.Write(0, "persisted"u8);
+      mount.Flush();
+    }
+
+    image.Position = 0;
+    using var reopened = MountNamespaceResolver.Open(
+      "Zip", image, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    Assert.That(ReadAll(reopened, "small.txt"), Is.EqualTo("persisted"u8.ToArray()));
+    var large = reopened.Lookup(reopened.RootNodeId, "large.bin")!.Value;
+    using var reread = reopened.OpenFile(large, FileAccess.Read);
+    Assert.That(reread.Length, Is.EqualTo(65L * 1024 * 1024));
+    Span<byte> end = stackalloc byte[8];
+    Assert.That(reread.Read(reread.Length - 8, end), Is.EqualTo(8));
+    Assert.That(end.ToArray(), Is.All.Zero);
+  }
+
+  [Test]
   public void WormOnlyWimMountStagesFullCopyAndPersistsRepeatedWrites() {
     var descriptor = FormatRegistry.GetById("Wim")!;
     Assert.Multiple(() => {
