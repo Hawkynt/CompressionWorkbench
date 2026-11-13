@@ -10,8 +10,8 @@ namespace FileFormat.Uharc;
 /// </summary>
 /// <remarks>
 /// The directory is always readable; file data decodes for every 0.6 method (store, RLE, LZ78,
-/// LZP, PPM and ALZ), the 0.4 store and LZP modes and every 0.2 mode, and every extracted file is
-/// checked against its stored CRC-32.
+/// LZP, PPM and ALZ), every 0.4 mode but PPM and every 0.2 mode, and every extracted file is checked
+/// against its stored CRC-32.
 /// </remarks>
 public sealed class UharcReader {
 
@@ -44,10 +44,14 @@ public sealed class UharcReader {
   public int Method => this._legacy?.Method ?? this._v04?.Method ?? this._header.Method;
 
   /// <summary>Gets the name of the compression mode, as <c>uharc l</c> prints it (0.2: the mode switch).</summary>
-  public string MethodName => this._legacy != null ? Uharc02Header.MethodName(this._legacy.Method) : UharcMethods.Name(this.Method);
+  public string MethodName => this._legacy != null ? Uharc02Header.MethodName(this._legacy.Method)
+    : this._v04 != null && this.Method is >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last ? "LZW"
+    : UharcMethods.Name(this.Method);
 
-  /// <summary>Gets the dictionary size in bytes, 0 for the store method.</summary>
-  public int DictionarySize => this._legacy != null ? Uharc02Header.DictionarySize(this._legacy.Method) : UharcMethods.DictionarySize(this.Method);
+  /// <summary>Gets the dictionary size in bytes (0.2 and 0.4 LZW: codes), 0 for the store method.</summary>
+  public int DictionarySize => this._legacy != null ? Uharc02Header.DictionarySize(this._legacy.Method)
+    : this._v04 != null && this.Method is >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last ? Uharc02Header.DictionarySize(this.Method)
+    : UharcMethods.DictionarySize(this.Method);
 
   /// <summary>Gets whether the archive was created with <c>-pw</c>.</summary>
   public bool IsEncrypted => this._legacy == null && (this._v04 != null
@@ -61,7 +65,8 @@ public sealed class UharcReader {
   public bool CanDecodeMethod => this._legacy != null
     ? this._legacy.Method is 0 or >= 2 and <= 43
     : this._v04 != null
-    ? this._v04.Method is UharcMethods.Store or >= UharcMethods.LzpFirst and <= UharcMethods.LzpLast
+    ? this._v04.Method is UharcMethods.Store or UharcMethods.Rle or >= UharcMethods.Lz78First and <= UharcMethods.LzpLast
+      or >= UharcMethods.AlzFirst and <= UharcMethods.AlzLast
     : this._header.Method is UharcMethods.Store or UharcMethods.Rle
     or >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last
     or >= UharcMethods.LzpFirst and <= UharcMethods.LzpLast
@@ -530,7 +535,10 @@ public sealed class UharcReader {
       return h.Method switch {
         UharcMethods.Store when length == size => packed.AsSpan(offset, size).ToArray(),
         UharcMethods.Store => throw new InvalidDataException("UHARC: stored stream size does not match."),
-        _ => Uharc04LzpDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
+        UharcMethods.Rle => UharcRleDecoder.Decode(packed, offset, length, size),
+        <= UharcMethods.Lz78Last => Uharc02LzwDecoder.Decode(packed, offset, length, h.Method, size),
+        <= UharcMethods.LzpLast => Uharc04LzpDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
+        _ => Uharc04AlzDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
       };
     } catch (Exception e) when (e is IndexOutOfRangeException or ArgumentOutOfRangeException) {
       throw new InvalidDataException("UHARC: packed stream is corrupt.", e);

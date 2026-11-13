@@ -20,7 +20,7 @@ internal sealed class UharcAlzDecoder {
   private static readonly ushort[] RunTokenSeed = [0, 1, 28, 78, 89, 100];
 
   // Literal-mode state machine: [(token - 1) * 32 + mode] -> next mode.
-  private static readonly byte[] ModeNext = [
+  internal static readonly byte[] ModeNext = [
     16, 16, 16, 16, 17, 17, 17, 17, 20, 20, 20, 20, 18, 18, 18, 19, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21,
     22, 22, 22, 22, 24, 23, 23, 24, 27, 27, 27, 27, 25, 25, 25, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28,
     29, 29, 29, 29, 29, 29, 29, 29, 30, 30, 30, 30, 30, 30, 30, 30, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31,
@@ -58,8 +58,8 @@ internal sealed class UharcAlzDecoder {
   ];
 
   // Distance slots: slot k covers [SlotBase[k], SlotBase[k] + SlotSpan[k]).
-  private static readonly uint[] SlotBase = BuildSlotBases();
-  private static readonly uint[] SlotSpan = [
+  internal static readonly uint[] SlotBase = BuildSlotBases();
+  internal static readonly uint[] SlotSpan = [
     1, 2, 4, 8, 16, 32, 32, 32, 64, 64, 128, 128, 256, 256, 512, 512,
     1024, 1024, 2048, 2048, 4096, 4096, 8192, 8192, 16384, 16384, 32768, 32768, 65536, 65536, 131072, 131072,
     262144, 262144, 524288, 524288, 1048576, 1048576, 2097152, 2097152, 4194304, 4194304, 8388608, 8388608,

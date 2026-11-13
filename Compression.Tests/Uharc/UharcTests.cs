@@ -78,6 +78,21 @@ public class UharcTests {
   [TestCase("v04-mm-mz.uha", "mm", null, false)]
   [TestCase("v04-runs-mz.uha", "runs", null, true)]
   [TestCase("v04-dates-mz.uha", "dates", null, true)]
+  [TestCase("v04-basic-m1.uha", "basic", null, true)]
+  [TestCase("v04-basic-m2.uha", "basic", null, true)]
+  [TestCase("v04-basic-m3.uha", "basic", null, true)]
+  [TestCase("v04-basic-m2-pw.uha", "basic", "secret", true)]
+  [TestCase("v04-reset-m2.uha", "reset", null, true)]
+  [TestCase("v04-reset-m21.uha", "reset", null, true)]
+  [TestCase("v04-exe-m2.uha", "exe", null, true)]
+  [TestCase("v04-mm-m1.uha", "mm", null, true)]
+  [TestCase("v04-runs-m2.uha", "runs", null, true)]
+  [TestCase("v04-basic-mr.uha", "basic", null, true)]
+  [TestCase("v04-runs-mr.uha", "runs", null, true)]
+  [TestCase("v04-basic-mw.uha", "basic", null, true)]
+  [TestCase("v04-runs-mw.uha", "runs", null, true)]
+  [TestCase("v04-reset-mw1.uha", "reset", null, true)]
+  [TestCase("v04-exe-mw.uha", "exe", null, true)]
   [Category("HappyPath"), Category("ThemVsUs")]
   public void GivenArchiveUharcWrote_WhenExtracted_ThenEveryFileMatchesItsInput(string archive, string set, string? password, bool wholeSet) {
     var reader = Open(archive, password);
@@ -129,6 +144,13 @@ public class UharcTests {
   [TestCase("v04-basic-mz.uha", "LZP", 16384)]
   [TestCase("v04-reset-mz1.uha", "LZP", 1024)]
   [TestCase("v04-reset-mz.uha", "LZP", 262144)]
+  [TestCase("v04-basic-m1.uha", "ALZ:1", 16384)]
+  [TestCase("v04-basic-m2.uha", "ALZ:2", 16384)]
+  [TestCase("v04-basic-m3.uha", "ALZ:3", 16384)]
+  [TestCase("v04-reset-m21.uha", "ALZ:2", 1024)]
+  [TestCase("v04-basic-mr.uha", "RLE", 0)]
+  [TestCase("v04-basic-mw.uha", "LZW", 16384)]
+  [TestCase("v04-reset-mw1.uha", "LZW", 1024)]
   [Category("HappyPath")]
   public void GivenEachMode_WhenOpened_ThenModeAndDictionaryAreReported(string archive, string mode, int dictionary) {
     var reader = Open(archive);
@@ -192,6 +214,8 @@ public class UharcTests {
   [TestCase("exe-mx.uha")]
   [TestCase("v02-reset-m3.uha")]
   [TestCase("v04-reset-mz.uha")]
+  [TestCase("v04-reset-m2.uha")]
+  [TestCase("v04-reset-mw1.uha")]
   [Category("ErrorHandling")]
   public void GivenCorruptedPackedStream_WhenExtracted_ThenNoWrongBytesAreReturned(string archive) {
     var data = Vector(archive);
@@ -325,6 +349,17 @@ public class UharcTests {
     var data = Vector("v04-basic-mz.uha");
     data[^3] ^= 0x40;
     Assert.That(() => new UharcReader(new MemoryStream(data)), Throws.InstanceOf<InvalidDataException>());
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenVersion04PpmArchive_WhenExtracted_ThenTheModeIsRefusedButListed() {
+    var reader = Open("v04-basic-mx.uha");
+    Assert.Multiple(() => {
+      Assert.That(reader.MethodName, Is.EqualTo("PPM"));
+      Assert.That(reader.CanDecodeMethod, Is.False);
+      Assert.That(reader.Entries.Count(e => !e.IsDirectory), Is.EqualTo(6));
+      Assert.That(() => reader.Extract(reader.Entries.First(e => e.Size > 0)), Throws.TypeOf<NotSupportedException>());
+    });
   }
 
   [Test, Category("Boundary")]

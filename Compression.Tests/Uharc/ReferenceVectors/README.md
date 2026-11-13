@@ -58,6 +58,16 @@ The `v04-*` archives were written by **UHARC 0.4 BETA** (`UHARC04.EXE`, Win32, 2
 | `v04-mm-mz.uha` | mm | `-mz`, files `pic.bmp u8.wav s16.wav` | the multimedia delta filter behind 0.4 LZP |
 | `v04-runs-mz.uha` | runs | `-mz` | 0.4 LZP runs and 256-byte copies |
 | `v04-dates-mz.uha` | dates | `-mz` | per-file dates and times, two directory levels |
+| `v04-basic-m1.uha` / `-m2` / `-m3` | basic | `-m1` / `-m2` / `-m3` | 0.4 ALZ:1..3; `-m1` uses selectors 10 and 6 |
+| `v04-basic-m2-pw.uha` | basic | `-m2 -pwsecret` | 0.4 ALZ behind the password cipher |
+| `v04-reset-m2.uha` / `v04-reset-m21.uha` | reset | `-m2` / `-m2 -md1` | 0.4 ALZ blocks and model resets; a 1 KiB window |
+| `v04-exe-m2.uha` | exe | `-m2` | the executable filter behind 0.4 ALZ |
+| `v04-mm-m1.uha` | mm | `-m1` | 0.4 ALZ multimedia selectors 1, 2, 3, 4, 5, 7, 8, 9 |
+| `v04-runs-m2.uha` | runs | `-m2` | 0.4 ALZ runs |
+| `v04-basic-mr.uha` / `v04-runs-mr.uha` | basic / runs | `-mr` | 0.4 RLE (a switch the 0.4 help does not list) |
+| `v04-basic-mw.uha` / `v04-runs-mw.uha` | basic / runs | `-mw` | 0.4 LZW (likewise unlisted) |
+| `v04-reset-mw1.uha` / `v04-exe-mw.uha` | reset / exe | `-mw -md1` / `-mw` | LZW with 1024 codes; the executable filter behind LZW |
+| `v04-basic-mx.uha` | basic | `-mx` | 0.4 PPM, listed but not decoded |
 
 `UHARC04.EXE t` reports "All files OK" for every `v04-*` archive.
 
