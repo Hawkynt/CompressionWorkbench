@@ -353,9 +353,17 @@ internal static class MutableArchiveMountSession {
       using var reader = snapshot.OpenRead();
       using var contents = archive.OpenEntry(reader, entry.Name, password);
       using var output = new MemoryStream();
-      contents.CopyTo(output);
-      if (output.Length != entry.OriginalSize)
-        throw new InvalidDataException($"Archive entry '{name}' has a size different from its directory record.");
+      var remaining = entry.OriginalSize;
+      Span<byte> buffer = stackalloc byte[16 * 1024];
+      while (remaining > 0) {
+        var read = contents.Read(buffer[..(int)Math.Min(buffer.Length, remaining)]);
+        if (read == 0)
+          throw new InvalidDataException($"Archive entry '{name}' ended before its declared length.");
+        output.Write(buffer[..read]);
+        remaining -= read;
+      }
+      if (contents.ReadByte() >= 0)
+        throw new InvalidDataException($"Archive entry '{name}' exceeds its declared length.");
       results.Add(RebuildFilesystemEntry.File(name, output.ToArray()));
     }
     return results;
