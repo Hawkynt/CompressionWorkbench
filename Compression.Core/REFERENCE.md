@@ -10128,6 +10128,7 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Decompresses data from the inner stream into the provided buffer. |
 | `FinishCompression` | `protected override void FinishCompression()` | Called when the stream is being closed in Compress mode. Implementations should flush any remaining compressed data. |
 | `OpenNsisDecoder` | `static Bzip2Stream OpenNsisDecoder(Stream stream, bool leaveOpen = false)` | Opens a decoder for the header-less bzip2 dialect embedded in NSIS installers: no "BZh" stream header, a single 0x31 byte before each block, 0x17 at the end, no CRCs. |
+| `OpenNsisEncoder` | `static Bzip2Stream OpenNsisEncoder(Stream stream, bool leaveOpen = false)` | Opens an encoder for the NSIS dialect `OpenNsisDecoder` reads: no stream header, 0x31 before each 900k block, 0x17 after the last, no CRCs and no randomised blocks. |
 
 ### Namespace `FileFormat.Gzip`
 

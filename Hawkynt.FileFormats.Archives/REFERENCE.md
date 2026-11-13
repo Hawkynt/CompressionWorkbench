@@ -25059,7 +25059,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 ### Namespace `FileFormat.Nsis`
 
-[`NsisCompression`](#nsiscompression) · [`NsisEntry`](#nsisentry) · [`NsisFormatDescriptor`](#nsisformatdescriptor) · [`NsisReader`](#nsisreader)
+[`NsisCompression`](#nsiscompression) · [`NsisEntry`](#nsisentry) · [`NsisFormatDescriptor`](#nsisformatdescriptor) · [`NsisInstallerFile`](#nsisinstallerfile) · [`NsisInstallerOptions`](#nsisinstalleroptions) · [`NsisInstallerWriter`](#nsisinstallerwriter) · [`NsisReader`](#nsisreader)
 
 #### `NsisCompression`
 
@@ -25094,7 +25094,7 @@ Implements `IEquatable<NsisEntry>`.
 
 NSIS (Nullsoft Scriptable Install System) installer: the files its install script extracts. References: `https://github.com/kichik/nsis` — NSIS sources; `Source/exehead/fileform.h` defines the layout (zlib/libpng licence)`https://nsis.sourceforge.io/Docs/` — NSIS documentation`https://www.7-zip.org` — 7-Zip's NSIS handler, the reference reader this one is checked against
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -25111,10 +25111,46 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes an installer that extracts every input below the installation directory. The method is "zlib", "bzip2" or "lzma" (the default), with ":solid" for one solid stream. The exehead stub comes from `FormatSpecific["stub"]` (a stub file), `FormatSpecific["nsisdir"]` or an installed NSIS 3 (`LoadStub`); `FormatSpecific["name"]` sets the product name. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Decodes one entry into memory; an unknown name yields no bytes. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens one entry as a bounded read-only stream. |
+
+#### `NsisInstallerFile`
+
+A file an NSIS installer writes.
+
+Implements `IEquatable<NsisInstallerFile>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NsisInstallerFile` | `NsisInstallerFile(string Path, byte[] Data, DateTime? LastWriteTimeUtc = null)` | A file an NSIS installer writes. |
+| `Data` | `byte[] Data { get; init; }` | Its contents. |
+| `LastWriteTimeUtc` | `DateTime? LastWriteTimeUtc { get; init; }` | The modification time the installer gives it; the time of writing when null. |
+| `Path` | `string Path { get; init; }` | Its path below the installation directory, "/"- or "\"-separated. |
+
+#### `NsisInstallerOptions`
+
+How `NsisInstallerWriter` builds an installer.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NsisInstallerOptions` | `NsisInstallerOptions()` |  |
+| `Compression` | `NsisCompression Compression { get; init; }` | The compressor: zlib, bzip2 or LZMA. The stub must be the one NSIS ships for it. |
+| `InstallDirectory` | `string InstallDirectory { get; init; }` | The default installation directory (InstallDir): an absolute path, or one starting with `$PROGRAMFILES` or `$TEMP`. `/D=` on the command line overrides it. Defaults to `$PROGRAMFILES\` and the name. |
+| `Name` | `string Name { get; init; }` | The product name the installer shows ($(^Name)). |
+| `Solid` | `bool Solid { get; init; }` | One compressed stream for the header and every file, instead of one per file. |
+
+#### `NsisInstallerWriter`
+
+Writes NSIS 3 installers: an exehead stub from NSIS's `Stubs` folder, prepared as makensis prepares it, then the firstheader, the script header and the files, and the CRC-32. The script is what makensis compiles from `Section`, `SetOutPath $INSTDIR\...` and `File` lines with the default pages, so the installer runs interactively or with `/S /D=dir`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LoadStub` | `static byte[] LoadStub(NsisCompression compression, bool solid, string nsisDirectory = null)` | Reads the matching stub from an NSIS installation: `nsisDirectory`, else the NSISDIR environment variable, else the usual install locations. Null when none is found. |
+| `StubFileName` | `static string StubFileName(NsisCompression compression, bool solid)` | The name of the stub NSIS ships for a compressor ("lzma_solid-x86-unicode", ...). |
+| `Write` | `static void Write(Stream output, ReadOnlySpan<byte> stub, IReadOnlyList<NsisInstallerFile> files, NsisInstallerOptions options = null)` | Writes an installer for `files` using `stub`. |
 
 #### `NsisReader`
 
