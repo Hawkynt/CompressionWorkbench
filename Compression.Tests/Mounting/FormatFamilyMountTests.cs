@@ -123,7 +123,7 @@ public sealed class FormatFamilyMountTests {
     var sub = stem + ".sub";
     var rawImage = Enumerable.Range(0, 2352).Select(static index => (byte)index).ToArray();
     var subchannel = Enumerable.Range(0, 96).Select(static index => (byte)(255 - index)).ToArray();
-    File.WriteAllText(ccd, "[CloneCD]\\nVersion=3\\n[Disc]\\nTocEntries=1\\nSessions=1\\n");
+    File.WriteAllText(ccd, "[CloneCD]\nVersion=3\n[Disc]\nTocEntries=1\nSessions=1\n");
     File.WriteAllBytes(img, rawImage);
     File.WriteAllBytes(sub, subchannel);
 
