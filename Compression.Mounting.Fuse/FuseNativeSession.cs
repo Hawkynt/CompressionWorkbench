@@ -281,7 +281,7 @@ internal sealed class FuseNativeCallbacks : IDisposable {
     var state = State(request);
     var attributes = Marshal.PtrToStructure<LinuxStat>(attributesPointer);
     ulong? handleId = fileInfoPointer == IntPtr.Zero ? null : Marshal.PtrToStructure<FuseFileInfo>(fileInfoPointer).FileHandle;
-    var error = state._operations.SetAttributes(inode, toSet, attributes.Size, handleId, out var snapshot);
+    var error = state._operations.SetAttributes(inode, toSet, attributes, handleId, out var snapshot);
     if (error != FuseErrno.Success) { ReplyError(request, error); return; }
     var result = FuseStatFactory.Create(snapshot.Inode, snapshot.Node, !state._operations.IsReadOnly);
     LibFuseNative.fuse_reply_attr(request, ref result, 1);
