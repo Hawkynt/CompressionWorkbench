@@ -1,0 +1,113 @@
+program	section	formats_listed	own_format_row	status	note
+7-Zip	table	7z, ARJ, bzip2, cab, cpio, deb, DMG, gzip, iso, LHA, LZMA, RAR, RPM, vhd, tar, ZIP	7z	FULL	
+7-Zip ZS	table	as 7-Zip, plus Zstandard, Brotli, LZ4, LZ5, Lizard and Fast LZMA2 inside 7z	7-Zip-zstd coders (Zstandard, Brotli, LZ4, LZ5, Lizard, Fast LZMA2)	PARTIAL	
+7zX	table	7z, s7z, self-extracting archives	-	NOT-A-FORMAT	macOS front-end for 7z
+ALZip	table	7z, alz, ace, bin, cab, jar, lzh, rar, tar, uue, zip, SFX, AES encryption	ALZ	PARTIAL	
+AMATERSE	table	simple (PACK) and complex (SPACK)	TERSE (AMATERSE PACK / SPACK)	FULL	
+ar	table	ar	ar (incl. A, LIB)	FULL	
+ARC, PKARC	table	ARC	ARC	FULL	
+ARJ und ARJ32	table	ARJ	ARJ	FULL	
+Ark	table	depends on installed back-ends (tar, gzip, bzip2, zip ...)	-	NOT-A-FORMAT	KDE front-end
+bzip und bzip2	table	bz, bz2, tbz, tbz2	bzip2	FULL	bzip (0.21) also FULL
+CompressIT	table	ZIP	-	NOT-A-FORMAT	writes ZIP
+compress	table	Z	compress (.Z)	FULL	
+Courgette	table	(binary update patches)	Courgette	MISSING	
+cpio	table	cpio, tar	cpio	FULL	
+DAR	table	DAR	DAR	FULL	
+FileCompressor	table	ZIP	-	NOT-A-FORMAT	writes ZIP
+Filzip	table	ACE, ARC, ARJ, CAB, gz, LHA, RAR, tar, ZIP, Z	-	NOT-A-FORMAT	WinZip-like front-end
+FLAM	table	ADC, VR8, CX8, CX7 (FLAMFILE)	FLAMFILE (ADC, VR8, CX8, CX7)	MISSING	
+FreeArc	table	arc	FreeArc	PARTIAL	
+freeze	table	F	freeze	FULL	
+gzip	table	gz, tgz	gzip	FULL	
+ICEOWS	table	ice, ARJ, ZIP, gzip, tar, CAB, RAR, ACE, MIME, UUE, XXE, B64, HQX, JAR, EAR, WAR, LZS, LZH, LHA, IMP, BZ2, SFX	ICE (ICEOWS)	REFUSED	
+Info-ZIP	table	ZIP	ZIP (incl. Zip64, PK3)	PARTIAL	
+IZArc	table	7z, A, ACE, ARC, ARJ, B64, BH, bz2, BZA, CAB, cpio, deb, ENC, GCA, gz, GZA, HA, ISO, JAR, LHA, LIB, LZH, MBF, MIM, PAK, PK3, RAR, RPM, tar, taz, tbz, tgz, TZ, UUE, XXE, YZ1, Z, ZIP, ZOO	-	NOT-A-FORMAT	multi-format front-end
+JAR	table	ARJ successor (.j)	JAR (ARJ Software)	MISSING	
+jZip	table	7z, bzip2, gzip, tar, ZIP, CAB, RAR, LHA, LZH, ARJ, cpio, RPM, deb	-	NOT-A-FORMAT	7-Zip-based front-end
+Karchiver	table	gz, bz2, zip, tar	-	NOT-A-FORMAT	KDE front-end
+KGB Archiver	table	kgb	KGB	PARTIAL	
+LHA und LHARC	table	LHA, LZH	LHA / LZH	FULL	
+Lzip	table	lz, tlz, tar.lz	lzip	FULL	
+LZX	table	LZX	LZX (Amiga)	FULL	
+MakeCAB	table	CAB	CAB	FULL	
+PAK	table	PAK, ARC, SDN, ZIP	PAK (NoGate, incl. SDN)	MISSING	
+pax	table	ustar, cpio	-	NOT-A-FORMAT	writes tar and cpio
+PeaZip	table	7z, ARJ, bzip2, CAB, CHM, cpio, deb, gzip, ISO, JAR, LZH, NSIS, OOo, PAQ, PEA, QUAD, RAR, RPM, split, tar, Z, ZIP	PEA	PARTIAL	
+PKZIP	table	ZIP	ZIP (incl. Zip64, PK3)	PARTIAL	
+PowerArchiver	table	7z, CAB, LHA, LZH, tar, gzip, bzip2, BH, XXE, UUE, yENC, MIME, PAE, ZIP, RAR, ARJ, ARC, ACE, ZOO	PAE (PowerArchiver encrypted)	MISSING	
+QuickZip	table	7z, ZIP, PK3, JAR, Czip, ACE, ARJ, bz2, BZA, GZA, CAB, LHA, LZA, RAR, R00, RS, RPM, tar, tgz, taz, gz, Z, PAK, WAD, HOG, SGX	-	NOT-A-FORMAT	multi-format front-end
+RarZilla Free Unrar	table	RAR	-	NOT-A-FORMAT	extracts RAR
+Rar, Unrar, WinRAR und UnrarX	table	7z, RAR, ZIP, ARJ, LZH, CAB, ACE, tar, gzip, UUE, bz2, JAR, ISO, Z	RAR (incl. R00 volumes)	FULL	
+StuffIt	table	AppleSingle, ARC, ARJ, BinHex, BtoAText, bzip2, CAB, CompactPro, compress, gzip, HQX, LHA, MacBinary, MIME, PrivateFile, RAR, Mac/Windows SFX, segments, ShrinkWrap & DiskCopy images, sit, sitx, tar, UU, yEnc, ZIP	StuffIt (sit, segments, Mac/Windows SFX)	PARTIAL	
+Squeez	table	7z, SQX, ARJ, LHA, LZH, ZIP, RAR, CAB, gzip, tar, UUE, JAR, ACE, bzip2	SQX	PARTIAL	
+TUGZip	table	7z, A, ACE, ARC, ARJ, BH, bz2, CAB, cpio, deb, GCA, gz, IMP, JAR, LHA, LZH, LIB, RAR, RPM, SQX, tar, tgz, tbz, taz, YZ1, ZIP, ZOO	-	NOT-A-FORMAT	multi-format front-end
+tar	table	tar, tgz, tbz, tbz2, tb2	tar (incl. ustar)	FULL	
+UHARC	table	UHA	UHA	PARTIAL	
+UltimateZip	table	ZIP	-	NOT-A-FORMAT	writes ZIP
+UltraCompressor II	table	UC2	UC2	PARTIAL	
+WinAce	table	ACE, ZIP, Zip64, LHA, CAB, BZip, ISO, RAR, ARC, ARJ, gzip, tar, ZOO, JAR	ACE	PARTIAL	
+WinHKI	table	HKI, ZIP, Zip64, LHA, ACE, BH, CAB, BZip, ISO, RAR, ARC, ARJ, gzip, tar, ZOO, JAR	HKI	MISSING	
+WinRK	table	RK, bzip2, gzip, ISO, tar, ZIP	RK	MISSING	
+WinZip, WinZip Plus	table	ZIP, Zip64, 7z, ARJ, tar, gz, bz2, RAR, ISO and others	-	NOT-A-FORMAT	writes ZIP/zipx (ZIP row)
+x-PRESS	table	(no format named)	x-PRESS	MISSING	
+XTreeGold 4.0 / Central Point Datei-Manager 3.0	table	ARC, Central Point Self-Extract, LHA, PAK, ZIP	Central Point self-extract	MISSING	
+xz	table	xz, tar.xz	xz	FULL	
+zip und unzip	table	ZIP	ZIP (incl. Zip64, PK3)	PARTIAL	
+Zip Magic	table	ZIP, 7z	-	NOT-A-FORMAT	shell integration for ZIP/7z
+ZipGenius	table	7z, ARJ, ACE, CAB, SQX, RAR, ZIP	-	NOT-A-FORMAT	multi-format front-end
+zoo	table	zoo, self-extracting archive	zoo (incl. self-extracting)	FULL	
+ProGuard	executable packers	packed executable	ProGuard	NOT-A-FORMAT	
+ANDpakk2	executable packers	packed executable	ANDpakk2	MISSING	
+ASPack	executable packers	packed executable	ASPack	PARTIAL	
+BeRoEXEPacker	executable packers	packed executable	BeRoEXEPacker	MISSING	
+BIN-crypter	executable packers	packed executable	BIN-crypter	MISSING	
+CExe	executable packers	packed executable	CExe	MISSING	
+Crinkler	executable packers	packed executable	Crinkler	PARTIAL	
+exe32pack	executable packers	packed executable	exe32pack	MISSING	
+ExeBundle	executable packers	packed executable	ExeBundle	MISSING	
+EXECryptor	executable packers	packed executable	EXECryptor	MISSING	
+ExeStealth	executable packers	packed executable	ExeStealth	MISSING	
+eXPressor	executable packers	packed executable	eXPressor	MISSING	
+FSG	executable packers	packed executable	FSG	PARTIAL	
+kkrunchy	executable packers	packed executable	kkrunchy	PARTIAL	
+32Lite	executable packers	packed executable	32Lite	MISSING	
+MEW	executable packers	packed executable	MEW	PARTIAL	
+MPRESS	executable packers	packed executable	MPRESS	PARTIAL	
+NeoLite	executable packers	packed executable	NeoLite	MISSING	
+.netshrink	executable packers	packed executable	.netshrink	MISSING	
+NsPack	executable packers	packed executable	NsPack	PARTIAL	
+Obsidium	executable packers	packed executable	Obsidium	MISSING	
+PECompact	executable packers	packed executable	PECompact	MISSING	
+PESpin	executable packers	packed executable	PESpin	MISSING	
+PEtite	executable packers	packed executable	PEtite	PARTIAL	
+PKLite32	executable packers	packed executable	PKLite32	MISSING	
+RLpack	executable packers	packed executable	RLpack	MISSING	
+Themida	executable packers	packed executable	Themida	PARTIAL	
+Upack	executable packers	packed executable	Upack	MISSING	
+UPX	executable packers	packed executable	UPX	PARTIAL	
+VMProtect	executable packers	packed executable	VMProtect	PARTIAL	
+WWPack32	executable packers	packed executable	WWPack32	MISSING	
+XComp/XPack	executable packers	packed executable	XComp/XPack	MISSING	
+Yoda's Crypter	executable packers	packed executable	Yoda's Crypter	PARTIAL	
+YZPack	executable packers	packed executable	YZPack	MISSING	
+ComPAck	executable packers	packed executable	ComPAck	MISSING	
+aPack	executable packers	packed executable	aPack	MISSING	
+AvPack	executable packers	packed executable	AvPack	MISSING	
+Diet	executable packers	packed executable	Diet	MISSING	
+LZEXE	executable packers	packed executable	LZEXE	PARTIAL	
+PKLITE (DOS)	executable packers	packed executable	PKLITE (DOS)	PARTIAL	
+ProPack (DOS)	executable packers	packed executable	ProPack (DOS)	MISSING	
+624	executable packers	packed executable	624	MISSING	
+WWPack (DOS)	executable packers	packed executable	WWPack (DOS)	MISSING	
+XPack (DOS)	executable packers	packed executable	XPack (DOS)	MISSING	
+gzexe	executable packers	packed executable	gzexe	PARTIAL	
+PuCrunch	executable packers	packed executable	PuCrunch	MISSING	
+Java Archive	executable packers	JAR	JAR (Java)	FULL	
+Detect It Easy	unpackers and identifiers	-	-	NOT-A-FORMAT	analysis tool, writes no format
+ExEinfo PE	unpackers and identifiers	-	-	NOT-A-FORMAT	analysis tool, writes no format
+CUP386	unpackers and identifiers	-	-	NOT-A-FORMAT	analysis tool, writes no format
+IUP	unpackers and identifiers	-	-	NOT-A-FORMAT	analysis tool, writes no format
+PEiD	unpackers and identifiers	-	-	NOT-A-FORMAT	analysis tool, writes no format
+RL!Unpackers	unpackers and identifiers	-	-	NOT-A-FORMAT	analysis tool, writes no format
+UNP	unpackers and identifiers	-	-	NOT-A-FORMAT	analysis tool, writes no format

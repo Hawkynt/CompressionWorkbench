@@ -1,7 +1,8 @@
 # 🧾 Format catalogue — gaps
 
-> What 7-Zip, libarchive, XADMaster, binwalk, Universal Extractor 2, PRONOM and Wikipedia know about
-> that this repository does not, does only partly, or only reads. Snapshot of 2026-10-19.
+> What 7-Zip, libarchive, XADMaster, binwalk, Universal Extractor 2, PRONOM, Wikipedia and the German
+> Wikipedia's list of compression programs know about that this repository does not, does only
+> partly, or only reads. Snapshot of 2026-10-19; the German list was added on 2026-11-13.
 
 The data is in [`reference-formats.csv`](reference-formats.csv): one row per real-world format,
 codec or filesystem, with the sources that list it, the descriptor or building-block ids that cover
@@ -13,21 +14,21 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Measure | Value |
 | --- | ---: |
-| Catalogue rows | 982 |
-| … formats listed by at least one source | 528 |
-| … registry ids no source lists (OURS-ONLY) | 454 |
-| Source-listed rows mapped to something here | 392 / 528 (74.2 %) |
-| … of rows listed by ≥ 2 sources | 135 / 138 (97.8 %) |
-| … of rows listed by ≥ 3 sources | 67 / 67 (100.0 %) |
-| … of rows listed by ≥ 4 sources | 31 / 31 (100.0 %) |
+| Catalogue rows | 1023 |
+| … formats listed by at least one source | 586 |
+| … registry ids no source lists (OURS-ONLY) | 437 |
+| Source-listed rows mapped to something here | 410 / 586 (70.0 %) |
+| … of rows listed by ≥ 2 sources | 150 / 159 (94.3 %) |
+| … of rows listed by ≥ 3 sources | 76 / 77 (98.7 %) |
+| … of rows listed by ≥ 4 sources | 43 / 43 (100.0 %) |
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 136 | a source lists it; no descriptor or building block covers it |
-| `READ-ONLY-BUT-SOURCES-WRITE` | 22 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 47 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 323 | covered with no known gap against what the sources list |
-| `OURS-ONLY` | 454 | in our registry, listed by none of the seven sources |
+| `MISSING` | 176 | a source lists it; no descriptor or building block covers it |
+| `READ-ONLY-BUT-SOURCES-WRITE` | 36 | we only read it; a source or the format's own tool writes it |
+| `PARTIAL` | 48 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 326 | covered with no known gap against what the sources list |
+| `OURS-ONLY` | 437 | in our registry, listed by none of the eight sources |
 
 ### Per source
 
@@ -43,8 +44,88 @@ read-only rows.
 | Universal Extractor 2 | 124 | 104 | 83.9 | 71 |
 | PRONOM | 87 | 83 | 95.4 | 73 |
 | Wikipedia | 268 | 197 | 73.5 | 153 |
+| Wikipedia (de): list of compression programs | 124 | 77 | 62.1 | 46 |
 
-These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-09. The source inventories retain their original 2026-10-19 snapshot. The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.
+These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-13. The source inventories retain their original 2026-10-19 snapshot; the German list is revision 268525499 (2026-07-05). The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.
+
+## 📋 Wikipedia (de): Liste von Datenkompressionsprogrammen
+
+[The German list](https://de.wikipedia.org/wiki/Liste_von_Datenkompressionsprogrammen) names
+programs, not formats. It has a table of 58 archivers and front-ends, 47 executable packers and 7
+unpackers or identifiers. Two files hold it:
+
+- [`sources/wikipedia_de_programs.tsv`](sources/wikipedia_de_programs.tsv): one row per program,
+  the formats it lists, the row of its own format, and a status;
+- [`sources/wikipedia_de.tsv`](sources/wikipedia_de.tsv): one row per format those programs
+  handle, mapped to the catalogue row it marks in `src_wikipedia_de`, with its status and what
+  would close the gap.
+
+Status: **FULL**, read and write proven (catalogue gap `OK` with read and create); **PARTIAL**,
+read-only or only some methods; **MISSING**, no descriptor; **REFUSED**, no descriptor and a
+reason recorded; **NOT-A-FORMAT**, a front-end or tool that only uses other programs' formats.
+Front-ends were resolved to the formats they list, and those formats were checked.
+
+| Status | Formats | Programs (table) | Packers | Identifiers |
+| --- | ---: | ---: | ---: | ---: |
+| FULL | 48 | 19 | 1 | |
+| PARTIAL | 31 | 13 | 15 | |
+| MISSING | 51 | 9 | 30 | |
+| REFUSED | 2 | 1 | | |
+| NOT-A-FORMAT | 2 | 16 | 1 | 7 |
+| **Total** | **134** | **58** | **47** | **7** |
+
+Six of the 51 missing formats could not be identified (IZArc's ENC and MBF; QuickZip's Czip,
+LZA, RS and SGX), so they have no catalogue row. Of the 47 packers, seven have an
+`ExecutablePackerHandler` but no descriptor (BeRoEXEPacker, RLPack, WinUpack, PECompact,
+eXPressor, exe32pack, NeoLite). The catalogue counts them as `MISSING` because it maps
+descriptors only.
+
+### Ranked gaps
+
+Ranked by real-world prevalence: 3 means everyday files, 2 means common within a niche, 1 means
+rare. Ties are broken by the number of catalogue sources. The first 30 rows:
+
+| # | Format | Status | Weight | What would make it real |
+| ---: | --- | --- | :---: | --- |
+| 1 | ISO 9660 | PARTIAL | 3 | The reader is complete. The writer still omits Rock Ridge SL, RE/CL and zisofs ZF. Rung 3 (ECMA-119, RRIP); oracle: xorriso and `isoinfo -R` in WSL. |
+| 2 | ZIP | PARTIAL | 3 | WinZip JPEG (96) has an LGPL decoder in XADMaster but needs a WinZip-written sample. Certificate, 3DES and RC2 strong encryption need SecureZIP samples. |
+| 3 | NSIS | PARTIAL (read-only) | 3 | Creation needs a real exehead stub. NSIS is mostly zlib/libpng-licensed; makensis is the oracle. |
+| 4 | UPX | PARTIAL (read-only) | 3 | Writing refused: provable output needs UPX's GPL loader stubs. |
+| 5 | PECompact | MISSING | 3 | The handler locates the payload. Decode its block series (the aPLib and LZMA cores exist) against the 130 PackingData samples, then wrap it in a descriptor. |
+| 6 | ACE | PARTIAL | 2 | The writer lacks the ACE 2.0 SOUND/PIC modes. Oracle: unace, acefile (BSD-2). |
+| 7 | StuffIt | PARTIAL | 2 | Methods 8 and 14, DES/RC4 forks and segmented sets. Rung 1: XADMaster (LGPL); oracle: unar. |
+| 8 | StuffIt X | PARTIAL | 2 | Darkhorse, Blend, Deflate, method 7, preprocessors, encryption; no writer. Rung 1: XADMaster (LGPL); oracle: unar. |
+| 9 | ALZip | PARTIAL | 2 | Split archives and method 3 need samples; ALZip is the oracle. |
+| 10 | PEA | PARTIAL | 2 | Encryption and volumes. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
+| 11 | PAK (NoGate) | MISSING | 2 | Rung 1: XADMaster's Crushed method (BB_ArcDistill already covers Distilled). Needs a real sample; PAK 2.51 under DOSBox is the oracle. |
+| 12 | 7-Zip-zstd coders in 7z | PARTIAL | 2 | Write Zstandard, Brotli and LZ4 (the encoders exist); decode LZ5 and Lizard (BB_Lizard exists). Oracle: 7-Zip-zstd. |
+| 13 | ASPack | PARTIAL (read-only) | 2 | The read side is real; creating packed executables is not a goal. |
+| 14 | DIET | MISSING | 2 | Rung 1: deark (MIT) decodes it; DIET under DOSBox is the oracle. |
+| 15 | EXECryptor | MISSING | 2 | Runtime protector: detection is the ceiling; needs samples. |
+| 16 | FSG | PARTIAL (read-only) | 2 | Remaining variants against the corpus originals. |
+| 17 | LZEXE | PARTIAL (read-only) | 2 | The read side is real. |
+| 18 | MEW | PARTIAL (read-only) | 2 | Non-standard LZMA framing variants remain. |
+| 19 | MPRESS | PARTIAL (read-only) | 2 | MPRESS 1.x codec undecoded; corpus samples exist. |
+| 20 | NsPack | PARTIAL (read-only) | 2 | Payload located only; decode the nsp1 loader table (130 corpus samples). |
+| 21 | Obsidium | MISSING | 2 | Runtime protector: detection is the ceiling; needs samples. |
+| 22 | PESpin | MISSING | 2 | Runtime protector: detection is the ceiling; needs samples. |
+| 23 | PEtite | PARTIAL (read-only) | 2 | Rebuild imports, relocations and OEP. |
+| 24 | PKLITE (DOS) | PARTIAL (read-only) | 2 | The read side is real. |
+| 25 | RLPack | MISSING | 2 | The handler already unpacks it; wrap it in a descriptor. |
+| 26 | Themida | PARTIAL (read-only) | 2 | Virtualising protector: detection is the honest ceiling. |
+| 27 | WinUpack | MISSING | 2 | The handler already unpacks it; wrap it in a descriptor. |
+| 28 | VMProtect | PARTIAL (read-only) | 2 | Virtualising protector: detection is the honest ceiling. |
+| 29 | FreeArc | PARTIAL | 1 | mm and external compressors; FreeArc (GPL) is an oracle only. |
+| 30 | Compact Pro | PARTIAL | 1 | Multi-volume and encrypted archives; samples needed. |
+
+The other 48 are rare (weight 1). In rank order: KGB 2 and .kge, UHARC 0.3/0.4, BlakHole, GCA
+(refused), WinHKI, ICE (refused), PAQ, WinRK, SQX, UC2, YZ1, then single-source rows. Among the
+single-source rows, btoa is the cheapest new format, and Courgette has a BSD-3 source to
+convert. QUAD needs its licence checked. IMP, JAR (.j), PAE, Aladdin Private File, Central Point
+SFX, FLAMFILE and x-PRESS are closed. The rest are executable packers with no specification or
+sample (four of them have handlers). For the full order, sort
+[`sources/wikipedia_de.tsv`](sources/wikipedia_de.tsv) by `weight`, then by the catalogue
+row's `source_count`.
 
 ## 🕳️ Original missing-format ranking (2026-10-19)
 
@@ -219,7 +300,7 @@ They are deleted rather than kept under an invented name.
 
 ## ➕ Ours only
 
-These 456 registry ids are listed by none of the seven sources:
+These registry ids are listed by none of the sources (456 at the 2026-10-19 snapshot, 437 now that the German list names some of them):
 
 | Kind | Count | Typical members |
 | --- | ---: | --- |
@@ -296,6 +377,13 @@ The reference-tool columns record common knowledge of each tool's current releas
     List of file systems; Comparison of file systems; Disk image; Comparison of disc image software.
     A disk-image row is kept only when its extension appears in those articles. Network and pseudo
     filesystems are excluded unless we have a descriptor for them.
+  - Wikipedia (de): Liste von Datenkompressionsprogrammen, revision 268525499, read through the
+    MediaWiki raw-text endpoint. The program table, the executable-packer lists and the
+    unpacker list are all included. A program's listed formats each become a source row in
+    `sources/wikipedia_de.tsv`. Front-ends that write no format of their own are recorded as
+    `NOT-A-FORMAT` in `sources/wikipedia_de_programs.tsv`. Names that match no known format are
+    recorded but not catalogued. The column records only that a format is listed: the article
+    does not say which program reads or writes which format.
 - **Merging.** [`sources/merge-aliases.txt`](sources/merge-aliases.txt) maps every source row to a
   catalogue row: LHA = LZH, compress = .Z = LZW, tar.gz/tgz = the tar compound row, all FAT variants
   = FAT. Rows mapped to `-` were dropped on purpose.
