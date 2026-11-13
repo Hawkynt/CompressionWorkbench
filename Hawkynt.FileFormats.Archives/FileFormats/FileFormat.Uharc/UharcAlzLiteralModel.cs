@@ -19,7 +19,7 @@ internal sealed class UharcAlzLiteralModel {
   private const uint CostWrapThreshold = 0xFEFF01;
 
   // Cost of coding a symbol of probability i/16384: 65520 - ceil(4680 * log2(i)), 0 for i = 0.
-  private static readonly ushort[] Cost = BuildCostTable();
+  internal static readonly ushort[] Cost = BuildCostTable();
   private static readonly ushort[] PrimaryStep = BuildPrimarySteps();
   private static readonly ushort[] EscapeStep = BuildEscapeSteps();
 

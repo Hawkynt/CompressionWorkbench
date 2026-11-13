@@ -110,3 +110,13 @@ put("exe/tiny.com", b"MZ" + bytes(0x3E) + b"\xE8\x10\x00\x00\x00" * 40)
 for dirpath, dirs, files in os.walk(root):
     for f in files + dirs:
         os.utime(os.path.join(dirpath, f), (STAMP, STAMP))
+
+# dates: one modification time per file (local time, outside daylight saving), for the date and
+# time planes of the directory
+for i, (name, stamp) in enumerate([
+        ("a.txt", (1999, 12, 31, 23, 59, 58)), ("b.txt", (2001, 2, 3, 4, 5, 6)),
+        ("deep/c.txt", (2010, 1, 15, 12, 30, 44)), ("deep/er/d.txt", (1985, 1, 1, 0, 0, 0)),
+        ("e.txt", (2024, 11, 30, 18, 1, 2))]):
+    put("dates/" + name, (f"file {name} number {i}\r\n" * (i * 7 + 1)).encode())
+    t = time.mktime(stamp + (0, 0, -1))
+    os.utime(os.path.join(root, "dates", name), (t, t))
