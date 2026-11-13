@@ -18,12 +18,11 @@ namespace FileSystem.Zfs;
 /// </list>
 /// </summary>
 /// <remarks>
-/// Creating and modifying pools is not offered: a pool is only real when <c>zpool import</c>
-/// accepts it and a scrub finds it clean, and this repository has no writer that proves
-/// that. The earlier writer's images used addresses and dnode fields of its own and were
-/// not ZFS.
+/// Create writes a new single-device pool (version 28, one ZPL version 3 filesystem holding the
+/// inputs) with <see cref="ZfsWriter"/>; OpenZFS's <c>zdb -bcc</c> finds no leaks in it and the
+/// kernel module imports, scrubs and mounts it. Modifying pools in place is not offered.
 /// </remarks>
-public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   /// <summary>Gets the id.</summary>
   public string Id => "Zfs";
   /// <summary>Gets the display name.</summary>
@@ -32,8 +31,8 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   /// <summary>Gets the capabilities.</summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>Gets the default extension.</summary>
   public string DefaultExtension => ".zfs";
   /// <summary>Gets the extensions.</summary>
@@ -55,8 +54,9 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>Gets the description.</summary>
   public string Description =>
-    "ZFS pool device image (read-only) — every dataset and snapshot; lzjb, zle, gzip, lz4 and zstd blocks; " +
-    "gang and embedded blocks, ditto copies, mirror and RAID-Z.";
+    "ZFS pool device image — reads every dataset and snapshot; lzjb, zle, gzip, lz4 and zstd blocks; " +
+    "gang and embedded blocks, ditto copies, mirror and RAID-Z. Creates single-device version 28 pools " +
+    "that OpenZFS imports and scrubs clean.";
 
   private const string FullName = "FULL.zfs";
   private const string MetadataName = "metadata.ini";
@@ -112,6 +112,24 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files is not { Length: > 0 } || MatchesFilter(MetadataName, files))
         WriteFile(outputDir, MetadataName, BuildMetadata(reader));
     }
+  }
+
+  /// <summary>
+  /// Writes a new single-device pool (version 28) whose one filesystem holds <paramref name="inputs"/>.
+  /// The option <c>PoolName</c> names the pool (default <c>cwb</c>).
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var writer = new ZfsWriter();
+    foreach (var input in inputs) {
+      var modified = input.Metadata?.LastWriteTimeUtc?.UtcDateTime;
+      if (input.IsDirectory)
+        writer.AddDirectory(input.ArchiveName, modified);
+      else
+        writer.AddFile(input.ArchiveName, input.ReadContent(), modified);
+    }
+    writer.Build(output, options.GetOption("PoolName", "cwb"));
   }
 
   private static byte[] BuildMetadata(ZfsReader reader) {

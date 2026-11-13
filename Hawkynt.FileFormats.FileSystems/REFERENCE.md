@@ -21366,7 +21366,7 @@ Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `
 
 Descriptor for ZFS pool device images (vdevs) as OpenZFS writes them. Read-only: every dataset and snapshot, all ZFS block compressions, gang and embedded blocks, mirrors and RAID-Z (see `ZfsReader`). References: Sun Microsystems, "ZFS On-Disk Specification" (2006 draft) — vdev labels, uberblocks, DMU, DSL, ZAP, ZPL`docs/ZFS-ON-DISK.md` — the structures added since, derived from OpenZFS 2.2`https://github.com/openzfs/zfs` — OpenZFS, whose tools wrote the reference pools the tests read`https://openzfs.github.io/openzfs-docs/` — OpenZFS documentation
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -21383,6 +21383,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a new single-device pool (version 28) whose one filesystem holds `inputs`. The option `PoolName` names the pool (default `cwb`). |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts the pool's files (links as files holding their target). |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the pool's files. Never throws: an image that cannot be read lists as `FULL.zfs` plus a `metadata.ini` saying why. |
 

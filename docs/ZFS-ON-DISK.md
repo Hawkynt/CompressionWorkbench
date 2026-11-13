@@ -1,6 +1,6 @@
 # ZFS — on-disk notes for the reader
 
-`FileSystem.Zfs.ZfsReader` is written from this page. The normative base is Sun's
+`FileSystem.Zfs.ZfsReader` is written from this page, `FileSystem.Zfs.ZfsWriter` from its "Writing a pool" section. The normative base is Sun's
 *ZFS On-Disk Specification* (2006 draft); it predates pool version 5000, so the
 structures added since — feature flags, embedded block pointers, LZ4/zstd, system
 attributes, large dnodes, RAID-Z column mapping — are written down here from the
@@ -217,6 +217,79 @@ master node's `REGISTRY` ZAP maps attribute names (`ZPL_SIZE`, `ZPL_MODE`,
 decimal to an array of `u16` attribute numbers. Attributes follow the header in
 layout order, each starting 8-byte aligned. When the bonus overflows, the remaining
 attributes sit in the spill block under their own header and layout.
+
+## Writing a pool
+
+`FileSystem.Zfs.ZfsWriter` writes what this section describes: one leaf device holding a pool
+of version 28 (no feature flags) with one ZPL version 3 filesystem. The layout is the one
+`zpool create` leaves on a version-28 pool (`Compression.Tests/Zfs/ReferenceVectors/cwbv28`),
+reduced to what pool import requires; which MOS directory entries are mandatory was read off
+the OpenZFS 2.2.2 import path (CDDL, read for behaviour only). A written pool is proven by
+OpenZFS: `zdb -bcc` must report "No leaks (block sum matches space maps exactly)" and no
+checksum error, `zdb -r` must copy every file out, and the kernel module must import it, scrub
+it with 0 errors and serve every file (`Compression.Tests/Zfs/ZfsWriterTests.cs`).
+
+**Device.** At least 64 MiB (OpenZFS refuses smaller devices), a multiple of 256 KiB, with
+the four labels. `asize` = device − 4 MiB − 512 KiB; metaslabs of `2^24` bytes (the shift grows
+until there are at most 200), `count = asize >> shift`. Blocks are allocated front to back
+from the 4 MiB start in 512-byte sectors (ashift 9); a block never straddles a metaslab. Every
+block is born in txg 4, uncompressed (compression 2), checksummed with Fletcher-4, one DVA,
+little-endian.
+
+**Labels.** Each `vdev_phys` is the XDR nvlist `version` 28, `name`, `state` 1 (exported),
+`txg`, `pool_guid`, `errata` 0, `hostname`, `top_guid` = `guid` (the device), `vdev_children`
+1, `vdev_tree` {`type` "file", `id` 0, `guid`, `path`, `metaslab_array`, `metaslab_shift`,
+`ashift` 9, `asize`, `is_log` 0, `create_txg` 4}, `features_for_read` {}, sealed with its
+SHA-256 `zio_eck_t` (verifier: the device offset of the `vdev_phys`). One uberblock per label,
+in slot `txg mod 128` of the 1 KiB slots: magic, version 28, txg, `guid_sum` = pool guid +
+device guid, timestamp, the MOS objset pointer; sealed the same way with the slot's offset.
+
+**Packed nvlists** (labels and the MOS `config` object) are libnvpair's XDR encoding: header
+`1, 1, 0, 0`, then for every list `u32` version 0, `u32` flags 1 (unique names), the pairs and
+two zero words. A pair is encoded size, decoded size, name (XDR string), type, element count,
+value (`u64` big-endian; strings as XDR strings; nested lists inline). The decoded size is
+libnvpair's in-memory size: `align8(16 + name length + 1) + align8(value)`, the value being 8
+for `u64`, string length + 1, 24 for an nvlist and `n * 8 + n * 24` for an nvlist array.
+
+**MOS objects** (object set type 1; the 1 KiB objset holds only the meta-dnode):
+
+| Object | Type (bonus) | Content |
+| --- | --- | --- |
+| 1 | object directory | micro ZAP: `root_dataset`, `config`, `sync_bplist`, `free_bpobj`, `deflate` 1, `creation_version` 28 |
+| root dir | DSL dir (256 bytes) | head dataset, origin = the `$ORIGIN` snapshot, child map {`$FREE`, `$MOS`, `$ORIGIN`}, props ZAP, flags 1, used = filesystem + MOS bytes (HEAD = filesystem, CHILD = MOS) |
+| `$MOS`, `$FREE` dirs | DSL dir | parent = root; `$MOS` used = the MOS's bytes |
+| `$ORIGIN` dir | DSL dir | head = origin head dataset, clones ZAP {hex(head dataset): head dataset} |
+| origin head | DSL dataset (320 bytes) | dir `$ORIGIN`, prev snapshot = origin snapshot (txg 1), snapshot names {`$ORIGIN`}, deadlist {`0`: empty bpobj}, flags 4, hole objset pointer |
+| origin snapshot | DSL dataset | next snapshot = origin head, children 2, empty deadlist, next-clones ZAP {hex(head dataset): head dataset} |
+| head dataset | DSL dataset | dir root, prev snapshot = origin snapshot (txg 1), empty snapshot names, deadlist {`0`: empty bpobj}, referenced = compressed = uncompressed = unique = the filesystem's bytes, flags 4, objset pointer to the filesystem |
+| `free_bpobj`, `sync_bplist` | bpobj (bpobj header, 48 bytes) | empty |
+| `config` | packed nvlist (size, 8 bytes) | the pool config: as the label, but `vdev_tree` is {`type` "root", `id` 0, `guid` = pool guid, `create_txg` 4, `children` [the device]} |
+| metaslab array | object array | one `u64` per metaslab: its space map object, 0 for none |
+| space maps | space map (header, 24 bytes) | three block pointers, so the bonus area is 64 bytes and the map counts as one without a histogram (zdb's feature-refcount check fails otherwise); one 512-byte block: a debug word (`2 << 62`, sync pass 1, txg) and one-word ALLOC entries (`offset << 16 \| run − 1`, both in sectors from the metaslab start); header: object, length in bytes, allocated bytes |
+
+DSL dir bonus offsets: creation time 0, head dataset 8, parent 16, origin 24, child map 32,
+used/compressed/uncompressed 40/48/56, props 80, flags 96, used breakdown 104 (HEAD) and 120
+(CHILD), clones 144. DSL dataset: dir 0, prev snapshot 8, its txg 16, next snapshot 24,
+snapshot names 32, children 40, creation time 48, creation txg 56, deadlist 64,
+referenced/compressed/uncompressed/unique 72–96, fsid guid 104 (56 bits), guid 112, flags 120,
+objset pointer 128, next clones 256. Deadlists are ZAPs with a 320-byte deadlist header bonus.
+
+**Filesystem** (object set type 2): object 1 is the master node {`DELETE_QUEUE` 2, `ROOT`,
+`VERSION` 3, `casesensitivity` 0, `normalization` 0, `utf8only` 0}, object 2 the unlinked set
+(an empty ZAP), then the root directory and the tree. Directories are ZAPs whose values are
+the object number with the `DT_*` type in bits 60–63 (4 directory, 8 file): a micro ZAP while
+every name has at most 49 bytes and the block stays within 128 KiB, otherwise a fat ZAP of
+16 KiB blocks (header with the pointer table embedded in its second half, `zt_shift` 10, then
+`2^p` leaves; leaf `i` holds the names whose ZAP hash begins with the `p` bits of `i`). The ZAP
+hash is CRC-64 (polynomial `0xC96C5795D7870F42`) of the name seeded with the ZAP's salt,
+keeping the top 28 bits. Files hold their data in one block of the size rounded up to 512
+bytes, or in 128 KiB blocks under 16 KiB indirect blocks. Every directory and file has a
+264-byte `znode_phys_t` bonus: four timestamps, generation, mode 0644/0755, size (a
+directory's is its entry count + 2), parent, links (2 + subdirectories for a directory), flags
+`0x40800000004` (file) or `0x40800000144` (directory), and a trivial three-entry FUID ACL
+(`owner@`, `group@`, `everyone@`) matching the mode. Dnodes carry `DNODE_FLAG_USED_BYTES` with
+the bytes of all their blocks; a dnode block's fill is the number of objects in it, an objset
+pointer's the number of objects.
 
 ## RAID-Z
 
