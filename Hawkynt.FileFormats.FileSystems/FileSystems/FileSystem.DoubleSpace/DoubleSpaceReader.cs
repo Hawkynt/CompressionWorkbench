@@ -215,12 +215,17 @@ public sealed class DoubleSpaceReader : IDisposable {
     if ((entry & 0x8000_0000u) == 0) return new byte[clusterBytes];
 
     var physOffset = (int)((entry & 0x1FFFFFu) + 1) * this._bytesPerSector;
-    if ((entry & 0x4000_0000u) != 0)
-      return physOffset + clusterBytes <= this._data.Length
-        ? this._data.AsSpan(physOffset, clusterBytes).ToArray()
-        : throw new InvalidDataException($"DoubleSpace: stored cluster {cluster} lies past the end of the image.");
-
     var inLen = (int)(((entry >> 22) & 0xF) + 1) * this._bytesPerSector;
+    if ((entry & 0x4000_0000u) != 0) {
+      // A stored run holds only the sectors a file's data reaches; the rest of the cluster reads as zero.
+      var storedLen = Math.Min(clusterBytes, inLen);
+      if (physOffset + storedLen > this._data.Length)
+        throw new InvalidDataException($"DoubleSpace: stored cluster {cluster} lies past the end of the image.");
+      var stored = new byte[clusterBytes];
+      this._data.AsSpan(physOffset, storedLen).CopyTo(stored);
+      return stored;
+    }
+
     var outLen = Math.Min(clusterBytes, (int)(((entry >> 26) & 0xF) + 1) * this._bytesPerSector);
     if (physOffset + inLen > this._data.Length)
       throw new InvalidDataException($"DoubleSpace: compressed cluster {cluster} lies past the end of the image.");
