@@ -21,7 +21,7 @@ namespace FileSystem.Zfs;
 /// Create writes a new single-device pool (version 28, one ZPL version 3 filesystem holding the
 /// inputs) with <see cref="ZfsWriter"/>; OpenZFS's <c>zdb -bcc</c> finds no leaks in it and the
 /// kernel module imports, scrubs and mounts it; <c>CreatePool</c> writes mirrors and RAID-Z.
-/// Add and Remove edit an existing single-device version 28 pool in place, in one new
+/// Add and Remove edit an existing single-device pool of version 28 or 5000 in place, in one new
 /// transaction group (<see cref="ZfsPoolEditor"/>), and <c>AddToPool</c>/<c>RemoveFromPool</c>
 /// do so for mirrors and RAID-Z — pools OpenZFS made included; anything that editor refuses is
 /// left untouched.

@@ -4,7 +4,7 @@ using System.Text;
 namespace FileSystem.Zfs;
 
 /// <summary>
-/// Adds and removes files in an existing pool of version 28 (one device, a mirror or a RAID-Z), the way a
+/// Adds and removes files in an existing pool of version 28 or 5000 (one device, a mirror or a RAID-Z), the way a
 /// transaction group of OpenZFS would (<c>docs/ZFS-ON-DISK.md</c>, "Editing a pool"): every
 /// changed block is written anew elsewhere (copy-on-write) up to a new MOS, the blocks it
 /// replaces go back to the space maps, the dataset, directory and user accounting follow,
@@ -14,7 +14,7 @@ namespace FileSystem.Zfs;
 /// The edit is planned completely in memory before a byte is written, so any refusal leaves the
 /// image untouched; new blocks are written first and the uberblocks last. Space freed by the edit
 /// is not reused by the same edit, so the previous uberblocks still name intact trees. Refused:
-/// feature-flag pools, degraded pools and several top-level vdevs, pool checkpoints, freeing a
+/// active features the editor does not keep consistent (block cloning, device removal, …), degraded pools and several top-level vdevs, pool checkpoints, freeing a
 /// block that a snapshot still holds, gang and deduplicated blocks, an unreplayed intent log,
 /// normalised or case-insensitive filesystems, and datasets with a refreservation.
 /// </remarks>
@@ -30,7 +30,9 @@ internal static class ZfsPoolEditor {
   private const int SmRunMax = 1 << 15;
   private const byte OtObjectArray = 2, OtSpaceMapHeader = 7, OtSpaceMap = 8, OtDnode = 10, OtObjset = 11,
     OtZnode = 17, OtPlainFile = 19, OtDirectory = 20, OtSa = 44;
-  private const byte FlagUsedBytes = 1, FlagUserUsedAccounted = 2, FlagSpill = 4;
+  private const byte OtZapMetadata = 0xC4;                        // DMU_OTN_ZAP_METADATA
+  private const byte FlagUsedBytes = 1, FlagUserUsedAccounted = 2, FlagSpill = 4, FlagUserObjUsedAccounted = 8;
+  private const ulong ZfsProjectFlag = 0x0000800000000000UL;   // ZFS_PROJID: the znode carries a project id
   private const int UsedHead = 0, UsedChild = 2, UsedChildReserve = 3, UsedRefReservation = 4;
   private const int UserUsedAt = 0x400, GroupUsedAt = 0x600, ProjectUsedAt = 0x800;
 
@@ -142,10 +144,160 @@ internal static class ZfsPoolEditor {
     public long Charged(long allocated) => (allocated >> ZfsConstants.SectorShift) * this.DeflateRatio;
     public readonly List<(string Path, ulong Dir, ulong Head)> Datasets = [];
 
+    // ── feature flags (version 5000) ─────────────────────────────
+    /// <summary>Every enabled feature by guid: its reference count and whether it sits in the write list.</summary>
+    public readonly Dictionary<string, (ulong Count, bool ForWrite)> Features = new(StringComparer.Ordinal);
+    public ulong FeaturesForRead, FeaturesForWrite;
+    public bool IsEnabled(string guid) => this.Features.ContainsKey(guid);
+    public bool IsActive(string guid) => this.Features.TryGetValue(guid, out var f) && f.Count > 0;
+    /// <summary>log_spacemap: the ZAP of log space maps (hex txg → object), the per-metaslab unflushed txgs and their object.</summary>
+    public ulong LogSpacemapZap, UnflushedObject;
+    public ulong[] Unflushed = [];
+    public readonly SortedDictionary<ulong, ulong> LogSpacemaps = [];
+
+    /// <summary>Features whose activity changes how blocks may be freed or space maps written; refused while active.</summary>
+    private static readonly HashSet<string> RefusedWhenActive = new(StringComparer.Ordinal) {
+      "com.fudosecurity:block_cloning", "com.delphix:device_removal", "com.delphix:obsolete_counts",
+      "com.delphix:zpool_checkpoint", "org.openzfs:draid", "com.delphix:async_destroy",
+      "org.zfsonlinux:allocation_classes", "com.delphix:livelist", "org.openzfs:raidz_expansion",
+      "com.delphix:redacted_datasets",
+    };
+
+    /// <summary>Features that may be active: the editor keeps the pool consistent with each of them.</summary>
+    private static readonly HashSet<string> Understood = new(StringComparer.Ordinal) {
+      "com.delphix:enabled_txg", "com.delphix:hole_birth", "com.delphix:embedded_data", "org.illumos:lz4_compress",
+      "com.delphix:spacemap_histogram", "com.delphix:spacemap_v2", "com.delphix:log_spacemap", "com.delphix:empty_bpobj",
+      "com.delphix:extensible_dataset", "org.freebsd:zstd_compress", "org.zfsonlinux:large_dnode", "org.open-zfs:large_blocks",
+      "org.illumos:sha512", "org.illumos:skein", "org.illumos:edonr", "org.openzfs:blake3",
+      "org.zfsonlinux:userobj_accounting", "org.zfsonlinux:project_quota", "com.klarasystems:vdev_zaps_v2",
+      "com.delphix:head_errlog", "com.delphix:bookmarks", "com.datto:bookmark_v2", "com.delphix:bookmark_written",
+      "com.delphix:redaction_bookmarks", "org.openzfs:zilsaxattr", "com.joyent:filesystem_limits",
+      "com.joyent:multi_vdev_crash_dump", "org.openzfs:device_rebuild", "com.datto:resilver_defer", "com.datto:encryption",
+    };
+
+    private void LoadFeatures() {
+      var directory = this.Pool.Mos.Zap(1, "MOS object directory").ToDictionary(e => e.Name, e => e.Value, StringComparer.Ordinal);
+      this.FeaturesForRead = directory.GetValueOrDefault("features_for_read");
+      this.FeaturesForWrite = directory.GetValueOrDefault("features_for_write");
+      if (this.FeaturesForRead == 0 || this.FeaturesForWrite == 0)
+        throw new InvalidDataException("ZFS: a version 5000 pool without its feature lists.");
+      foreach (var (obj, forWrite) in new[] { (this.FeaturesForRead, false), (this.FeaturesForWrite, true) })
+        foreach (var e in this.Pool.Mos.Zap(obj, "feature list"))
+          this.Features[e.Name] = (e.Value, forWrite);
+      foreach (var (guid, (count, _)) in this.Features) {
+        if (count == 0) continue;
+        if (RefusedWhenActive.Contains(guid))
+          throw new NotSupportedException($"ZFS: feature {guid} is active; such pools are not edited.");
+        if (!Understood.Contains(guid))
+          throw new NotSupportedException($"ZFS: feature {guid} is active and not understood; the pool is not edited.");
+      }
+      if (this.IsActive("com.delphix:log_spacemap")) {
+        this.LogSpacemapZap = directory.GetValueOrDefault("com.delphix:log_spacemap_zap");
+        if (this.LogSpacemapZap == 0) throw new InvalidDataException("ZFS: log_spacemap is active without its ZAP.");
+        foreach (var e in this.Pool.Mos.Zap(this.LogSpacemapZap, "log space maps"))
+          this.LogSpacemaps[Convert.ToUInt64(e.Name, 16)] = e.Value;
+      }
+    }
+
+    /// <summary>The per-metaslab txgs from which on the log space maps hold a metaslab's changes (0 = none).</summary>
+    private void LoadUnflushed(XdrNvList tree) {
+      this.Unflushed = new ulong[this.MetaslabCount];
+      // the labels do not carry the per-vdev ZAPs; the MOS config does
+      var topZap = tree.UInt64("com.delphix:vdev_zap_top") ?? this.MosConfigTopVdev()?.UInt64("com.delphix:vdev_zap_top") ?? 0;
+      if (topZap == 0) return;
+      var entry = this.Pool.Mos.Zap(topZap, "top vdev ZAP").FirstOrDefault(e => e.Name == "com.delphix:ms_unflushed_phys_txgs");
+      if (entry == null) return;
+      this.UnflushedObject = entry.Value;
+      var dnode = this.Pool.Mos.RequireDnode(this.UnflushedObject, "unflushed txgs");
+      for (var m = 0; m < this.MetaslabCount; ++m) {
+        var at = (long)m * 8;
+        var blockId = (ulong)(at / dnode.DataBlockSize);
+        if (blockId > dnode.MaxBlockId) break;
+        this.Unflushed[m] = U64(this.Pool.Mos.ReadBlock(dnode, blockId), (int)(at % dnode.DataBlockSize));
+      }
+    }
+
+    /// <summary>The top-level vdev as the MOS <c>config</c> object (a packed nvlist) describes it.</summary>
+    private XdrNvList? MosConfigTopVdev() {
+      var mos = this.Pool.Mos;
+      var configObject = mos.Zap(1, "MOS object directory").FirstOrDefault(e => e.Name == "config")?.Value ?? 0;
+      if (configObject == 0) return null;
+      var dnode = mos.RequireDnode(configObject, "MOS config");
+      var size = (int)U64(dnode.Bonus, 0);
+      var bytes = new byte[size];
+      for (var at = 0; at < size; at += dnode.DataBlockSize) {
+        var block = mos.ReadBlock(dnode, (ulong)(at / dnode.DataBlockSize));
+        block.AsSpan(0, Math.Min(block.Length, size - at)).CopyTo(bytes.AsSpan(at));
+      }
+      return XdrNvList.Decode(bytes).List("vdev_tree")?.Lists("children").FirstOrDefault();
+    }
+
+    /// <summary>Applies the log space maps to the metaslabs whose changes they still hold, oldest first.</summary>
+    private void ReplayLogs() {
+      foreach (var (txg, obj) in this.LogSpacemaps)
+        this.ReplayMap(obj, 0, long.MaxValue, ZfsConstants.SectorShift, (offset, run, alloc) => {
+          var m = (int)(offset >> this.MetaslabShift);
+          if (m < 0 || m >= this.MetaslabCount || (offset + run - 1) >> this.MetaslabShift != m)
+            throw new InvalidDataException("ZFS: a log space map entry lies outside the metaslabs.");
+          if (txg < this.Unflushed[m]) return;
+          if (alloc) this.Allocated[m].Add(offset, offset + run);
+          else this.Allocated[m].Remove(offset, offset + run);
+        });
+    }
+
+    /// <summary>
+    /// Walks a space map's entries: one-word entries, two-word entries (spacemap_v2; vdev 0 or
+    /// none), debug entries skipped; offsets and runs in units of <c>2^shift</c> from <paramref name="start"/>.
+    /// Returns the bytes the map's header says are allocated.
+    /// </summary>
+    private long ReplayMap(ulong obj, long start, long limit, int shift, Action<long, long, bool> apply) {
+      var mos = this.Pool.Mos;
+      var map = mos.RequireDnode(obj, "space map");
+      if (map.Bonus.Length < 24) throw new InvalidDataException("ZFS: space map header truncated.");
+      var length = U64(map.Bonus, 8);
+      var blockSize = (ulong)map.DataBlockSize;
+      byte[]? block = null;
+      var blockId = ulong.MaxValue;
+      ulong Word(ulong at) {
+        var id = at / blockSize;
+        if (id != blockId) {
+          block = mos.ReadBlock(map, id);
+          blockId = id;
+        }
+        return U64(block!, (int)(at % blockSize));
+      }
+      for (ulong at = 0; at + 8 <= length; at += 8) {
+        var word = Word(at);
+        long offset, run;
+        bool alloc;
+        if (word >> 62 == 3) {
+          if (at + 16 > length) throw new InvalidDataException("ZFS: a two-word space map entry is cut off.");
+          var second = Word(at + 8);
+          at += 8;
+          // vdev field (24 bits): the top-level vdev in a log space map; "none" in a metaslab's map encodes as 0 too
+          if ((word & 0xFFFFFF) != 0)
+            throw new NotSupportedException("ZFS: a space map entry names another vdev.");
+          run = (long)(((word >> 24) & ((1UL << 36) - 1)) + 1) << shift;
+          offset = start + ((long)(second & ((1UL << 63) - 1)) << shift);
+          alloc = (second >> 63) == 0;
+        } else if (word >> 63 != 0) {
+          continue;                                                    // debug entry
+        } else {
+          offset = start + ((long)((word >> 16) & ((1UL << 47) - 1)) << shift);
+          run = (long)((word & 0x7FFF) + 1) << shift;
+          alloc = ((word >> 15) & 1) == 0;
+        }
+        if (offset < start || offset + run > limit)
+          throw new InvalidDataException("ZFS: a space map entry lies outside its range.");
+        apply(offset, run, alloc);
+      }
+      return (long)U64(map.Bonus, 16);
+    }
+
     public PoolState(ZfsPool pool, IReadOnlyList<Stream> devices) {
       this.Pool = pool;
-      if (pool.Version != 28)
-        throw new NotSupportedException($"ZFS: only pool version 28 is edited; this pool is version {pool.Version}.");
+      if (pool.Version is not (28 or 5000))
+        throw new NotSupportedException($"ZFS: pool versions 28 and 5000 are edited; this pool is version {pool.Version}.");
       if (pool.NewestUberblockTxg != pool.Txg)
         throw new NotSupportedException("ZFS: the newest uberblock does not lead to a readable pool; it is not edited.");
       if (pool.VdevChildren != 1 || pool.TopLevelVdevs.Count != 1)
@@ -158,8 +310,8 @@ internal static class ZfsPoolEditor {
         this.Parity = (int)(tree.UInt64("nparity") ?? 1);
         this.DeflateRatio = ZfsRaidzVdev.DeflateRatio(this.Children.Length, this.Parity, (int)(tree.UInt64("ashift") ?? 9));
       }
-      if ((config.List("features_for_read")?.Pairs.Count ?? 0) > 0)
-        throw new NotSupportedException("ZFS: pools with features are not edited.");
+      if (pool.Version < 5000 && (config.List("features_for_read")?.Pairs.Count ?? 0) > 0)
+        throw new NotSupportedException("ZFS: a version 28 pool that names features is not edited.");
 
       this.NewTxg = pool.Txg + 1;
       this.Ashift = (int)(tree.UInt64("ashift") ?? throw new InvalidDataException("ZFS: the vdev has no ashift."));
@@ -181,8 +333,10 @@ internal static class ZfsPoolEditor {
       if (this.Uberblock.Length >= 0xD0 && U64(this.Uberblock, 0xC8) != 0)
         throw new NotSupportedException("ZFS: the pool has a checkpoint; it is not edited.");
       this.MosRoot = this.Uberblock.AsSpan(0x28, Bp).ToArray();
+      if (pool.Version >= 5000) this.LoadFeatures();
+      this.LoadUnflushed(tree);
 
-      // the metaslab array and every space map, replayed
+      // the metaslab array and every space map, replayed, then the log space maps on top
       var mos = pool.Mos;
       var array = mos.RequireDnode(this.MetaslabArray, "metaslab array");
       this.SpaceMaps = new ulong[this.MetaslabCount];
@@ -195,6 +349,7 @@ internal static class ZfsPoolEditor {
         this.Allocated[m] = new ZfsRangeSet();
         if (this.SpaceMaps[m] != 0) this.Replay(m);
       }
+      this.ReplayLogs();
       this.AllocationOrder = Enumerable.Range(0, this.MetaslabCount).OrderBy(m => this.SpaceMaps[m] == 0 ? 1 : 0).ThenBy(m => m).ToArray();
 
       // the filesystems, by the path the reader lists them under
@@ -205,37 +360,16 @@ internal static class ZfsPoolEditor {
     }
 
     private void Replay(int m) {
-      var mos = this.Pool.Mos;
-      var map = mos.RequireDnode(this.SpaceMaps[m], "space map");
-      if (map.Bonus.Length != 24)
-        throw new NotSupportedException("ZFS: a space map with a histogram belongs to a feature-flag pool; it is not edited.");
-      var length = U64(map.Bonus, 8);
-      var expected = (long)U64(map.Bonus, 16);
+      var map = this.Pool.Mos.RequireDnode(this.SpaceMaps[m], "space map");
+      if (map.Bonus.Length is not (24 or 320))
+        throw new InvalidDataException("ZFS: a space map header of unexpected size.");
       this.SpaceMapBlockSize[m] = map.DataBlockSize;
       var start = (long)m << this.MetaslabShift;
-      var end = start + (1L << this.MetaslabShift);
       var set = this.Allocated[m];
-      byte[]? block = null;
-      ulong blockId = ulong.MaxValue;
-      for (ulong at = 0; at + 8 <= length; at += 8) {
-        var id = at / (ulong)map.DataBlockSize;
-        if (id != blockId) {
-          block = mos.ReadBlock(map, id);
-          blockId = id;
-        }
-        var word = U64(block!, (int)(at % (ulong)map.DataBlockSize));
-        if (word >> 63 != 0) {
-          if (word >> 62 == 3)
-            throw new NotSupportedException("ZFS: two-word space map entries belong to a feature-flag pool.");
-          continue;                                                  // debug entry
-        }
-        var offset = start + (long)((word >> 16) & ((1UL << 47) - 1)) * (1L << this.Ashift);
-        var run = (long)((word & 0x7FFF) + 1) << this.Ashift;
-        if (offset < start || offset + run > end)
-          throw new InvalidDataException($"ZFS: a space map entry of metaslab {m} lies outside it.");
-        if (((word >> 15) & 1) == 0) set.Add(offset, offset + run);
+      var expected = this.ReplayMap(this.SpaceMaps[m], start, start + (1L << this.MetaslabShift), this.Ashift, (offset, run, alloc) => {
+        if (alloc) set.Add(offset, offset + run);
         else set.Remove(offset, offset + run);
-      }
+      });
       if (set.Total != expected)
         throw new InvalidDataException($"ZFS: metaslab {m} replays to {set.Total} allocated bytes, its space map says {expected}.");
     }
@@ -420,6 +554,9 @@ internal static class ZfsPoolEditor {
     public ZfsSystemAttributes? Sa;
     public int NewLayout = -1;
     public bool Accounting;
+    public bool ObjectAccounting;
+    public bool ProjectAccounting;
+    public int ZstdLevel = 3;
     public byte Compression = ZfsConstants.CompressOff;
     public readonly Dictionary<ulong, Znode> Znodes = [];
   }
@@ -432,7 +569,7 @@ internal static class ZfsPoolEditor {
     public ulong Xattr;
     public ulong AclObject;
     public ulong ExtraZap;
-    public ulong Uid, Gid;
+    public ulong Uid, Gid, Project;
     public SortedDictionary<string, ulong>? Entries;
     public bool EntriesChanged;
     public bool LinksChanged;
@@ -665,14 +802,14 @@ internal static class ZfsPoolEditor {
     /// Allocates level-0 blocks holding <paramref name="contents"/> as blocks 0… of <paramref name="d"/>,
     /// compressed with <paramref name="compression"/> where that pays (a block of zeros stays a hole).
     /// </summary>
-    private void WriteContents(Os os, Dnode d, IReadOnlyList<byte[]?> contents, int blockSize, byte compression = ZfsConstants.CompressOff) {
+    private void WriteContents(Os os, Dnode d, IReadOnlyList<byte[]?> contents, int blockSize, byte compression = ZfsConstants.CompressOff, int zstdLevel = 3) {
       d.DataBlockSize = blockSize;
       var changes = new Dictionary<ulong, NewBlock?>();
       for (var i = 0; i < contents.Count; ++i) {
         if (contents[i] is not { } content) continue;
         var logical = new byte[blockSize];
         content.AsSpan(0, Math.Min(content.Length, blockSize)).CopyTo(logical);
-        var (algorithm, physical) = ZfsCompression.Compress(compression, logical, this._s.Ashift);
+        var (algorithm, physical, _) = ZfsCompression.CompressBlock(compression, logical, this._s.Ashift, zstdLevel);
         if (physical == null) {
           changes[(ulong)i] = null;                                 // zeros: a hole, still within the object
           continue;
@@ -928,8 +1065,6 @@ internal static class ZfsPoolEditor {
       // A clean export leaves the next log block allocated but unwritten; a written one holds records still to replay.
       if (U64(os.Block, 0x200) != 0 || this.LogBlockWritten(os.Block.AsSpan(0x210, Bp).ToArray()))
         throw new NotSupportedException($"ZFS: dataset '{path}' has an intent log that was never replayed.");
-      if (os.Block.Length >= ProjectUsedAt + Slot && os.Block[ProjectUsedAt] != 0)
-        throw new NotSupportedException($"ZFS: dataset '{path}' has a project-quota object set; it is not edited.");
 
       var fs = new Fs { Path = path, DirObject = dirObject, HeadObject = headObject, Os = os };
       var master = os.Old.Zap(1, "ZPL master node").ToDictionary(e => e.Name, e => e.Value, StringComparer.Ordinal);
@@ -948,7 +1083,11 @@ internal static class ZfsPoolEditor {
           }
       }
       fs.Accounting = os.Block.Length >= 2048 && os.Block[UserUsedAt] != 0 && os.Block[GroupUsedAt] != 0;
-      fs.Compression = this.EffectiveCompression(dirObject);
+      // userobj_accounting counts objects ("obj-<id>"), project_quota charges by project as well
+      fs.ObjectAccounting = fs.Accounting && this._s.IsEnabled("org.zfsonlinux:userobj_accounting");
+      fs.ProjectAccounting = fs.Accounting && this._s.IsEnabled("org.zfsonlinux:project_quota")
+        && os.Block.Length >= ProjectUsedAt + Slot && os.Block[ProjectUsedAt] != 0;
+      (fs.Compression, fs.ZstdLevel) = this.EffectiveCompression(dirObject, headObject);
       this._filesystems.Add(fs);
       return fs;
     }
@@ -1016,6 +1155,7 @@ internal static class ZfsPoolEditor {
         z.Xattr = Value("ZPL_XATTR");
         z.Uid = Value("ZPL_UID");
         z.Gid = Value("ZPL_GID");
+        if ((Value("ZPL_FLAGS") & ZfsProjectFlag) != 0) z.Project = Value("ZPL_PROJID");
       } else {
         throw new InvalidDataException($"ZFS: object {obj} is not a file or directory.");
       }
@@ -1153,7 +1293,7 @@ internal static class ZfsPoolEditor {
         var blocks = new List<byte[]?>();
         for (var at = 0; at < data.Length; at += blockSize)
           blocks.Add(data.AsSpan(at, Math.Min(blockSize, data.Length - at)).ToArray());
-        this.WriteContents(fs.Os, d, blocks, blockSize, fs.Compression);
+        this.WriteContents(fs.Os, d, blocks, blockSize, fs.Compression, fs.ZstdLevel);
       }
       this.Entries(fs, parent)[name] = obj | (isDirectory ? 4UL : 8UL) << ZfsConstants.DirentTypeShift;
       parent.EntriesChanged = true;
@@ -1251,26 +1391,36 @@ internal static class ZfsPoolEditor {
       if (!fs.Accounting) return;
       var users = new Dictionary<string, long>(StringComparer.Ordinal);
       var groups = new Dictionary<string, long>(StringComparer.Ordinal);
-      void Charge(Dictionary<string, long> into, ulong id, long delta) {
-        var key = id.ToString("x");
-        into[key] = into.GetValueOrDefault(key) + delta;
+      var projects = new Dictionary<string, long>(StringComparer.Ordinal);
+      void Charge(Dictionary<string, long> into, string key, long delta) => into[key] = into.GetValueOrDefault(key) + delta;
+      void ChargeAll(Znode z, long bytes, long objects, bool space, bool count) {
+        if (space) {
+          Charge(users, z.Uid.ToString("x"), bytes);
+          Charge(groups, z.Gid.ToString("x"), bytes);
+          if (fs.ProjectAccounting) Charge(projects, z.Project.ToString("x"), bytes);
+        }
+        if (count) {
+          Charge(users, "obj-" + z.Uid.ToString("x"), objects);
+          Charge(groups, "obj-" + z.Gid.ToString("x"), objects);
+          if (fs.ProjectAccounting) Charge(projects, "obj-" + z.Project.ToString("x"), objects);
+        }
       }
       foreach (var z in fs.Znodes.Values) {
         var d = z.Dnode;
         var synced = z.Freed || os.Dirty.Contains(z.Object);
         if (!synced) continue;
-        if (!d.IsNew && (d.OriginalFlags & FlagUserUsedAccounted) != 0) {
-          Charge(users, z.Uid, -(Slot + d.OriginalUsed));
-          Charge(groups, z.Gid, -(Slot + d.OriginalUsed));
-        }
+        if (!d.IsNew)
+          ChargeAll(z, -(Slot + d.OriginalUsed), -1,
+            (d.OriginalFlags & FlagUserUsedAccounted) != 0, (d.OriginalFlags & FlagUserObjUsedAccounted) != 0);
         if (!z.Freed) {
           d.Flags |= FlagUserUsedAccounted;
-          Charge(users, z.Uid, Slot + d.Used);
-          Charge(groups, z.Gid, Slot + d.Used);
+          if (fs.ObjectAccounting) d.Flags |= FlagUserObjUsedAccounted;
+          ChargeAll(z, Slot + d.Used, 1, true, fs.ObjectAccounting);
         }
       }
       this.UpdateUsedZap(os, UserUsedAt, users);
       this.UpdateUsedZap(os, GroupUsedAt, groups);
+      if (fs.ProjectAccounting) this.UpdateUsedZap(os, ProjectUsedAt, projects);
     }
 
     /// <summary>Size and links of a znode this edit created (laid out by <see cref="WriteSaBonus"/> or <see cref="ZfsWriter.ZnodeBonus"/>).</summary>
@@ -1318,7 +1468,7 @@ internal static class ZfsPoolEditor {
           mos.Dirty.Add(obj);
           this.FreeTree(mos, d, spill: false);
         } else {
-          d = Dnode.Create(OtSpaceMap, OtSpaceMapHeader, 24, NewSpaceMapBlock, 14, 3, FlagUsedBytes);
+          d = this.NewSpaceMap(NewSpaceMapBlock);
           obj = this.NewObject(mos, d);
           this._newArray ??= (ulong[])this._s.SpaceMaps.Clone();
           this._newArray[m] = obj;
@@ -1344,7 +1494,65 @@ internal static class ZfsPoolEditor {
         this.SetBlocks(mos, d, changes);
       }
 
+      if (this._s.LogSpacemapZap != 0) this.PlanLogSpacemap();
+      if (this._newMaps > 0) {
+        // spacemap_histogram counts every space map object with a histogram
+        this.RewriteZap(mos, this._s.FeaturesForWrite, entries => {
+          var at = entries.FindIndex(e => e.Name == "com.delphix:spacemap_histogram");
+          if (at < 0) throw new InvalidDataException("ZFS: spacemap_histogram is not in the write list.");
+          entries[at] = (entries[at].Name, entries[at].Value + (ulong)this._newMaps);
+        });
+      }
+
       this.CommitObjset(mos);
+    }
+
+    private int _newMaps;
+
+    /// <summary>A new space map object: with spacemap_histogram one block pointer and the 320-byte header, else three and 24 bytes.</summary>
+    private Dnode NewSpaceMap(int blockSize) {
+      var histogram = this._s.IsEnabled("com.delphix:spacemap_histogram");
+      if (histogram) ++this._newMaps;
+      return Dnode.Create(OtSpaceMap, OtSpaceMapHeader, histogram ? 320 : 24, blockSize, 14, histogram ? 1 : 3, FlagUsedBytes);
+    }
+
+    /// <summary>
+    /// log_spacemap: the metaslabs whose maps this txg rewrites are flushed in it. Their unflushed
+    /// txg becomes this txg, and an (empty) log space map for this txg is registered, since every
+    /// unflushed txg must name one.
+    /// </summary>
+    private void PlanLogSpacemap() {
+      var mos = this._mos;
+      var log = this.NewSpaceMap(128 * 1024);
+      this._logSpacemap = log;
+      this._logSpacemapObject = this.NewObject(mos, log);
+      this.RewriteZap(mos, this._s.LogSpacemapZap, entries => entries.Add((this.Txg.ToString("x"), this._logSpacemapObject)));
+
+      if (this._s.UnflushedObject == 0)
+        throw new NotSupportedException("ZFS: log_spacemap is active but the vdev keeps no unflushed txgs.");
+      var d = this.Load(mos, this._s.UnflushedObject);
+      mos.Dirty.Add(this._s.UnflushedObject);
+      var blockSize = d.DataBlockSize;
+      var count = (int)((this._s.MetaslabCount * 8L + blockSize - 1) / blockSize);
+      var bytes = new byte[count * blockSize];
+      for (var m = 0; m < this._s.MetaslabCount; ++m)
+        W64(bytes, m * 8, this._guess.ContainsKey(m) ? this.Txg : this._s.Unflushed[m]);
+      this.FreeTree(mos, d, spill: false);
+      this.WriteContents(mos, d, Enumerable.Range(0, count).Select(i => (byte[]?)bytes.AsSpan(i * blockSize, blockSize).ToArray()).ToList(), blockSize);
+    }
+
+    private Dnode? _logSpacemap;
+    private ulong _logSpacemapObject;
+
+    /// <summary>Rewrites a MOS ZAP of single-integer entries after <paramref name="change"/> edits its entries.</summary>
+    private void RewriteZap(Os os, ulong obj, Action<List<(string Name, ulong Value)>> change) {
+      var entries = os.Old.Zap(obj, "ZAP").Select(e => (e.Name, e.Value)).ToList();
+      change(entries);
+      var d = this.Load(os, obj);
+      os.Dirty.Add(obj);
+      this.FreeTree(os, d, spill: false);
+      var (blockSize, blocks) = ZfsWriter.BuildZap(entries);
+      this.WriteContents(os, d, blocks, blockSize);
     }
 
     /// <summary>
@@ -1352,22 +1560,36 @@ internal static class ZfsPoolEditor {
     /// nearest ancestor's (0 = inherit), <c>on</c> meaning lzjb on version 28; off when unset or
     /// when it names an algorithm this pool version cannot hold.
     /// </summary>
-    private byte EffectiveCompression(ulong dir) {
+    private (byte Algorithm, int ZstdLevel) EffectiveCompression(ulong dir, ulong headDataset) {
       var mos = this._mos.Old;
+      var lz4 = this._s.IsEnabled("org.illumos:lz4_compress");
       for (var guard = 0; dir != 0 && guard < 64; ++guard) {
         var d = mos.RequireDnode(dir, "DSL directory");
         var props = U64(d.Bonus, 80);
         var value = props == 0 ? null : mos.Zap(props, "DSL properties").FirstOrDefault(p => p.Name == "compression");
-        if (value != null && value.Value != ZfsConstants.CompressInherit)
-          return value.Value switch {
-            ZfsConstants.CompressOn or ZfsConstants.CompressLzjb => ZfsConstants.CompressLzjb,
-            >= ZfsConstants.CompressGzip1 and <= ZfsConstants.CompressGzip9 => (byte)value.Value,
-            ZfsConstants.CompressZle => ZfsConstants.CompressZle,
-            _ => ZfsConstants.CompressOff,
+        // the low 7 bits name the algorithm; zstd keeps its level above them
+        var algorithm = (byte)((value?.Value ?? 0) & 0x7F);
+        if (value != null && algorithm != ZfsConstants.CompressInherit)
+          return algorithm switch {
+            ZfsConstants.CompressOn => (lz4 ? ZfsConstants.CompressLz4 : ZfsConstants.CompressLzjb, 0),
+            ZfsConstants.CompressLzjb => (ZfsConstants.CompressLzjb, 0),
+            ZfsConstants.CompressLz4 when lz4 => (ZfsConstants.CompressLz4, 0),
+            >= ZfsConstants.CompressGzip1 and <= ZfsConstants.CompressGzip9 => (algorithm, 0),
+            ZfsConstants.CompressZle => (ZfsConstants.CompressZle, 0),
+            // zstd only where the dataset already carries the feature: writing it must not activate it
+            ZfsConstants.CompressZstd when this.ZstdActive(headDataset) =>
+              (ZfsConstants.CompressZstd, (int)(value.Value >> 7) is >= 1 and <= 19 and var level ? level : 3),
+            _ => (ZfsConstants.CompressOff, 0),
           };
         dir = U64(d.Bonus, 16);
       }
-      return ZfsConstants.CompressOff;
+      return (ZfsConstants.CompressOff, 0);
+    }
+
+    /// <summary>Whether a dataset's object (turned into a ZAP) carries <c>org.freebsd:zstd_compress</c>.</summary>
+    private bool ZstdActive(ulong headDataset) {
+      var d = this._mos.Old.RequireDnode(headDataset, "DSL dataset");
+      return d.Type == OtZapMetadata && this._mos.Old.Zap(d).Any(e => e.Name == "org.freebsd:zstd_compress");
     }
 
     private ulong MosDirectory() {
@@ -1443,6 +1665,15 @@ internal static class ZfsPoolEditor {
         W64(bonus, 0, plan.Object);
         W64(bonus, 8, (ulong)(words.Count * 8));
         W64(bonus, 16, (ulong)this._allocated[m].Total);
+        if (bonus.Length >= 320) {
+          var start = (long)m << this._s.MetaslabShift;
+          ZfsWriter.SpaceMapHistogram(bonus[64..], start, start + (1L << this._s.MetaslabShift), this._allocated[m].Ranges, this._s.Ashift);
+        }
+      }
+      if (this._logSpacemap is { } log) {
+        var bonus = log.Bonus;
+        bonus.Clear();
+        W64(bonus, 0, this._logSpacemapObject);                    // empty: nothing is unflushed in this txg
       }
       if (this._newArray != null) {
         var blockSize = this._arrayBlocks![0].Size;

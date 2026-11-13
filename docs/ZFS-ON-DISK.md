@@ -451,6 +451,42 @@ to the RAID-Z's devices; the space maps take the RAID-Z `asize`, the accounting 
 (deflate ratio). The new uberblock goes into the four labels of every device. A degraded pool
 (a child missing) is not edited.
 
+**Feature-flag pools (version 5000).** The enabled features and their reference counts are
+the entries of `features_for_read` and `features_for_write`. An edit is refused while one of
+these is active: block_cloning, device_removal, obsolete_counts, zpool_checkpoint, draid,
+async_destroy, allocation_classes, livelist, raidz_expansion, redacted_datasets — and while any
+feature not known to the editor is. What the active ones ask of an edit:
+
+- **spacemap_v2**: a space map may hold two-word entries — word 0: prefix `11` in bits 62-63, run
+  − 1 in bits 24-59, vdev in bits 0-23 (0 for "none" in a metaslab's own map); word 1: bit 63 set
+  for FREE, offset in bits 0-62; units as for one-word entries. Rewritten maps may use one-word
+  entries only.
+- **spacemap_histogram**: every rewritten map keeps the 320-byte header with its histogram of
+  free regions; a new map object adds 1 to the feature's count.
+- **log_spacemap**: the object directory's `com.delphix:log_spacemap_zap` maps each txg (key in
+  lower-case hex) to a log space map — a space map of shift 9 and start 0 whose two-word entries
+  name the top-level vdev and absolute offsets. The MOS `config` object's top-level vdev names its
+  ZAP (`com.delphix:vdev_zap_top`), whose `com.delphix:ms_unflushed_phys_txgs` is an object of one
+  `u64` per metaslab: the txg from which on the logs hold that metaslab's changes (0 = none). A
+  metaslab's allocated space is its own map plus, in txg order, the entries of every log whose
+  txg is at least its unflushed txg. A metaslab whose map the edit rewrites is flushed in the new
+  txg: its unflushed txg becomes the new txg, and an empty log space map is registered for that
+  txg, because every unflushed txg must name an existing log (the kernel's import refuses
+  otherwise). That log is a space map object too and counts towards spacemap_histogram.
+- **userobj_accounting**: the user and group objects also count objects, key `obj-<hex id>`, one
+  per object whose dnode has flag bit 3 (`USEROBJUSED_ACCOUNTED`); rewritten znodes gain the bit.
+- **project_quota**: a 4 KiB object set block holds the project-used object at 0x800; projects are
+  charged like users and groups, the project being `ZPL_PROJID` when the znode's flags carry
+  `0x0000800000000000` (`ZFS_PROJID`), else 0.
+- **lz4_compress / zstd_compress**: `on` means lz4; zstd is written only into datasets whose object
+  already carries the zstd feature, so the edit never has to activate it; elsewhere a zstd property
+  is written uncompressed. A property value keeps the zstd level above its low 7 bits.
+- **embedded_data**: freeing an embedded block frees no space; its logical size leaves the
+  dataset's uncompressed bytes.
+- hole_birth, large_blocks, large_dnode, the checksum features, head_errlog, zilsaxattr,
+  vdev_zaps_v2, bookmarks and encryption need nothing more; encrypted datasets themselves are not
+  edited.
+
 ### Intent log
 
 An object set's `zil_header_t` sits at 0x200: claim txg, replay sequence, the first log block
