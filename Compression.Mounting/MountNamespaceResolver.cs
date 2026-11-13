@@ -28,6 +28,10 @@ public static class MountNamespaceResolver {
       IReadOnlyDictionary<string, string>? volumeParameters = null) {
     ArgumentException.ThrowIfNullOrWhiteSpace(formatId);
     ArgumentNullException.ThrowIfNull(source);
+    if (IsOpaqueRaw(formatId))
+      return new(
+        RawContentFilesystemSession.ProfileFor(formatId, source),
+        [$"format:{formatId}", "namespace:opaque-read-only"]);
     var descriptor = FormatRegistry.GetById(formatId)
       ?? throw new KeyNotFoundException($"Unknown format id '{formatId}'.");
 
@@ -72,6 +76,12 @@ public static class MountNamespaceResolver {
     ArgumentException.ThrowIfNullOrWhiteSpace(formatId);
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(options);
+    if (IsOpaqueRaw(formatId)) {
+      if (!options.ReadOnly)
+        throw new NotSupportedException("Raw/unknown format mounts are read-only.");
+      var raw = RawContentFilesystemSession.Open(formatId, source, sourceName);
+      return options.LeaveOpen ? raw : new OwnedFilesystemSession(raw, source);
+    }
     var descriptor = FormatRegistry.GetById(formatId)
       ?? throw new KeyNotFoundException($"Unknown format id '{formatId}'.");
 
@@ -337,6 +347,10 @@ public static class MountNamespaceResolver {
     if (type.Length == 0) type = "raw";
     return $"Partition{partition.Index + 1}_{type}";
   }
+
+  private static bool IsOpaqueRaw(string formatId)
+    => formatId.Equals("Raw", StringComparison.OrdinalIgnoreCase) ||
+       formatId.Equals("Unknown", StringComparison.OrdinalIgnoreCase);
 
   private static bool IsFilesystem(string formatId)
     => FormatRegistry.FilesystemFormatIds.Contains(formatId, StringComparer.OrdinalIgnoreCase);
