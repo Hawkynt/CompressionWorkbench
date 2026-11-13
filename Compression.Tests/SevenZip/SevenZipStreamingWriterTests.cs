@@ -45,7 +45,7 @@ public sealed class SevenZipStreamingWriterTests {
   }
 
   public static IEnumerable<TestCaseData> Profiles() {
-    foreach (var codec in new[] { SevenZipCodec.Lzma2, SevenZipCodec.Lzma, SevenZipCodec.PPMd, SevenZipCodec.Deflate, SevenZipCodec.BZip2, SevenZipCodec.Copy })
+    foreach (var codec in new[] { SevenZipCodec.Lzma2, SevenZipCodec.Lzma, SevenZipCodec.PPMd, SevenZipCodec.Deflate, SevenZipCodec.BZip2, SevenZipCodec.Zstd, SevenZipCodec.Brotli, SevenZipCodec.Lz4, SevenZipCodec.Copy })
       foreach (var filter in new[] { SevenZipFilter.None, SevenZipFilter.BcjX86, SevenZipFilter.Bcj2, SevenZipFilter.Delta, SevenZipFilter.Swap4 })
         foreach (var encrypt in new[] { false, true })
           yield return new TestCaseData(codec, filter, encrypt).SetName($"Given_StreamedEntries_{codec}_{filter}_{(encrypt ? "aes" : "plain")}_When_ReadBack_Then_TheyMatch");
@@ -108,13 +108,13 @@ public sealed class SevenZipStreamingWriterTests {
   [TestCaseSource(nameof(Profiles))]
   [Category("EndToEnd")]
   public void Given_StreamedEntries_When_7ZipTestsAndExtracts_Then_TheyMatch(SevenZipCodec codec, SevenZipFilter filter, bool encrypt) {
-    SevenZipOracle.Require();
+    var tool = SevenZipOracle.RequireFor(codec);
     var path = Path.Combine(this._root, "s.7z");
     File.WriteAllBytes(path, WriteStreamed(codec, filter, encrypt));
     var pw = encrypt ? "-ppw" : "-p-";
-    SevenZipOracle.RunOk(this._root, "t", pw, path);
+    SevenZipOracle.RunToolOk(tool, this._root, "t", pw, path);
     var output = Path.Combine(this._root, "out");
-    SevenZipOracle.RunOk(this._root, "x", "-y", pw, $"-o{output}", path);
+    SevenZipOracle.RunToolOk(tool, this._root, "x", "-y", pw, $"-o{output}", path);
     foreach (var (name, data) in Files())
       Assert.That(File.ReadAllBytes(Path.Combine(output, name)), Is.EqualTo(data), name);
   }
@@ -126,8 +126,11 @@ public sealed class SevenZipStreamingWriterTests {
   [TestCase("lzma")]
   [TestCase("ppmd")]
   [TestCase("lzma2", "bcj2")]
+  [TestCase("zstd")]
+  [TestCase("brotli")]
+  [TestCase("lz4")]
   public void Given_AFileLargerThan4GiB_When_ArchivedThroughTheLibrary_Then_7ZipTestsAndExtractsItWithBoundedMemory(string method, string? filter = null) {
-    SevenZipOracle.Require();
+    var tool = SevenZipOracle.RequireFor(MethodSpec.Parse(method).Resolve7z());
     var source = Path.Combine(this._root, "big.bin");
     const long size = (9L << 29) + 4321;
     var chunk = new byte[1 << 20];
@@ -161,9 +164,9 @@ public sealed class SevenZipStreamingWriterTests {
     TestContext.Out.WriteLine($"{method}{(filter == null ? "" : "+" + filter)}: peak managed memory {(peak - before) >> 20} MiB above the start, archive {new FileInfo(archive).Length} bytes");
     Assert.That(peak - before, Is.LessThan(768L << 20), "the writer must not hold the file in memory");
 
-    SevenZipOracle.RunOk(this._root, "t", archive);
+    SevenZipOracle.RunToolOk(tool, this._root, "t", archive);
     var output = Path.Combine(this._root, "out");
-    SevenZipOracle.RunOk(this._root, "x", "-y", $"-o{output}", archive);
+    SevenZipOracle.RunToolOk(tool, this._root, "x", "-y", $"-o{output}", archive);
     var extracted = Path.Combine(output, "big.bin");
     Assert.That(new FileInfo(extracted).Length, Is.EqualTo(size));
     using var a = File.OpenRead(source);

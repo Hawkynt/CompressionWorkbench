@@ -216,11 +216,11 @@ internal sealed class SevenZipFolderDecoder {
     if (c.Is(SevenZipConstants.CodecPpmd))
       return OpenPpmd(c, input, size);
     if (c.Is(SevenZipConstants.CodecZstd))
-      return new MemoryStream(SevenZipZstdFamilyCoders.DecodeZstd(ReadAll(input)), writable: false);
+      return new SevenZipPullStream(SevenZipZstdFamilyCoders.OpenZstd(input).Read, size);
     if (c.Is(SevenZipConstants.CodecBrotli))
-      return new MemoryStream(SevenZipZstdFamilyCoders.DecodeBrotli(ReadAll(input)), writable: false);
+      return new SevenZipPullStream(SevenZipZstdFamilyCoders.OpenBrotli(input).Read, size);
     if (c.Is(SevenZipConstants.CodecLz4))
-      return new MemoryStream(SevenZipZstdFamilyCoders.DecodeLz4(ReadAll(input)), writable: false);
+      return new SevenZipPullStream(SevenZipZstdFamilyCoders.OpenLz4(input).Read, size);
 
     throw new NotSupportedException($"7z: unsupported coder {SevenZipCoderNames.Describe(c.CodecId)}.");
   }

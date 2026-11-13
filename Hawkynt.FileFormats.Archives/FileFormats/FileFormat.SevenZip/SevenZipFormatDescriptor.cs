@@ -20,7 +20,7 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("Method", "Compression method", FormatOptionKind.Enum, "lzma2",
-      AllowedValues: ["lzma2", "lzma", "ppmd", "bzip2", "deflate", "copy"]),
+      AllowedValues: ["lzma2", "lzma", "ppmd", "bzip2", "deflate", "zstd", "brotli", "lz4", "copy"]),
     new("Level", "Compression level", FormatOptionKind.Integer, "5",
       AllowedValues: ["1", "3", "5", "7", "9"]),
     new("DictSize", "Dictionary size", FormatOptionKind.Integer, "16777216",
@@ -259,7 +259,8 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("lzma2", "LZMA2"), new("lzma", "LZMA"), new("ppmd", "PPMd"),
-    new("bzip2", "BZip2"), new("deflate", "Deflate"), new("copy", "Store")
+    new("bzip2", "BZip2"), new("deflate", "Deflate"), new("zstd", "Zstd"), new("brotli", "Brotli"),
+    new("lz4", "LZ4"), new("copy", "Store")
   ];
   /// <summary>
   /// Gets the tar compression format id.
@@ -483,10 +484,13 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     var password = !string.IsNullOrEmpty(options.Password) ? options.Password
       : !string.IsNullOrEmpty(passwordFromSchema) ? passwordFromSchema : null;
     var compressHeaders = options.GetOption("HeaderCompression", "false").Trim().ToLowerInvariant() is "true" or "on" or "1" or "yes";
+    // The Zstandard / Brotli / LZ4 level: 7-Zip's -mx maps onto it one to one.
+    var schemaLevel = options.GetOptionInt("Level", -1);
+    var level = options.Level ?? (schemaLevel >= 0 ? schemaLevel : SevenZipZstdFamilyCoders.DefaultLevel);
 
     return (codec, blockSize, output => new SevenZipWriter(output, codec, dictionarySize: dictSize,
       ppmdOrder: ppmdOrder, ppmdMemorySize: ppmdMem, password: password,
-      encryptHeaders: options.EncryptFilenames, compressHeaders: compressHeaders));
+      encryptHeaders: options.EncryptFilenames, compressHeaders: compressHeaders, level: level));
   }
 
   /// <summary>

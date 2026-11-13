@@ -17,14 +17,10 @@ internal sealed record SevenZipSource(SevenZipEntry Entry, byte[]? Data, Func<St
 public sealed partial class SevenZipWriter {
   /// <summary>
   /// Whether <paramref name="plan"/> is encoded as a stream: when a file of it is not in memory or
-  /// the block is too large to assemble, and its coders can stream — LZMA2, Deflate, BZip2 or
-  /// Copy, any filter but BCJ2.
+  /// the block is too large to assemble. Every coder the writer offers streams, with any filter.
   /// </summary>
-  private bool MustStream(PlannedBlock plan) {
-    var large = plan.Files.Exists(static f => f.Data == null) || plan.Files.Sum(static f => f.Size) > InMemoryBlockLimit;
-    return large
-      && plan.Codec is SevenZipCodec.Lzma2 or SevenZipCodec.Lzma or SevenZipCodec.PPMd or SevenZipCodec.Deflate or SevenZipCodec.BZip2 or SevenZipCodec.Copy;
-  }
+  private bool MustStream(PlannedBlock plan)
+    => plan.Files.Exists(static f => f.Data == null) || plan.Files.Sum(static f => f.Size) > InMemoryBlockLimit;
 
   /// <summary>
   /// Encodes <paramref name="plan"/> straight into the archive: the files are read one after
@@ -164,6 +160,9 @@ public sealed partial class SevenZipWriter {
       case SevenZipCodec.Copy:
         input.CopyTo(output, 1 << 16);
         return new SevenZipCoder { CodecId = SevenZipConstants.CodecCopy.ToArray() };
+      case SevenZipCodec.Zstd or SevenZipCodec.Brotli or SevenZipCodec.Lz4:
+        SevenZipZstdFamilyCoders.Encode(codec, input, output, this._level);
+        return new SevenZipCoder { CodecId = SevenZipZstdFamilyCoders.CodecId(codec), Properties = SevenZipZstdFamilyCoders.Properties(codec, this._level) };
       default:
         throw new NotSupportedException($"7z: {codec} cannot be streamed.");
     }
