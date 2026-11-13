@@ -517,14 +517,16 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
 
   private void MarkDirty() => _dirty = true;
 
-  private void AdjustContentBudget(long previousSize, long newSize) {
+  private void EnsureContentBudget(long previousSize, long newSize) {
     // Called only while holding _gate. Deleted but still-open file nodes
     // remain budgeted because this session keeps them alive for stable handles.
     var growth = newSize - previousSize;
     if (growth > 0 && growth > _maxTotalContentBytes - _allocatedContentBytes)
       throw new IOException($"Writable mount exceeds the {_maxTotalContentBytes:N0}-byte content budget.");
-    _allocatedContentBytes = checked(_allocatedContentBytes + growth);
   }
+
+  private void AccountContentResize(long previousSize, long newSize)
+    => _allocatedContentBytes = checked(_allocatedContentBytes + newSize - previousSize);
 
   private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -593,8 +595,10 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
         if (end > Array.MaxLength)
           throw new NotSupportedException($"The managed rebuild session currently limits one mutable file to {Array.MaxLength:N0} bytes.");
         if (end > node.Data.LongLength) {
-          owner.AdjustContentBudget(node.Data.LongLength, end);
+          var previousSize = node.Data.LongLength;
+          owner.EnsureContentBudget(previousSize, end);
           Array.Resize(ref node.Data, checked((int)end));
+          owner.AccountContentResize(previousSize, end);
         }
         source.CopyTo(node.Data.AsSpan(checked((int)offset)));
         if (!source.IsEmpty)
@@ -613,8 +617,10 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
           throw new ArgumentOutOfRangeException(nameof(length));
         if (length == node.Data.LongLength)
           return;
-        owner.AdjustContentBudget(node.Data.LongLength, length);
+        var previousSize = node.Data.LongLength;
+        owner.EnsureContentBudget(previousSize, length);
         Array.Resize(ref node.Data, checked((int)length));
+        owner.AccountContentResize(previousSize, length);
         owner.MarkDirty();
       }
     }
