@@ -90,6 +90,12 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'S', (byte)'I', (byte)'T', (byte)'!'], Confidence: 0.95),
     new("StuffIt (c)1997-"u8.ToArray(), Confidence: 0.95),
+    // The same archives as the data fork of a MacBinary file (128-byte header), which is how a
+    // classic archive keeps the resource fork that holds its password check. They outrank the
+    // generic MacBinary reading so that detection lands on the reader that decrypts them.
+    new("SIT!\0\0\0\0\0\0rLau"u8.ToArray(), Offset: 128, Confidence: 0.9,
+      Mask: [0xFF, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF]),
+    new("StuffIt (c)1997-"u8.ToArray(), Offset: 128, Confidence: 0.9),
   ];
   /// <summary>
   /// Gets the methods.
