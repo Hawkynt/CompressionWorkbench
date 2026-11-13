@@ -5,9 +5,9 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Zfs;
 
 /// <summary>
-/// Descriptor for ZFS pool device images (vdevs) as OpenZFS writes them. Read-only:
-/// every dataset and snapshot, all ZFS block compressions, gang and embedded blocks,
-/// mirrors and RAID-Z (see <see cref="ZfsReader"/>).
+/// Descriptor for ZFS pool device images (vdevs) as OpenZFS writes them. Reads every
+/// dataset and snapshot, all ZFS block compressions, gang and embedded blocks, mirrors
+/// and RAID-Z (see <see cref="ZfsReader"/>); creates and edits single-device pools.
 ///
 /// References:
 /// <list type="bullet">
@@ -20,9 +20,11 @@ namespace FileSystem.Zfs;
 /// <remarks>
 /// Create writes a new single-device pool (version 28, one ZPL version 3 filesystem holding the
 /// inputs) with <see cref="ZfsWriter"/>; OpenZFS's <c>zdb -bcc</c> finds no leaks in it and the
-/// kernel module imports, scrubs and mounts it. Modifying pools in place is not offered.
+/// kernel module imports, scrubs and mounts it. Add and Remove edit an existing single-device
+/// version 28 pool in place, in one new transaction group (<see cref="ZfsPoolEditor"/>) — pools
+/// OpenZFS made included; anything that editor refuses is left untouched.
 /// </remarks>
-public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   /// <summary>Gets the id.</summary>
   public string Id => "Zfs";
   /// <summary>Gets the display name.</summary>
@@ -31,7 +33,7 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   /// <summary>Gets the capabilities.</summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>Gets the default extension.</summary>
   public string DefaultExtension => ".zfs";
@@ -56,7 +58,7 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Description =>
     "ZFS pool device image — reads every dataset and snapshot; lzjb, zle, gzip, lz4 and zstd blocks; " +
     "gang and embedded blocks, ditto copies, mirror and RAID-Z. Creates single-device version 28 pools " +
-    "that OpenZFS imports and scrubs clean.";
+    "that OpenZFS imports and scrubs clean, and adds and removes files in such pools in place.";
 
   private const string FullName = "FULL.zfs";
   private const string MetadataName = "metadata.ini";
@@ -130,6 +132,27 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         writer.AddFile(input.ArchiveName, input.ReadContent(), modified);
     }
     writer.Build(output, options.GetOption("PoolName", "cwb"));
+  }
+
+  /// <summary>
+  /// Adds or replaces files and directories in an existing pool, in place: one new transaction
+  /// group, copy-on-write, freed blocks returned to the space maps. Paths of child datasets
+  /// (<c>child/…</c>, as listed) go into that dataset.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var additions = inputs.Select(i => new ZfsPoolEditor.Addition(i.ArchiveName, i.IsDirectory ? null : i.ReadContent(),
+      i.Metadata?.LastWriteTimeUtc?.UtcDateTime)).ToList();
+    ZfsPoolEditor.Edit(archive, additions, []);
+  }
+
+  /// <summary>Removes files and directories (with everything beneath them) from an existing pool, in place.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    var names = entryNames.Where(n => n is not (MetadataName or FullName)).ToList();
+    ZfsPoolEditor.Edit(archive, [], names);
   }
 
   private static byte[] BuildMetadata(ZfsReader reader) {

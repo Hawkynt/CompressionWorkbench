@@ -9,16 +9,16 @@ namespace Compression.Tests.Zfs;
 public class ZfsTests {
 
   [Test, Category("HappyPath")]
-  public void Descriptor_CreatesButDoesNotModify() {
+  public void Descriptor_CreatesAndModifies() {
     var desc = new ZfsFormatDescriptor();
     Assert.That(desc.Id, Is.EqualTo("Zfs"));
     Assert.That(desc.DefaultExtension, Is.EqualTo(".zfs"));
     Assert.That(desc.Extensions, Does.Contain(".zpool"));
     Assert.That(desc.Category, Is.EqualTo(FormatCategory.Archive));
     Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
-    Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+    Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
     Assert.That(desc, Is.InstanceOf<IArchiveCreatable>());
-    Assert.That(desc, Is.Not.InstanceOf<IArchiveModifiable>());
+    Assert.That(desc, Is.InstanceOf<IArchiveModifiable>());
   }
 
   [Test, Category("HappyPath"), Category("Oracle")]

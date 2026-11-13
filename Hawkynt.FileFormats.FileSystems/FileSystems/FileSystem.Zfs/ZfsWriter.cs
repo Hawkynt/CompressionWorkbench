@@ -300,26 +300,34 @@ internal sealed class ZfsWriter {
   }
 
   /// <summary>A ZAP (microzap when every name fits and the block stays within 128 KiB, else a fat ZAP).</summary>
-  private (int BlockSize, List<byte[]?> Blocks) BuildZap(IReadOnlyList<(string Name, ulong Value)> entries) {
+  internal static (int BlockSize, List<byte[]?> Blocks) BuildZap(IReadOnlyList<(string Name, ulong Value)> entries) {
     var micro = entries.All(e => Encoding.UTF8.GetByteCount(e.Name) <= MicroZapNameMax) && (entries.Count + 1) * MicroZapEntry <= MaxDataBlock;
     if (micro) {
       var size = Sector;
       while (size < (entries.Count + 1) * MicroZapEntry)
         size <<= 1;
       var block = new byte[size];
+      var salt = NewSalt();
       BinaryPrimitives.WriteUInt64LittleEndian(block, ZbtMicro);
-      BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(8), this.NewSalt());
+      BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(8), salt);
+      var cdByHash = new Dictionary<ulong, uint>();
       for (var i = 0; i < entries.Count; ++i) {
         var at = (i + 1) * MicroZapEntry;
+        var name = Encoding.UTF8.GetBytes(entries[i].Name);
+        // names whose hashes collide are told apart by the collision differentiator
+        var hash = ZapHash(salt, name);
+        var cd = cdByHash.TryGetValue(hash, out var taken) ? taken + 1 : 0;
+        cdByHash[hash] = cd;
         BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(at), entries[i].Value);
-        Encoding.UTF8.GetBytes(entries[i].Name, block.AsSpan(at + 14));
+        BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(at + 8), cd);
+        name.CopyTo(block.AsSpan(at + 14));
       }
       return (size, [block]);
     }
-    return (FatZapBlock, this.BuildFatZap(entries));
+    return (FatZapBlock, BuildFatZap(entries));
   }
 
-  private ulong NewSalt() => (BinaryPrimitives.ReadUInt64LittleEndian(RandomNumberGenerator.GetBytes(8)) | 1) & 0x0000_0000_FFFF_FFFFUL;
+  private static ulong NewSalt() => (BinaryPrimitives.ReadUInt64LittleEndian(RandomNumberGenerator.GetBytes(8)) | 1) & 0x0000_0000_FFFF_FFFFUL;
 
   private static ulong ZapHash(ulong salt, ReadOnlySpan<byte> name) {
     var h = salt;
@@ -332,14 +340,14 @@ internal sealed class ZfsWriter {
   /// A fat ZAP: header block 0 with the pointer table embedded in its second half, then
   /// 2^p leaves, leaf i holding the names whose hash starts with the p bits of i.
   /// </summary>
-  private List<byte[]?> BuildFatZap(IReadOnlyList<(string Name, ulong Value)> entries) {
+  private static List<byte[]?> BuildFatZap(IReadOnlyList<(string Name, ulong Value)> entries) {
     const int leafHashShift = 14 - 5;                                // 2^(bs-5) hash buckets
     const int chunkBytes = 24;
     const int leafHeader = 48;
     const int chunkArea = FatZapBlock - leafHeader - (2 << leafHashShift);
     const int chunksPerLeaf = chunkArea / chunkBytes;
     const int tableShift = 10;                                       // (16 KiB / 2) / 8 pointers
-    var salt = this.NewSalt();
+    var salt = NewSalt();
 
     var hashed = entries.Select(e => {
       var name = Encoding.UTF8.GetBytes(e.Name);
@@ -443,38 +451,50 @@ internal sealed class ZfsWriter {
   }
 
   private DmuObject ZapObject(byte type, IReadOnlyList<(string Name, ulong Value)> entries, byte bonusType = 0, byte[]? bonus = null) {
-    var (size, blocks) = this.BuildZap(entries);
+    var (size, blocks) = BuildZap(entries);
     return this.NewObject(type, bonusType, bonus ?? [], size, blocks);
   }
 
   // ── ZPL ────────────────────────────────────────────────────────────────────────────────
 
-  private static byte[] Znode(Node node, ulong parent, ulong size, ulong links) {
+  private static byte[] Znode(Node node, ulong parent, ulong size, ulong links) =>
+    ZnodeBonus(node.IsDirectory, node.Modified, parent, size, links);
+
+  /// <summary>A version ≤ 4 <c>znode_phys_t</c> (264 bytes) with a trivial ACL matching mode 0644 / 0755.</summary>
+  internal static byte[] ZnodeBonus(bool isDirectory, DateTime modified, ulong parent, ulong size, ulong links, ulong generation = Txg) {
     var z = new byte[264];
-    var t = node.Modified;
+    var t = modified;
     var seconds = (ulong)Math.Max(0, (long)(t - DateTime.UnixEpoch).TotalSeconds);
     var nanos = (ulong)((t - DateTime.UnixEpoch).Ticks % TimeSpan.TicksPerSecond * 100);
     for (var i = 0; i < 4; ++i) {                                    // atime, mtime, ctime, crtime
       BinaryPrimitives.WriteUInt64LittleEndian(z.AsSpan(i * 16), seconds);
       BinaryPrimitives.WriteUInt64LittleEndian(z.AsSpan(i * 16 + 8), nanos);
     }
-    BinaryPrimitives.WriteUInt64LittleEndian(z.AsSpan(64), Txg);                  // zp_gen
-    var mode = node.IsDirectory ? 0x41EDUL : 0x81A4UL;                            // 0755 dir / 0644 file
+    BinaryPrimitives.WriteUInt64LittleEndian(z.AsSpan(64), generation);           // zp_gen
+    var mode = isDirectory ? 0x41EDUL : 0x81A4UL;                            // 0755 dir / 0644 file
     BinaryPrimitives.WriteUInt64LittleEndian(z.AsSpan(72), mode);
     BinaryPrimitives.WriteUInt64LittleEndian(z.AsSpan(80), size);
     BinaryPrimitives.WriteUInt64LittleEndian(z.AsSpan(88), parent);
     BinaryPrimitives.WriteUInt64LittleEndian(z.AsSpan(96), links);
-    BinaryPrimitives.WriteUInt64LittleEndian(z.AsSpan(120), node.IsDirectory ? 0x40800000144UL : 0x40800000004UL); // zp_flags
+    BinaryPrimitives.WriteUInt64LittleEndian(z.AsSpan(120), ZnodeFlags(isDirectory));            // zp_flags
     // zfs_acl_phys_t at 176: a trivial three-entry ACL (owner@, group@, everyone@) matching the mode
     var acl = z.AsSpan(176);
     BinaryPrimitives.WriteUInt32LittleEndian(acl[8..], 24);                       // z_acl_size
     BinaryPrimitives.WriteUInt16LittleEndian(acl[12..], 1);                       // ZFS_ACL_VERSION_FUID
     BinaryPrimitives.WriteUInt16LittleEndian(acl[14..], 3);                       // z_acl_count
-    var exec = node.IsDirectory ? 0x20u : 0u;
-    WriteAce(acl[16..], 0x1000, 0x1E0190 | 0x09 | 0x46 | exec);                  // owner@: rw(x)
-    WriteAce(acl[24..], 0x4040, 0x120080 | 0x09 | exec);                         // group@: r(x)
-    WriteAce(acl[32..], 0x4000, 0x120080 | 0x09 | exec);                         // everyone@: r(x)
+    WriteTrivialAces(acl[16..], isDirectory);
     return z;
+  }
+
+  /// <summary>Flags of a new znode: a trivial ACL, archive and anti-virus-modified bits, and for directories inheritance.</summary>
+  internal static ulong ZnodeFlags(bool isDirectory) => isDirectory ? 0x40800000144UL : 0x40800000004UL;
+
+  /// <summary>The three 8-byte FUID-style ACEs (owner@, group@, everyone@) matching mode 0644 / 0755: 24 bytes.</summary>
+  internal static void WriteTrivialAces(Span<byte> at, bool isDirectory) {
+    var exec = isDirectory ? 0x20u : 0u;
+    WriteAce(at, 0x1000, 0x1E0190 | 0x09 | 0x46 | exec);                         // owner@: rw(x)
+    WriteAce(at[8..], 0x4040, 0x120080 | 0x09 | exec);                           // group@: r(x)
+    WriteAce(at[16..], 0x4000, 0x120080 | 0x09 | exec);                          // everyone@: r(x)
   }
 
   private static void WriteAce(Span<byte> at, ushort flags, uint mask) {
@@ -792,7 +812,7 @@ internal sealed class ZfsWriter {
   }
 
   /// <summary>Seals a label-area block with its trailing <c>zio_eck_t</c>: SHA-256 with the device offset as verifier.</summary>
-  private static void Seal(byte[] block, long deviceOffset) {
+  internal static void Seal(byte[] block, long deviceOffset) {
     var tail = block.Length - 40;
     BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(tail), ZfsConstants.EmbeddedChecksumMagic);
     var checksum = block.AsSpan(tail + 8, 32);

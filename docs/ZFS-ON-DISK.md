@@ -1,6 +1,6 @@
 # ZFS — on-disk notes for the reader
 
-`FileSystem.Zfs.ZfsReader` is written from this page, `FileSystem.Zfs.ZfsWriter` from its "Writing a pool" section. The normative base is Sun's
+`FileSystem.Zfs.ZfsReader` is written from this page, `FileSystem.Zfs.ZfsWriter` from its "Writing a pool" section and `FileSystem.Zfs.ZfsPoolEditor` from "Editing a pool". The normative base is Sun's
 *ZFS On-Disk Specification* (2006 draft); it predates pool version 5000, so the
 structures added since — feature flags, embedded block pointers, LZ4/zstd, system
 attributes, large dnodes, RAID-Z column mapping — are written down here from the
@@ -282,7 +282,8 @@ every name has at most 49 bytes and the block stays within 128 KiB, otherwise a 
 16 KiB blocks (header with the pointer table embedded in its second half, `zt_shift` 10, then
 `2^p` leaves; leaf `i` holds the names whose ZAP hash begins with the `p` bits of `i`). The ZAP
 hash is CRC-64 (polynomial `0xC96C5795D7870F42`) of the name seeded with the ZAP's salt,
-keeping the top 28 bits. Files hold their data in one block of the size rounded up to 512
+keeping the top 28 bits; names whose hashes collide are told apart by the collision
+differentiator (a micro ZAP entry's `u32` at offset 8). Files hold their data in one block of the size rounded up to 512
 bytes, or in 128 KiB blocks under 16 KiB indirect blocks. Every directory and file has a
 264-byte `znode_phys_t` bonus: four timestamps, generation, mode 0644/0755, size (a
 directory's is its entry count + 2), parent, links (2 + subdirectories for a directory), flags
@@ -290,6 +291,94 @@ directory's is its entry count + 2), parent, links (2 + subdirectories for a dir
 (`owner@`, `group@`, `everyone@`) matching the mode. Dnodes carry `DNODE_FLAG_USED_BYTES` with
 the bytes of all their blocks; a dnode block's fill is the number of objects in it, an objset
 pointer's the number of objects.
+
+## Editing a pool
+
+`FileSystem.Zfs.ZfsPoolEditor` adds and removes files in an existing single-device pool of
+version 28 — written by `ZfsWriter` or by OpenZFS — as one transaction group, the way this
+section describes. The proof is the same as for writing: after edits on a written pool and on
+`ReferenceVectors/cwbv28` (a system-attribute root dataset and a ZPL version 3 child holding
+lzjb and gzip blocks, a hard link, a sparse file), `zdb -bcc` finds no leak, `zdb -r` copies the
+new files out, and the kernel module imports, scrubs (0 errors) and serves exactly the expected
+files; in addition every dataset's and `$MOS`'s recorded space and the user and group
+accounting move by exactly what a walk of every block tree moves by
+(`Compression.Tests/Zfs/ZfsEditorTests.cs`).
+
+**One transaction group.** The new txg is the active one + 1. The active uberblock slot is
+copied with its txg, timestamp and root pointer replaced and is written, resealed, into slot
+`txg mod slots` of all four labels — after every other block. The label nvlists stay as they
+are; a label's `txg` may lag the uberblock's. Blocks are never overwritten: every changed
+level-0 block is written elsewhere together with every indirect block above it, the dnode
+blocks holding changed dnodes, the meta-dnode's tree, the object set block, the dataset's
+objset pointer and so on up to the MOS object set. An indirect block whose children are all
+holes becomes a hole; a dnode block with no allocated dnode is a hole. When a write reaches
+past what `nblkptr << (levels − 1) · (indblkshift − 7)` can address, a level is added: a new
+top indirect block whose first children are the old top pointers. Space freed by a txg is not
+reused within it, so older uberblocks still name intact trees.
+
+**Space maps.** Every metaslab with a space map (the metaslab array lists its object, 0 for
+none) holds `u64` entries in its data, `smp_length` bytes of them. On a version-28 pool all are
+one-word entries: bit 63 clear, offset in bits 16–62 and run − 1 in bits 0–14 (both in units of
+`2^ashift` from the metaslab start), bit 15 set for FREE. A word with bits 63–62 = `10` is a
+debug entry (action, sync pass, txg) and carries no space; `11` starts a two-word entry, which
+belongs to the `spacemap_v2` feature. Replaying ALLOC and FREE in order gives the metaslab's
+allocated space, which equals the header's `smp_alloc`. A map may be rewritten whole
+("condensed"): one debug word and an ALLOC run for every allocated range, the map's own new
+blocks included, in blocks of the object's block size; bytes past `smp_length` mean nothing. A
+metaslab that gets its first map gets a new MOS object (three block pointers, 24-byte header
+bonus) and the metaslab array is rewritten. The maps after the txg must record every block
+allocated or freed in it — those of the maps themselves and of the MOS included — so the
+number of map blocks is settled before their contents are.
+
+**Freeing.** A freed block returns every DVA's `asize` (the DVA's 24-bit field, in 512-byte
+units) to its metaslab. Gang blocks, deduplicated blocks (property bit 62) and blocks born at
+or before the dataset's previous snapshot txg (which a snapshot still references; they would
+go to the deadlist) are left to OpenZFS.
+
+**Accounting.** A block's charge is `used` = the sum of its DVAs' `asize` (a plain vdev has
+`deflate` 1), `compressed` = its physical size and `uncompressed` = its physical size for
+metadata (level > 0, or any object type except 19, 23, 25, 26 and 49) and its logical size
+otherwise. A dataset's blocks add to its referenced, compressed, uncompressed and unique
+bytes; the MOS's own blocks (the MOS object set block included) belong to the `$MOS`
+directory. A directory charged `Δ` under breakdown `t` adds `Δ` to its used, compressed and
+uncompressed bytes and to `used_breakdown[t]`; its parent then gets
+`a = max(u + Δ, reserved) − max(u, reserved)` (`u` = the directory's used before) added to its
+used bytes, `Δ − a` taken from CHILD_RSRV and `Δ` added to CHILD — and so on up the chain.
+Breakdown indices: HEAD 0, SNAP 1, CHILD 2, CHILD_RSRV 3, REFRSRV 4. A dnode's `dn_used` holds
+bytes when flag bit 0 is set, sectors otherwise.
+
+**User and group accounting.** An object set block of 2 KiB or more holds two more dnodes, the
+user-used object at 0x400 and the group-used object at 0x600 (and a project-used one at 0x800
+in 4 KiB blocks with the `project_quota` feature). They are micro ZAPs from the id in lower-case
+hex to `Σ (512 + dn_used)` over the objects whose dnode has flag bit 1 (`USERUSED_ACCOUNTED`)
+and a znode (17) or system-attribute (44) bonus; the ids are the owner and group in the bonus
+(`znode_phys_t` offsets 128 and 136; with system attributes at header + 24 and + 32). A
+rewritten object gains flag bit 1; what it contributed before is taken away only if it had the
+flag. An entry that reaches 0 is removed.
+
+**ZPL on version 5 (system attributes).** A new object's bonus uses the registered layout
+whose attributes are, in this order, `ZPL_MODE`, `ZPL_SIZE`, `ZPL_GEN`, `ZPL_UID`, `ZPL_GID`,
+`ZPL_PARENT`, `ZPL_FLAGS`, `ZPL_ATIME`, `ZPL_MTIME`, `ZPL_CTIME`, `ZPL_CRTIME` (16 bytes each),
+`ZPL_LINKS`, `ZPL_DACL_COUNT` and the variable-length `ZPL_DACL_ACES`: an 8-byte header (magic
+`0x2F505A`, layout number | `1 << 10`, then the ACE length 24), the attributes each padded to
+8 bytes, and a bonus length of 320 (the whole bonus area of a 512-byte dnode with one block
+pointer). The first seven sit at fixed offsets after the header (mode 0, size 8, generation 16,
+uid 24, gid 32, parent 40, flags 48). Removing a name removes its directory entry; a file whose
+last link goes is freed with its spill block, its extended-attribute directory (`zp_xattr` /
+`ZPL_XATTR`) and an external ACL object (`znode_phys_t` offset 176); a directory goes with
+everything beneath it and its parent loses a link.
+
+### Intent log
+
+An object set's `zil_header_t` sits at 0x200: claim txg, replay sequence, the first log block
+pointer at 0x210, then claimed block and record sequences and flags. A clean export leaves that
+pointer naming an allocated block that was never written. A log block was written when its
+embedded checksum holds: for checksum 9 (`zilog2`) the block starts with `zil_chain_t` (pad,
+next block pointer, `nused` at 136, then the `zio_eck_t` at 144: magic `0x0210DA7AB10C7A11` and
+four checksum words) and Fletcher-4 runs over `nused` rounded up to 4 KiB; for checksum 5
+(`zilog`) the `zio_eck_t` is the block's last 40 bytes and Fletcher-2 runs over the whole block.
+Either way the checksum words are replaced by the block pointer's checksum (the verifier) while
+summing. A written block holds records still to be replayed, so such a dataset is not edited.
 
 ## RAID-Z
 
