@@ -38,7 +38,8 @@ internal static class SevenZipOracle {
 
   /// <summary>Whether <paramref name="codec"/> is one only 7-Zip-zstd reads.</summary>
   public static bool NeedsZstd(FileFormat.SevenZip.SevenZipCodec codec)
-    => codec is FileFormat.SevenZip.SevenZipCodec.Zstd or FileFormat.SevenZip.SevenZipCodec.Brotli or FileFormat.SevenZip.SevenZipCodec.Lz4;
+    => codec is FileFormat.SevenZip.SevenZipCodec.Zstd or FileFormat.SevenZip.SevenZipCodec.Brotli or FileFormat.SevenZip.SevenZipCodec.Lz4
+      or FileFormat.SevenZip.SevenZipCodec.Lz5;
 
   /// <summary>The oracle that reads <paramref name="codec"/>: 7-Zip, or 7-Zip-zstd for its own coders.</summary>
   public static string RequireFor(FileFormat.SevenZip.SevenZipCodec codec) => NeedsZstd(codec) ? RequireZstd() : Require();

@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using Compression.Core.Checksums;
 using Compression.Core.Dictionary.Brotli;
 using Compression.Core.Dictionary.Lz4;
+using Compression.Core.Dictionary.Lz5;
 using Compression.Core.Streams;
 using FileFormat.Brotli;
 using FileFormat.Lz4;
@@ -10,7 +11,7 @@ using FileFormat.Zstd;
 namespace FileFormat.SevenZip;
 
 /// <summary>
-/// The coders 7-Zip-zstd registers under 0x04F711xx — Zstandard, Brotli and LZ4 — in both
+/// The coders 7-Zip-zstd registers under 0x04F711xx — Zstandard, Brotli, LZ4 and LZ5 — in both
 /// directions, streamed: memory stays bounded by one chunk whatever the size of the block.
 /// </summary>
 /// <remarks>
@@ -29,10 +30,13 @@ namespace FileFormat.SevenZip;
 ///   with a 12-byte skippable frame — UInt32 0x184D2A50, UInt32 4, UInt32 compressed size — followed by
 ///   standard LZ4 frames; single-threaded mode writes the standard LZ4 frames bare. Properties: 5
 ///   bytes — 1, 10 (the library version), the level, 0, 0.</description></item>
+///   <item><description>LZ5 (1.5): every chunk of at most 4 MiB behind the same 12-byte skippable
+///   frame, single- and multi-threaded alike, holding one LZ5 frame. Properties: 5 bytes — 1, 5 (the
+///   library version), the level (1-15), 0, 0.</description></item>
 /// </list>
 /// <para>The writer produces 7-Zip-zstd's own layouts: Zstandard frames of at most
 /// <see cref="ZstdFrameSize"/> bytes, the Brotli chunk framing, and the multi-threaded LZ4 chunk
-/// framing (one LZ4 frame per chunk).</para>
+/// framing (one LZ4 frame per chunk), and the same framing for LZ5.</para>
 /// </remarks>
 internal static class SevenZipZstdFamilyCoders {
   /// <summary>The level 7-Zip-zstd writes when none is given.</summary>
@@ -55,6 +59,7 @@ internal static class SevenZipZstdFamilyCoders {
     SevenZipCodec.Zstd => [1, 5, (byte)ClampLevel(codec, level), 0, 0],
     SevenZipCodec.Brotli => [1, 0, (byte)ClampLevel(codec, level)],
     SevenZipCodec.Lz4 => [1, 10, (byte)ClampLevel(codec, level), 0, 0],
+    SevenZipCodec.Lz5 => [1, 5, (byte)ClampLevel(codec, level), 0, 0],
     _ => throw new ArgumentOutOfRangeException(nameof(codec)),
   };
 
@@ -63,13 +68,15 @@ internal static class SevenZipZstdFamilyCoders {
     SevenZipCodec.Zstd => SevenZipConstants.CodecZstd.ToArray(),
     SevenZipCodec.Brotli => SevenZipConstants.CodecBrotli.ToArray(),
     SevenZipCodec.Lz4 => SevenZipConstants.CodecLz4.ToArray(),
+    SevenZipCodec.Lz5 => SevenZipConstants.CodecLz5.ToArray(),
     _ => throw new ArgumentOutOfRangeException(nameof(codec)),
   };
 
-  /// <summary>7-Zip-zstd's level range per method: Zstandard 1-22, Brotli 0-11, LZ4 1-12.</summary>
+  /// <summary>7-Zip-zstd's level range per method: Zstandard 1-22, Brotli 0-11, LZ4 1-12, LZ5 1-15.</summary>
   public static int ClampLevel(SevenZipCodec codec, int level) => codec switch {
     SevenZipCodec.Brotli => Math.Clamp(level, 0, 11),
     SevenZipCodec.Lz4 => Math.Clamp(level, 1, 12),
+    SevenZipCodec.Lz5 => Math.Clamp(level, 1, 15),
     _ => Math.Clamp(level, 1, 22),
   };
 
@@ -100,25 +107,38 @@ internal static class SevenZipZstdFamilyCoders {
       }
       case SevenZipCodec.Lz4: {
         var tier = level switch { < 3 => Lz4CompressionLevel.Fast, < 9 => Lz4CompressionLevel.Hc, _ => Lz4CompressionLevel.Max };
-        using var frame = new MemoryStream();
-        var header = new byte[Lz4HeaderSize];
-        EncodeChunks(input, Lz4ChunkSize, chunk => {
-          frame.SetLength(0);
-          new Lz4FrameWriter(frame, Lz4Constants.MaxBlockSize, level: tier).Write(chunk);
-          BinaryPrimitives.WriteUInt32LittleEndian(header, SevenZipConstants.MtSkippableFrameMagic);
-          BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(4), 4);
-          BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(8), (uint)frame.Length);
-          output.Write(header);
-          output.Write(frame.GetBuffer(), 0, (int)frame.Length);
-        });
+        EncodeFramedChunks(input, output, (chunk, frame) => new Lz4FrameWriter(frame, Lz4Constants.MaxBlockSize, level: tier).Write(chunk));
         break;
       }
+      case SevenZipCodec.Lz5:
+        EncodeFramedChunks(input, output, Lz5Frame.Write);
+        break;
       default:
         throw new ArgumentOutOfRangeException(nameof(codec));
     }
   }
 
   private delegate void ChunkAction(ReadOnlySpan<byte> chunk);
+
+  private delegate void FrameWriter(ReadOnlySpan<byte> chunk, Stream frame);
+
+  /// <summary>
+  /// 7-Zip-zstd's 12-byte chunk framing: every chunk of at most <see cref="Lz4ChunkSize"/> bytes
+  /// encoded by <paramref name="write"/> behind a skippable frame (magic, 4, packed size).
+  /// </summary>
+  private static void EncodeFramedChunks(Stream input, Stream output, FrameWriter write) {
+    using var frame = new MemoryStream();
+    var header = new byte[Lz4HeaderSize];
+    EncodeChunks(input, Lz4ChunkSize, chunk => {
+      frame.SetLength(0);
+      write(chunk, frame);
+      BinaryPrimitives.WriteUInt32LittleEndian(header, SevenZipConstants.MtSkippableFrameMagic);
+      BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(4), 4);
+      BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(8), (uint)frame.Length);
+      output.Write(header);
+      output.Write(frame.GetBuffer(), 0, (int)frame.Length);
+    });
+  }
 
   /// <summary>Hands <paramref name="input"/> to <paramref name="action"/> in full chunks of <paramref name="size"/> bytes and one final shorter one.</summary>
   private static void EncodeChunks(Stream input, int size, ChunkAction action) {
@@ -174,11 +194,16 @@ internal static class SevenZipZstdFamilyCoders {
   /// <summary>A stream of the LZ4 coder's output over its packed stream, one block in memory at a time.</summary>
   public static Stream OpenLz4(Stream packed) => new Lz4FramesReadStream(packed);
 
+  /// <summary>A stream of the LZ5 coder's output over its packed stream, one chunk in memory at a time.</summary>
+  public static Stream OpenLz5(Stream packed) => new FramedChunkReadStream(packed, "LZ5", Lz5Frame.Decode);
+
   public static byte[] DecodeZstd(byte[] data) => ReadAll(OpenZstd(new MemoryStream(data, writable: false)));
 
   public static byte[] DecodeBrotli(byte[] data) => ReadAll(OpenBrotli(new MemoryStream(data, writable: false)));
 
   public static byte[] DecodeLz4(byte[] data) => ReadAll(OpenLz4(new MemoryStream(data, writable: false)));
+
+  public static byte[] DecodeLz5(byte[] data) => ReadAll(OpenLz5(new MemoryStream(data, writable: false)));
 
   private static byte[] ReadAll(Stream stream) {
     using (stream) {
@@ -237,6 +262,43 @@ internal static class SevenZipZstdFamilyCoders {
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
     public override void SetLength(long value) => throw new NotSupportedException();
     public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+  }
+
+  private delegate void FrameDecoder(ReadOnlySpan<byte> frames, Stream output);
+
+  /// <summary>
+  /// Chunks behind 7-Zip-zstd's 12-byte skippable-frame headers, each decoded whole by
+  /// <paramref name="decode"/>; frames without such headers are decoded together.
+  /// </summary>
+  private sealed class FramedChunkReadStream(Stream input, string name, FrameDecoder decode) : ChunkReadStream {
+    private readonly byte[] _header = new byte[Lz4HeaderSize];
+    private readonly MemoryStream _output = new();
+
+    protected override ArraySegment<byte>? NextChunk() {
+      while (true) {
+        var n = input.ReadAtLeast(this._header, Lz4HeaderSize, throwOnEndOfStream: false);
+        if (n == 0)
+          return null;
+        byte[] packed;
+        if (n == Lz4HeaderSize && IsSkippable(this._header, 4)) {
+          var size = BinaryPrimitives.ReadUInt32LittleEndian(this._header.AsSpan(8));
+          if (size > Array.MaxLength)
+            throw new InvalidDataException($"7z {name}: chunk overruns the packed stream.");
+          packed = new byte[size];
+          if (input.ReadAtLeast(packed, packed.Length, throwOnEndOfStream: false) < packed.Length)
+            throw new InvalidDataException($"7z {name}: chunk overruns the packed stream.");
+        } else {
+          using var all = new MemoryStream();
+          all.Write(this._header, 0, n);
+          input.CopyTo(all);
+          packed = all.ToArray();
+        }
+        this._output.SetLength(0);
+        decode(packed, this._output);
+        if (this._output.Length > 0)
+          return new ArraySegment<byte>(this._output.GetBuffer(), 0, (int)this._output.Length);
+      }
+    }
   }
 
   /// <summary>
