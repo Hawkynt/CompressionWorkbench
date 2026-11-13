@@ -24,7 +24,8 @@ internal static class MutableArchiveMountSession {
       IFormatDescriptor descriptor,
       Stream source,
       string? password) {
-    var basic = FilesystemDriverDerivation.Probe(descriptor, source, password);
+    var basic = FilesystemDriverDerivation.Probe(descriptor, source, password,
+      preserveFileIdentity: source is FileStream);
     if (!basic.CanMount || !Eligible(descriptor, password))
       return basic;
 
