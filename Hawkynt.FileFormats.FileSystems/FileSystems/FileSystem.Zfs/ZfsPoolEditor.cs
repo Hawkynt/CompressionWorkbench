@@ -4,7 +4,7 @@ using System.Text;
 namespace FileSystem.Zfs;
 
 /// <summary>
-/// Adds and removes files in an existing single-device pool of version 28, the way a
+/// Adds and removes files in an existing pool of version 28 (one device, a mirror or a RAID-Z), the way a
 /// transaction group of OpenZFS would (<c>docs/ZFS-ON-DISK.md</c>, "Editing a pool"): every
 /// changed block is written anew elsewhere (copy-on-write) up to a new MOS, the blocks it
 /// replaces go back to the space maps, the dataset, directory and user accounting follow,
@@ -14,7 +14,7 @@ namespace FileSystem.Zfs;
 /// The edit is planned completely in memory before a byte is written, so any refusal leaves the
 /// image untouched; new blocks are written first and the uberblocks last. Space freed by the edit
 /// is not reused by the same edit, so the previous uberblocks still name intact trees. Refused:
-/// feature-flag pools, mirrors, RAID-Z and several top-level vdevs, pool checkpoints, freeing a
+/// feature-flag pools, degraded pools and several top-level vdevs, pool checkpoints, freeing a
 /// block that a snapshot still holds, gang and deduplicated blocks, an unreplayed intent log,
 /// normalised or case-insensitive filesystems, and datasets with a refreservation.
 /// </remarks>
@@ -44,10 +44,23 @@ internal static class ZfsPoolEditor {
   /// <exception cref="ArgumentException">A path is unusable, or a file and a directory would share it.</exception>
   public static void Edit(Stream device, IReadOnlyList<Addition> additions, IReadOnlyList<string> removals) {
     ArgumentNullException.ThrowIfNull(device);
+    Edit([device], additions, removals);
+  }
+
+  /// <summary>
+  /// Applies the edit to a pool spread over <paramref name="devices"/>: a single device, every
+  /// device of a mirror, or every device of a RAID-Z (in any order; none may be missing).
+  /// </summary>
+  public static void Edit(IReadOnlyList<Stream> devices, IReadOnlyList<Addition> additions, IReadOnlyList<string> removals) {
+    ArgumentNullException.ThrowIfNull(devices);
     ArgumentNullException.ThrowIfNull(additions);
     ArgumentNullException.ThrowIfNull(removals);
-    if (!device.CanSeek || !device.CanWrite || !device.CanRead)
-      throw new NotSupportedException("ZFS: editing needs a readable, writable, seekable device image.");
+    if (devices.Count == 0) throw new ArgumentException("ZFS: no device given.", nameof(devices));
+    foreach (var device in devices) {
+      ArgumentNullException.ThrowIfNull(device);
+      if (!device.CanSeek || !device.CanWrite || !device.CanRead)
+        throw new NotSupportedException("ZFS: editing needs readable, writable, seekable device images.");
+    }
     if (additions.Count == 0 && removals.Count == 0) return;
 
     // the last addition of a path wins
@@ -57,9 +70,11 @@ internal static class ZfsPoolEditor {
     var now = DateTime.UtcNow;
 
     Commit commit;
-    device.Position = 0;
-    using (var pool = new ZfsPool([device], leaveOpen: true)) {
-      var state = new PoolState(pool, device);
+    IReadOnlyList<Stream> children;
+    foreach (var device in devices) device.Position = 0;
+    using (var pool = new ZfsPool(devices, leaveOpen: true)) {
+      var state = new PoolState(pool, devices);
+      children = state.Children;
       var guess = new Dictionary<int, int>();
       for (var attempt = 0; ; ++attempt) {
         if (attempt == MaxAttempts)
@@ -72,7 +87,7 @@ internal static class ZfsPoolEditor {
         break;
       }
     }
-    commit.WriteTo(device);
+    commit.WriteTo(children);
   }
 
   private static string Normalize(string path) => (path ?? "").Replace('\\', '/').Trim('/');
@@ -112,20 +127,37 @@ internal static class ZfsPoolEditor {
     public readonly byte[] MosRoot;
     public readonly long DeviceLength;
     public readonly int[] AllocationOrder;
+    /// <summary>The leaf devices in the order of the top-level vdev's children.</summary>
+    public readonly Stream[] Children;
+    /// <summary>RAID-Z parity; 0 for a plain device or a mirror.</summary>
+    public readonly int Parity;
+    public readonly bool IsMirror;
+    /// <summary>Charge of one allocated 512-byte unit (512 unless RAID-Z).</summary>
+    public readonly long DeflateRatio = 512;
+
+    public long AllocatedSize(int size) => this.Parity > 0
+      ? ZfsRaidzVdev.AllocatedSize(size, this.Children.Length, this.Parity, this.Ashift)
+      : Align(size, 1L << this.Ashift);
+
+    public long Charged(long allocated) => (allocated >> ZfsConstants.SectorShift) * this.DeflateRatio;
     public readonly List<(string Path, ulong Dir, ulong Head)> Datasets = [];
 
-    public PoolState(ZfsPool pool, Stream device) {
+    public PoolState(ZfsPool pool, IReadOnlyList<Stream> devices) {
       this.Pool = pool;
       if (pool.Version != 28)
         throw new NotSupportedException($"ZFS: only pool version 28 is edited; this pool is version {pool.Version}.");
       if (pool.NewestUberblockTxg != pool.Txg)
         throw new NotSupportedException("ZFS: the newest uberblock does not lead to a readable pool; it is not edited.");
       if (pool.VdevChildren != 1 || pool.TopLevelVdevs.Count != 1)
-        throw new NotSupportedException("ZFS: only single-device pools are edited.");
+        throw new NotSupportedException("ZFS: pools of several top-level vdevs are not edited.");
       var config = pool.Config;
       var tree = config.List("vdev_tree") ?? throw new InvalidDataException("ZFS: the label has no vdev tree.");
-      if (tree.String("type") is not ("disk" or "file") || tree.Lists("children").Length > 0)
-        throw new NotSupportedException($"ZFS: a '{tree.String("type")}' top-level vdev is not edited; only plain devices.");
+      this.Children = MapChildren(tree, devices);
+      this.IsMirror = tree.String("type") == "mirror";
+      if (tree.String("type") == "raidz") {
+        this.Parity = (int)(tree.UInt64("nparity") ?? 1);
+        this.DeflateRatio = ZfsRaidzVdev.DeflateRatio(this.Children.Length, this.Parity, (int)(tree.UInt64("ashift") ?? 9));
+      }
       if ((config.List("features_for_read")?.Pairs.Count ?? 0) > 0)
         throw new NotSupportedException("ZFS: pools with features are not edited.");
 
@@ -137,13 +169,14 @@ internal static class ZfsPoolEditor {
       if (this.Ashift is < 9 or > 16 || this.MetaslabShift is < 16 or > 40)
         throw new InvalidDataException("ZFS: the vdev geometry is implausible.");
       this.MetaslabCount = (int)(asize >> this.MetaslabShift);
-      this.DeviceLength = device.Length;
-      if (ZfsConstants.DataStart + ((long)this.MetaslabCount << this.MetaslabShift) > this.DeviceLength)
-        throw new InvalidDataException("ZFS: the metaslabs run past the device.");
+      this.DeviceLength = this.Children.Min(c => c.Length);
+      var perDevice = ((long)this.MetaslabCount << this.MetaslabShift) / (this.Parity > 0 ? this.Children.Length : 1);
+      if (ZfsConstants.DataStart + perDevice > this.DeviceLength)
+        throw new InvalidDataException("ZFS: the metaslabs run past the devices.");
 
       // the active uberblock, as bytes, and the MOS it names
       this.SlotSize = 1 << Math.Clamp(this.Ashift, ZfsConstants.MinUberblockShift, ZfsConstants.MaxUberblockShift);
-      this.Uberblock = FindUberblock(device, pool.Txg, this.SlotSize)
+      this.Uberblock = FindUberblock(this.Children[0], pool.Txg, this.SlotSize)
         ?? throw new InvalidDataException("ZFS: the active uberblock was not found again.");
       if (this.Uberblock.Length >= 0xD0 && U64(this.Uberblock, 0xC8) != 0)
         throw new NotSupportedException("ZFS: the pool has a checkpoint; it is not edited.");
@@ -219,6 +252,39 @@ internal static class ZfsPoolEditor {
         if (child.Name.StartsWith('$') || child.Name.Contains('%')) continue;
         this.AddDatasets(child.Value, path.Length == 0 ? child.Name : path + "/" + child.Name, depth + 1);
       }
+    }
+
+    /// <summary>
+    /// The supplied devices in the order of the top-level vdev's children, matched by the
+    /// <c>guid</c> in each device's own label: a plain device, or every child of a mirror or RAID-Z.
+    /// </summary>
+    private static Stream[] MapChildren(XdrNvList tree, IReadOnlyList<Stream> devices) {
+      var type = tree.String("type");
+      var byGuid = new Dictionary<ulong, Stream>();
+      foreach (var device in devices) {
+        var label = new byte[ZfsConstants.NvListSize];
+        device.Position = ZfsConstants.NvListOffset;
+        device.ReadExactly(label);
+        var guid = XdrNvList.Decode(label).UInt64("guid") ?? throw new InvalidDataException("ZFS: a device label has no guid.");
+        if (!byGuid.TryAdd(guid, device)) throw new ArgumentException("ZFS: the same device was given twice.");
+      }
+      if (type is "disk" or "file") {
+        if (tree.Lists("children").Length > 0 || devices.Count != 1)
+          throw new NotSupportedException("ZFS: a single-device pool is edited through its one device.");
+        return [devices[0]];
+      }
+      if (type is not ("mirror" or "raidz"))
+        throw new NotSupportedException($"ZFS: a '{type}' top-level vdev is not edited; plain devices, mirrors and RAID-Z are.");
+      var children = tree.Lists("children");
+      if (children.Any(c => c.String("type") is not ("disk" or "file")))
+        throw new NotSupportedException("ZFS: a mirror or RAID-Z with nested or replacing children is not edited.");
+      var ordered = new Stream[children.Length];
+      for (var i = 0; i < children.Length; ++i)
+        ordered[i] = byGuid.TryGetValue(children[i].UInt64("guid") ?? 0, out var s) ? s
+          : throw new NotSupportedException($"ZFS: device {i} of the {type} is missing; a degraded pool is not edited.");
+      if (devices.Count != children.Length)
+        throw new ArgumentException("ZFS: a device was given that the pool does not have.");
+      return ordered;
     }
 
     private static byte[]? FindUberblock(Stream device, ulong txg, int slotSize) {
@@ -379,22 +445,22 @@ internal static class ZfsPoolEditor {
     public required NewBlock[] Blocks;
   }
 
-  /// <summary>The bytes to write: blocks first, then the uberblock in every label.</summary>
+  /// <summary>The bytes to write, by device: blocks first, then the uberblock in every label.</summary>
   private sealed class Commit {
-    public readonly List<(long At, byte[] Data)> Blocks = [];
-    public readonly List<(long At, byte[] Data)> Uberblocks = [];
+    public readonly List<(int Device, long At, byte[] Data)> Blocks = [];
+    public readonly List<(int Device, long At, byte[] Data)> Uberblocks = [];
 
-    public void WriteTo(Stream device) {
-      foreach (var (at, data) in this.Blocks) {
-        device.Position = at;
-        device.Write(data);
+    public void WriteTo(IReadOnlyList<Stream> devices) {
+      foreach (var (device, at, data) in this.Blocks) {
+        devices[device].Position = at;
+        devices[device].Write(data);
       }
-      device.Flush();
-      foreach (var (at, data) in this.Uberblocks) {
-        device.Position = at;
-        device.Write(data);
+      foreach (var device in devices) device.Flush();
+      foreach (var (device, at, data) in this.Uberblocks) {
+        devices[device].Position = at;
+        devices[device].Write(data);
       }
-      device.Flush();
+      foreach (var device in devices) device.Flush();
     }
   }
 
@@ -449,7 +515,7 @@ internal static class ZfsPoolEditor {
     }
 
     private NewBlock AllocBlock(Os os, Dnode? d, int size, byte type, int level, int logicalSize = 0, byte compression = ZfsConstants.CompressOff) {
-      var allocated = Align(size, 1L << this._s.Ashift);
+      var allocated = this._s.AllocatedSize(size);
       var logical = logicalSize == 0 ? size : logicalSize;
       var block = new NewBlock {
         Offset = this.Allocate(allocated), Size = size, LogicalSize = logical, Compression = compression,
@@ -457,10 +523,10 @@ internal static class ZfsPoolEditor {
       };
       this._blocks.Add(block);
       var metadata = level > 0 || type != OtPlainFile;
-      os.Used += allocated;
+      os.Used += this._s.Charged(allocated);
       os.Compressed += size;
       os.Uncompressed += metadata ? size : logical;
-      if (d != null) d.Used += allocated;
+      if (d != null) d.Used += this._s.Charged(allocated);
       return block;
     }
 
@@ -478,7 +544,7 @@ internal static class ZfsPoolEditor {
         if (dva.Vdev != 0) throw new InvalidDataException("ZFS: a block names a vdev the pool does not have.");
         var size = (long)dva.AllocatedSectors << ZfsConstants.SectorShift;
         this.Free(dva.Offset, size);
-        total += size;
+        total += this._s.Charged(size);
       }
       os.Used -= total;
       os.Compressed -= bp.PhysicalSize;
@@ -1384,20 +1450,34 @@ internal static class ZfsPoolEditor {
       var mosRoot = this.SealObjset(mos);
 
       var commit = new Commit();
+      var devices = this._s.Children.Length;
       foreach (var block in this._blocks) {
         if (block.Pointer == null) throw new InvalidOperationException("ZFS: a block was planned but never placed in a tree.");
-        commit.Blocks.Add((ZfsConstants.DataStart + block.Offset, block.Data!));
+        if (this._s.Parity > 0) {
+          // RAID-Z: the block's data and parity columns, each on its device
+          var columns = ZfsRaidzVdev.Map(block.Offset, block.Size, devices, this._s.Parity, this._s.Ashift);
+          var encoded = ZfsRaidzVdev.Encode(block.Data!, columns, this._s.Parity);
+          for (var c = 0; c < columns.Length; ++c)
+            if (columns[c].Size > 0)
+              commit.Blocks.Add((columns[c].Child, ZfsConstants.DataStart + columns[c].Offset, encoded[c]));
+        } else {
+          // a plain device, or every side of a mirror
+          for (var d = 0; d < devices; ++d)
+            commit.Blocks.Add((d, ZfsConstants.DataStart + block.Offset, block.Data!));
+        }
       }
-      var aligned = this._s.DeviceLength / ZfsConstants.LabelSize * ZfsConstants.LabelSize;
       var slots = ZfsConstants.UberblockRingSize / this._s.SlotSize;
-      foreach (var labelAt in PoolState.LabelOffsets(aligned)) {
-        var ub = this._s.Uberblock.ToArray();
-        W64(ub, 0x10, this.Txg);
-        W64(ub, 0x20, (ulong)new DateTimeOffset(this._now).ToUnixTimeSeconds());
-        mosRoot.CopyTo(ub, 0x28);
-        var at = labelAt + ZfsConstants.UberblockRingOffset + (long)(this.Txg % (ulong)slots) * this._s.SlotSize;
-        ZfsWriter.Seal(ub, at);
-        commit.Uberblocks.Add((at, ub));
+      for (var d = 0; d < devices; ++d) {
+        var aligned = this._s.Children[d].Length / ZfsConstants.LabelSize * ZfsConstants.LabelSize;
+        foreach (var labelAt in PoolState.LabelOffsets(aligned)) {
+          var ub = this._s.Uberblock.ToArray();
+          W64(ub, 0x10, this.Txg);
+          W64(ub, 0x20, (ulong)new DateTimeOffset(this._now).ToUnixTimeSeconds());
+          mosRoot.CopyTo(ub, 0x28);
+          var at = labelAt + ZfsConstants.UberblockRingOffset + (long)(this.Txg % (ulong)slots) * this._s.SlotSize;
+          ZfsWriter.Seal(ub, at);
+          commit.Uberblocks.Add((d, at, ub));
+        }
       }
       return commit;
     }
