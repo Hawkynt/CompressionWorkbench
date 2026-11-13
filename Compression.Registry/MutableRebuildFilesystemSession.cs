@@ -160,6 +160,14 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
     Stream candidate,
     IReadOnlyList<SpoolingRebuildFilesystemEntry> entries);
 
+  /// <summary>
+  /// Optional explicitly qualified direct mutation publisher. The delegate
+  /// MUST journal, validate and restore the entire source on failure.
+  /// </summary>
+  public delegate void CommitImageInPlace(
+    Stream image,
+    IReadOnlyList<SpoolingRebuildFilesystemEntry> entries);
+
   private sealed class Node {
     public required FilesystemNodeId Id;
     public required FilesystemNodeKind Kind;
@@ -179,6 +187,7 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
   private readonly ValidateImage? _validate;
   private RebuildImageFromStreams? _streamRebuild;
   private ValidateImageFromStreams? _streamValidate;
+  private CommitImageInPlace? _streamInPlace;
   private readonly Dictionary<FilesystemNodeId, Node> _nodes = [];
   private readonly Dictionary<FilesystemNodeId, Dictionary<string, Node>> _children = [];
   private readonly StringComparer _nameComparer;
@@ -251,7 +260,8 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
       IEnumerable<SpoolingRebuildFilesystemEntry> entries,
       RebuildImageFromStreams rebuild,
       ValidateImageFromStreams? validate = null,
-      bool leaveOpen = true) {
+      bool leaveOpen = true,
+      CommitImageInPlace? journalledInPlaceCommit = null) {
     ArgumentNullException.ThrowIfNull(entries);
     ArgumentNullException.ThrowIfNull(rebuild);
 
@@ -296,6 +306,7 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
         }
         filesystem._streamRebuild = rebuild;
         filesystem._streamValidate = validate;
+        filesystem._streamInPlace = journalledInPlaceCommit;
       }
       return filesystem;
     } catch {
@@ -482,9 +493,12 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
 
       if (_streamRebuild is { } streaming) {
         var staged = CaptureLinkedStreamingEntries();
-        WholeImageRebuildCommitter.Replace(_image,
-          candidate => streaming(candidate, staged),
-          _streamValidate is null ? null : candidate => _streamValidate(candidate, staged));
+        if (_streamInPlace is { } journalled)
+          journalled(_image, staged);
+        else
+          WholeImageRebuildCommitter.Replace(_image,
+            candidate => streaming(candidate, staged),
+            _streamValidate is null ? null : candidate => _streamValidate(candidate, staged));
       } else {
         var snapshot = CaptureLinkedEntries();
         WholeImageRebuildCommitter.Replace(
