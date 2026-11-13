@@ -52,9 +52,12 @@ public static class MountNamespaceResolver {
         var archiveProfile = MutableArchiveMountSession.Probe(descriptor, source, password);
         return new(
           archiveProfile,
-          [$"archive:{descriptor.Id}", archiveProfile.CanMountWritable
-            ? "namespace:qualified-write-back"
-            : "namespace:derived-read-only"]);
+          [$"archive:{descriptor.Id}",
+            !archiveProfile.CanMountWritable
+              ? "namespace:derived-read-only"
+              : archiveProfile.ProfileName == "qualified WORM copy rebuild"
+                ? "namespace:qualified-worm-rebuild"
+                : "namespace:qualified-write-back"]);
       }
 
       return new(
