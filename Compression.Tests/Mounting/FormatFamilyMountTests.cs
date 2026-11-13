@@ -93,6 +93,11 @@ public sealed class FormatFamilyMountTests {
           handle.Write(0, "journalled"u8);
         mount.DeleteFile(mount.RootNodeId, "removed.txt");
         mount.Flush();
+
+        mount.Rename(mount.RootNodeId, "created.txt", mount.RootNodeId, "renamed.txt", replace: false);
+        using (var handle = mount.OpenFile(node, FileAccess.ReadWrite))
+          handle.Write(0, "J"u8);
+        mount.Flush();
       }
 
       Assert.That(File.Exists(JournaledArchiveWriteback.JournalPath(path)), Is.False);
@@ -101,7 +106,8 @@ public sealed class FormatFamilyMountTests {
         "Zip", reopened, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
       Assert.Multiple(() => {
         Assert.That(filesystem.Lookup(filesystem.RootNodeId, "removed.txt"), Is.Null);
-        Assert.That(ReadAll(filesystem, "created.txt"), Is.EqualTo("journalled"u8.ToArray()));
+        Assert.That(filesystem.Lookup(filesystem.RootNodeId, "created.txt"), Is.Null);
+        Assert.That(ReadAll(filesystem, "renamed.txt"), Is.EqualTo("Journalled"u8.ToArray()));
         Assert.That(ReadAll(filesystem, "kept.txt"), Is.EqualTo("still here"u8.ToArray()));
       });
     } finally {
