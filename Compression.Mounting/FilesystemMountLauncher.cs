@@ -54,6 +54,10 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
 
     try {
       source = OpenBackingSource(imagePath, requestedPlan.AccessMode);
+      if (source.CanWrite)
+        JournaledArchiveWriteback.RecoverIfRequired(source);
+      else if (File.Exists(JournaledArchiveWriteback.JournalPath(source.Name)))
+        throw new IOException("The source has a pending undo journal; mount it read/write to recover before allowing reads.");
 
       var probe = MountNamespaceResolver.Probe(formatId, source, password, volumeParameters);
       var resolvedPlan = this._backends.ResolveFilesystem(
