@@ -68,7 +68,7 @@ Measured with dmsdos as a black box: volumes were built with candidate layouts a
   | 4 | 4·*n* | one entry per further piece: 16-bit little-endian sector, sector count − 1, one byte that was 0 in every accepted volume |
 
 * The compressed payload (chosen by its first word as for any Stacker cluster; SD-3 and SD-4 were
-  verified, a DS payload was not read by dmsdos in this position) starts right after the entries, at byte 4 + 4·*n* of the first piece, and continues through the
+  verified; dmsdos did not read a DS payload in this position, and `GenuineStackerReader` refuses one) starts right after the entries, at byte 4 + 4·*n* of the first piece, and continues through the
   pieces in list order. A stored payload is not possible: dmsdos decompresses fragmented clusters.
 * Accepted: one to three further pieces, first pieces of one and two sectors, SD-3 and SD-4 payloads.
   Not established: the meaning of the entries' fourth byte (perhaps the sector's high bits on volumes

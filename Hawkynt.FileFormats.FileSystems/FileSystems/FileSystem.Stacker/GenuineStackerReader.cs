@@ -249,6 +249,10 @@ public sealed class GenuineStackerReader : IDisposable {
           }
           case ClusterKind.Fragmented: {
             var payload = this.FragmentedPayload(cluster, phys, sectors);
+            // Only SD-3/SD-4 payloads were seen read from a fragmented cluster; dmsdos did not read a
+            // DS one there, so it is refused rather than decoded on our word alone.
+            if (payload.Length >= 2 && (payload[0] | payload[1] << 8) == 0x5344)
+              throw new NotSupportedException($"Stacker (genuine): fragmented cluster {cluster} of '{entry.Name}' holds a DS payload; reading one from a fragmented cluster has not been verified.");
             var full = Compression.Core.FileSystems.Cvf.CvfLzCodec.DecompressStacker(payload, payload.Length, clusterBytes);
             Array.Copy(full, 0, output, written, want);
             break;
