@@ -31796,6 +31796,7 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `StuffItWriter` | `StuffItWriter(Stream stream, StuffItCompression compression, bool leaveOpen = false)` | Initializes a new `StuffItWriter` that compresses forks as `compression` asks. |
+| `StuffItWriter` | `StuffItWriter(Stream stream, StuffItCompression compression, string password, string macBinaryName = "Archive.sit", bool leaveOpen = false)` | Initializes a new `StuffItWriter` that encrypts the archive with `password`. The output is then a MacBinary file, named `macBinaryName`, whose resource fork holds the key check. |
 | `StuffItWriter` | `StuffItWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `StuffItWriter`. |
 | `AddDirectory` | `void AddDirectory(string path, DateTime? lastModified = null)` | Adds a folder, which may stay empty; folders named in file paths are created on their own. |
 | `AddFileWithResourceFork` | `void AddFileWithResourceFork(string fileName, byte[] dataFork, byte[] resourceFork, string fileType = "TEXT", string fileCreator = "CWIE", DateTime? lastModified = null)` | Adds a file entry to the archive with both data and resource forks. |

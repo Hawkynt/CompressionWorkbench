@@ -103,11 +103,6 @@ public class StuffIt5EncryptionTests {
     Assert.That(archive.AsSpan().IndexOf("encrypted stuffit fork"u8), Is.EqualTo(-1));
   }
 
-  [Test, Category("Exception")]
-  public void GivenClassicTargetWithPassword_WhenCreating_ThenRefused()
-    => Assert.That(() => new StuffItFormatDescriptor().Create(new MemoryStream(), [new ArchiveInputInfo("a", "a", false, [1])], new FormatCreateOptions { Password = Password }),
-      Throws.InstanceOf<NotSupportedException>());
-
   // ── The Unarchiver ───────────────────────────────────────────────────────
 
   [TestCase(StuffItCompression.Smallest), TestCase(StuffItCompression.Store)]

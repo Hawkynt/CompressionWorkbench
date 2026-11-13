@@ -204,7 +204,8 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// Writes a classic "SIT!" archive, or a StuffIt 5 archive when
   /// <see cref="FormatOptionKeys.TargetCompatibility"/> is <c>StuffIt5</c>. The compression option
   /// selects store, RLE, LZ+Huffman, Arsenic, or the smallest encoding for each fork. A password
-  /// encrypts a StuffIt 5 archive with StuffIt 5's RC4 scheme.
+  /// encrypts a StuffIt 5 archive with StuffIt 5's RC4 scheme, and a classic archive with classic
+  /// StuffIt's scheme, written as a MacBinary file whose resource fork holds the key check.
   /// </remarks>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     if (string.Equals(options.GetString(FormatOptionKeys.TargetCompatibility), StuffIt5, StringComparison.OrdinalIgnoreCase)) {
@@ -215,9 +216,8 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       }
       return;
     }
-    if (!string.IsNullOrEmpty(options.Password))
-      throw new NotSupportedException("Classic StuffIt archives are written unencrypted; choose the StuffIt5 target to encrypt.");
-    using var w = new StuffItWriter(output, CompressionOf(options), leaveOpen: true);
+    // A password makes the classic archive a MacBinary file: its resource fork carries the key check.
+    using var w = new StuffItWriter(output, CompressionOf(options), options.Password, leaveOpen: true);
     foreach (var i in inputs) {
       if (i.IsDirectory) w.AddDirectory(i.ArchiveName);
       else w.AddFile(i.ArchiveName, i.ReadContent());

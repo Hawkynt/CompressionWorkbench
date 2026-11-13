@@ -53,7 +53,7 @@
     </EmbeddedResource>
 
     <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
-    <EmbeddedResource Include="StuffIt\ReferenceVectors\*.sit">
+    <EmbeddedResource Include="StuffIt\ReferenceVectors\*.sit;StuffIt\ReferenceVectors\*.sit.bin">
       <LogicalName>StuffItVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
 
