@@ -60,3 +60,23 @@ ours-encrypted.ace	docs/text.txt	26690	1	3	16	0	eb7f816574fb9684dd93f6b5e22556c6
 ours-encrypted.ace	noise.bin	9000	1	3	16	0	cb97e1734d7e3ca24c73ce70bcd1c1e31a8b61314dcdec94175c1ea5288cb6c3
 ours-encrypted.ace	empty.txt	0	0	0	16	0	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 ours-encrypted.ace	again.txt	26690	1	3	16	0	eb7f816574fb9684dd93f6b5e22556c639cdb67690bb54dce8a52b5cb0378d47
+# ace26-mono8.ace solid=0 comment=''
+ace26-mono8.ace	mono8.wav	30046	2	5	20	0	1958a343bfe676a65ab247830b47179b4b15f37ef0ea0f684ddb4a14e58a08ca
+# ace26-stereo8.ace solid=0 comment=''
+ace26-stereo8.ace	stereo8.wav	40044	2	5	20	0	341201b4b37f663ce6934f6dd90111955dbe73d98e1a632fc693e09f0cbd1223
+# ace26-mono16.ace solid=0 comment=''
+ace26-mono16.ace	mono16.wav	50044	2	5	20	0	f7fcc4e9ee0f3a3b08bcfe936a9db789a69c7e8cf1a63ca013ab617ea7c49683
+# ace26-stereo16.ace solid=0 comment=''
+ace26-stereo16.ace	stereo16.wav	80044	2	5	20	0	7b577d31c3b93d84c0c9ebfbe0c8b76fc71d648d89f2e38a7a50607c6678341b
+# ace26-rgb24.ace solid=0 comment=''
+ace26-rgb24.ace	rgb24.bmp	27414	2	5	20	0	df22d576bd5f6e14bf975a897c15de890c04f989c038f76686b76898ed043e4e
+# ours-media.ace solid=0 comment=''
+ours-media.ace	mono8.wav	30046	2	3	16	0	45dddb726700329f6b60216d07e58e7dedc985d1873d2686e716fff6c90d4cf7
+ours-media.ace	stereo8.wav	40044	2	3	16	0	166ac4a01a38766e4070c740672ba2d27dfaa94a8df03c2611483ca1547989f2
+ours-media.ace	mono16.wav	50044	2	3	16	0	d994caf66a5e99c39283b15cbda518ef6cddf23f8e9188d370774df968ec7ab3
+ours-media.ace	stereo16.wav	80044	2	3	16	0	7a149a25dbaf653feddbecf73fe1b76194fc63e1f7cdfcf4b124a96dbabbb111
+ours-media.ace	gray8.bmp	25558	2	3	16	0	0554ee5aa46a7920e479088c2d2af9d4a644500628ffbcb41405b96cbc44ea08
+ours-media.ace	rgb16.bmp	9414	2	3	16	0	c0d26525a33df93b48d70a12a2cbfa9abed3a9886df952eac16e6d7065c6805e
+ours-media.ace	rgb24.bmp	27414	2	3	16	0	dfaf6b7c9eed9c07d2758b1ae3862c9b4bca4530e2f7587b94e8bf5318c89c85
+ours-media.ace	rgba32.bmp	30774	2	3	16	0	5eb20028d37bb1c19654212d95fdacc1639b2955183927bb5c991c3ee3d54f32
+ours-media.ace	trailer24.bmp	6147	2	3	16	0	42cbdd451421d9e23839b70f0d852e7dd9a5bb07adb3744bcc121570a1a73b84

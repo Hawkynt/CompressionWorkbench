@@ -7390,7 +7390,7 @@ Implements `IDisposable`.
 
 #### `AceWriter`
 
-Writes single-volume ACE archives: stored, ACE 1.0 LZ77 or (with `ace20`) ACE 2.0 blocked members (LZ77 with repeat distances, behind the EXE or DELTA filter where that is smaller), optionally solid and/or Blowfish-encrypted, with directory entries. No comments, adverts or recovery records.
+Writes single-volume ACE archives: stored, ACE 1.0 LZ77 or (with `ace20`) ACE 2.0 blocked members (LZ77 with repeat distances, behind the EXE or DELTA filter, or WAVE files in SOUND and BMP pixel rows in PIC mode, where that is smaller), optionally solid and/or Blowfish-encrypted, with directory entries. No comments, adverts or recovery records.
 
 | Member | Signature | Summary |
 | --- | --- | --- |

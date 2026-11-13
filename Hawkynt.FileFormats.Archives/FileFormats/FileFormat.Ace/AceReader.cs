@@ -319,6 +319,9 @@ public sealed class AceReader : IDisposable {
     pending.Clear();
   }
 
+  /// <summary>The mode instructions of the ACE 2.0 member extracted last, in stream order.</summary>
+  internal IReadOnlyList<int> LastModes => this._decompressor.LastModes;
+
   /// <summary>Returns a member's decompressed bytes, verifying its CRC.</summary>
   public byte[] ExtractEntry(AceEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);

@@ -102,7 +102,13 @@ public sealed class AceDecompressor {
     return output;
   }
 
+  /// <summary>The mode instructions the last ACE 2.0 member switched to, in stream order.</summary>
+  public IReadOnlyList<int> LastModes => this._lastModes;
+
+  private readonly List<int> _lastModes = [];
+
   private byte[] Blocked(ReadOnlyMemory<byte> packed, int size, int dicSize) {
+    this._lastModes.Clear();
     var bs = Bits(packed);
     this._lz77.SetDictionarySize(dicSize);
     this._lz77.Reinit();
@@ -116,6 +122,7 @@ public sealed class AceDecompressor {
     try {
       while (produced < size) {
         if (nextMode != null) {
+          this._lastModes.Add(nextMode.Mode);
           if (mode.Mode != nextMode.Mode) {
             if (nextMode.Mode is >= AceConstants.ModeSound8 and <= AceConstants.ModeSound32B)
               this._sound.Reinit(nextMode.Mode);
