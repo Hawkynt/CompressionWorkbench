@@ -2283,15 +2283,8 @@ public class ExternalFsInteropTests {
   // ═══════════════════════════════════════════════════════════════════
   // DoubleSpace / DriveSpace — DOS-only validation paths
   // ═══════════════════════════════════════════════════════════════════
-  // No Linux apt-installable validator exists. Three potential paths:
-  //   (1) dmsdos — GPL DBLSPACE/DRVSPACE Linux kernel module + userspace
-  //                tool (last release 2001, doesn't build modern out-of-box).
-  //   (2) DOSBox-X + MS-DOS 6.22 — runs the real DBLSPACE.EXE /CHKDSK
-  //                command. Needs a legal MS-DOS 6.22 boot image, supplied
-  //                by the user via env var CWB_MSDOS_BOOT_IMG.
-  //   (3) Build dmsdos from source — practical if a maintained fork exists.
-  //
-  // For now both tests skip cleanly with actionable instructions.
+  // Two oracles: the dmsdos driver (built on demand, below) and the real Microsoft drivers, which
+  // Cvf/MsDosRealDriverTests boots from the owner's MS-DOS 6.22 / 7.1 media under qemu (CWB_MSDOS_*).
 
   [Test, Category("DriverProof")]
   [TestCase(Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored)]
@@ -2326,111 +2319,6 @@ public class ExternalFsInteropTests {
         $"{name} did not read back byte-exact through the dmsdos driver");
     }
   }
-
-  // ── Shared CVF/CHKDSK harness ──────────────────────────────────────
-  //
-  // The DBLSPACE (MS-DOS 6.0/6.2) and DRVSPACE (MS-DOS 6.22+) gates are
-  // structurally identical — only the env var, CVF variant, and driver
-  // filename differ. Both delegate to RunCvfChkdskGate so the harness is
-  // a single source of truth.
-
-  /// <summary>Drives a DBLSPACE.EXE / DRVSPACE.EXE /CHKDSK run inside DOSBox-X
-  /// against a CVF produced by our writer with the given codec. Skips
-  /// cleanly with an actionable hint when any prerequisite is missing.</summary>
-  private void RunCvfChkdskGate(
-    string envVarPrimary,
-    string envVarFallback,
-    Compression.Core.FileSystems.Cvf.CvfLzMethod method,
-    string driverName,
-    string productLabel) {
-    var msdosImg = Environment.GetEnvironmentVariable(envVarPrimary);
-    if (string.IsNullOrEmpty(msdosImg) || !File.Exists(msdosImg))
-      msdosImg = Environment.GetEnvironmentVariable(envVarFallback);
-    if (string.IsNullOrEmpty(msdosImg) || !File.Exists(msdosImg)) {
-      Assert.Ignore(
-        $"Set {envVarPrimary} to a legal {productLabel} boot hard-disk image. " +
-        $"{driverName}.BIN must be on the C: partition. " +
-        "See Compression.Tests/Support/MsDosImageStaging.md for the full " +
-        "build recipe (DOSBox-X imgmake → SETUP → copy out C:).");
-    }
-    if (!DosboxRunner.DosboxXAvailable) {
-      Assert.Ignore(
-        "DOSBox-X not found. Install from https://dosbox-x.com/ (Windows) or " +
-        "via 'sudo apt install -y dosbox-x' (Linux/WSL). DOSBox-X is required " +
-        $"(not classic DOSBox) because only DOSBox-X loads {driverName}.BIN reliably.");
-    }
-
-    var dbl = new GenuineCvfWriter { CompressionMethod = method };
-    dbl.AddFile("HELLO.TXT", "Test from CompressionWorkbench"u8.ToArray());
-    var cvfPath = Path.Combine(this._tmpDir, $"test_{method}.cvf");
-    File.WriteAllBytes(cvfPath, dbl.Build());
-
-    var hostShareDir = this._tmpDir;
-    var guestOutputPath = Path.Combine(hostShareDir, "OUTPUT.TXT");
-    if (File.Exists(guestOutputPath)) File.Delete(guestOutputPath);
-
-    // Both DOS and DOS\\ paths are tried so this harness works against
-    // either an unattended-install image (DBLSPACE.EXE in C:\\DOS) or a
-    // hand-rolled minimal boot floppy (driver in root).
-    var driverExe = $"{driverName}.EXE";
-    var conf = new DosboxConfBuilder()
-      .MountBootImageAsC(msdosImg)
-      .MountHdd(cvfPath, "D")
-      .Autoexec(
-        $"mount e \"{hostShareDir}\"",
-        "C:",
-        $"if exist C:\\DOS\\{driverExe} C:\\DOS\\{driverExe} /CHKDSK D: > E:\\OUTPUT.TXT",
-        $"if exist C:\\{driverExe} C:\\{driverExe} /CHKDSK D: >> E:\\OUTPUT.TXT",
-        "EXIT")
-      .Build();
-
-    var result = DosboxRunner.RunWithConf(conf, guestOutputPath, TimeSpan.FromSeconds(60));
-
-    if (result.ExitCode == DosboxRunner.ExitCode_DosboxMissing)
-      Assert.Ignore("DOSBox-X disappeared between probe and run — re-check installation.");
-    if (result.ExitCode == DosboxRunner.ExitCode_TimedOut) {
-      Assert.Ignore(
-        "DOSBox-X timed out before exiting. The MS-DOS guest may be waiting at " +
-        "an interactive prompt (e.g. 'Press any key'); rebuild your boot image " +
-        "with a non-interactive AUTOEXEC.BAT. Captured stderr: " + result.StdErr.Trim());
-    }
-
-    if (string.IsNullOrWhiteSpace(result.GuestOutput)) {
-      Assert.Ignore(
-        $"DOSBox-X ran but {driverExe} produced no output. Check that " +
-        $"C:\\DOS\\{driverExe} exists in your boot image. " +
-        $"Stdout: {result.StdOut.Trim()} | Stderr: {result.StdErr.Trim()}");
-    }
-
-    Assert.Multiple(() => {
-      Assert.That(result.GuestOutput, Does.Not.Contain("error").IgnoreCase,
-        $"{driverName} /CHKDSK reported error against our CVF:\n{result.GuestOutput}");
-      Assert.That(result.GuestOutput, Does.Not.Contain("invalid").IgnoreCase,
-        $"{driverName} /CHKDSK reported invalid structure in our CVF:\n{result.GuestOutput}");
-    });
-  }
-
-  /// <summary>DBLSPACE gate — MS-DOS 6.0/6.2, DS-0-0 clusters. Env var: <c>CWB_MSDOS_DBLSPACE_BOOT_IMG</c> (or legacy
-  /// <c>CWB_MSDOS_BOOT_IMG</c>). Runs <c>DBLSPACE /CHKDSK D:</c> in DOSBox-X.</summary>
-  [Test]
-  public void DoubleSpace_OurImage_DblspaceChkdsk() =>
-    this.RunCvfChkdskGate(
-      envVarPrimary: "CWB_MSDOS_DBLSPACE_BOOT_IMG",
-      envVarFallback: "CWB_MSDOS_BOOT_IMG",
-      method: Compression.Core.FileSystems.Cvf.CvfLzMethod.Ds,
-      driverName: "DBLSPACE",
-      productLabel: "MS-DOS 6.0/6.2 DoubleSpace");
-
-  /// <summary>DRVSPACE gate — MS-DOS 6.22+, JM-0-0 clusters. Env var: <c>CWB_MSDOS_DRVSPACE_BOOT_IMG</c> (or legacy
-  /// <c>CWB_MSDOS622_BOOT_IMG</c>). Runs <c>DRVSPACE /CHKDSK D:</c> in DOSBox-X.</summary>
-  [Test]
-  public void DriveSpace_OurImage_DrvspaceChkdsk() =>
-    this.RunCvfChkdskGate(
-      envVarPrimary: "CWB_MSDOS_DRVSPACE_BOOT_IMG",
-      envVarFallback: "CWB_MSDOS622_BOOT_IMG",
-      method: Compression.Core.FileSystems.Cvf.CvfLzMethod.Jm,
-      driverName: "DRVSPACE",
-      productLabel: "MS-DOS 6.22 DriveSpace");
 
   // ═══════════════════════════════════════════════════════════════════
   // FAT — FreeDOS chkdsk gate (legal, no proprietary binaries)

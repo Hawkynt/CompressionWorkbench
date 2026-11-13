@@ -14,6 +14,7 @@ alone, with dmsdos run only as a black box; the container layouts (MDFAT, AMAP, 
 | dmsdos (Frank Gockel, Pavel Pisa, Jaroslav Fojtik; GPL), <https://github.com/sandsmark/dmsdos>, master as of 2026-10 | 2 — licence-incompatible | Read as a description of behaviour to write this document; its library is the **black-box oracle** that produced the reference vectors and that reads our output back. No code was taken. |
 | RFC 1974, *PPP Stac LZS Compression Protocol* (and RFC 2395) | 3 — standard | The LZS token grammar SD-3 uses. |
 | dmsdos `doc/dmsdos.doc` | 4 — project documentation | Method names: JM-0-0 *Normal*, JM-0-1 *High*, SQ-0-0 *Ultra* for DriveSpace 3; SD-3 / SD-4 for Stacker 3 / 4. |
+| MS-DOS 6.22 and MS-DOS 7.1 `DRVSPACE.BIN`, booted under qemu from the owner's media | 2 — black-box oracle | Mount and read volumes our codecs filled: 6.22 decodes JM-0-0 clusters and answers DS-0-0 ones with a data error; 7.1 decodes both. 6.22 wrote the checked-in JM volume (`Compression.Tests/Cvf/ReferenceVectors/Volumes/`). |
 | Microsoft KB Q138310 (Plus! `Drvspace.txt`), <https://jeffpar.github.io/kbarchive/kb/138/Q138310/> | 3 — vendor documentation | DriveSpace 3's HiPack and UltraPack formats, chosen per file by Compression Agent |
 
 The constants in the tables below (offset classes, length extensions, run tokens) are copied

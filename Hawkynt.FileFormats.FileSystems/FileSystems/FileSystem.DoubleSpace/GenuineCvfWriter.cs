@@ -16,39 +16,53 @@ namespace FileSystem.DoubleSpace;
 /// </para>
 /// <list type="bullet">
 ///   <item><b>Sector 0</b> — MDBPB: standard BPB (512 B/sector, 16 sec/cluster,
-///     16 reserved, 1 FAT, 512 root entries, 128-sector FAT) plus the
+///     28 reserved, 1 FAT, 512 root entries, 132-sector FAT) plus the
 ///     DoubleSpace geometry substructure (inner-volume base sector @0x27, root
-///     @0x29, first-data @0x2B, MDFAT index offset @0x2D, MDFAT-start-1 @0x24).</item>
-///   <item><b>Sector 130</b> — MDFAT: one little-endian u32 per inner-volume
+///     @0x29, first-data @0x2B, MDFAT index offset @0x2D, MDFAT-start-1 @0x24)
+///     and the size-tier words a driver-created volume carries.</item>
+///   <item><b>Sectors 1–133</b> — BitFAT: one bit per physical sector of the cluster heap.</item>
+///   <item><b>Sector 134</b> — MDFAT: one little-endian u32 per inner-volume
 ///     cluster at <c>(0x24+1)*512 + (0x2D + cluster)*4</c>; physical sector =
-///     <c>(entry &amp; 0x1FFFFF) + 1</c>; stored clusters carry the run-length
-///     flag bits (0xFFC0…&#160;full, 0xC000…&#160;final).</item>
-///   <item><b>Sector 417 (inner base)</b> — a complete FAT12 volume (boot, FAT,
-///     root directory, data) laid out contiguously; clusters are stored
-///     verbatim (no compression), which the driver reads transparently.</item>
+///     <c>(entry &amp; 0x1FFFFF) + 1</c>.</item>
+///   <item><b>Sector 429 (inner base)</b> — the inner FAT12 volume's boot sector, FAT and root
+///     directory; the cluster heap follows two sectors after them.</item>
 /// </list>
-/// The fixed geometry matches a ~557 KB compressed volume; files must fit the
-/// inner FAT12 data area (≈ 69 clusters of 8 KB).
+/// Files must fit the inner FAT12 volume (at most 4080 clusters of 8 KB).
 /// </summary>
 public sealed class GenuineCvfWriter {
 
-  // Container geometry (proven against real MS-DOS 6.22 DRVSPACE images).
+  // Container geometry, as on volumes MS-DOS 6.22's DRVSPACE /CREATE writes.
   private const int Ss = 512;
   private const int Spc = 16;                 // sectors per cluster (8 KB)
-  private const int Resv = 16;                // reserved sectors
-  private const int NumFats = 1;
+  private const int MinResv = 16;             // reserved sectors, at least
+  private const int NumFats = 1;              // the CVF stores one FAT; the inner boot sector shows DOS two
   private const int RootEntries = 512;
   private const int RootSecs = RootEntries * 32 / Ss;          // 32
-  private const int MdfatStartSec = 130;
-  private const int MdfatIdxOff = 9;
   private const int ClusterBytes = Ss * Spc;                   // 8192
 
-  // Geometry sized to the cluster count (lifts the old fixed ~69-cluster cap up
-  // to the inner FAT12 / 21-bit-sector ceiling).
-  private int _fatSize;       // inner FAT12 sectors
+  // The system-area geometry a driver-created volume carries when its maximum size is the smallest
+  // tier (a volume on a host of up to 32 MB): a 132-sector FAT area, the BitFAT in sectors 1..133, the
+  // MDFAT from sector 134 (two sectors per FAT sector plus 31), the inner volume from sector 429. The
+  // MDBPB repeats the tier in 0x2F (FAT sectors / 4), 0x35 / 0x37 and 0x3E (FAT sectors * 2); the
+  // real driver and its checker take them together, so they are written as one set.
+  private const int FatSectors = 132;
+  private const int MdfatStartSec = FatSectors + 2;                       // 134
+  private const int MdfatSectors = FatSectors * 2 + 31;                   // 295
+  private const int InnerBase = MdfatStartSec + MdfatSectors;             // 429
+  private const ushort TierWord2F = FatSectors / 4;                       // 33
+  private const ushort TierWord35 = 20992;
+  private const ushort TierWord37 = 5;
+  private const ushort TierWord3E = FatSectors * 2;                       // 264
+
+  // FAT12 holds at most 4084 clusters; DOS reads a FAT16 beyond that.
+  private const int MaxClusters = 4084;
+
+  private int _fatSize;       // inner FAT sectors (FatSectors; FAT12 entries)
   private int _innerBase;     // res0 / emulated boot block sector
-  private int _rootLog;       // Resv + NumFats*fatSize
-  private int _firstData;     // rootLog + RootSecs
+  private int _resv;          // reserved sectors: at least MinResv, raised so _firstData is cluster-aligned
+  private int _rootLog;       // _resv + NumFats*fatSize
+  private int _firstData;     // rootLog + RootSecs, a multiple of Spc
+  private int _mdfatIdxOff;   // MDFAT index of cluster 0: _firstData / Spc - 2
 
   // MDFAT stored-run flag bits (upper word), per the real driver's encoding.
   // 0xFFC0… marks a full 16-sector stored cluster: the driver reads all 16
@@ -97,6 +111,8 @@ public sealed class GenuineCvfWriter {
     if (this.CompressionMethod is not (Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored
         or Compression.Core.FileSystems.Cvf.CvfLzMethod.Ds or Compression.Core.FileSystems.Cvf.CvfLzMethod.Jm))
       throw new NotSupportedException($"A DoubleSpace/DriveSpace volume holds stored, DS or JM clusters; {this.CompressionMethod} is not written into it.");
+    if (this._files.Count + (string.IsNullOrEmpty(this.VolumeLabel) ? 0 : 1) > RootEntries)
+      throw new NotSupportedException($"The root directory holds {RootEntries} entries; {this._files.Count} files were given.");
     // 1. Plan files → clusters; capture each file's first cluster + size, and
     //    each cluster's full (zero-padded) logical bytes.
     var files = new List<(string Name, int First, int Count, long Size)>();
@@ -117,16 +133,22 @@ public sealed class GenuineCvfWriter {
 
     // Size geometry to the cluster count.
     var maxCluster = nextCluster - 1;
-    var fatBytes = ((maxCluster + 1) * 3 + 1) / 2;              // FAT12: 1.5 bytes/entry
-    this._fatSize = Math.Max(1, (fatBytes + Ss - 1) / Ss);
-    var mdfatBytes = (MdfatIdxOff + maxCluster + 1) * 4;
-    var mdfatSectors = Math.Max(1, (mdfatBytes + Ss - 1) / Ss);
-    this._innerBase = MdfatStartSec + mdfatSectors;
-    this._rootLog = Resv + NumFats * this._fatSize;
+    if (maxCluster + 3 > MaxClusters)
+      throw new NotSupportedException($"The files need {maxCluster - 1} clusters; a FAT12 compressed volume holds at most {MaxClusters - 4}.");
+    this._fatSize = FatSectors;
+    // The real driver maps the inner volume in whole-cluster slots: the MDFAT index of a cluster is
+    // cluster + firstData / Spc - 2, so the system area (reserved, FAT, root) must end on a cluster
+    // boundary; the reserved area absorbs the padding (28 sectors for the 132-sector FAT).
+    this._resv = MinResv;
+    while ((this._resv + NumFats * this._fatSize + RootSecs) % Spc != 0) ++this._resv;
+    this._rootLog = this._resv + NumFats * this._fatSize;
     this._firstData = this._rootLog + RootSecs;
+    this._mdfatIdxOff = this._firstData / Spc - 2;
+    this._innerBase = InnerBase;
 
-    // 2. Compress each cluster (auto-best) and pack into physical sectors.
-    var physDataStart = this._innerBase + this._firstData;
+    // 2. Compress each cluster and pack into physical sectors. Cluster runs start two sectors past
+    //    the inner system area, where the BitFAT's first bit points (as on driver-created volumes).
+    var physDataStart = this._innerBase + this._firstData + 2;
     var physCursor = physDataStart;
     var layout = new List<ClusterPlan>();
     foreach (var (cl, full) in clusterFull) {
@@ -148,15 +170,15 @@ public sealed class GenuineCvfWriter {
     // BPB total-sectors (0x20) must keep dmsdos's DOS-limit max_cluster above the
     // real cluster count even when compression shrinks the physical image.
     var declaredSectors = Math.Max(totalSectors,
-      (maxCluster + 2) * Spc + this._fatSize + Resv + (RootEntries >> 4) + Spc);
+      (maxCluster + 2) * Spc + this._fatSize + this._resv + (RootEntries >> 4) + Spc);
 
     this.WriteMdbpb(img, declaredSectors);
-    this.WriteInnerBoot(img);
+    this.WriteInnerBoot(img, declaredSectors);
 
     var innerOff = this._innerBase * Ss;
-    var fatOff = innerOff + Resv * Ss;
+    var fatOff = innerOff + this._resv * Ss;
     var rootOff = innerOff + this._rootLog * Ss;
-    var mdfatBase = MdfatStartSec * Ss + MdfatIdxOff * 4;
+    var mdfatBase = MdfatStartSec * Ss + this._mdfatIdxOff * 4;
 
     // FAT12 reserved entries (clusters 0 and 1).
     img[fatOff] = 0xF8; img[fatOff + 1] = 0xFF; img[fatOff + 2] = 0xFF;
@@ -196,8 +218,22 @@ public sealed class GenuineCvfWriter {
       BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(mdfatBase + plan.Cluster * 4), entry);
     }
 
-    // BITFAT: mirror the real driver's first marked region.
-    img[Ss + 1] = 0x80;
+    // BitFAT (from sector 1): one bit per physical sector from physDataStart, set for every sector a
+    // cluster run occupies; bits run MSB-first through little-endian 16-bit words. The real driver
+    // allocates new runs from this map, so an unmarked run would be overwritten.
+    foreach (var plan in layout)
+      for (var s = plan.PhysSector; s < plan.PhysSector + plan.Sectors; ++s) {
+        var bit = s - physDataStart;
+        var word = Ss + bit / 16 * 2;
+        var mask = 0x8000 >> (bit % 16);
+        img[word] |= (byte)mask;
+        img[word + 1] |= (byte)(mask >> 8);
+      }
+
+    // Signatures: "MDR\0" opens the last sector of the file, "<media>DR\0" the inner volume's second sector.
+    "MDR\0"u8.CopyTo(img.AsSpan(img.Length - Ss));
+    img[(this._innerBase + 1) * Ss] = 0xF8;
+    "DR\0"u8.CopyTo(img.AsSpan((this._innerBase + 1) * Ss + 1));
     return img;
   }
 
@@ -206,7 +242,7 @@ public sealed class GenuineCvfWriter {
     "MSDBL6.0"u8.CopyTo(img.AsSpan(3, 8));
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x0B), Ss);
     img[0x0D] = Spc;
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x0E), Resv);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x0E), (ushort)this._resv);
     img[0x10] = NumFats;
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x11), RootEntries);
     img[0x15] = 0xF8;
@@ -220,27 +256,34 @@ public sealed class GenuineCvfWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x27), (ushort)this._innerBase);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x29), (ushort)this._rootLog);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x2B), (ushort)this._firstData);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x2D), MdfatIdxOff);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x2F), RootSecs);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x2D), (ushort)this._mdfatIdxOff);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x2F), TierWord2F);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x31), 1024);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x33), 2);
-    "12  "u8.CopyTo(img.AsSpan(0x39, 4));
-    img[0x3D] = 1; img[0x3F] = 1;
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x35), TierWord35);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x37), TierWord37);
+    "16  "u8.CopyTo(img.AsSpan(0x39, 4));
+    img[0x3D] = 1;
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x3E), TierWord3E);
   }
 
-  private void WriteInnerBoot(byte[] img) {
+  // The inner boot sector is what DOS sees: two FATs (the driver serves the one stored FAT for both),
+  // so its total is the MDBPB's plus one FAT; 63 sectors per track, 16 heads — as on driver-created
+  // volumes.
+  private void WriteInnerBoot(byte[] img, int declaredSectors) {
     var b = this._innerBase * Ss;
     img[b] = 0xEB; img[b + 1] = 0x3C; img[b + 2] = 0x90;
     "MSDBL6.0"u8.CopyTo(img.AsSpan(b + 3, 8));
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x0B), Ss);
     img[b + 0x0D] = Spc;
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x0E), Resv);
-    img[b + 0x10] = NumFats;
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x0E), (ushort)this._resv);
+    img[b + 0x10] = 2;
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x11), RootEntries);
     img[b + 0x15] = 0xF8;
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x16), (ushort)this._fatSize);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x18), 17);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x1A), 6);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x18), 63);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x1A), 16);
+    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(b + 0x20), (uint)(declaredSectors + this._fatSize));
     img[b + 0x26] = 0x29; // extended boot signature
     "COMPRESSED "u8.CopyTo(img.AsSpan(b + 0x2B, 11));
     "FAT12   "u8.CopyTo(img.AsSpan(b + 0x36, 8));

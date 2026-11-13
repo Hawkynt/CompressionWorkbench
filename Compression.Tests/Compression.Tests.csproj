@@ -467,6 +467,10 @@
     <EmbeddedResource Include="Cvf\ReferenceVectors\*.bin">
       <LogicalName>CvfVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- A DriveSpace volume MS-DOS 6.22 created and filled; see Cvf/ReferenceVectors/Volumes/README.md. -->
+    <EmbeddedResource Include="Cvf\ReferenceVectors\Volumes\*.gz">
+      <LogicalName>CvfVolumes.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- AFF4 logical images from pyaff4 (its reference image dream.aff4 and two it wrote) plus pyaff4's
          own read-back listing; see Aff4/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Aff4\ReferenceVectors\*.aff4;Aff4\ReferenceVectors\*.tsv">
