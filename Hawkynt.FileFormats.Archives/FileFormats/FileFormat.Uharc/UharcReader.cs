@@ -257,24 +257,33 @@ public sealed class UharcReader {
     if (this._legacy != null) {
       if (this._legacy.Method != 0)
         UharcExecutableFilter.RestoreLegacy(data);
-    } else if (this._v04 != null) {
-      if (this._v04.Method != UharcMethods.Store) {
-        if ((this._v04.Filters & UharcHeader.ExecutableFilter) != 0)
-          UharcExecutableFilter.Restore(data);
-        if ((this._v04.Filters & UharcHeader.MultimediaFilter) != 0)
-          UharcMultimediaFilter.Restore(data);
-      }
-    } else if (this._header.Method != UharcMethods.Store) {
-      if ((this._header.Filters & UharcHeader.ExecutableFilter) != 0)
-        UharcExecutableFilter.Restore(data, swapOperandBytes: this._header.Method is >= UharcMethods.PpmFirst and <= UharcMethods.PpmLast);
-      if ((this._header.Filters & UharcHeader.MultimediaFilter) != 0)
-        UharcMultimediaFilter.Restore(data);
-    }
+    } else if (this._v04 != null)
+      RestoreFilters(data, this._v04.Filters, this._v04.Method, swapOperandBytes: false);
+    else
+      RestoreFilters(data, this._header.Filters, this._header.Method, swapOperandBytes: this._header.Method is >= UharcMethods.PpmFirst and <= UharcMethods.PpmLast);
 
     if (Crc32.Compute(data) != entry.Crc32)
       throw new InvalidDataException($"UHARC: CRC mismatch in '{entry.FileName}'.");
 
     return data;
+  }
+
+  /// <summary>
+  /// Undoes the 0.4/0.6 preprocessing of one file: a fax page alone (stored archives too), else,
+  /// for compressed streams, executable then multimedia.
+  /// </summary>
+  private static void RestoreFilters(Span<byte> data, byte filters, int method, bool swapOperandBytes) {
+    if ((filters & UharcHeader.FaxFilter) != 0 && data.Length == UharcFaxFilter.PageSize) {
+      UharcFaxFilter.Restore(data);
+      return;
+    }
+
+    if (method == UharcMethods.Store)
+      return;
+    if ((filters & UharcHeader.ExecutableFilter) != 0)
+      UharcExecutableFilter.Restore(data, swapOperandBytes);
+    if ((filters & UharcHeader.MultimediaFilter) != 0)
+      UharcMultimediaFilter.Restore(data);
   }
 
   private byte[] DecodeStream() {

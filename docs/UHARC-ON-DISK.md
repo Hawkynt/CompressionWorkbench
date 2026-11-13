@@ -55,7 +55,7 @@ byte 37 — the low byte of the header check, which lies outside the scrambled r
 | 4 | 2 | archive DOS time |
 | 6 | 2 | archive DOS date |
 | 8 | 1 | flags: bit 1 packed stream enciphered with the password, bit 2 tables enciphered with the password |
-| 9 | 1 | filters: bit 0 executable filter enabled, bit 1 multimedia delta filter enabled |
+| 9 | 1 | filters: bit 0 executable filter enabled, bit 1 multimedia delta filter enabled, bit 7 fax page (see Filters) |
 | 10 | 1 | stream method (below) |
 | 11 | 2 | number of directory names |
 | 13 | 4 | unpacked size of the stream (sum of all file sizes) |
@@ -469,6 +469,17 @@ data fails its CRC under the former, a 364-byte MZ file under the latter.
 from byte 36 with a stride of 3, channels × bytes per sample, or 1: each byte is the difference
 from the byte one stride back, with a per-phase sign that flips on a difference ≥ 128.
 
+**Fax filter** (filters bit 7, every mode, the store mode included; 0.4 and 0.6 alike). A file of
+exactly 513216 bytes is a 1728 × 2376 one-bit page, rows of 216 bytes with the leftmost pixel in
+bit 7. When the encoder recognises such a page it sets bit 7 for the archive and stores each
+page-sized file as 297 bands of eight rows, one byte per pixel column, the band's top row in
+bit 7 of that byte. To restore: for row *r* and pixel column *x*, the pixel is bit `7 − (r mod 8)`
+of byte `(r div 8)·1728 + x`. Such a file gets neither the executable nor the multimedia filter.
+Measured: a drawn page (fixture input `fax/page.fax`) sets the bit in every mode of 0.4 and
+0.6, `-m0` included; 513216 bytes of random data, the same page cut to 513215 bytes, and an
+archive holding the page together with the random file leave it clear, and then nothing is
+transposed. Fixtures `fax-m2`, `fax-mx` and `v04-fax-mz`.
+
 ## Writing
 
 The writer produces 0.6 archives in the layout above: the stream stored (method 0) or packed
@@ -606,7 +617,7 @@ low 16 bits of the CRC of the descrambled bytes 4..39.
 | 4 | 2 | archive DOS time |
 | 6 | 2 | archive DOS date |
 | 8 | 1 | flags: bit 1 tables and packed stream enciphered with the password |
-| 9 | 1 | filters: as 0.6 (bit 0 executable, bit 1 multimedia delta) |
+| 9 | 1 | filters: as 0.6 (bit 0 executable, bit 1 multimedia delta, bit 7 fax page) |
 | 10 | 1 | stream method |
 | 11 | 2 | number of directory names |
 | 13 | 4 | unpacked size of the stream |

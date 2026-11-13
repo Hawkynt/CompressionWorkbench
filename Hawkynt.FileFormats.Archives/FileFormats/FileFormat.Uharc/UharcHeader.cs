@@ -39,6 +39,9 @@ internal sealed record UharcHeader(
   /// <summary>Filters bit: BMP/WAV/VOC files were delta-coded before packing (LZP mode only).</summary>
   public const byte MultimediaFilter = 0x02;
 
+  /// <summary>Filters bit: a 513216-byte file was stored as a transposed 1728 × 2376 fax page.</summary>
+  public const byte FaxFilter = 0x80;
+
   /// <summary>Recognises the four magic bytes <c>UHA\x06</c>.</summary>
   public static bool HasMagic(ReadOnlySpan<byte> data)
     => data.Length >= 4 && data[0] == 'U' && data[1] == 'H' && data[2] == 'A' && data[3] == Version;
