@@ -154,6 +154,8 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
   private ulong _nextNodeValue;
   private bool _dirty;
   private bool _disposed;
+  private readonly long _maxTotalContentBytes;
+  private long _allocatedContentBytes;
 
   public MutableRebuildFilesystemSession(
       FilesystemDriverProfile profile,
@@ -161,7 +163,9 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
       IEnumerable<RebuildFilesystemEntry> entries,
       RebuildImage? rebuild,
       ValidateImage? validate = null,
-      bool leaveOpen = true) {
+      bool leaveOpen = true,
+      long maxTotalContentBytes = long.MaxValue) {
+    ArgumentOutOfRangeException.ThrowIfNegative(maxTotalContentBytes);
     ArgumentNullException.ThrowIfNull(profile);
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(entries);
@@ -183,6 +187,7 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
     _nameComparer = (profile.Capabilities & FilesystemDriverCapabilities.CaseSensitiveNames) != 0
       ? StringComparer.Ordinal
       : StringComparer.OrdinalIgnoreCase;
+    _maxTotalContentBytes = maxTotalContentBytes;
 
     RootNodeId = new(1, 1);
     _nextNodeValue = RootNodeId.Value;
@@ -197,6 +202,11 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
     _children.Add(root.Id, NewChildMap());
 
     BuildNamespace(entries);
+    foreach (var node in _nodes.Values.Where(static node => node.Kind == FilesystemNodeKind.RegularFile)) {
+      if (node.Data.LongLength > _maxTotalContentBytes - _allocatedContentBytes)
+        throw new NotSupportedException($"Mutable namespace exceeds the {_maxTotalContentBytes:N0}-byte session content budget.");
+      _allocatedContentBytes += node.Data.LongLength;
+    }
   }
 
   public FilesystemDriverProfile Profile { get; }
@@ -507,6 +517,15 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
 
   private void MarkDirty() => _dirty = true;
 
+  private void AdjustContentBudget(long previousSize, long newSize) {
+    // Called only while holding _gate. Deleted but still-open file nodes
+    // remain budgeted because this session keeps them alive for stable handles.
+    var growth = newSize - previousSize;
+    if (growth > 0 && growth > _maxTotalContentBytes - _allocatedContentBytes)
+      throw new IOException($"Writable mount exceeds the {_maxTotalContentBytes:N0}-byte content budget.");
+    _allocatedContentBytes = checked(_allocatedContentBytes + growth);
+  }
+
   private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
   private static string NormalizePath(string path) {
@@ -573,8 +592,10 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
         var end = checked(offset + source.Length);
         if (end > Array.MaxLength)
           throw new NotSupportedException($"The managed rebuild session currently limits one mutable file to {Array.MaxLength:N0} bytes.");
-        if (end > node.Data.LongLength)
+        if (end > node.Data.LongLength) {
+          owner.AdjustContentBudget(node.Data.LongLength, end);
           Array.Resize(ref node.Data, checked((int)end));
+        }
         source.CopyTo(node.Data.AsSpan(checked((int)offset)));
         if (!source.IsEmpty)
           owner.MarkDirty();
@@ -592,6 +613,7 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
           throw new ArgumentOutOfRangeException(nameof(length));
         if (length == node.Data.LongLength)
           return;
+        owner.AdjustContentBudget(node.Data.LongLength, length);
         Array.Resize(ref node.Data, checked((int)length));
         owner.MarkDirty();
       }
