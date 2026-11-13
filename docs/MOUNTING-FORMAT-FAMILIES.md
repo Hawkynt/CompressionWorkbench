@@ -47,7 +47,7 @@ following hold:
 - It has `IArchiveFormatOperations` for listing and reading entries, and
   either `CanModify` with `IArchiveModifiable`, or `CanCreate` with
   `IArchiveCreatable`. A class name or extension alone is insufficient.
-- It is a true `FormatCategory.Archive`, not a media/executable pseudo-archive,
+- It is a true `FormatCategory.Archive` or `FormatCategory.CompoundTar`, not a media/executable pseudo-archive,
   a registered filesystem, or an inner block-device provider.
 - Its source contains only ordinary, unencrypted, non-link entries with safe,
   unique relative names. No password is used.
@@ -107,7 +107,7 @@ because a primary file is writable.
 | Input family | Read-only | Read/write |
 | --- | --- | --- |
 | ZIP / 7z / RAR and other native-edit archives | Registered archive listing and entry streams | Qualified, bounded unencrypted profiles through their existing editor |
-| WORM-only multi-entry archives (e.g. WIM with named files) | Registered archive listing and entry streams | Qualified per-image via temporary full rebuild with verified no-op preflight |
+| WORM-only multi-entry archives (e.g. WIM with named files, tar.gz) | Registered archive listing and entry streams | Qualified per-image via temporary full rebuild with verified no-op preflight |
 | ISO / FAT / NTFS / ext4 / btrfs | Existing managed filesystem driver or derived archive listing when the precise image is supported | **Only** an actual writable native filesystem profile; no implied support from the file extension |
 | VMDK / other registered block containers | Registered container → recognized inner filesystem(s) and raw fallback partitions | Only a single native writable inner filesystem via its supported block provider; composite partition root is read-only |
 | CloneCD `.ccd/.img/.sub` | Existing pseudo-archive, with companion-file identity retained | No qualified mounted write-back |
