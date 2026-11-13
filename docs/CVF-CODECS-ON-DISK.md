@@ -74,8 +74,24 @@ Measured with dmsdos as a black box: volumes were built with candidate layouts a
   Not established: the meaning of the entries' fourth byte (perhaps the sector's high bits on volumes
   past 65535 sectors) — `GenuineStackerReader` refuses an entry where it is non-zero.
 
-Suballocated clusters (bit 7 and bit 5 set) are refused by `GenuineStackerReader`; their layout has
-not been measured.
+### Stacker suballocated clusters — partly measured
+
+Suballocated clusters (bit 7 and bit 5 set) are refused by `GenuineStackerReader`: their layout is not
+established. What dmsdos showed as a black box (trial volumes read with `dcread`):
+
+* It looks for the signature `34 12` (the word `0x1234`) in the **last two bytes of the AMAP run's first
+  sector**. Without it — or with it at the start of the run or at the end of the run's last sector —
+  dmsdos reports the suballocation signature as not found and refuses the cluster.
+* With the signature in place and the 30 bytes before it (offsets 480..509) all zero, dmsdos reports the
+  suballocation as not present and refuses the cluster.
+* With any non-zero byte among those 30 bytes, dmsdos decodes the run as a compressed stream starting
+  at the first byte of that first sector — so the trailer fields before the signature describe the
+  suballocated data, but which field means what (offsets, lengths, owning clusters) was not
+  established. Refuted: a payload placed after a header sector, read from the next sector.
+
+### DriveSpace 3 fragmented clusters
+
+Not measured: no trial volumes were built, and `GenuineDvr3Reader` does not read them.
 
 ## 🔢 DS-0-x and JM-0-x
 
@@ -225,6 +241,7 @@ full 15-bit limit for both codes.
 
 ## ⚠️ Not covered
 
-* **DriveSpace 3 fragmented clusters** (an MDFAT flag dmsdos itself describes as guessed) and
-  **Stacker suballocated clusters** are not read: no layout has been measured for either.
+* **DriveSpace 3 fragmented clusters** (an MDFAT flag dmsdos itself describes as guessed) are not
+  read: no layout has been measured. **Stacker suballocated clusters** are not read: their trailer is
+  only partly measured (see above).
 * No Microsoft or Stac tool has produced or read any of these streams on this machine.
