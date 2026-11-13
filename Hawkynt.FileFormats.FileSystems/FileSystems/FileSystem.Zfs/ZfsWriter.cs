@@ -33,6 +33,7 @@ internal sealed class ZfsWriter {
   private const int MicroZapEntry = 64;
   private const int MicroZapNameMax = 49;
   private const int FatZapBlock = 16 * 1024;
+  private const int ConfigBlock = 16 * 1024;
   private const long MinimumDevice = 64L * 1024 * 1024;
   private const int MetaslabShift = 24;
 
@@ -594,11 +595,24 @@ internal sealed class ZfsWriter {
   /// <summary>Writes the pool image to <paramref name="output"/>.</summary>
   public void Build(Stream output, string poolName = "cwb") {
     ArgumentNullException.ThrowIfNull(output);
+    this.Build([output], poolName);
+  }
+
+  /// <summary>
+  /// Writes the pool to <paramref name="outputs"/>: one device, or an n-way mirror whose
+  /// devices each hold every block (<c>docs/ZFS-ON-DISK.md</c>, "Writing a pool").
+  /// </summary>
+  public void Build(IReadOnlyList<Stream> outputs, string poolName = "cwb") {
+    ArgumentNullException.ThrowIfNull(outputs);
+    if (outputs.Count == 0) throw new ArgumentException("ZFS: a pool needs at least one device.", nameof(outputs));
+    foreach (var o in outputs) ArgumentNullException.ThrowIfNull(o);
     if (string.IsNullOrEmpty(poolName) || !char.IsAsciiLetter(poolName[0]) || poolName.Any(c => !(char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '.' or ':')))
       throw new ArgumentException("ZFS: pool names start with a letter and use letters, digits, '_', '-', '.', ':'.", nameof(poolName));
 
     var poolGuid = Guid64();
-    var vdevGuid = Guid64();
+    var leafGuids = outputs.Select(_ => Guid64()).ToArray();
+    var mirror = outputs.Count > 1;
+    var topGuid = mirror ? Guid64() : leafGuids[0];
     var now = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
     // 1. the filesystem's objects and its object set
@@ -668,26 +682,36 @@ internal sealed class ZfsWriter {
 
     // config and metaslab array objects: sizes fixed now, contents filled once numbers are known.
     var metaslabArray = Add(this.NewObject(OtObjectArray, 0, [], (metaslabCount * 8 + Sector - 1) & ~(Sector - 1), [new byte[metaslabCount * 8]]));
-    NvList LeafVdev(ulong arrayObject) => new NvList()
-      .Add("type", "file").Add("id", 0UL).Add("guid", vdevGuid).Add("path", $"/dev/{poolName}")
-      .Add("metaslab_array", arrayObject).Add("metaslab_shift", (ulong)metaslabShift).Add("ashift", (ulong)Ashift)
-      .Add("asize", (ulong)asize).Add("is_log", 0UL).Add("create_txg", Txg);
-    NvList Config(bool label) {
+    // the top-level vdev: the device itself, or a mirror of the devices; it carries the metaslabs
+    NvList TopVdev(ulong arrayObject) {
+      var top = new NvList();
+      if (mirror) top.Add("type", "mirror").Add("id", 0UL).Add("guid", topGuid);
+      else top.Add("type", "file").Add("id", 0UL).Add("guid", topGuid).Add("path", $"/dev/{poolName}");
+      top.Add("metaslab_array", arrayObject).Add("metaslab_shift", (ulong)metaslabShift).Add("ashift", (ulong)Ashift)
+        .Add("asize", (ulong)asize).Add("is_log", 0UL).Add("create_txg", Txg);
+      if (mirror)
+        top.Add("children", leafGuids.Select((g, i) => new NvList().Add("type", "file").Add("id", (ulong)i).Add("guid", g)
+          .Add("path", $"/dev/{poolName}-{i}").Add("create_txg", Txg)).ToArray());
+      return top;
+    }
+    NvList Config(int? device) {
       var l = new NvList().Add("version", PoolVersion).Add("name", poolName).Add("state", 1UL).Add("txg", Txg)
         .Add("pool_guid", poolGuid).Add("errata", 0UL).Add("hostname", "cwb");
-      if (label)
-        l.Add("top_guid", vdevGuid).Add("guid", vdevGuid).Add("vdev_children", 1UL).Add("vdev_tree", LeafVdev(metaslabArray));
+      if (device is { } d)
+        l.Add("top_guid", topGuid).Add("guid", leafGuids[d]).Add("vdev_children", 1UL).Add("vdev_tree", TopVdev(metaslabArray));
       else
         l.Add("vdev_children", 1UL).Add("vdev_tree", new NvList().Add("type", "root").Add("id", 0UL).Add("guid", poolGuid)
-          .Add("create_txg", Txg).Add("children", new[] { LeafVdev(metaslabArray) }));
+          .Add("create_txg", Txg).Add("children", new[] { TopVdev(metaslabArray) }));
       l.Add("features_for_read", new NvList());
       return l;
     }
-    var configBytes = XdrNvListWriter.Pack(Config(label: false));
-    var configBlock = (configBytes.Length + Sector - 1) & ~(Sector - 1);
+    var configBytes = XdrNvListWriter.Pack(Config(null));
+    // 16 KiB blocks (SPA_CONFIG_BLOCKSIZE): the kernel rewrites the config in whole 16 KiB units
+    // and stops at an object whose single block is smaller ("accessing past end of object").
     var configBonus = new byte[8];
     BinaryPrimitives.WriteUInt64LittleEndian(configBonus, (ulong)configBytes.Length);
-    var configObj = Add(this.NewObject(OtPackedNvList, OtPackedNvListSize, configBonus, configBlock, [configBytes]));
+    var configBlocks = configBytes.Chunk(ConfigBlock).Select(c => (byte[]?)c).ToList();
+    var configObj = Add(this.NewObject(OtPackedNvList, OtPackedNvListSize, configBonus, ConfigBlock, configBlocks));
 
     mos.Objects[1] = this.ZapObject(OtObjectDirectory, [
       ("root_dataset", rootDir), ("config", configObj), ("sync_bplist", syncBplist), ("free_bpobj", freeBpobj),
@@ -817,7 +841,16 @@ internal sealed class ZfsWriter {
     // 4. the MOS object set, then the labels and the uberblock
     SealObjectSet(mos);
 
-    var image = output;
+    // every vdev of the tree counts towards the uberblock's guid sum: root (the pool), top, leaves
+    var guidSum = unchecked(poolGuid + topGuid);
+    if (mirror)
+      foreach (var g in leafGuids) guidSum = unchecked(guidSum + g);
+    for (var d = 0; d < outputs.Count; ++d)
+      this.WriteDevice(outputs[d], device, XdrNvListWriter.Pack(Config(d)), guidSum, now, mos.Root);
+  }
+
+  /// <summary>One device: every block at its offset, then the four labels with their uberblock.</summary>
+  private void WriteDevice(Stream image, long device, byte[] labelList, ulong guidSum, ulong now, Block mosRoot) {
     image.SetLength(0);
     image.SetLength(device);
     const long dataStart = 4L * 1024 * 1024;
@@ -826,10 +859,8 @@ internal sealed class ZfsWriter {
       image.Write(b.Data);
     }
 
-    var labelList = XdrNvListWriter.Pack(Config(label: true));
     if (labelList.Length > ZfsConstants.NvListSize - 40)
       throw new InvalidOperationException("ZFS: label nvlist too large.");
-    var guidSum = unchecked(poolGuid + vdevGuid);
     var labelStarts = new[] { 0L, ZfsConstants.LabelSize, (device & ~(ZfsConstants.LabelSize - 1L)) - 2 * ZfsConstants.LabelSize,
       (device & ~(ZfsConstants.LabelSize - 1L)) - ZfsConstants.LabelSize };
     foreach (var label in labelStarts) {
@@ -846,8 +877,8 @@ internal sealed class ZfsWriter {
       BinaryPrimitives.WriteUInt64LittleEndian(ub.AsSpan(16), Txg);
       BinaryPrimitives.WriteUInt64LittleEndian(ub.AsSpan(24), guidSum);
       BinaryPrimitives.WriteUInt64LittleEndian(ub.AsSpan(32), now);
-      mos.Root.Type = OtObjset;
-      WriteBlockPointer(ub.AsSpan(40), mos.Root);
+      mosRoot.Type = OtObjset;
+      WriteBlockPointer(ub.AsSpan(40), mosRoot);
       var slotIndex = (int)(Txg % (ulong)(ZfsConstants.UberblockRingSize / slot));
       var at = label + ZfsConstants.UberblockRingOffset + (long)slotIndex * slot;
       Seal(ub, at);

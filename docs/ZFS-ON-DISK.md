@@ -244,6 +244,18 @@ SHA-256 `zio_eck_t` (verifier: the device offset of the `vdev_phys`). One uberbl
 in slot `txg mod 128` of the 1 KiB slots: magic, version 28, txg, `guid_sum` = pool guid +
 device guid, timestamp, the MOS objset pointer; sealed the same way with the slot's offset.
 
+**Mirrors.** An n-way mirror of equally sized devices is one top-level vdev: every device holds
+every block at the same offset, and DVAs name vdev 0 as before. Each device's label differs only
+in `guid` (its own); `top_guid` is the mirror's guid and `vdev_tree` is {`type` "mirror", `id`
+0, `guid` = mirror guid, the metaslab and size keys as above, `children` [{`type` "file", `id`
+i, `guid`, `path`, `create_txg` 4} per device]}; the MOS config nests the same mirror under the
+root. The uberblock's `guid_sum` covers every vdev of the tree: pool guid + mirror guid + every
+device guid.
+
+**Config object.** Its data blocks are 16 KiB (`SPA_CONFIG_BLOCKSIZE`): the kernel rewrites the
+config in whole 16 KiB units whenever it changes (a device path that differs on import is
+enough), and a config object with one smaller block stops it.
+
 **Packed nvlists** (labels and the MOS `config` object) are libnvpair's XDR encoding: header
 `1, 1, 0, 0`, then for every list `u32` version 0, `u32` flags 1 (unique names), the pairs and
 two zero words. A pair is encoded size, decoded size, name (XDR string), type, element count,

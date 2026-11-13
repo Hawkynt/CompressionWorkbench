@@ -124,7 +124,18 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
+    this.CreatePool([output], inputs, options);
+  }
+
+  /// <summary>
+  /// Writes a new pool (version 28) over <paramref name="devices"/>: one device, or with two or
+  /// more an n-way mirror of equally sized devices, each holding every block. Options as for
+  /// <see cref="Create"/>.
+  /// </summary>
+  public void CreatePool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(devices);
     ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
     var writer = new ZfsWriter { Compression = options.GetOption("Compression", "off") };
     foreach (var input in inputs) {
       var modified = input.Metadata?.LastWriteTimeUtc?.UtcDateTime;
@@ -133,7 +144,7 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       else
         writer.AddFile(input.ArchiveName, input.ReadContent(), modified);
     }
-    writer.Build(output, options.GetOption("PoolName", "cwb"));
+    writer.Build(devices, options.GetOption("PoolName", "cwb"));
   }
 
   /// <summary>
