@@ -33,4 +33,7 @@ public enum SevenZipCodec {
 
   /// <summary>LZ5 1.5, as the 7-Zip-zstd coder 04 F7 11 05 writes it (4 MiB chunks behind skippable-frame headers).</summary>
   Lz5 = 9,
+
+  /// <summary>Lizard, as the 7-Zip-zstd coder 04 F7 11 06 writes it (4 MiB chunks behind skippable-frame headers).</summary>
+  Lizard = 10,
 }

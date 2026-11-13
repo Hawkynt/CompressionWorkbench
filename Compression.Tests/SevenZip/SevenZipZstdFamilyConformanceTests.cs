@@ -4,7 +4,7 @@ using FileFormat.SevenZip;
 namespace Compression.Tests.SevenZip;
 
 /// <summary>
-/// The 7-Zip-zstd coders inside 7z — Zstandard, Brotli, LZ4 and LZ5 — both ways against 7-Zip-zstd
+/// The 7-Zip-zstd coders inside 7z — Zstandard, Brotli, LZ4, LZ5 and Lizard — both ways against 7-Zip-zstd
 /// (mcmilk/7-Zip-zstd, <see cref="SevenZipOracle.ZstdToolPath"/>): it tests and extracts what we
 /// write byte for byte, and we extract what it writes, solid and non-solid, plain and with AES
 /// (data and headers).
@@ -32,13 +32,14 @@ public sealed class SevenZipZstdFamilyConformanceTests {
     try { Directory.Delete(this._root, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
   }
 
-  private static readonly SevenZipCodec[] Codecs = [SevenZipCodec.Zstd, SevenZipCodec.Brotli, SevenZipCodec.Lz4, SevenZipCodec.Lz5];
+  private static readonly SevenZipCodec[] Codecs = [SevenZipCodec.Zstd, SevenZipCodec.Brotli, SevenZipCodec.Lz4, SevenZipCodec.Lz5, SevenZipCodec.Lizard];
 
   private static string MethodName(SevenZipCodec codec) => codec switch {
     SevenZipCodec.Zstd => "zstd",
     SevenZipCodec.Brotli => "brotli",
     SevenZipCodec.Lz4 => "lz4",
-    _ => "lz5",
+    SevenZipCodec.Lz5 => "lz5",
+    _ => "lizard",
   };
 
   public static IEnumerable<TestCaseData> Profiles() {
@@ -103,7 +104,7 @@ public sealed class SevenZipZstdFamilyConformanceTests {
     }
     SevenZipOracle.AssertSameTree(this._tree, extracted, name);
     Assert.That(reader.Entries.Where(e => !e.IsDirectory && e.Size > 0).Select(e => e.Method).Distinct(),
-      Is.EqualTo(new[] { codec switch { SevenZipCodec.Zstd => "Zstd", SevenZipCodec.Brotli => "Brotli", SevenZipCodec.Lz4 => "LZ4", _ => "LZ5" } }));
+      Is.EqualTo(new[] { codec switch { SevenZipCodec.Zstd => "Zstd", SevenZipCodec.Brotli => "Brotli", SevenZipCodec.Lz4 => "LZ4", SevenZipCodec.Lz5 => "LZ5", _ => "Lizard" } }));
   }
 
   [Category("EndToEnd")]
@@ -116,6 +117,9 @@ public sealed class SevenZipZstdFamilyConformanceTests {
   [TestCase(SevenZipCodec.Lz4, 9)]
   [TestCase(SevenZipCodec.Lz5, 1)]
   [TestCase(SevenZipCodec.Lz5, 15)]
+  [TestCase(SevenZipCodec.Lizard, 10)]
+  [TestCase(SevenZipCodec.Lizard, 29)]
+  [TestCase(SevenZipCodec.Lizard, 49)]
   public void Given_TheSameLevel_When_BothWrite_Then_7ZipZstdDescribesTheCodersAlike(SevenZipCodec codec, int level) {
     SevenZipOracle.RequireZstd();
     var data = this._tree["text.txt"]!;
@@ -148,6 +152,9 @@ public sealed class SevenZipZstdFamilyConformanceTests {
   [TestCase(SevenZipCodec.Lz5, 3, new byte[] { 1, 5, 3, 0, 0 })]
   [TestCase(SevenZipCodec.Lz5, 0, new byte[] { 1, 5, 1, 0, 0 })]
   [TestCase(SevenZipCodec.Lz5, 16, new byte[] { 1, 5, 15, 0, 0 })]
+  [TestCase(SevenZipCodec.Lizard, 3, new byte[] { 2, 1, 10 })]
+  [TestCase(SevenZipCodec.Lizard, 49, new byte[] { 2, 1, 49 })]
+  [TestCase(SevenZipCodec.Lizard, 50, new byte[] { 2, 1, 49 })]
   [Category("Unit")]
   public void Given_ALevel_When_PropertiesAreWritten_Then_TheyAreThe7ZipZstdBytes(SevenZipCodec codec, int level, byte[] expected)
     => Assert.That(SevenZipZstdFamilyCoders.Properties(codec, level), Is.EqualTo(expected));
@@ -191,7 +198,8 @@ public sealed class SevenZipZstdFamilyConformanceTests {
       SevenZipCodec.Zstd => SevenZipZstdFamilyCoders.DecodeZstd(packed.ToArray()),
       SevenZipCodec.Brotli => SevenZipZstdFamilyCoders.DecodeBrotli(packed.ToArray()),
       SevenZipCodec.Lz4 => SevenZipZstdFamilyCoders.DecodeLz4(packed.ToArray()),
-      _ => SevenZipZstdFamilyCoders.DecodeLz5(packed.ToArray()),
+      SevenZipCodec.Lz5 => SevenZipZstdFamilyCoders.DecodeLz5(packed.ToArray()),
+      _ => SevenZipZstdFamilyCoders.DecodeLizard(packed.ToArray()),
     };
     Assert.That(decoded, Is.EqualTo(data));
   }

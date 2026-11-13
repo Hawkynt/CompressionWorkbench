@@ -20,6 +20,7 @@ internal static class SevenZipOptionsResolver {
     "brotli" => SevenZipCodec.Brotli,
     "lz4" => SevenZipCodec.Lz4,
     "lz5" => SevenZipCodec.Lz5,
+    "lizard" => SevenZipCodec.Lizard,
     _ => SevenZipCodec.Lzma2,
   };
 

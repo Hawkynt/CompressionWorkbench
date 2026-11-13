@@ -77,8 +77,9 @@ public sealed partial class SevenZipWriter : IDisposable {
   /// keeps the archive open to in-place appends and removals.
   /// </param>
   /// <param name="level">
-  /// The level of the Zstandard, Brotli, LZ4 and LZ5 coders on 7-Zip-zstd's scale (Zstandard 1-22,
-  /// Brotli 0-11, LZ4 1-12, LZ5 1-15; clamped), recorded in the coder properties. Default 3, 7-Zip-zstd's.
+  /// The level of the Zstandard, Brotli, LZ4, LZ5 and Lizard coders on 7-Zip-zstd's scale (Zstandard
+  /// 1-22, Brotli 0-11, LZ4 1-12, LZ5 1-15, Lizard 10-49; clamped), recorded in the coder properties.
+  /// Default 3, 7-Zip-zstd's (Lizard: 10).
   /// </param>
   public SevenZipWriter(Stream stream, SevenZipCodec codec, bool leaveOpen = false,
       int dictionarySize = 1 << 23, int ppmdOrder = 6, int ppmdMemorySize = 1 << 24,
@@ -605,7 +606,7 @@ public sealed partial class SevenZipWriter : IDisposable {
       case SevenZipCodec.Copy:
         coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecCopy.ToArray() };
         return data;
-      case SevenZipCodec.Zstd or SevenZipCodec.Brotli or SevenZipCodec.Lz4 or SevenZipCodec.Lz5: {
+      case SevenZipCodec.Zstd or SevenZipCodec.Brotli or SevenZipCodec.Lz4 or SevenZipCodec.Lz5 or SevenZipCodec.Lizard: {
         using var ms = new MemoryStream();
         SevenZipZstdFamilyCoders.Encode(codec, new MemoryStream(data, writable: false), ms, this._level);
         coder = new SevenZipCoder { CodecId = SevenZipZstdFamilyCoders.CodecId(codec), Properties = SevenZipZstdFamilyCoders.Properties(codec, this._level) };

@@ -223,6 +223,8 @@ internal sealed class SevenZipFolderDecoder {
       return new SevenZipPullStream(SevenZipZstdFamilyCoders.OpenLz4(input).Read, size);
     if (c.Is(SevenZipConstants.CodecLz5))
       return new SevenZipPullStream(SevenZipZstdFamilyCoders.OpenLz5(input).Read, size);
+    if (c.Is(SevenZipConstants.CodecLizard))
+      return new SevenZipPullStream(SevenZipZstdFamilyCoders.OpenLizard(input).Read, size);
 
     throw new NotSupportedException($"7z: unsupported coder {SevenZipCoderNames.Describe(c.CodecId)}.");
   }

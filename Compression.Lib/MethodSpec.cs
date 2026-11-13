@@ -104,6 +104,7 @@ public readonly record struct MethodSpec(string Name, bool Optimize) {
     "brotli" => FileFormat.SevenZip.SevenZipCodec.Brotli,
     "lz4" => FileFormat.SevenZip.SevenZipCodec.Lz4,
     "lz5" => FileFormat.SevenZip.SevenZipCodec.Lz5,
+    "lizard" => FileFormat.SevenZip.SevenZipCodec.Lizard,
     _ => FileFormat.SevenZip.SevenZipCodec.Lzma2,
   };
 
