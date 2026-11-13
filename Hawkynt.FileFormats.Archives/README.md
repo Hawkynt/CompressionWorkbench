@@ -161,7 +161,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [Spark (RISC OS)](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Spark` | `.spk` `.spark` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Spark) |
 | [Split File (.001)](https://en.wikipedia.org/wiki/File_spanning) | `SplitFile` | `.001` | WORM | ✅ | — |  | [Wikipedia](https://en.wikipedia.org/wiki/File_spanning) |
 | [SQX](https://en.wikipedia.org/wiki/SQX) | `Sqx` | `.sqx` | R/W | ✅ | defrag · wipe | Formats 1.1 and 2.0, stored and LZ77 + Huffman (methods 1-4, solid, multimedia blocks, delta and x86 filters), self-extracting archives; audio, text (PPMd) and ultra methods, encryption and volumes are refused | [encode.su](https://encode.su/threads/1290-SQX-(by-SpeedProject)) |
-| [StuffIt](https://en.wikipedia.org/wiki/StuffIt) | `StuffIt` | `.sit` | R/W | ✅ | defrag · wipe | Classic SIT! and StuffIt 5 read (methods 0/1/2/3/5/13/15, folders, resource forks as `.rsrc`); writes classic and StuffIt 5 archives with store, RLE, method 13 (LZ+Huffman) or method 15 (Arsenic), checked by unar; StuffIt 5 (RC4) and classic password encryption read and written; an encrypted classic archive is a MacBinary file, since its key check lives in the resource fork | [GitHub](https://github.com/MacPaw/XADMaster) |
+| [StuffIt](https://en.wikipedia.org/wiki/StuffIt) | `StuffIt` | `.sit` | R/W | ✅ | defrag · wipe | Classic SIT! and StuffIt 5 read (methods 0/1/2/3/5/13/14/15, folders, resource forks as `.rsrc`); writes classic and StuffIt 5 archives with store, RLE, method 13 (LZ+Huffman) or method 15 (Arsenic), checked by unar; StuffIt 5 (RC4) and classic password encryption read and written; an encrypted classic archive is a MacBinary file, since its key check lives in the resource fork | [GitHub](https://github.com/MacPaw/XADMaster) |
 | [StuffIt X](https://en.wikipedia.org/wiki/StuffIt) | `StuffItX` | `.sitx` | R | ✅ | — | Read-only: Brimstone, Cyanide, Iron and stored streams, folders, resource forks as `.rsrc`, every stream CRC-checked; Darkhorse, Deflate, Blend, method 7, preprocessed and encrypted streams are listed but not extracted | [GitHub](https://github.com/MacPaw/XADMaster) |
 | [Split WIM (.swm)](https://en.wikipedia.org/wiki/Windows_Imaging_Format) | `Swm` | `.swm` `.swm2` `.swm3` `.swm4` … | WORM | ✅ | wipe | Reads wimlib-written sets from part 1 with its siblings beside it; `SwmFormatDescriptor.CreateSplit` writes multi-part sets that wimlib-imagex verifies and applies (XPRESS, LZX, LZMS, none); the generic single-stream Create writes a one-part set | [Microsoft Learn](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview) |
 | [T64 (Commodore tape image)](https://en.wikipedia.org/wiki/T64_(file_format)) | `T64` | `.t64` | R/W | ✅ | defrag · wipe |  | [vice-emu.sourceforge.net](https://vice-emu.sourceforge.io/) |
@@ -221,7 +221,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [MSI](https://en.wikipedia.org/wiki/Windows_Installer) | `Msi` | `.msi` `.msp` `.mst` | R/W | ✅ | wipe | CFB envelope; a functional Installer database is not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/) |
 | [MSIX](https://en.wikipedia.org/wiki/MSIX) | `Msix` | `.msix` `.msixbundle` | R/W | ✅ | defrag · wipe | Unsigned fresh package output | [Microsoft Learn](https://learn.microsoft.com/en-us/windows/msix/) |
 | Windows Update package | `Msu` | `.msu` | R | ✅ | — | The package cabinet (or WIM) and its parts; checked against 7-Zip | [Microsoft Learn](https://learn.microsoft.com/troubleshoot/windows-client/installing-updates-features-roles/description-of-windows-update-standalone-installer) |
-| [NSIS](https://en.wikipedia.org/wiki/Nullsoft_Scriptable_Install_System) | `Nsis` |  | R | ✅ | — | Files of the install script, zlib/bzip2/LZMA, solid or not, NSIS 2 and 3; LZMA behind the x86 branch filter (7-Zip's own installers); the uninstaller `WriteUninstaller` writes, rebuilt byte for byte as the installer writes it; checked against 7-Zip | [nsis.sourceforge.io](https://nsis.sourceforge.io/Docs/) |
+| [NSIS](https://en.wikipedia.org/wiki/Nullsoft_Scriptable_Install_System) | `Nsis` |  | WORM | ✅ | — | Files of the install script, zlib/bzip2/LZMA, solid or not, NSIS 2 and 3; LZMA behind the x86 branch filter (7-Zip's own installers); the uninstaller `WriteUninstaller` writes, rebuilt byte for byte as the installer writes it; checked against 7-Zip. Creates NSIS 3 Unicode installers (zlib, bzip2, LZMA, solid or not) on the exehead stub of an installed NSIS 3, which is native code and not shipped; they install with `/S /D=` and 7-Zip extracts them | [nsis.sourceforge.io](https://nsis.sourceforge.io/Docs/) |
 | [NuGet .nupkg](https://en.wikipedia.org/wiki/NuGet) | `NuPkg` | `.nupkg` | R/W | ✅ | defrag · wipe |  | [Microsoft Learn](https://learn.microsoft.com/nuget/reference/nuspec) |
 | [OVA](https://en.wikipedia.org/wiki/Open_Virtualization_Format) | `Ova` | `.ova` | WORM | ✅ | — | Stays WORM: the manifest must cover every member | [dmtf.org](https://www.dmtf.org/standards/ovf) |
 | [Pack200](https://en.wikipedia.org/wiki/Pack200) | `Pack200` | `.pack` | R | ✅ | — | Listing only: class names are decoded from a subset of bands; full `.class` reconstruction and creation are not implemented | [docs.oracle.com](https://docs.oracle.com/javase/8/docs/technotes/guides/pack200/pack-spec.html) |
@@ -462,19 +462,21 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | ASProtect | `AsProtect` |  | R |  | [aspack.com](http://www.aspack.com) |
 | bzexe | `Bzexe` |  | R |  | [sourceware.org](https://sourceware.org/bzip2/) |
 | Crinkler | `Crinkler` |  | R |  | [GitHub](https://github.com/runestubbe/Crinkler) |
+| DIET (DOS exe) | `Diet` |  | R | Restores DIET 1.00-1.45f EXE and COM files; files from DIET 1.45f come back byte-identical to UNP 4.11's restoration (Deark conversion) | [Archive Team](http://fileformats.archiveteam.org/wiki/DIET) |
+| EXEPACK (DOS exe) | `ExePack` |  | R | Restores EXEPACK.EXE and LINK /EXEPACK programs; equal to UNP 4.11's restoration apart from the minimum allocation, which keeps the packed program's total memory (Deark conversion) | [Archive Team](http://fileformats.archiveteam.org/wiki/EXEPACK) |
 | FSG | `Fsg` |  | R |  | [GitHub](https://github.com/horsicq/Detect-It-Easy) |
 | GoPacker | `GoPacker` |  | R |  | [GitHub](https://github.com/packing-box/docker-packing-box) |
 | [gzexe](https://en.wikipedia.org/wiki/Gzip) | `Gzexe` |  | R |  | [gnu.org](https://www.gnu.org/software/gzip/manual/gzip.html) |
 | Huan | `Huan` |  | R |  | [GitHub](https://github.com/frkngksl/Huan) |
 | kkrunchy | `Kkrunchy` |  | R |  | [GitHub](https://github.com/farbrausch/fr_public) |
-| [LZEXE (DOS exe)](https://en.wikipedia.org/wiki/LZEXE) | `LzExe` |  | R |  | [Archive Team](http://fileformats.archiveteam.org/wiki/LZEXE) |
+| [LZEXE (DOS exe)](https://en.wikipedia.org/wiki/LZEXE) | `LzExe` |  | R | Restores LZEXE 0.90/0.91/1.00a programs: image, relocations and registers equal UNP 4.11's restoration, minimum allocation as LZEXE recorded it (Deark conversion) | [Archive Team](http://fileformats.archiveteam.org/wiki/LZEXE) |
 | MEW | `Mew` |  | R |  | [GitHub](https://github.com/horsicq/Detect-It-Easy) |
 | MPRESS | `MPress` |  | R |  | [matcode.com](https://matcode.com/) |
 | NsPack | `NsPack` |  | R |  | [GitHub](https://github.com/horsicq/Detect-It-Easy) |
 | Origami | `Origami` |  | R |  | [GitHub](https://github.com/dr4k0nia/Origami) |
 | Papaw | `Papaw` |  | R |  | [GitHub](https://github.com/dimkr/papaw) |
 | PEtite | `Petite` |  | R |  | [un4seen.com](https://www.un4seen.com/petite/) |
-| [PKLITE (DOS exe)](https://en.wikipedia.org/wiki/PKLITE) | `PkLite` |  | R |  | [Archive Team](http://fileformats.archiveteam.org/wiki/PKLITE) |
+| [PKLITE (DOS exe)](https://en.wikipedia.org/wiki/PKLITE) | `PkLite` |  | R | Restores PKLITE 1.00-2.01 EXE and COM files (extra, large and 1.20 variants included); files from PKLITE 1.15 and 2.01 come back byte-identical to `pklite -x` and UNP 4.11 (Deark conversion) | [Archive Team](http://fileformats.archiveteam.org/wiki/PKLITE) |
 | Shrinkler | `Shrinkler` |  | R |  | [GitHub](https://github.com/askeksa/Shrinkler) |
 | Silent_Packer | `SilentPacker` |  | R |  | [GitHub](https://github.com/SilentVoid13/Silent_Packer) |
 | [Themida](https://en.wikipedia.org/wiki/Themida) | `Themida` |  | R |  | [oreans.com](https://www.oreans.com/themida.php) |
@@ -500,6 +502,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | RLPack | Unpack | Own `{sourceRva, destinationRva}` block table, one bare LZMA or aPLib stream per section; x86 call/jump filter reversed. All 130 corpus samples decompress. |
 | WinUpack | Unpack | Upack's LZMA-idiom range coder plus call/jump filter, driven by the loader's parameter block; both container shapes decode. |
 | Yoda's Crypter | Unpack | Stub walker replays the per-build byte cipher and restores the original entry point; 129 of 130 corpus samples decrypt. |
+| LZEXE / PKLITE / EXEPACK / DIET (DOS) | Unpack | Stubs walked, LZ77 / run-length images decoded, relocation tables and headers rebuilt; checked against UNP 4.11 and `pklite -x` on files the real packers made (see `Compression.Tests/ExePackers/DosVectors`). |
 | GZEXE / BZEXE | Unpack | Shell wrappers with embedded gzip / bzip2 payload; the original executable is restored statically. |
 | Papaw | Unpack | ELF wrapper with obfuscated XZ/LZMA2 payload; appended original restored. |
 | GoPacker | Unpack | Appended Zstandard executable payload restored. |
@@ -605,7 +608,7 @@ Use it when a .NET process needs to enumerate, extract, test, create, edit or in
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 2785 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
+Every public and protected member of all 2799 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
 
 <!-- API:END -->
 
