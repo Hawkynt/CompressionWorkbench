@@ -51,9 +51,7 @@ following hold:
   a registered filesystem, or an inner block-device provider.
 - Its source contains only ordinary, unencrypted, non-link entries with safe,
   unique relative names. No password is used.
-- The total uncompressed file contents fit the **64 MiB** memory budget,
-  enforced again when files grow while mounted. Native mount-grade filesystem
-  implementations retain their own different storage limits.
+- ZIP and TAR are now independently qualified for disk-spooled staging when their total uncompressed contents exceed **64 MiB**. Other archives, including 7z, RAR, WIM and compound tar.gz, retain the 64 MiB in-memory cap until the exact large-member writer is qualified. Disk-backed inode lengths and positions may exceed 2 GiB; available disk capacity, the archive format and the chosen editor still impose practical limits.
 - The backing source is readable, writable and seekable.
 - A **WORM-only** descriptor must first pass a non-destructive no-op rebuild:
   recreate the existing entries in a temporary file, then compare names,
@@ -68,7 +66,8 @@ following hold:
 
 | Capability | Implementation | Publication boundary |
 | --- | --- | --- |
-| Existing archive editor (`IArchiveModifiable`) | Copy original into a scratch archive; apply its native add/remove operations on that copy; fall back to the creator where available when an editor refuses a profile | Validate candidate, publish at `Flush` |
+| Existing archive editor (`IArchiveModifiable`) | Apply archive-native add/remove operations on a private candidate; ZIP and TAR with large contents stage file data on disk | Verify candidate and publish at `Flush` |
+| Explicit native in-place editor (`IArchiveInPlaceMountWriter`, currently ZIP) | For a named FileStream only, persist a full-size SHA-256 undo journal beside the original, edit the live stream, verify all data and known metadata; on failure roll back and on next mount recover any surviving journal | Journal-backed direct `Flush` |
 | WORM-only creator (`IArchiveCreatable`) | Construct complete replacement from the mounted file tree through the existing archive writer | Validate candidate, publish at `Flush` |
 | Read-only parser only | No writes; retain parsed hierarchy for reading | None |
 
@@ -80,14 +79,11 @@ publication is **not crash-atomic**; rollback can recover ordinary I/O errors,
 not every possible process or power failure. Never edit the source in another
 application while it is mounted.
 
-A native archive editor may perform changed-block edits on its *private staged
-copy*, but this version deliberately does **not** write directly into the live
-archive before verification. Direct in-place live mutation would need its own
-journal/rollback and durability qualification.
+Ordinary native archive editors mutate **only a private candidate**. ZIP is the first explicitly qualified exception: if opened from a named, writable file, the mount uses `JournaledArchiveWriteback` to persist a same-directory undo image before any live change. A failed mutation or post-write verification replays the undo. At a later mount, a surviving valid journal is recovered before the source is exposed. A corrupt journal fails closed and is retained for manual investigation. A read-only open with pending journal is refused. Native direct mutation is not inferred from `CanModify` alone.
 
-The 64 MiB limit reflects the in-memory mutable namespace, not a ZIP/7z/RAR
-format limit. Future large writable archives need disk-spooled positional
-extents and bounded transactional validation.
+**Power-failure caveat:** managed `Flush(true)` covers data fsync, but cannot portably fsync the parent directory after journal creation/deletion. The undo record may therefore lack a directory-durability guarantee on some filesystems. Do not claim crash-atomic transactions in this mode; use staged candidate publication where that stronger property is required.
+
+The original 64 MiB cap remains for formats whose writers may internally buffer complete inputs (notably 7z, RAR, WIM and compound tar.gz). The mount-neutral inode layer now supports disk-backed staging with positional `RandomAccess` and stream-oriented reconstruction for ZIP/TAR, including files larger than `Array.MaxLength`. Streaming beyond this bound still requires a format-qualified writer and sufficient temporary disk space.
 
 ## Named multi-file sources
 
@@ -106,7 +102,9 @@ because a primary file is writable.
 
 | Input family | Read-only | Read/write |
 | --- | --- | --- |
-| ZIP / 7z / RAR and other native-edit archives | Registered archive listing and entry streams | Qualified, bounded unencrypted profiles through their existing editor |
+| ZIP | Registered archive listing and entry streams | Disk-spooled, no 64 MiB logical cap; named files may use explicit in-place edits with persistent undo journal |
+| TAR | Registered archive listing and entry streams | Disk-spooled, no 64 MiB logical cap; native editor staged on a private output |
+| 7z / RAR and other native-edit archives | Registered archive listing and entry streams | Qualified unencrypted profiles within current 64 MiB materialization cap |
 | WORM-only multi-entry archives (e.g. WIM with named files, tar.gz) | Registered archive listing and entry streams | Qualified per-image via temporary full rebuild with verified no-op preflight |
 | ISO / FAT / NTFS / ext4 / btrfs | Existing managed filesystem driver or derived archive listing when the precise image is supported | **Only** an actual writable native filesystem profile; no implied support from the file extension |
 | VMDK / other registered block containers | Registered container → recognized inner filesystem(s) and raw fallback partitions | Only a single native writable inner filesystem via its supported block provider; composite partition root is read-only |
@@ -130,3 +128,17 @@ modification at the descriptor API tier.
 - [RAR archive technote](https://www.rarlab.com/technote.htm)
 - [VICE D90 disk image specification](https://vice-emu.sourceforge.io/vice_17.html)
 - [CloneCD CCD/IMG/SUB layout](https://psx-spx.consoledev.net/dev/ps1/cdr/cdromfileformats/diskimages/)
+
+
+## Native Linux FUSE validation
+
+The `NativeFuseArchiveMountIntegrationTests` fixture exercises ZIP, 7z,
+RAR, WIM and tar.gz through a real libfuse3 mount. It performs file creation,
+positional writes, truncate, rename, deletion, flush/fsync, unmount and reopen
+via the OS VFS. It carries `OsIntegration` and `NativeFuse` categories.
+
+The Linux CI job installs libfuse3 and attempts to prepare `/dev/fuse` before
+invoking this test fixture. GitHub-hosted environments may reject real FUSE
+mounts; the job is advisory and missing device/library requirements are marked
+as **skipped**. Such skips are not counted as successful kernel validation.
+The mount-neutral unit tests remain the mandatory cross-platform gate.
