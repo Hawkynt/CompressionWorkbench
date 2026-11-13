@@ -154,7 +154,7 @@ public class UharcExternalConformanceTests {
     foreach (var path in Directory.EnumerateFiles(directory)) {
       var head = new byte[4];
       using (var probe = File.OpenRead(path))
-        if (probe.Read(head) < 4 || !(UharcHeader.HasMagic(head) || head is [(byte)'U', (byte)'H', (byte)'A', 2]))
+        if (probe.Read(head) < 4 || head is not [(byte)'U', (byte)'H', (byte)'A', 2 or 4 or 6])
           continue;
 
       using var stream = File.OpenRead(path);
@@ -168,5 +168,33 @@ public class UharcExternalConformanceTests {
     }
 
     Assert.That(checkedFiles, Is.Positive, "no decodable UHARC archive in the sample directory");
+  }
+
+  /// <summary>
+  /// UHARC codes two files of the Canterbury corpus specially: <c>kennedy.xls</c> with its own
+  /// PPM model (filters bit 6) and <c>ptt5</c> as a transposed fax page (bit 7). The corpus is not
+  /// ours to commit, so <c>CWB_UHARC_CORPUS</c> points at a directory holding it.
+  /// </summary>
+  [TestCase("-mx")]
+  [TestCase("-m2")]
+  [TestCase("-mz")]
+  public void GivenCanterburyCorpusFiles_WhenUharcPacksThem_ThenOurReaderExtractsThem(string mode) {
+    var uharc = RequireUharc();
+    var corpus = Environment.GetEnvironmentVariable("CWB_UHARC_CORPUS");
+    string[] names = ["alice29.txt", "ptt5", "kennedy.xls"];
+    if (string.IsNullOrEmpty(corpus) || names.Any(n => !File.Exists(Path.Combine(corpus, n))))
+      Assert.Ignore("Set CWB_UHARC_CORPUS to a directory holding the Canterbury corpus (alice29.txt, ptt5, kennedy.xls).");
+
+    var input = Path.Combine(this._tmp, "in");
+    Directory.CreateDirectory(input);
+    foreach (var name in names)
+      File.Copy(Path.Combine(corpus!, name), Path.Combine(input, name));
+    var archive = Path.Combine(this._tmp, "corpus.uha");
+    Run(uharc, input, ["a", "-y", "-d0", mode, archive, .. names]);
+
+    using var stream = File.OpenRead(archive);
+    var reader = new UharcReader(stream);
+    foreach (var entry in reader.Entries.Where(e => !e.IsDirectory))
+      Assert.That(reader.Extract(entry), Is.EqualTo(File.ReadAllBytes(Path.Combine(input, entry.FileName))), entry.FileName);
   }
 }
