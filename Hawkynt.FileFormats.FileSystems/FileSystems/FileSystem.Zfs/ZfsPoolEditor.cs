@@ -531,8 +531,15 @@ internal static class ZfsPoolEditor {
     }
 
     private void FreePointer(Os os, Dnode? d, byte[] raw) {
-      if (IsHole(raw) || IsEmbedded(raw)) return;
+      if (IsHole(raw)) return;
       var bp = ZfsBlockPointer.Read(raw);
+      if (bp.IsEmbedded) {
+        // nothing allocated; only its logical size was charged
+        if (bp.LogicalBirth <= os.PrevSnapTxg)
+          throw new NotSupportedException("ZFS: a snapshot still holds a block the edit would free; it is not edited.");
+        if (!IsMetadata(bp)) os.Uncompressed -= bp.LogicalSize;
+        return;
+      }
       if (((U64(raw, 0x30) >> 62) & 1) != 0)
         throw new NotSupportedException("ZFS: freeing a deduplicated block is not supported.");
       if (bp.LogicalBirth <= os.PrevSnapTxg)
@@ -572,9 +579,9 @@ internal static class ZfsPoolEditor {
       if (node.Block != null || node.Pending != null)
         throw new InvalidOperationException("ZFS: an object was rewritten twice in one edit.");
       var raw = node.Raw!;
-      if (IsHole(raw) || IsEmbedded(raw)) return;
+      if (IsHole(raw)) return;
       var bp = ZfsBlockPointer.Read(raw);
-      if (bp.Level > 0) {
+      if (!bp.IsEmbedded && bp.Level > 0) {
         if (bp.Dvas.Any(v => v.Gang)) throw new NotSupportedException("ZFS: freeing a gang block is not supported.");
         var data = this._s.Pool.ReadBlock(bp, cache: false);
         for (var at = 0; at + Bp <= data.Length; at += Bp)

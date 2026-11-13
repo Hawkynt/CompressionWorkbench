@@ -122,7 +122,8 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Writes a new single-device pool (version 28) whose one filesystem holds <paramref name="inputs"/>.
   /// The option <c>PoolName</c> names the pool (default <c>cwb</c>); <c>Compression</c> sets how file
   /// data is compressed and the filesystem's <c>compression</c> property: <c>off</c> (default),
-  /// <c>on</c>/<c>lzjb</c>, <c>gzip</c>, <c>gzip-1</c>…<c>gzip-9</c> or <c>zle</c>.
+  /// <c>on</c>/<c>lzjb</c>, <c>gzip</c>, <c>gzip-1</c>…<c>gzip-9</c> or <c>zle</c>, and with <c>Version</c> =
+  /// <c>5000</c> (a feature-flag pool; default <c>28</c>) also <c>lz4</c>, <c>zstd</c> and <c>zstd-1</c>…<c>zstd-19</c>.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
@@ -153,6 +154,11 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       "raidz2" => 2,
       "raidz3" => 3,
       var other => throw new ArgumentException($"ZFS: layout '{other}' is not mirror, raidz1, raidz2 or raidz3."),
+    };
+    writer.Version = options.GetOption("Version", "28").Trim() switch {
+      "28" or "" => 28UL,
+      "5000" or "features" => 5000UL,
+      var other => throw new ArgumentException($"ZFS: pool version '{other}' is not written; 28 and 5000 are."),
     };
     if (devices.Count == 1 && writer.Parity > 0) throw new ArgumentException("ZFS: RAID-Z needs several devices.");
     writer.Build(devices, options.GetOption("PoolName", "cwb"));

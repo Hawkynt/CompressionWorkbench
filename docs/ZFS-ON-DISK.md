@@ -324,6 +324,50 @@ Charges follow the block: allocated bytes from `psize` rounded to the sector, co
 `psize`, uncompressed bytes `lsize` for file data (see "Editing a pool", "Accounting"); the
 written filesystem's dataset and directories record those three sums.
 
+### Feature flags (version 5000)
+
+With `Version` 5000 the writer marks the pool as feature-flag pool (version 5000 in the labels,
+the MOS config and the uberblock; `creation_version` 5000) and enables these features at txg 4:
+
+| Feature (guid) | List | Reference count written | Why |
+| --- | --- | --- | --- |
+| `com.delphix:enabled_txg` | write | the number of enabled features | every enabling after it records its txg |
+| `com.delphix:hole_birth` | read | 1 | active from enabling on |
+| `com.delphix:embedded_data` | read | 1 | active from enabling on |
+| `org.illumos:lz4_compress` | read | 1 | active from enabling on |
+| `com.delphix:spacemap_histogram` | write | the number of space-map objects | each space map carries a histogram |
+| `com.delphix:empty_bpobj` | write | 0 | enabled, not used |
+| `com.delphix:extensible_dataset` | read | objects turned into ZAPs (1 with zstd, else 0) | |
+| `org.freebsd:zstd_compress` | read | datasets holding zstd blocks (1 or 0) | per-dataset feature |
+
+The lists are MOS ZAPs of type `DMU_OTN_ZAP_METADATA` (0xC4) named in the object directory:
+`features_for_read` and `features_for_write` (guid → reference count; a feature flagged
+read-only-compatible goes to the write list, the rest to the read list),
+`feature_descriptions` (a fat ZAP, guid → the description as 1-byte integers including the NUL)
+and `feature_enabled_txg` (guid → txg). The labels' and MOS config's `features_for_read` nvlist
+lists, as booleans, the active features needed to read the MOS: `hole_birth` and
+`embedded_data`.
+
+- **spacemap_histogram**: a space map dnode has one block pointer and the full 320-byte
+  `space_map_phys_t` bonus: object, length, allocated bytes, five pad words, then 32 counters of
+  the metaslab's *free* regions, counter `i` for regions of `2^(i + ashift)` up to below
+  `2^(i + ashift + 1)` bytes; larger regions add `2^(class − 31)` to the last counter.
+- **embedded_data**: a file data block whose compressed stream (before padding) is at most 112
+  bytes is stored in its block pointer: payload in words 0-5, 7-9 and 11-15, the properties word
+  with logical size − 1 (25 bits), payload size − 1 (7 bits), compression, the embedded bit 39,
+  embedded type 0 (data), object type and level; logical birth in word 10. It takes no space; it
+  is charged only its logical size as uncompressed bytes. The decision comes before rounding to a
+  sector: a 512-byte block that compresses to 20 bytes is embedded.
+- **lz4**: a big-endian `u32` stream length, then one LZ4 block; `on` means lz4 here.
+- **zstd**: big-endian `u32` frame length, a big-endian `u32` holding the zstd version (low 24 bits,
+  10405 written) and level (high 8 bits), then the frame without its magic. The `compression`
+  property is `16 | level << 7`. The dataset holding zstd blocks gets the feature: its object
+  becomes a ZAP (type 0xC4, the dataset bonus kept) with the entry `org.freebsd:zstd_compress` = 0.
+
+`zdb -d` checks the per-dataset counts and that the space-map count equals the number of space
+maps with histograms; the kernel reports each feature active or enabled as written
+(`Compression.Tests/Zfs/ZfsFeatureWriteTests.cs`).
+
 ## Editing a pool
 
 `FileSystem.Zfs.ZfsPoolEditor` adds and removes files in an existing single-device pool of

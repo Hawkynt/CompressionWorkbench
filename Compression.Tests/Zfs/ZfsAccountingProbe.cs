@@ -76,7 +76,12 @@ internal static class ZfsAccountingProbe {
     long used = 0, compressed = 0, uncompressed = 0;
     var ratio = DeflateRatio(pool);
     void Count(ZfsBlockPointer bp) {
-      if (bp.IsHole || bp.IsEmbedded) return;
+      if (bp.IsHole) return;
+      if (bp.IsEmbedded) {
+        // an embedded block takes no space: data is charged its logical size only
+        if (bp.Type is 19 or 23 or 25 or 26 or 49) uncompressed += bp.LogicalSize;
+        return;
+      }
       foreach (var dva in bp.Dvas)
         if (!dva.IsEmpty) used += dva.AllocatedSectors * ratio;
       compressed += bp.PhysicalSize;
@@ -84,9 +89,9 @@ internal static class ZfsAccountingProbe {
       uncompressed += metadata ? bp.PhysicalSize : bp.LogicalSize;
     }
     void Tree(ZfsBlockPointer bp) {
-      if (bp.IsHole || bp.IsEmbedded) return;
+      if (bp.IsHole) return;
       Count(bp);
-      if (bp.Level == 0) return;
+      if (bp.IsEmbedded || bp.Level == 0) return;
       var data = pool.ReadBlock(bp, cache: false);
       for (var at = 0; at + 128 <= data.Length; at += 128)
         Tree(ZfsBlockPointer.Read(data.AsSpan(at)));

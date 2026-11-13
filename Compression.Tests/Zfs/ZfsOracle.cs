@@ -47,6 +47,19 @@ internal static class ZfsOracle {
     Assert.That(bcc.StdOut, Does.Not.Contain("mismatch").And.Not.Contain("error"), bcc.StdOut);
   }
 
+  /// <summary>
+  /// <c>zdb -d</c> walks every dataset and the MOS: no MOS object leaks and every feature reference
+  /// count it can check (space-map histograms included) is right. Returns its output.
+  /// </summary>
+  public static string AssertFeatureCounts(string wsl, string pool) {
+    var d = FsInteropToolbox.RunWsl($"zdb -e -p {wsl} -d {pool} 2>&1");
+    Assert.That(d.ExitCode, Is.Zero, d.StdOut);
+    Assert.That(d.StdOut, Does.Not.Contain("mismatch").And.Not.Contain("leaked").And.Not.Contain("error"), d.StdOut);
+    var b = FsInteropToolbox.RunWsl($"zdb -e -p {wsl} -b {pool} 2>&1");
+    Assert.That(b.StdOut, Does.Not.Contain("space map refcount mismatch"), b.StdOut);
+    return d.StdOut;
+  }
+
   /// <summary><c>zdb -r</c> copies <paramref name="path"/> of <paramref name="dataset"/> out byte for byte.</summary>
   public static void AssertCopiesOut(string dir, string wsl, string dataset, string path, string sha) {
     var copy = FsInteropToolbox.RunWsl($"zdb -e -p {wsl} -r {dataset} '{path}' {wsl}/copy.bin 2>&1");
@@ -59,7 +72,10 @@ internal static class ZfsOracle {
   /// mounts every dataset under one root and returns the SHA-256 of every regular file by path
   /// (child datasets under their names), after an export.
   /// </summary>
-  public static Dictionary<string, string> KernelManifest(string dir, string wsl, string pool) {
+  public static Dictionary<string, string> KernelManifest(string dir, string wsl, string pool) => KernelManifest(dir, wsl, pool, out _);
+
+  /// <summary>As <see cref="KernelManifest(string, string, string)"/>; <paramref name="log"/> also lists every <c>feature@</c> property as <c>FEATURE name state</c>.</summary>
+  public static Dictionary<string, string> KernelManifest(string dir, string wsl, string pool, out string log) {
     var uploads = string.Concat(Directory.GetFiles(dir, "*.img").Select(Path.GetFileName).Order(StringComparer.Ordinal)
       .Select(f => $"upload {f} /out/{f}\\n"));
     File.WriteAllText(Path.Combine(dir, "inner.sh"), $$"""
@@ -68,6 +84,7 @@ internal static class ZfsOracle {
       zpool import -d $O -N -o altroot=$M {{pool}} || { echo IMPORT-FAILED; exit 1; }
       zpool scrub -w {{pool}}
       zpool status -v {{pool}}
+      zpool get -H -o property,value all {{pool}} | grep feature@ | while read -r k v; do echo "FEATURE ${k#feature@} $v"; done
       zfs set mountpoint=/ {{pool}}
       zfs mount -a
       ( cd $M && find . -mindepth 1 -type f | sort | while read -r p; do echo "$(sha256sum < "$p" | cut -d' ' -f1) ${p#./}"; done ) > $O/pool.manifest
@@ -80,7 +97,7 @@ internal static class ZfsOracle {
       "debug sh \"sh /sysroot/inner.sh > /sysroot/log.txt 2>&1\"\\ndownload /log.txt log.txt\\n" +
       "download /out/pool.manifest pool.manifest\\n' | timeout 300 guestfish -a scratch.img 2>&1");
     var logPath = Path.Combine(dir, "log.txt");
-    var log = File.Exists(logPath) ? File.ReadAllText(logPath) : "";
+    log = File.Exists(logPath) ? File.ReadAllText(logPath) : "";
     if (!File.Exists(Path.Combine(dir, "pool.manifest")) && !log.Contains("IMPORT-FAILED"))
       Assert.Inconclusive("the appliance did not run:\n" + run.StdOut + run.StdErr);
     Assert.That(log, Does.Not.Contain("IMPORT-FAILED"), log);
