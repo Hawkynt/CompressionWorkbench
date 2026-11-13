@@ -69,7 +69,18 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Kind: FormatOptionKind.Boolean,
       Default: "true",
       Description: "Record Rock Ridge (RRIP 1.10) in the primary tree: full POSIX names " +
-        "of any length, permissions and modification times, as Linux and the BSDs read them."),
+        "of any length, permissions and modification times, as Linux and the BSDs read them; " +
+        "symbolic links (an input that is a link on disk) and folders deeper than eight levels " +
+        "(relocated to rr_moved with RE/CL/PL) need it."),
+    new FormatOptionDescriptor(
+      Key: "Zisofs",
+      DisplayName: "zisofs compression",
+      Kind: FormatOptionKind.Boolean,
+      Default: "false",
+      Description: "Store files zisofs-compressed (Rock Ridge ZF, 32 KiB zlib blocks) where that " +
+        "saves sectors, as mkisofs -z with mkzftree does; the Linux kernel and other Rock Ridge " +
+        "readers decompress them transparently. Needs Rock Ridge; Joliet-only readers see the " +
+        "compressed bytes."),
     new FormatOptionDescriptor(
       Key: "BootImage",
       DisplayName: "El Torito BIOS boot image",
@@ -208,10 +219,17 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         continue;
       }
       var info = i;
+      if (LinkTarget(w, info) is { } target) {
+        w.AddSymlink(name, target, mode, i.SourceLastModifiedUtc);
+        continue;
+      }
       // Only the length is needed to lay the image out; reading a large input
-      // into a byte[] would cap the image at what an array can hold.
+      // into a byte[] would cap the image at what an array can hold. zisofs needs the
+      // content to compress it, so with zisofs a file on disk is read in.
       if (info.InMemoryContent is { } bytes)
         w.AddFile(name, bytes);
+      else if (w.EnableZisofs && new FileInfo(info.FullPath).Length <= uint.MaxValue)
+        w.AddFile(name, File.ReadAllBytes(info.FullPath));
       else
         w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
       w.SetMetadata(name, mode, i.SourceLastModifiedUtc);
@@ -236,10 +254,27 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         w.AddDirectory(name, mode, i.SourceLastModifiedUtc);
         continue;
       }
+      if (LinkTarget(w, i) is { } target) {
+        w.AddSymlink(name, target, mode, i.SourceLastModifiedUtc);
+        continue;
+      }
       w.AddFile(name, i.ReadContent());
       w.SetMetadata(name, mode, i.SourceLastModifiedUtc);
     }
     return w;
+  }
+
+  /// <summary>
+  /// The target of an input that is a symbolic link on disk, when the image records links
+  /// (Rock Ridge); otherwise null, and the link's content is stored as a file.
+  /// </summary>
+  private static string? LinkTarget(IsoWriter w, ArchiveInputInfo input) {
+    if (!w.EnableRockRidge || input.InMemoryContent != null || string.IsNullOrEmpty(input.FullPath)) return null;
+    try {
+      return new FileInfo(input.FullPath).LinkTarget?.Replace('\\', '/');
+    } catch (IOException) {
+      return null;
+    }
   }
 
   private static IsoWriter NewWriter(FormatCreateOptions? options) {
@@ -251,6 +286,7 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       EnableJoliet          = options?.GetOptionBool("Joliet", true) ?? true,
       EnableRockRidge       = options?.GetOptionBool("RockRidge", true) ?? true,
     };
+    w.EnableZisofs = w.EnableRockRidge && (options?.GetOptionBool("Zisofs", false) ?? false);
     if (EntryPath(options?.GetOption("BootImage", "") ?? "") is { Length: > 0 } bios)
       // The isolinux / GRUB convention: no emulation, load 4 virtual sectors, boot info table.
       w.BootEntries.Add(new IsoWriter.BootEntry { Platform = 0x00, SectorCount = 4, ImagePath = bios, PatchBootInfoTable = true });

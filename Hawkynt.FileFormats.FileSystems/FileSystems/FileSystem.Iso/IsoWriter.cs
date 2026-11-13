@@ -89,7 +89,39 @@ public sealed class IsoWriter {
   /// modes (PX) and modification times (TF), marked by SUSP "SP"/"ER" in the root. Off by
   /// default, so images stay byte-identical to before unless asked for.
   /// </summary>
+  /// <remarks>
+  /// With Rock Ridge the primary tree also carries symbolic links (SL, see
+  /// <see cref="AddSymlink"/>) and stays within ECMA-119's eight directory levels (6.8.2.1):
+  /// a directory deeper than that moves to <c>rr_moved</c> at the root, marked RE there, with
+  /// a PL entry in its ".." naming its real parent and a CL placeholder at its real place, so
+  /// Rock Ridge readers show it where it belongs (RRIP 1.10 4.1.5). The Joliet tree keeps the
+  /// real hierarchy.
+  /// </remarks>
   public bool EnableRockRidge { get; set; }
+
+  /// <summary>
+  /// Stores files zisofs-compressed (Rock Ridge ZF, zisofs 1 with 32 KiB zlib blocks) when
+  /// that saves sectors; Rock Ridge readers such as the Linux kernel decompress them on the fly.
+  /// Needs <see cref="EnableRockRidge"/>. The Joliet tree names the same compressed data, as
+  /// with mkisofs -z, so only a zisofs-aware reader sees the plain content. Boot images and
+  /// streamed files are not compressed.
+  /// </summary>
+  public bool EnableZisofs { get; set; }
+
+  private readonly List<(string Name, string Target)> _symlinks = [];
+
+  /// <summary>
+  /// Adds a symbolic link (Rock Ridge SL, RRIP 1.10 4.1.3); the image needs
+  /// <see cref="EnableRockRidge"/>. A link is a Rock Ridge object only: the Joliet tree leaves
+  /// it out.
+  /// </summary>
+  public void AddSymlink(string name, string target, int? mode = null, DateTime? modified = null) {
+    ArgumentNullException.ThrowIfNull(target);
+    var key = Key(name);
+    if (key.Length == 0) throw new ArgumentException("A symbolic link needs a name.", nameof(name));
+    _symlinks.Add((key, target));
+    if (mode != null || modified != null) _meta[key] = (mode, modified);
+  }
 
   private readonly Dictionary<string, (int? Mode, DateTime? Modified)> _meta = new(StringComparer.Ordinal);
   private readonly List<string> _explicitDirs = [];
@@ -168,6 +200,15 @@ public sealed class IsoWriter {
     public int? Mode;
     public DateTime? Modified;
     public ContinuationArea? Continuation;  // where an NM too long for the record went
+
+    // The primary tree with Rock Ridge relocation: a directory deeper than eight levels lives
+    // in rr_moved (PrimaryParent), and its real parent holds a CL placeholder for it.
+    public DirNode? PrimaryParent;
+    public readonly List<DirNode> PrimaryChildren = [];
+    public readonly List<DirNode> Placeholders = [];
+    public bool Relocated;                  // RE in its record in rr_moved, PL in its ".."
+    public string PlaceholderName = "";     // its primary identifier at its real place
+    public ContinuationArea? PlaceholderContinuation;
   }
 
   private sealed class FileNode {
@@ -184,6 +225,10 @@ public sealed class IsoWriter {
     public ContinuationArea? Continuation;
     /// <summary>Not written as data: its extent is the boot catalog.</summary>
     public bool IsBootCatalog;
+    /// <summary>A symbolic link (Rock Ridge SL): no data, no Joliet record.</summary>
+    public string? SymlinkTarget;
+    /// <summary>When set, <see cref="Data"/> holds the zisofs form of a file this many bytes long.</summary>
+    public long? ZisofsSize;
 
     /// <summary>Logical file length, whether in-memory or streamed.</summary>
     public long Length => this.StreamingSize ?? this.Data.Length;
@@ -208,15 +253,16 @@ public sealed class IsoWriter {
     var root = BuildTree();
 
     // Enumerate directories in breadth-first order: a node's parent always
-    // precedes it, which is exactly the ordering the path table requires.
-    var dirs = OrderDirectoriesBreadthFirst(root);
+    // precedes it, which is exactly the ordering the path table requires. The primary tree
+    // (with rr_moved when directories were relocated) and the Joliet tree have one each.
+    var dirs = OrderDirectoriesBreadthFirst(root, primary: true);
+    var jolietDirs = this.EnableJoliet ? OrderDirectoriesBreadthFirst(root, primary: false) : [];
 
     // Compute each directory's extent size for both trees.
-    foreach (var dir in dirs) {
+    foreach (var dir in dirs)
       dir.Size = this.CalculateDirectorySize(dir, joliet: false);
-      if (this.EnableJoliet)
-        dir.JolietSize = this.CalculateDirectorySize(dir, joliet: true);
-    }
+    foreach (var dir in jolietDirs)
+      dir.JolietSize = this.CalculateDirectorySize(dir, joliet: true);
 
     // Reserved sectors 0-15 (system area), then the volume-descriptor set:
     //   16 PVD, [17 Joliet SVD,] then the terminator.
@@ -238,7 +284,7 @@ public sealed class IsoWriter {
     var jolietLPathLba = 0;
     var jolietMPathLba = 0;
     if (joliet) {
-      jolietPathTableSize = CalculatePathTableSize(dirs, joliet: true);
+      jolietPathTableSize = CalculatePathTableSize(jolietDirs, joliet: true);
       var jolietPathTableSectors = SectorsFor(jolietPathTableSize);
       jolietLPathLba = cursor;
       jolietMPathLba = jolietLPathLba + jolietPathTableSectors;
@@ -258,18 +304,20 @@ public sealed class IsoWriter {
 
     // Joliet directory extents follow the primary ones.
     if (joliet)
-      foreach (var dir in dirs) {
+      foreach (var dir in jolietDirs) {
         dir.JolietLba = cursor;
         cursor += SectorsFor(dir.JolietSize);
       }
 
-    // Rock Ridge continuation areas: names too long for their directory record.
+    // Rock Ridge continuation areas: names and link targets too long for their directory record.
     var continuations = new List<(ContinuationArea Area, byte[] Bytes)>();
     if (this.EnableRockRidge) {
       var areaOffset = 0;
       var areaLba = cursor;
-      ContinuationArea? Place(string name, int idLen) {
-        if (NameContinuation(name, idLen) is not { } bytes) return null;
+      ContinuationArea? Place(RockRidgeRecord record, int idLen) {
+        if (IsoRockRidgeWriter.Overflow(record, idLen) is not { } bytes) return null;
+        if (bytes.Length > SectorSize)
+          throw new NotSupportedException($"ISO 9660: the Rock Ridge name or link target of '{record.Name}' needs more than one sector.");
         if (areaOffset + bytes.Length > SectorSize) {
           ++areaLba;
           areaOffset = 0;
@@ -280,10 +328,12 @@ public sealed class IsoWriter {
         return area;
       }
       foreach (var dir in dirs) {
-        foreach (var child in dir.Children.Values)
-          child.Continuation = Place(child.RrName, IdentifierLength(child.Name, isFile: false, joliet: false));
+        foreach (var child in dir.PrimaryChildren)
+          child.Continuation = Place(ChildRecord(child, null), IdentifierLength(child.Name, isFile: false, joliet: false));
+        foreach (var moved in dir.Placeholders)
+          moved.PlaceholderContinuation = Place(PlaceholderRecord(moved), IdentifierLength(moved.PlaceholderName, isFile: false, joliet: false));
         foreach (var file in dir.Files)
-          file.Continuation = Place(file.RrName, IdentifierLength(file.Identifier, isFile: true, joliet: false));
+          file.Continuation = Place(FileRecord(file), IdentifierLength(file.Identifier, isFile: true, joliet: false));
       }
       if (continuations.Count > 0) cursor = areaLba + 1;
     }
@@ -295,6 +345,7 @@ public sealed class IsoWriter {
     this.FileDataStartSector = cursor;
     foreach (var dir in dirs)
       foreach (var file in dir.Files) {
+        if (file.SymlinkTarget != null) continue; // a link has no data
         file.Lba = cursor;
         var sectors = file.Length == 0 ? 1 : (int)((file.Length + SectorSize - 1) / SectorSize);
         if (file.IsBootCatalog) sectors = Math.Max(sectors, 1);
@@ -384,15 +435,15 @@ public sealed class IsoWriter {
 
     // Joliet path tables.
     if (joliet) {
-      WritePathTable(image, jolietLPathLba * SectorSize, dirs, littleEndian: true, joliet: true);
-      WritePathTable(image, jolietMPathLba * SectorSize, dirs, littleEndian: false, joliet: true);
+      WritePathTable(image, jolietLPathLba * SectorSize, jolietDirs, littleEndian: true, joliet: true);
+      WritePathTable(image, jolietMPathLba * SectorSize, jolietDirs, littleEndian: false, joliet: true);
     }
 
     // Directory extents (primary then Joliet), then the Rock Ridge continuation areas.
     foreach (var dir in dirs)
       WriteDirectoryExtent(image, dir, joliet: false);
     if (joliet)
-      foreach (var dir in dirs)
+      foreach (var dir in jolietDirs)
         WriteDirectoryExtent(image, dir, joliet: true);
     foreach (var (area, bytes) in continuations)
       bytes.CopyTo(image, (long)area.Lba * SectorSize + area.Offset);
@@ -403,6 +454,7 @@ public sealed class IsoWriter {
     // which copies only Data.Length bytes).
     foreach (var dir in dirs)
       foreach (var file in dir.Files) {
+        if (file.SymlinkTarget != null) continue;
         if (file.StreamOpener != null) {
           if (this._streamingSink != null && file.Length > 0)
             this._streamingSink.Add(((long)file.Lba * SectorSize, file.Length, file.StreamOpener));
@@ -523,8 +575,115 @@ public sealed class IsoWriter {
       if (_meta.TryGetValue(path, out var m)) (node.Mode, node.Modified) = m;
       dir.Files.Add(node);
     }
+
+    if (_symlinks.Count > 0 && !this.EnableRockRidge)
+      throw new NotSupportedException("ISO 9660: symbolic links need Rock Ridge (EnableRockRidge).");
+    if (this.EnableZisofs && !this.EnableRockRidge)
+      throw new NotSupportedException("ISO 9660: zisofs needs Rock Ridge (EnableRockRidge).");
+    foreach (var (path, target) in _symlinks) {
+      var segments = path.Split('/');
+      var dir = Descend(segments, segments.Length - 1);
+      dir.Files.RemoveAll(f => f.Path == path);
+      var node = new FileNode {
+        Identifier = NormalizeFileName(segments[^1]) + ";1",
+        JolietName = TruncateJolietName(segments[^1]),
+        RrName = segments[^1],
+        Path = path,
+        Data = [],
+        SymlinkTarget = target,
+      };
+      if (_meta.TryGetValue(path, out var m)) (node.Mode, node.Modified) = m;
+      dir.Files.Add(node);
+    }
+
+    if (this.EnableZisofs) this.CompressWithZisofs(root);
     MakeIdentifiersUnique(root);
+    this.LayOutPrimaryTree(root);
     return root;
+  }
+
+  /// <summary>
+  /// zisofs-compresses each in-memory file whose zisofs form takes fewer sectors; boot images
+  /// and the boot catalog stay plain, since El Torito loads them as they are.
+  /// </summary>
+  private void CompressWithZisofs(DirNode root) {
+    var boot = new HashSet<string>(this.BootEntries.Where(e => e.ImagePath != null).Select(e => Key(e.ImagePath!)), StringComparer.Ordinal);
+    var queue = new Queue<DirNode>([root]);
+    while (queue.Count > 0) {
+      var dir = queue.Dequeue();
+      foreach (var child in dir.Children.Values) queue.Enqueue(child);
+      foreach (var file in dir.Files) {
+        if (file.SymlinkTarget != null || file.StreamOpener != null || file.IsBootCatalog || boot.Contains(file.Path) || file.Data.Length == 0)
+          continue;
+        if (Zisofs.Compress(file.Data) is not { } packed || SectorsFor(packed.Length) >= SectorsFor(file.Data.Length)) continue;
+        file.ZisofsSize = file.Data.Length;
+        file.Data = packed;
+      }
+    }
+  }
+
+  /// <summary>
+  /// The primary tree: as the real one, except that with Rock Ridge a directory below the
+  /// eighth level (ECMA-119 6.8.2.1, the root being level 1) moves into rr_moved at the root,
+  /// leaving a CL placeholder in its real parent (RRIP 1.10 4.1.5).
+  /// </summary>
+  private void LayOutPrimaryTree(DirNode root) {
+    var queue = new Queue<DirNode>([root]);
+    while (queue.Count > 0) {
+      var dir = queue.Dequeue();
+      foreach (var child in dir.Children.Values) {
+        child.PrimaryParent = dir;
+        dir.PrimaryChildren.Add(child);
+        queue.Enqueue(child);
+      }
+    }
+    if (!this.EnableRockRidge) return;
+
+    DirNode? moved = null;
+    var levels = new Queue<(DirNode Dir, int Level)>([(root, 1)]);
+    while (levels.Count > 0) {
+      var (dir, level) = levels.Dequeue();
+      foreach (var child in dir.PrimaryChildren.ToList()) {
+        if (level < 8) {
+          levels.Enqueue((child, level + 1));
+          continue;
+        }
+        if (moved == null) {
+          moved = new DirNode { Name = "RR_MOVED", RrName = "rr_moved", JolietName = "rr_moved", Path = "rr_moved", Parent = root, PrimaryParent = root };
+          var taken = new HashSet<string>(root.PrimaryChildren.Select(c => c.Name).Concat(root.Files.Select(f => f.Identifier[..^2])), StringComparer.Ordinal);
+          for (var n = 1; !taken.Add(moved.Name); n++) moved.Name = $"RR_MOVED~{n}";
+          root.PrimaryChildren.Add(moved);
+        }
+        dir.PrimaryChildren.Remove(child);
+        dir.Placeholders.Add(child);
+        child.Relocated = true;
+        child.PlaceholderName = child.Name;
+        child.PrimaryParent = moved;
+        var name = child.Name;
+        for (var n = 1; moved.PrimaryChildren.Any(c => c.Name == name); n++) name = $"{child.Name}~{n}";
+        child.Name = name;
+        moved.PrimaryChildren.Add(child);
+        levels.Enqueue((child, 3)); // root 1, rr_moved 2
+      }
+    }
+  }
+
+  private static RockRidgeRecord ChildRecord(DirNode child, int? _)
+    => new('d', child.Mode, child.Modified, child.RrName, Relocated: child.Relocated);
+
+  /// <summary>The CL placeholder of a relocated directory, at its real place: a record of its name pointing at it.</summary>
+  private static RockRidgeRecord PlaceholderRecord(DirNode moved)
+    => new('d', moved.Mode, moved.Modified, moved.RrName, ChildLink: moved.Lba);
+
+  private static RockRidgeRecord FileRecord(FileNode file)
+    => file.SymlinkTarget != null
+      ? new('l', file.Mode, file.Modified, file.RrName, SymlinkTarget: file.SymlinkTarget)
+      : new('f', file.Mode, file.Modified, file.RrName, ZisofsSize: file.ZisofsSize);
+
+  /// <summary>The ".." of a directory: its primary parent's attributes, and PL to its real parent when relocated.</summary>
+  private static RockRidgeRecord ParentRecord(DirNode dir) {
+    var parent = dir.PrimaryParent ?? dir;
+    return new('d', parent.Mode, parent.Modified, null, ParentLink: dir.Relocated ? dir.Parent!.Lba : null);
   }
 
   /// <summary>
@@ -552,22 +711,22 @@ public sealed class IsoWriter {
     }
   }
 
-  private static List<DirNode> OrderDirectoriesBreadthFirst(DirNode root) {
+  private static List<DirNode> OrderDirectoriesBreadthFirst(DirNode root, bool primary) {
     var ordered = new List<DirNode>();
     var queue = new Queue<DirNode>();
     queue.Enqueue(root);
     while (queue.Count > 0) {
       var dir = queue.Dequeue();
-      dir.PathTableIndex = ordered.Count + 1; // 1-based
-      dir.JolietPathTableIndex = dir.PathTableIndex;
+      if (primary) dir.PathTableIndex = ordered.Count + 1; // 1-based
+      else dir.JolietPathTableIndex = ordered.Count + 1;
       ordered.Add(dir);
-      foreach (var child in dir.Children.Values)
+      foreach (var child in primary ? dir.PrimaryChildren : (IEnumerable<DirNode>)dir.Children.Values)
         queue.Enqueue(child);
     }
     // Parent indices are resolved once every node has its own index.
     foreach (var dir in ordered) {
-      dir.ParentPathTableIndex = dir.Parent?.PathTableIndex ?? 1; // root's parent = itself (1)
-      dir.JolietParentPathTableIndex = dir.Parent?.JolietPathTableIndex ?? 1;
+      if (primary) dir.ParentPathTableIndex = dir.PrimaryParent?.PathTableIndex ?? 1; // root's parent = itself (1)
+      else dir.JolietParentPathTableIndex = dir.Parent?.JolietPathTableIndex ?? 1;
     }
     return ordered;
   }
@@ -576,19 +735,25 @@ public sealed class IsoWriter {
 
   private int CalculateDirectorySize(DirNode dir, bool joliet) {
     var rr = this.EnableRockRidge && !joliet;
-    var parent = dir.Parent ?? dir;
     var size = 0;
     size = AppendRecord(size, 1, rr ? SelfSystemUse(dir).Length : 0);
-    size = AppendRecord(size, 1, rr ? RockRidgeFields(parent.Mode, parent.Modified, isDir: true, null, 0, null).Length : 0);
+    size = AppendRecord(size, 1, rr ? IsoRockRidgeWriter.Fields(ParentRecord(dir), 1, null).Length : 0);
 
-    foreach (var child in dir.Children.Values) {
+    foreach (var child in joliet ? (IEnumerable<DirNode>)dir.Children.Values : dir.PrimaryChildren) {
       var idLen = IdentifierLength(joliet ? child.JolietName : child.Name, isFile: false, joliet);
-      size = AppendRecord(size, idLen, rr ? RockRidgeFields(child.Mode, child.Modified, isDir: true, child.RrName, idLen, null).Length : 0);
+      size = AppendRecord(size, idLen, rr ? IsoRockRidgeWriter.Fields(ChildRecord(child, null), idLen, null).Length : 0);
     }
 
+    if (!joliet)
+      foreach (var moved in dir.Placeholders) {
+        var idLen = IdentifierLength(moved.PlaceholderName, isFile: false, joliet: false);
+        size = AppendRecord(size, idLen, rr ? IsoRockRidgeWriter.Fields(PlaceholderRecord(moved), idLen, null).Length : 0);
+      }
+
     foreach (var file in dir.Files) {
+      if (joliet && file.SymlinkTarget != null) continue;
       var idLen = IdentifierLength(joliet ? file.JolietName : file.Identifier, isFile: true, joliet);
-      size = AppendRecord(size, idLen, rr ? RockRidgeFields(file.Mode, file.Modified, isDir: false, file.RrName, idLen, null).Length : 0);
+      size = AppendRecord(size, idLen, rr ? IsoRockRidgeWriter.Fields(FileRecord(file), idLen, null).Length : 0);
     }
 
     if (size % SectorSize != 0)
@@ -867,32 +1032,44 @@ public sealed class IsoWriter {
     var baseOff = lba * SectorSize;
     var pos = baseOff;
 
-    // "." (self) and ".." (parent; root's parent is itself).
-    var parent = dir.Parent ?? dir;
+    // "." (self) and ".." (parent; root's parent is itself). In the primary tree a relocated
+    // directory's parent is rr_moved, and its ".." names the real parent with PL.
+    var parent = (joliet ? dir.Parent : dir.PrimaryParent) ?? dir;
     var parentLba = joliet ? parent.JolietLba : parent.Lba;
     var parentSize = joliet ? parent.JolietSize : parent.Size;
     WriteDirectoryRecord(image, pos, lba, selfSize, 0x02, [0], rr ? SelfSystemUse(dir) : null, dir.Modified);
     pos += image[pos];
-    WriteDirectoryRecord(image, pos, parentLba, parentSize, 0x02, [1], rr ? RockRidgeFields(parent.Mode, parent.Modified, true, null, 1, null) : null, parent.Modified);
+    WriteDirectoryRecord(image, pos, parentLba, parentSize, 0x02, [1], rr ? IsoRockRidgeWriter.Fields(ParentRecord(dir), 1, null) : null, parent.Modified);
     pos += image[pos];
 
     // Child directory records.
-    foreach (var child in dir.Children.Values) {
+    foreach (var child in joliet ? (IEnumerable<DirNode>)dir.Children.Values : dir.PrimaryChildren) {
       var identifier = DirectoryIdentifierBytes(child, joliet);
       var childLba = joliet ? child.JolietLba : child.Lba;
       var childSize = joliet ? child.JolietSize : child.Size;
-      var su = rr ? RockRidgeFields(child.Mode, child.Modified, true, child.RrName, identifier.Length, child.Continuation) : null;
+      var su = rr ? IsoRockRidgeWriter.Fields(ChildRecord(child, null), identifier.Length, child.Continuation) : null;
       pos = AdvancePastSectorBoundary(baseOff, pos, identifier.Length, su?.Length ?? 0);
       WriteDirectoryRecord(image, pos, childLba, childSize, 0x02, identifier, su, child.Modified);
       pos += image[pos];
     }
 
-    // File records (both trees reference the same shared data extent).
+    // CL placeholders of relocated directories: file records at their real place.
+    if (!joliet)
+      foreach (var moved in dir.Placeholders) {
+        var identifier = Encoding.ASCII.GetBytes(moved.PlaceholderName);
+        var su = rr ? IsoRockRidgeWriter.Fields(PlaceholderRecord(moved), identifier.Length, moved.PlaceholderContinuation) : null;
+        pos = AdvancePastSectorBoundary(baseOff, pos, identifier.Length, su?.Length ?? 0);
+        WriteDirectoryRecord(image, pos, moved.Lba, 0, 0x00, identifier, su, moved.Modified);
+        pos += image[pos];
+      }
+
+    // File records (both trees reference the same shared data extent); links only in Rock Ridge.
     foreach (var file in dir.Files) {
+      if (joliet && file.SymlinkTarget != null) continue;
       var identifier = FileIdentifierBytes(file, joliet);
-      var su = rr ? RockRidgeFields(file.Mode, file.Modified, false, file.RrName, identifier.Length, file.Continuation) : null;
+      var su = rr ? IsoRockRidgeWriter.Fields(FileRecord(file), identifier.Length, file.Continuation) : null;
       pos = AdvancePastSectorBoundary(baseOff, pos, identifier.Length, su?.Length ?? 0);
-      var length = file.IsBootCatalog ? SectorSize : (int)file.Length;
+      var length = file.IsBootCatalog ? SectorSize : file.SymlinkTarget != null ? 0 : (int)file.Length;
       WriteDirectoryRecord(image, pos, file.Lba, length, 0x00, identifier, su, file.Modified);
       pos += image[pos];
     }
