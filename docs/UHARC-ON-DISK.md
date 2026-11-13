@@ -55,7 +55,7 @@ byte 37 — the low byte of the header check, which lies outside the scrambled r
 | 4 | 2 | archive DOS time |
 | 6 | 2 | archive DOS date |
 | 8 | 1 | flags: bit 1 packed stream enciphered with the password, bit 2 tables enciphered with the password |
-| 9 | 1 | filters: bit 0 executable filter enabled, bit 1 multimedia delta filter enabled |
+| 9 | 1 | filters: bit 0 executable filter enabled, bit 1 multimedia delta filter enabled, bit 7 fax page (see Filters) |
 | 10 | 1 | stream method (below) |
 | 11 | 2 | number of directory names |
 | 13 | 4 | unpacked size of the stream (sum of all file sizes) |
@@ -260,12 +260,38 @@ followed by a uniform value of 2 that says whether another group follows. Output
 go through the word transform; at *L* the stream switches to binary coding (below). A stream of
 nothing but text still codes *L*, usually a few bytes short of the end.
 
-**Resets.** Like LZP's, derived from the file sizes, with a span of 256 KiB (text) or 64 KiB
-(binary) and never beyond *L*. A reset clears the order-1 and order-0 rows and seeds the uniform rows, halves
+**Resets.** Derived from the file sizes: from the last reset point the coder looks 256 KiB
+(text) or 64 KiB (binary) ahead and walks the file ends up to the first one at or beyond that,
+but stops at a file end that reaches *L* or the start of the record file (below) as soon as it
+steps onto it. A reset clears the order-1 and order-0 rows and seeds the uniform rows, halves
 the class rows, quarters the order-2 records, resets the copy decisions, the stride detector,
 the cost averages and the linear-predictor scores, and finally codes the multimedia class as a
 uniform value of 10 (0 = none, 1..9 as ALZ's selectors 1..9, with contexts 0xF8 lower). The
 binary predictor's tables clear too.
+
+**File-size rules.** Just before that class is coded, the sizes of the file the new block ends
+with (*c*) and of the file before it (*p*) are compared with a fixed list of
+(*previous*, *current*) pairs, unless the block ends with the first file: (587984, 2988578) quarters the order-4 records twice; (481861, 426754)
+quarters them once; (1566200, 2934336) and (2934336, 438144) quarter the order-4 and the
+order-2 records; (3706306, 1498414), (513216, 246814), and a record-sized *c* after a
+non-record-sized *p* inside the record region clear the first record of every order-4 chain
+and the first 65536 order-2 records. They are sizes of standard compression-corpus files; the
+rules apply to any files of those sizes. Fixtures `sizes-mx-a` (481861 then 426754) and
+`sizes-mx-b` (513216 then 246814) are our own text and fail to decode without the rules; the
+four larger pairs are also generated and packed by UHARC 0.6b in
+`UharcExternalConformanceTests.GivenLargerFileSizeRulePairs_WhenUharcWritesPpm_ThenEveryByteMatches`;
+both files of every pair decode byte for byte.
+
+**Record file** (filters bit 6). UHARC 0.6 sets the bit when the archive holds one particular
+1029744-byte spreadsheet of the Canterbury corpus (`kennedy.xls`); the same size with other
+content, or that file with 100 bytes changed, leaves it clear. With the bit, the record region
+starts at the end of the file before the first 1029744-byte file. From there on, in the
+output, symbol 0xFE escapes the next one: `FE FE` is a literal 0xFE and `FE x` the five bytes
+`00 00 03 03 x`; the binary predictor's stride-10 phase becomes "the bytes two and three back
+are `09 00`", and no level of it is trusted right after a 0x01. Stride 10 is armed from the
+start when the record file is the first file, else at the block where it begins. Measured on
+`kennedy.xls` alone, after `alice29.txt` and `ptt5`, and renamed: all decode only this way
+(a gated conformance test, `CWB_UHARC_CORPUS`, repeats it; the corpus is not committed).
 
 **Copies.** Before every byte a candidate position is chosen:
 
@@ -469,6 +495,17 @@ data fails its CRC under the former, a 364-byte MZ file under the latter.
 from byte 36 with a stride of 3, channels × bytes per sample, or 1: each byte is the difference
 from the byte one stride back, with a per-phase sign that flips on a difference ≥ 128.
 
+**Fax filter** (filters bit 7, every mode, the store mode included; 0.4 and 0.6 alike). A file of
+exactly 513216 bytes is a 1728 × 2376 one-bit page, rows of 216 bytes with the leftmost pixel in
+bit 7. When the encoder recognises such a page it sets bit 7 for the archive and stores each
+page-sized file as 297 bands of eight rows, one byte per pixel column, the band's top row in
+bit 7 of that byte. To restore: for row *r* and pixel column *x*, the pixel is bit `7 − (r mod 8)`
+of byte `(r div 8)·1728 + x`. Such a file gets neither the executable nor the multimedia filter.
+Measured: a drawn page (fixture input `fax/page.fax`) sets the bit in every mode of 0.4 and
+0.6, `-m0` included; 513216 bytes of random data, the same page cut to 513215 bytes, and an
+archive holding the page together with the random file leave it clear, and then nothing is
+transposed. Fixtures `fax-m2`, `fax-mx` and `v04-fax-mz`.
+
 ## Writing
 
 The writer produces 0.6 archives in the layout above: the stream stored (method 0) or packed
@@ -606,7 +643,7 @@ low 16 bits of the CRC of the descrambled bytes 4..39.
 | 4 | 2 | archive DOS time |
 | 6 | 2 | archive DOS date |
 | 8 | 1 | flags: bit 1 tables and packed stream enciphered with the password |
-| 9 | 1 | filters: as 0.6 (bit 0 executable, bit 1 multimedia delta) |
+| 9 | 1 | filters: as 0.6 (bit 0 executable, bit 1 multimedia delta, bit 7 fax page) |
 | 10 | 1 | stream method |
 | 11 | 2 | number of directory names |
 | 13 | 4 | unpacked size of the stream |

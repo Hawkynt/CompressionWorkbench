@@ -76,10 +76,17 @@ internal sealed partial class UharcPpmDecoder {
 
     // Level 7: the difference of the bytes one and two strides back, which predicts their extrapolation.
     uint phase = 0, near = 0, far = 0;
+    var levelsOff = false;
     if (this._strideLast != 0) {
-      phase = ((this._symbols % this._strideLast) << 8) & 0xFFFF;
       near = this._window[(this._position - this._strideLast) & this._mask];
       far = this._window[(this._position - 2 * this._strideLast) & this._mask];
+      if (this._strideLast == this._recordStride) {
+        // Record file: the phase is whether the bytes two and three back are 09 00 (complemented
+        // F6 FF), and no level is trusted right after a 01.
+        phase = (r0 >> 16) == 0xF6FF ? 0x100u : 0u;
+        levelsOff = (r0 & 0xFF) == 1;
+      } else
+        phase = ((this._symbols % this._strideLast) << 8) & 0xFFFF;
     }
 
     this._ringContexts[7] = (phase + ((near - far) & 0xFF)) & 0xFFFF;
@@ -94,7 +101,7 @@ internal sealed partial class UharcPpmDecoder {
     this._ringStrideLevel = false;
     uint bestScore = 0;
     var best = 8;
-    for (var level = 0; level < 8; ++level) {
+    for (var level = levelsOff ? 8 : 0; level < 8; ++level) {
       var b = this.LevelBase(level);
       uint misses = this._levels[b], hits = this._levels[b + 1], flags = this._levels[b + 3];
       if (misses == 0 || flags >= 0x80)
