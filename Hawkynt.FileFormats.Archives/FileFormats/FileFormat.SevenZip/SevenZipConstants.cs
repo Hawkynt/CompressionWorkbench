@@ -156,9 +156,12 @@ internal static class SevenZipConstants {
   /// <summary>Codec ID 0x04F71105: LZ5 1.5 frames, as registered by 7-Zip-zstd.</summary>
   public static ReadOnlySpan<byte> CodecLz5 => [0x04, 0xF7, 0x11, 0x05];
 
+  /// <summary>Codec ID 0x04F71106: Lizard frames, as registered by 7-Zip-zstd.</summary>
+  public static ReadOnlySpan<byte> CodecLizard => [0x04, 0xF7, 0x11, 0x06];
+
   /// <summary>
   /// Skippable-frame magic (the zstd/LZ4 frame-format value 0x184D2A50) with which the 7-Zip-zstd
-  /// Brotli, LZ4 and LZ5 coders prefix each independently compressed chunk.
+  /// Brotli, LZ4, LZ5 and Lizard coders prefix each independently compressed chunk.
   /// </summary>
   public const uint MtSkippableFrameMagic = 0x184D2A50;
 

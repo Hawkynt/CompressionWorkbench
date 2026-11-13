@@ -40,6 +40,7 @@ internal static class SevenZipCoderNames {
     (SevenZipConstants.CodecBrotli.ToArray(), "BROTLI"),
     (SevenZipConstants.CodecLz4.ToArray(), "LZ4"),
     (SevenZipConstants.CodecLz5.ToArray(), "LZ5"),
+    (SevenZipConstants.CodecLizard.ToArray(), "LIZARD"),
   ];
 
   /// <summary>The branch converter a 7z method id names, or <see langword="null"/>.</summary>
@@ -83,6 +84,7 @@ internal static class SevenZipCoderNames {
     if (c.Is(SevenZipConstants.CodecBrotli)) return "Brotli";
     if (c.Is(SevenZipConstants.CodecLz4)) return "LZ4";
     if (c.Is(SevenZipConstants.CodecLz5)) return "LZ5";
+    if (c.Is(SevenZipConstants.CodecLizard)) return "Lizard";
     return null;
   }
 }

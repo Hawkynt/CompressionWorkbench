@@ -5,13 +5,14 @@ using Compression.Core.Dictionary.Lz4;
 using Compression.Core.Dictionary.Lz5;
 using Compression.Core.Streams;
 using FileFormat.Brotli;
+using FileFormat.Lizard;
 using FileFormat.Lz4;
 using FileFormat.Zstd;
 
 namespace FileFormat.SevenZip;
 
 /// <summary>
-/// The coders 7-Zip-zstd registers under 0x04F711xx — Zstandard, Brotli, LZ4 and LZ5 — in both
+/// The coders 7-Zip-zstd registers under 0x04F711xx — Zstandard, Brotli, LZ4, LZ5 and Lizard — in both
 /// directions, streamed: memory stays bounded by one chunk whatever the size of the block.
 /// </summary>
 /// <remarks>
@@ -33,10 +34,12 @@ namespace FileFormat.SevenZip;
 ///   <item><description>LZ5 (1.5): every chunk of at most 4 MiB behind the same 12-byte skippable
 ///   frame, single- and multi-threaded alike, holding one LZ5 frame. Properties: 5 bytes — 1, 5 (the
 ///   library version), the level (1-15), 0, 0.</description></item>
+///   <item><description>Lizard: the same 12-byte chunk framing around one Lizard frame per chunk.
+///   Properties: 3 bytes — 2, 1 (the library version), the level (10-49).</description></item>
 /// </list>
 /// <para>The writer produces 7-Zip-zstd's own layouts: Zstandard frames of at most
 /// <see cref="ZstdFrameSize"/> bytes, the Brotli chunk framing, and the multi-threaded LZ4 chunk
-/// framing (one LZ4 frame per chunk), and the same framing for LZ5.</para>
+/// framing (one LZ4 frame per chunk), and the same framing for LZ5 and Lizard.</para>
 /// </remarks>
 internal static class SevenZipZstdFamilyCoders {
   /// <summary>The level 7-Zip-zstd writes when none is given.</summary>
@@ -60,6 +63,7 @@ internal static class SevenZipZstdFamilyCoders {
     SevenZipCodec.Brotli => [1, 0, (byte)ClampLevel(codec, level)],
     SevenZipCodec.Lz4 => [1, 10, (byte)ClampLevel(codec, level), 0, 0],
     SevenZipCodec.Lz5 => [1, 5, (byte)ClampLevel(codec, level), 0, 0],
+    SevenZipCodec.Lizard => [2, 1, (byte)ClampLevel(codec, level)],
     _ => throw new ArgumentOutOfRangeException(nameof(codec)),
   };
 
@@ -69,14 +73,16 @@ internal static class SevenZipZstdFamilyCoders {
     SevenZipCodec.Brotli => SevenZipConstants.CodecBrotli.ToArray(),
     SevenZipCodec.Lz4 => SevenZipConstants.CodecLz4.ToArray(),
     SevenZipCodec.Lz5 => SevenZipConstants.CodecLz5.ToArray(),
+    SevenZipCodec.Lizard => SevenZipConstants.CodecLizard.ToArray(),
     _ => throw new ArgumentOutOfRangeException(nameof(codec)),
   };
 
-  /// <summary>7-Zip-zstd's level range per method: Zstandard 1-22, Brotli 0-11, LZ4 1-12, LZ5 1-15.</summary>
+  /// <summary>7-Zip-zstd's level range per method: Zstandard 1-22, Brotli 0-11, LZ4 1-12, LZ5 1-15, Lizard 10-49.</summary>
   public static int ClampLevel(SevenZipCodec codec, int level) => codec switch {
     SevenZipCodec.Brotli => Math.Clamp(level, 0, 11),
     SevenZipCodec.Lz4 => Math.Clamp(level, 1, 12),
     SevenZipCodec.Lz5 => Math.Clamp(level, 1, 15),
+    SevenZipCodec.Lizard => Math.Clamp(level, 10, 49),
     _ => Math.Clamp(level, 1, 22),
   };
 
@@ -112,6 +118,9 @@ internal static class SevenZipZstdFamilyCoders {
       }
       case SevenZipCodec.Lz5:
         EncodeFramedChunks(input, output, Lz5Frame.Write);
+        break;
+      case SevenZipCodec.Lizard:
+        EncodeFramedChunks(input, output, (chunk, frame) => LizardStream.Compress(new MemoryStream(chunk.ToArray(), writable: false), frame, level, Lz4ChunkSize));
         break;
       default:
         throw new ArgumentOutOfRangeException(nameof(codec));
@@ -197,6 +206,13 @@ internal static class SevenZipZstdFamilyCoders {
   /// <summary>A stream of the LZ5 coder's output over its packed stream, one chunk in memory at a time.</summary>
   public static Stream OpenLz5(Stream packed) => new FramedChunkReadStream(packed, "LZ5", Lz5Frame.Decode);
 
+  /// <summary>A stream of the Lizard coder's output over its packed stream, one chunk in memory at a time.</summary>
+  public static Stream OpenLizard(Stream packed) => new FramedChunkReadStream(packed, "Lizard", static (frames, output) => {
+    using var input = new MemoryStream(frames.ToArray(), writable: false);
+    while (input.Position < input.Length)
+      LizardStream.Decompress(input, output);
+  });
+
   public static byte[] DecodeZstd(byte[] data) => ReadAll(OpenZstd(new MemoryStream(data, writable: false)));
 
   public static byte[] DecodeBrotli(byte[] data) => ReadAll(OpenBrotli(new MemoryStream(data, writable: false)));
@@ -204,6 +220,8 @@ internal static class SevenZipZstdFamilyCoders {
   public static byte[] DecodeLz4(byte[] data) => ReadAll(OpenLz4(new MemoryStream(data, writable: false)));
 
   public static byte[] DecodeLz5(byte[] data) => ReadAll(OpenLz5(new MemoryStream(data, writable: false)));
+
+  public static byte[] DecodeLizard(byte[] data) => ReadAll(OpenLizard(new MemoryStream(data, writable: false)));
 
   private static byte[] ReadAll(Stream stream) {
     using (stream) {

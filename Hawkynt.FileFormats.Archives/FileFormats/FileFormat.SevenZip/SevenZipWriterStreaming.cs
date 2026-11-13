@@ -160,7 +160,7 @@ public sealed partial class SevenZipWriter {
       case SevenZipCodec.Copy:
         input.CopyTo(output, 1 << 16);
         return new SevenZipCoder { CodecId = SevenZipConstants.CodecCopy.ToArray() };
-      case SevenZipCodec.Zstd or SevenZipCodec.Brotli or SevenZipCodec.Lz4 or SevenZipCodec.Lz5:
+      case SevenZipCodec.Zstd or SevenZipCodec.Brotli or SevenZipCodec.Lz4 or SevenZipCodec.Lz5 or SevenZipCodec.Lizard:
         SevenZipZstdFamilyCoders.Encode(codec, input, output, this._level);
         return new SevenZipCoder { CodecId = SevenZipZstdFamilyCoders.CodecId(codec), Properties = SevenZipZstdFamilyCoders.Properties(codec, this._level) };
       default:
