@@ -73,6 +73,43 @@ public sealed class FormatFamilyMountTests {
   }
 
   [Test]
+  public void ZipNamedFileUsesVerifiedJournalledInPlaceMutationAndLeavesNoUndoFile() {
+    var folder = Path.Combine(Path.GetTempPath(), $"cwb-zip-mount-journal-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(folder);
+    var path = Path.Combine(folder, "image.zip");
+    try {
+      var creator = (IArchiveCreatable)FormatRegistry.GetById("Zip")!;
+      using (var destination = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+        creator.Create(destination, [
+          ArchiveInputInfo.InMemory("kept.txt", "still here"u8.ToArray()),
+          ArchiveInputInfo.InMemory("removed.txt", "bye"u8.ToArray()),
+        ], new FormatCreateOptions());
+
+      using (var image = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read)) {
+        using var mount = MountNamespaceResolver.Open(
+          "Zip", image, new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true));
+        var node = mount.CreateFile(mount.RootNodeId, "created.txt");
+        using (var handle = mount.OpenFile(node, FileAccess.ReadWrite))
+          handle.Write(0, "journalled"u8);
+        mount.DeleteFile(mount.RootNodeId, "removed.txt");
+        mount.Flush();
+      }
+
+      Assert.That(File.Exists(JournaledArchiveWriteback.JournalPath(path)), Is.False);
+      using var reopened = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+      using var filesystem = MountNamespaceResolver.Open(
+        "Zip", reopened, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+      Assert.Multiple(() => {
+        Assert.That(filesystem.Lookup(filesystem.RootNodeId, "removed.txt"), Is.Null);
+        Assert.That(ReadAll(filesystem, "created.txt"), Is.EqualTo("journalled"u8.ToArray()));
+        Assert.That(ReadAll(filesystem, "kept.txt"), Is.EqualTo("still here"u8.ToArray()));
+      });
+    } finally {
+      Directory.Delete(folder, recursive: true);
+    }
+  }
+
+  [Test]
   public void ZipWithSixtyFiveMiBUncompressedMemberMountsWritableUsingDiskSpooling() {
     const int sourceMiB = 65;
     using var image = new MemoryStream();
