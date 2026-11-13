@@ -52,4 +52,10 @@ public sealed class StuffItEntry {
   // Stored CRC-16/ARC values for integrity checking (not used with method 15, which carries a CRC-32).
   internal ushort DataForkCrc16 { get; set; }
   internal ushort ResourceForkCrc16 { get; set; }
+
+  /// <summary>StuffIt 5: the data fork's 5-byte key, when encrypted.</summary>
+  internal byte[]? DataForkKey { get; set; }
+
+  /// <summary>StuffIt 5: the resource fork's 5-byte key, when encrypted.</summary>
+  internal byte[]? ResourceForkKey { get; set; }
 }

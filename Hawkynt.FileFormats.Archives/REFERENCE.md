@@ -31699,6 +31699,7 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `StuffIt5Writer` | `StuffIt5Writer(Stream stream, StuffItCompression compression, bool leaveOpen = false)` | Starts a StuffIt 5 archive whose forks are compressed as `compression` asks. |
+| `StuffIt5Writer` | `StuffIt5Writer(Stream stream, StuffItCompression compression, string password, bool leaveOpen = false)` | Starts a StuffIt 5 archive whose forks are compressed as `compression` asks and, with a `password`, encrypted. |
 | `StuffIt5Writer` | `StuffIt5Writer(Stream stream, bool leaveOpen = false)` | Starts a StuffIt 5 archive on `stream`; it is written on `Dispose`. |
 | `AddDirectory` | `void AddDirectory(string path, DateTime? lastModified = null)` | Adds a folder, which may stay empty; folders named in file paths are created on their own. |
 | `AddFile` | `void AddFile(string fileName, byte[] data, byte[] resourceFork = null, string fileType = "TEXT", string fileCreator = "CWIE", DateTime? lastModified = null)` | Adds a file with a data fork and an optional resource fork; '/' in the path creates folders. |
@@ -31778,6 +31779,7 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `StuffItReader` | `StuffItReader(Stream stream, bool leaveOpen = false)` | Opens a StuffIt archive from the given stream and parses the entry directory. |
+| `StuffItReader` | `StuffItReader(Stream stream, string password, bool leaveOpen = false)` | Opens a StuffIt archive whose encrypted forks are to be decrypted with `password`. |
 | `Entries` | `IReadOnlyList<StuffItEntry> Entries { get; }` | Gets the entries (folders first in archive order, then their contents). |
 | `IsStuffIt5` | `bool IsStuffIt5 { get; }` | Gets whether the archive uses the StuffIt 5 layout. |
 | `Dispose` | `void Dispose()` |  |

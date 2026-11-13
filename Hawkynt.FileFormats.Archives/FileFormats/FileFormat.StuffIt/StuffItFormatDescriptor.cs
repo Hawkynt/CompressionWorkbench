@@ -160,7 +160,7 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new StuffItReader(stream, leaveOpen: true);
+    var r = new StuffItReader(stream, password, leaveOpen: true);
     foreach (var (e, resource, name) in Items(r)) {
       if (files != null && !MatchesFilter(name, files)) continue;
       if (e.IsDirectory) continue; // folders come into being with the files inside them
@@ -178,7 +178,7 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
-    var r = new StuffItReader(archive, leaveOpen: true);
+    var r = new StuffItReader(archive, password, leaveOpen: true);
     foreach (var (e, resource, name) in Items(r)) {
       if (e.IsDirectory || !string.Equals(name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
       var bytes = resource ? r.ExtractResourceFork(e) : r.Extract(e);
@@ -203,17 +203,20 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <remarks>
   /// Writes a classic "SIT!" archive, or a StuffIt 5 archive when
   /// <see cref="FormatOptionKeys.TargetCompatibility"/> is <c>StuffIt5</c>. The compression option
-  /// selects store, RLE, LZ+Huffman, Arsenic, or the smallest encoding for each fork.
+  /// selects store, RLE, LZ+Huffman, Arsenic, or the smallest encoding for each fork. A password
+  /// encrypts a StuffIt 5 archive with StuffIt 5's RC4 scheme.
   /// </remarks>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     if (string.Equals(options.GetString(FormatOptionKeys.TargetCompatibility), StuffIt5, StringComparison.OrdinalIgnoreCase)) {
-      using var w5 = new StuffIt5Writer(output, CompressionOf(options), leaveOpen: true);
+      using var w5 = new StuffIt5Writer(output, CompressionOf(options), options.Password, leaveOpen: true);
       foreach (var i in inputs) {
         if (i.IsDirectory) w5.AddDirectory(i.ArchiveName);
         else w5.AddFile(i.ArchiveName, i.ReadContent());
       }
       return;
     }
+    if (!string.IsNullOrEmpty(options.Password))
+      throw new NotSupportedException("Classic StuffIt archives are written unencrypted; choose the StuffIt5 target to encrypt.");
     using var w = new StuffItWriter(output, CompressionOf(options), leaveOpen: true);
     foreach (var i in inputs) {
       if (i.IsDirectory) w.AddDirectory(i.ArchiveName);
