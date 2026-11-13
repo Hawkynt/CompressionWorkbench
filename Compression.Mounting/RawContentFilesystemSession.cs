@@ -12,13 +12,16 @@ internal static class RawContentFilesystemSession {
   private static readonly FilesystemNodeId Root = new(1, 1);
   private static readonly FilesystemNodeId Content = new(2, 1);
 
-  public static FilesystemDriverProfile ProfileFor(IFormatDescriptor descriptor, Stream source) {
-    ArgumentNullException.ThrowIfNull(descriptor);
+  public static FilesystemDriverProfile ProfileFor(IFormatDescriptor descriptor, Stream source)
+    => ProfileFor(descriptor.Id, source);
+
+  public static FilesystemDriverProfile ProfileFor(string formatId, Stream source) {
+    ArgumentException.ThrowIfNullOrWhiteSpace(formatId);
     ArgumentNullException.ThrowIfNull(source);
 
     var readable = source.CanRead && source.CanSeek;
     return new FilesystemDriverProfile(
-      descriptor.Id,
+      formatId,
       "opaque source read-only view",
       readable
         ? FilesystemMountCapabilityResolver.CoreReadCapabilities | FilesystemDriverCapabilities.CasePreservingNames
@@ -32,13 +35,16 @@ internal static class RawContentFilesystemSession {
       ]);
   }
 
-  public static IFilesystemSession Open(IFormatDescriptor descriptor, Stream source, string? name = null) {
-    var profile = ProfileFor(descriptor, source);
+  public static IFilesystemSession Open(IFormatDescriptor descriptor, Stream source, string? name = null)
+    => Open(descriptor.Id, source, name ?? descriptor.Id + descriptor.DefaultExtension);
+
+  public static IFilesystemSession Open(string formatId, Stream source, string? name = null) {
+    var profile = ProfileFor(formatId, source);
     if (!profile.CanMount)
       throw new NotSupportedException("An opaque source mount requires a readable, seekable stream.");
 
     var leaf = string.IsNullOrWhiteSpace(name)
-      ? descriptor.Id + descriptor.DefaultExtension
+      ? "content.bin"
       : name.Replace('\\', '/').Split('/').LastOrDefault() ?? string.Empty;
     if (string.IsNullOrWhiteSpace(leaf) || leaf is "." or "..")
       leaf = "content.bin";
