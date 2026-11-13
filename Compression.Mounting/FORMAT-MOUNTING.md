@@ -34,18 +34,41 @@ stable identities, renames and deletes; Flush rebuilds into a temporary file,
 verifies every emitted entry's bytes, and publishes with rollback on recoverable
 I/O failure. Thus no archive writer is invoked for individual kernel writes.
 
-The current in-memory staging implementation caps the sum of original entry
-bytes at 256 MiB and rejects encrypted entries, symlinks and unsafe paths. It
-does not guarantee preservation of metadata that `ArchiveEntryInfo` cannot
-represent. `WholeImageRebuildCommitter` is rollback-safe within a running
-process but is **not power-loss atomic** for the path-backed source. For larger
-archives, move the staged nodes to temporary file-backed content and publish
-with a same-filesystem atomic replacement where available.
+Archive file content is staged in separate temporary files. Positional reads,
+writes, sparse extends and truncations use 64-bit file offsets rather than
+`byte[]` allocation, including for entries larger than 2 GiB. Writers are
+invoked through `IArchiveCreatable.CreateFromStreams`. A format's *default*
+implementation of that method still buffers an entire entry, so true bounded
+memory also requires its descriptor to override the streaming writer (ZIP,
+7z and RAR provide implementations). Encrypted/linked/unsafe entries are rejected.
 
-A descriptor with an actual native in-place writer may be optimized later,
-but the existing `IArchiveModifiable` alone does not prove safe open-handle or
-random-access semantics. For now it also uses the staged verified rebuild path
-if `IArchiveCreatable` is available.
+**ZIP's independently verified native delta path** uses its existing
+`ZipModifier.Add/Remove` on a private candidate; unchanged ZIP records and
+compressed content are retained. Edits for all other formats currently use
+a complete streamed candidate rebuild. Even native ZIP operations never mutate
+the live archive while the mount is open: a bad candidate cannot corrupt it.
+
+For a mounted **local path**, Flush creates a candidate and a verified backup
+*in the archive's directory*, flushes both to disk, then writes a durable
+journal containing old/new SHA-256 hashes and candidate/backup names. Only
+after exact entry-content validation does it replace the archive pathname.
+Next mount holds an exclusive `.cwbmount.lock`, reads a surviving journal,
+accepts either verified version, or restores the original from the verified
+backup when neither matches. Other changes to the source since mount are
+detected by SHA-256 and rejected. Failed publication preserves staging files
+for manual recovery. The journal and backup are removed after successful
+publication/recovery.
+
+**Durability limit:** managed `.NET` can flush the candidate, backup, and
+journal files; it does not expose portable parent-directory `fsync`. Therefore
+neither power-loss durability on every filesystem nor crash-atomic rename on
+every Windows/filesystem configuration can be promised solely from `File.Move`.
+Do not claim strict power-loss atomicity until each platform supplies a
+verified durable directory-metadata barrier. A non-path-backed `Stream`
+retains the existing verified copy-and-rollback publication path.
+
+No arbitrary `IArchiveModifiable` is treated as a safe native mount-grade
+writer: ZIP is explicitly qualified; other editors need per-format tests.
 
 The mount backends and resolver must never invoke Windows virtual-disk mounts
 or host filesystem mounting to interpret unknown content.
