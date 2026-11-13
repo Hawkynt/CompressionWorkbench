@@ -1275,6 +1275,14 @@ Opt-in capability: the descriptor can extract a single named entry straight to a
 | --- | --- | --- |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Writes the bytes of `entryName` (as named by `List`) into `output`. |
 
+#### `IArchiveInPlaceMountWriter`
+
+Explicit opt-in for native archive editors whose Add/Remove mutation path can operate directly on a seekable source stream under an external persistent undo journal. This is distinct from CanModify: a format that uses a full create-only rebuild must not claim direct in-place editing.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanEditInPlace` | `bool CanEditInPlace(Stream source)` | Returns true only for source profiles that the descriptor can edit directly. The mounting layer must additionally verify a writable named FileStream, create and persist an undo journal and validate the result. |
+
 #### `IArchiveLayoutMap`
 
 Opt-in capability: the descriptor can enumerate the real byte-level layout of an archive — every entry's header, compressed payload, and inter-entry gaps at their actual offsets. Parallel to `IFilesystemExtentMap` but for archive formats (ZIP, 7z, TAR, LZH, ARJ, etc.). Fail-closed contract: omitted bytes are interpreted as unused by maintenance consumers. Any live, structural, ambiguous or undecoded region must therefore be emitted as `MetadataReserved` (or `Used`), never silently omitted. If a layout cannot be proven safe, return no extents and the inherited generic wipe is a no-op.That exact preservation map also makes every implementation an `IWipeEmpty` capability. The generic implementation zeros proven dead gaps while format-specific overrides may additionally scrub tombstones, reserved growth records, stale indexes, or other recoverable metadata.Drives the Defragment/Optimize window block-map preview so the user sees the real archive layout before pressing "Optimize".

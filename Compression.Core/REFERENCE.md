@@ -8606,6 +8606,14 @@ Opt-in capability: the descriptor can extract a single named entry straight to a
 | --- | --- | --- |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Writes the bytes of `entryName` (as named by `List`) into `output`. |
 
+#### `IArchiveInPlaceMountWriter`
+
+Explicit opt-in for native archive editors whose Add/Remove mutation path can operate directly on a seekable source stream under an external persistent undo journal. This is distinct from CanModify: a format that uses a full create-only rebuild must not claim direct in-place editing.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanEditInPlace` | `bool CanEditInPlace(Stream source)` | Returns true only for source profiles that the descriptor can edit directly. The mounting layer must additionally verify a writable named FileStream, create and persist an undo journal and validate the result. |
+
 #### `IArchiveLayoutMap`
 
 Opt-in capability: the descriptor can enumerate the real byte-level layout of an archive — every entry's header, compressed payload, and inter-entry gaps at their actual offsets. Parallel to `IFilesystemExtentMap` but for archive formats (ZIP, 7z, TAR, LZH, ARJ, etc.). Fail-closed contract: omitted bytes are interpreted as unused by maintenance consumers. Any live, structural, ambiguous or undecoded region must therefore be emitted as `MetadataReserved` (or `Used`), never silently omitted. If a layout cannot be proven safe, return no extents and the inherited generic wipe is a no-op.That exact preservation map also makes every implementation an `IWipeEmpty` capability. The generic implementation zeros proven dead gaps while format-specific overrides may additionally scrub tombstones, reserved growth records, stale indexes, or other recoverable metadata.Drives the Defragment/Optimize window block-map preview so the user sees the real archive layout before pressing "Optimize".
@@ -10710,7 +10718,7 @@ Represents a single entry in a ZIP archive.
 
 ZIP archive — the universal container with per-entry compression methods. References: `https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE APPNOTE.TXT — the canonical .ZIP file format specification`https://en.wikipedia.org/wiki/ZIP_(file_format)` — Wikipedia overviewInfo-ZIP zip/unzip — long-standing open reference implementations
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveRenamable`, `IArchiveRepackable`, `IArchiveShrinkable`, `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInPlaceMountWriter`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveRenamable`, `IArchiveRepackable`, `IArchiveShrinkable`, `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10729,6 +10737,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanEditInPlace` | `bool CanEditInPlace(Stream source)` | ZIP's native central-directory editor supports positional additions and removals. The mount layer decides whether the exact archive qualifies (unencrypted, no unsupported entry types) and wraps edits in its undo journal before allowing direct mutations of a live source. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing ZIP archive. Uses `ZipModifier` for true O(touched bytes) random-access I/O — only the central directory, the EOCD, and the appended file's local file header + compressed data are read or written. On-disk inputs are streamed (no size limit) and keep their last-write time. |
 | `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Large-file-safe streaming variant of `Create` for the STORE method. STORE entries are uncompressed, so the local header can be written with the pre-known `Size` up front and the payload copied in 64 KB chunks while the CRC is computed incrementally and patched back into the header — peak memory is the copy buffer regardless of entry size. Output is byte-identical to `Create` with `Method=store`. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a ZIP archive from `inputs`. Honors all of `FormatCreateOptions`: method, level, dict-size, threads, password, encryption mode, and incompressibility hints. |
