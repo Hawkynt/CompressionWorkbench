@@ -154,7 +154,9 @@ public sealed class FormatFamilyMountTests {
     var vmdk = new FileFormat.Vmdk.VmdkWriter();
     vmdk.SetDiskData(fat.Build());
 
-    using var image = new MemoryStream(vmdk.Build());
+    using var image = new MemoryStream();
+    image.Write(vmdk.Build());
+    image.Position = 0;
     var probe = MountNamespaceResolver.Probe("Vmdk", image);
     Assert.Multiple(() => {
       Assert.That(probe.Profile.CanMount, Is.True, string.Join("; ", probe.Profile.Limitations));
