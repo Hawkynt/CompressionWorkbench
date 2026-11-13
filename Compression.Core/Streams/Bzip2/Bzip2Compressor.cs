@@ -14,6 +14,11 @@ internal sealed class Bzip2Compressor {
   private byte[] _blockBuffer;
   private int _blockLength;
   private uint _combinedCrc;
+  private readonly bool _nsisVariant;
+
+  // NSIS's bzip2 dialect frames a block with one byte and ends the stream with another.
+  private const uint NsisBlockMarker = 0x31;
+  private const uint NsisEndMarker = 0x17;
 
   // The block size limits the RLE1-encoded block, not the raw input, so the raw bytes
   // are buffered while their RLE1 length is tracked alongside. A long run shrinks by a
@@ -34,8 +39,10 @@ internal sealed class Bzip2Compressor {
   /// </summary>
   /// <param name="bitWriter">The bit writer for output.</param>
   /// <param name="blockSize100k">Block size multiplier (1-9).</param>
-  public Bzip2Compressor(BitWriter<MsbBitOrder> bitWriter, int blockSize100k = 9) {
+  /// <param name="nsisVariant">Write NSIS's framing: no block magic, CRCs or randomised bit.</param>
+  public Bzip2Compressor(BitWriter<MsbBitOrder> bitWriter, int blockSize100k = 9, bool nsisVariant = false) {
     this._bitWriter = bitWriter;
+    this._nsisVariant = nsisVariant;
     this._blockSize = blockSize100k * 100_000;
     this._blockBuffer = new byte[Math.Min(this._blockSize, 1 << 16)];
     this._blockLength = 0;
@@ -88,6 +95,12 @@ internal sealed class Bzip2Compressor {
   public void Finish() {
     if (this._blockLength > 0)
       FlushBlock();
+
+    if (this._nsisVariant) {
+      this._bitWriter.WriteBits(NsisEndMarker, 8);
+      this._bitWriter.FlushBits();
+      return;
+    }
 
     // End-of-stream magic (48 bits)
     WriteBits48(Bzip2Constants.BlockEndMagic);
@@ -143,14 +156,18 @@ internal sealed class Bzip2Compressor {
 
   private void WriteBlock(uint blockCrc, int bwtIndex, bool[] symbolUsed,
     int alphaSize, int[] symbols) {
-    // Block header magic (48 bits)
-    WriteBits48(Bzip2Constants.BlockHeaderMagic);
+    if (this._nsisVariant)
+      this._bitWriter.WriteBits(NsisBlockMarker, 8);
+    else {
+      // Block header magic (48 bits)
+      WriteBits48(Bzip2Constants.BlockHeaderMagic);
 
-    // Block CRC (32 bits)
-    this._bitWriter.WriteBits(blockCrc, 32);
+      // Block CRC (32 bits)
+      this._bitWriter.WriteBits(blockCrc, 32);
 
-    // Randomized flag (1 bit, always 0)
-    this._bitWriter.WriteBit(0);
+      // Randomized flag (1 bit, always 0)
+      this._bitWriter.WriteBit(0);
+    }
 
     // BWT original pointer (24 bits)
     this._bitWriter.WriteBits((uint)bwtIndex, 24);
