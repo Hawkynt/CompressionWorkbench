@@ -16,10 +16,16 @@ namespace Compression.Mounting;
 /// alone. Unsafe formats continue to mount read-only.
 /// </remarks>
 internal static class MutableArchiveMountSession {
-  private const long MaxWritableContentBytes = 64L * 1024 * 1024;
+  private const long MaxInMemoryContentBytes = 64L * 1024 * 1024;
+
+  // Both descriptors have independently qualified streaming edit/writer paths.
+  // Other formats retain the bounded path until large-member interoperability
+  // has been established against independent readers.
+  private static bool SupportsLargeStreaming(IFormatDescriptor descriptor)
+    => descriptor.Id is "Zip" or "Tar";
   private const string UnsafeProfileMessage =
-    "Writable archive mounts require ordinary unencrypted entries with safe unique names, " +
-    "no links, and at most 64 MiB of logical content.";
+    "Writable archive mounts require ordinary unencrypted entries with safe unique names and no links. " +
+    "Large members additionally require a qualified streaming archive writer.";
 
   public static FilesystemDriverProfile Probe(
       IFormatDescriptor descriptor,
@@ -34,7 +40,8 @@ internal static class MutableArchiveMountSession {
     try {
       source.Position = 0;
       var entries = ((IArchiveFormatOperations)descriptor).List(source, password);
-      if (!QualifiesEntries(entries) ||
+      var large = IsBeyondMemoryBudget(entries);
+      if (!QualifiesEntries(entries, large && SupportsLargeStreaming(descriptor)) ||
           (entries.Any(static entry => entry.IsDirectory) &&
            !descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsDirectories)))
         return WithLimitation(basic, UnsafeProfileMessage);
@@ -70,6 +77,8 @@ internal static class MutableArchiveMountSession {
           hasNativeEditor
             ? "Native archive edit operations run on a private candidate copy before verified publication."
             : "WORM-only archive creation reconstructs the complete image in a temporary file on every flush.",
+          large ? "Large regular files use disk-spooled inodes and streaming candidate validation."
+            : "The aggregate in-memory content budget is 64 MiB.",
           "The mount provides regular-file writes with stable handles; archive links and unsupported metadata remain read-only.",
           "Publication to an ordinary host file is not crash-atomic; do not edit the archive concurrently.",
         ]);
@@ -92,6 +101,17 @@ internal static class MutableArchiveMountSession {
       throw new NotSupportedException("The backing archive stream is not writable.");
 
     var archive = (IArchiveFormatOperations)descriptor;
+    var savedPosition = source.Position;
+    bool large;
+    try {
+      source.Position = 0;
+      large = IsBeyondMemoryBudget(archive.List(source, password));
+    } finally {
+      source.Position = savedPosition;
+    }
+    if (large)
+      return SpoolingArchiveMountSession.Open(descriptor, source, password, profile);
+
     var modifier = HasNativeEditor(descriptor) ? (IArchiveModifiable)descriptor : null;
     var creator = CanRecreate(descriptor) ? (IArchiveCreatable)descriptor : null;
     var sourceSnapshot = MountSourceSnapshot.Capture(source);
@@ -205,7 +225,7 @@ internal static class MutableArchiveMountSession {
 
       var session = new MutableRebuildFilesystemSession(
         profile, source, original, rebuild, validate, leaveOpen: true,
-        maxTotalContentBytes: MaxWritableContentBytes);
+        maxTotalContentBytes: MaxInMemoryContentBytes);
       return new OwnedFilesystemSession(session, sourceSnapshot);
     } catch {
       sourceSnapshot.Dispose();
@@ -232,13 +252,23 @@ internal static class MutableArchiveMountSession {
   private static FilesystemDriverProfile WithLimitation(FilesystemDriverProfile baseProfile, string reason)
     => baseProfile with { Limitations = baseProfile.Limitations.Append(reason).ToArray() };
 
-  private static bool QualifiesEntries(IReadOnlyList<ArchiveEntryInfo> entries) {
+  private static bool IsBeyondMemoryBudget(IReadOnlyList<ArchiveEntryInfo> entries) {
+    long total = 0;
+    foreach (var entry in entries.Where(static entry => !entry.IsDirectory)) {
+      if (entry.OriginalSize < 0 || entry.OriginalSize > MaxInMemoryContentBytes - total)
+        return true;
+      total += entry.OriginalSize;
+    }
+    return false;
+  }
+
+  private static bool QualifiesEntries(IReadOnlyList<ArchiveEntryInfo> entries, bool allowLarge = false) {
     var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     long total = 0;
     foreach (var entry in entries) {
       if (entry.IsEncrypted || entry.IsSymlink || entry.LinkTarget is not null ||
           entry.Kind is not null ||
-          entry.OriginalSize < 0 || entry.OriginalSize > MaxWritableContentBytes)
+          entry.OriginalSize < 0 || (!allowLarge && entry.OriginalSize > MaxInMemoryContentBytes))
         return false;
 
       string path;
@@ -248,7 +278,8 @@ internal static class MutableArchiveMountSession {
       if (!seen.Add(path))
         return false;
       if (!entry.IsDirectory) {
-        if (total > MaxWritableContentBytes - entry.OriginalSize)
+        if (entry.OriginalSize > long.MaxValue - total ||
+            (!allowLarge && entry.OriginalSize > MaxInMemoryContentBytes - total))
           return false;
         total += entry.OriginalSize;
       }
