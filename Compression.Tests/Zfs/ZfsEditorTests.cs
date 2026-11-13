@@ -171,8 +171,12 @@ public sealed class ZfsEditorTests {
   }
 
   [Test]
-  public void Given_AFeatureFlagPool_When_Edited_Then_ItIsRefusedUntouched() =>
-    AssertRefusedUntouched<NotSupportedException>(ZfsReferencePools.Copy("cwbmain"), i => Add(i, ("x.txt", [1])));
+  public void Given_AFileASnapshotStillHolds_When_Removed_Then_ItIsRefusedUntouched() =>
+    AssertRefusedUntouched<NotSupportedException>(ZfsReferencePools.Copy("cwbmain"), i => Remove(i, "c-lz4/rand.bin"));
+
+  [Test]
+  public void Given_GangBlocks_When_TheirFileIsRemoved_Then_ItIsRefusedUntouched() =>
+    AssertRefusedUntouched<NotSupportedException>(ZfsReferencePools.Copy("cwbgang"), i => Remove(i, "big.txt"));
 
   [Test]
   public void Given_AMirror_When_Edited_Then_ItIsRefusedUntouched() =>

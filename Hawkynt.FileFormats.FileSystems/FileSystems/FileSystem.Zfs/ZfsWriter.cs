@@ -19,7 +19,8 @@ namespace FileSystem.Zfs;
 /// </remarks>
 internal sealed class ZfsWriter {
   // ── constants ──────────────────────────────────────────────────────────────────────────
-  private const ulong PoolVersion = 28;
+  private const int EmbeddedPayloadMax = 112;              // BPE_PAYLOAD_SIZE
+  private const byte OtZapMetadata = 0xC4;                  // DMU_OTN_ZAP_METADATA
   private const ulong ZplVersion = 3;
   private const ulong Txg = 4;
   private const int Sector = 512;
@@ -60,17 +61,53 @@ internal sealed class ZfsWriter {
 
   private readonly Node _root = new() { Name = "", IsDirectory = true };
   private byte _compression = ZfsConstants.CompressOff;
+  private string _compressionName = "off";
+  private int _zstdLevel = 3;
+  private bool _zstdUsed;                                   // a block was written with zstd: the dataset activates zstd_compress
+  private ulong _version = 28;
 
   /// <summary>
   /// The compression of file data and the filesystem's <c>compression</c> property: <c>off</c>
-  /// (default), <c>on</c> or <c>lzjb</c>, <c>gzip</c> (level 6) or <c>gzip-1</c>…<c>gzip-9</c>, <c>zle</c>.
+  /// (default), <c>on</c> (lzjb on version 28, lz4 with feature flags), <c>lzjb</c>, <c>gzip</c>
+  /// (level 6) or <c>gzip-1</c>…<c>gzip-9</c>, <c>zle</c>, and with feature flags <c>lz4</c>.
+  /// Checked against <see cref="Version"/> when the pool is built.
   /// </summary>
   /// <exception cref="ArgumentException">An unknown name.</exception>
-  /// <exception cref="NotSupportedException">An algorithm that needs a feature flag (lz4, zstd).</exception>
+  /// <exception cref="NotSupportedException">zstd.</exception>
   public string Compression {
-    get => ZfsCompression.Name(this._compression);
-    set => this._compression = ZfsCompression.ParseForVersion28(value);
+    get => this._compressionName;
+    set {
+      ZfsCompression.Parse(value, 5000);
+      this._compressionName = value;
+    }
   }
+
+  /// <summary>
+  /// The pool version: 28 (default, no feature flags) or 5000 (feature flags: enabled_txg,
+  /// hole_birth, embedded_data, lz4_compress, spacemap_histogram and empty_bpobj).
+  /// </summary>
+  public ulong Version {
+    get => this._version;
+    set => this._version = value is 28 or 5000 ? value : throw new ArgumentOutOfRangeException(nameof(value), "ZFS: pools are written as version 28 or 5000.");
+  }
+
+  private bool Features => this._version >= 5000;
+
+  /// <summary>The features a version 5000 pool is written with: guid, description, read (vs. write) list, needed to open the MOS.</summary>
+  private static readonly (string Guid, string Description, bool ForRead, bool Mos)[] FeatureTable = [
+    ("com.delphix:enabled_txg", "Record txg at which a feature is enabled", false, false),
+    ("com.delphix:hole_birth", "Retain hole birth txg for more precise zfs send", true, true),
+    ("com.delphix:embedded_data", "Blocks which compress very well use even less space.", true, true),
+    ("org.illumos:lz4_compress", "LZ4 compression algorithm support.", true, false),
+    ("com.delphix:spacemap_histogram", "Spacemaps maintain space histograms.", false, false),
+    ("com.delphix:empty_bpobj", "Snapshots use less space.", false, false),
+    ("com.delphix:extensible_dataset", "Enhanced dataset functionality, used by other features.", true, false),
+    ("org.freebsd:zstd_compress", "zstd compression algorithm support.", true, false),
+  ];
+
+  /// <summary>The <c>compression</c> property value: the algorithm id, for zstd with its level in the bits above the 7 id bits.</summary>
+  private ulong CompressionProperty =>
+    this._compression == ZfsConstants.CompressZstd ? (ulong)this._compression | (ulong)this._zstdLevel << 7 : this._compression;
 
   /// <summary>Adds a file; missing parent directories are created.</summary>
   public void AddFile(string path, byte[] data, DateTime? modified = null) {
@@ -116,6 +153,7 @@ internal sealed class ZfsWriter {
     public int LogicalSize;          // the size before compression
     public long Allocated;           // the space on the vdev: Size, or Size with RAID-Z parity and padding
     public byte Compression = ZfsConstants.CompressOff;
+    public bool Embedded;            // data carried in the block pointer itself, nothing allocated
     public byte Type;
     public int Level;
     public ulong Fill;
@@ -184,11 +222,19 @@ internal sealed class ZfsWriter {
       }
       var logical = new byte[blockSize];
       content.CopyTo(logical, 0);
-      var (algorithm, physical) = compress ? ZfsCompression.Compress(this._compression, logical, Ashift) : (ZfsConstants.CompressOff, logical);
+      var (algorithm, physical, stream) = compress ? ZfsCompression.CompressBlock(this._compression, logical, Ashift, this._zstdLevel) : (ZfsConstants.CompressOff, logical, null);
       if (physical == null) {                                       // all zeros: a hole, as ZFS writes it
         obj.Level0.Add(null);
         continue;
       }
+      if (this.Features && stream != null && stream.Length <= EmbeddedPayloadMax && type == OtPlainFile) {
+        this._zstdUsed |= this._compression == ZfsConstants.CompressZstd;
+        // embedded_data: a data block that compresses to at most 112 bytes lives in its pointer
+        obj.Level0.Add(new Block { Embedded = true, Data = stream, Size = stream.Length, LogicalSize = blockSize,
+          Compression = this._compression, Type = type, Fill = 1 });
+        continue;
+      }
+      this._zstdUsed |= algorithm == ZfsConstants.CompressZstd;
       var b = this.Allocate(physical.Length, type, 0);
       physical.CopyTo(b.Data, 0);
       b.LogicalSize = blockSize;
@@ -221,7 +267,7 @@ internal sealed class ZfsWriter {
   private void SealObject(DmuObject obj) {
     long used = 0;
     foreach (var b in obj.Level0) {
-      if (b == null) continue;
+      if (b == null || b.Embedded) continue;
       b.Seal();
       used += (long)this.Charged(b);
     }
@@ -250,6 +296,10 @@ internal sealed class ZfsWriter {
     dst[..ZfsConstants.BlockPointerSize].Clear();
     if (b == null)
       return;
+    if (b.Embedded) {
+      WriteEmbedded(dst, b);
+      return;
+    }
     var sectors = (ulong)(b.Size / Sector);
     var logical = (ulong)(b.LogicalSize / Sector);
     BinaryPrimitives.WriteUInt64LittleEndian(dst, (ulong)(b.Allocated / Sector));          // DVA 0: asize, vdev 0
@@ -266,6 +316,28 @@ internal sealed class ZfsWriter {
     BinaryPrimitives.WriteUInt64LittleEndian(dst[0x50..], Txg);                             // logical birth
     BinaryPrimitives.WriteUInt64LittleEndian(dst[0x58..], b.Fill);
     b.Checksum.CopyTo(dst[0x60..]);
+  }
+
+  /// <summary>
+  /// An embedded block pointer (<c>docs/ZFS-ON-DISK.md</c>, "Embedded pointers"): the payload in
+  /// words 0-5, 7-9 and 11-15, little-endian; the properties word gives logical size − 1 (25 bits),
+  /// payload size − 1 (7 bits), compression, the embedded bit, type 0 (data), object type and level.
+  /// </summary>
+  private static void WriteEmbedded(Span<byte> dst, Block b) {
+    var at = 0;
+    for (var i = 0; i < b.Data.Length; ++i) {
+      if (at == 0x30 || at == 0x50) at += 8;                         // the properties and birth words
+      dst[at++] = b.Data[i];
+    }
+    var prop = (ulong)(uint)(b.LogicalSize - 1)
+      | (ulong)(uint)(b.Data.Length - 1) << 25
+      | (ulong)b.Compression << 32
+      | 1UL << 39
+      | (ulong)b.Type << 48
+      | (ulong)b.Level << 56
+      | 1UL << 63;
+    BinaryPrimitives.WriteUInt64LittleEndian(dst[0x30..], prop);
+    BinaryPrimitives.WriteUInt64LittleEndian(dst[0x50..], Txg);                             // logical birth
   }
 
   /// <summary>The 512-byte dnode for <paramref name="obj"/>.</summary>
@@ -337,7 +409,9 @@ internal sealed class ZfsWriter {
     var total = default(Space);
     foreach (var b in blocks) {
       var metadata = b.Level > 0 || b.Type != OtPlainFile;
-      total += new Space(this.Charged(b), (ulong)b.Size, (ulong)(metadata ? b.Size : b.LogicalSize));
+      // an embedded block takes no space: it is charged only its logical size
+      total += b.Embedded ? new Space(0, 0, (ulong)b.LogicalSize)
+        : new Space(this.Charged(b), (ulong)b.Size, (ulong)(metadata ? b.Size : b.LogicalSize));
     }
     return total;
   }
@@ -389,7 +463,11 @@ internal sealed class ZfsWriter {
       }
       return (size, [block]);
     }
-    return (FatZapBlock, BuildFatZap(entries));
+    return (FatZapBlock, BuildFatZap(entries.Select(e => {
+      var value = new byte[8];
+      BinaryPrimitives.WriteUInt64BigEndian(value, e.Value);
+      return (e.Name, 8, value);
+    }).ToList()));
   }
 
   private static ulong NewSalt() => (BinaryPrimitives.ReadUInt64LittleEndian(RandomNumberGenerator.GetBytes(8)) | 1) & 0x0000_0000_FFFF_FFFFUL;
@@ -403,9 +481,10 @@ internal sealed class ZfsWriter {
 
   /// <summary>
   /// A fat ZAP: header block 0 with the pointer table embedded in its second half, then
-  /// 2^p leaves, leaf i holding the names whose hash starts with the p bits of i.
+  /// 2^p leaves, leaf i holding the names whose hash starts with the p bits of i. Each value is an
+  /// array of integers of <c>IntLength</c> bytes, given (and stored) most significant byte first.
   /// </summary>
-  private static List<byte[]?> BuildFatZap(IReadOnlyList<(string Name, ulong Value)> entries) {
+  internal static List<byte[]?> BuildFatZap(IReadOnlyList<(string Name, int IntLength, byte[] Value)> entries) {
     const int leafHashShift = 14 - 5;                                // 2^(bs-5) hash buckets
     const int chunkBytes = 24;
     const int leafHeader = 48;
@@ -416,16 +495,16 @@ internal sealed class ZfsWriter {
 
     var hashed = entries.Select(e => {
       var name = Encoding.UTF8.GetBytes(e.Name);
-      return (Name: name, e.Value, Hash: ZapHash(salt, name));
+      return (Name: name, e.IntLength, e.Value, Hash: ZapHash(salt, name));
     }).OrderBy(e => e.Hash).ToList();
-    int ChunksFor(byte[] name) => 1 + (name.Length + 1 + 20) / 21 + 1;
+    int ChunksFor(byte[] name, byte[] value) => 1 + (name.Length + 1 + 20) / 21 + (value.Length + 20) / 21;
 
     // Smallest prefix length whose leaves all fit.
     var prefix = 0;
     for (;; ++prefix) {
       if (prefix > tableShift)
         throw new NotSupportedException("ZFS: a directory too large for one pointer-table block.");
-      var fits = hashed.GroupBy(e => prefix == 0 ? 0UL : e.Hash >> (64 - prefix)).All(g => g.Sum(e => ChunksFor(e.Name)) <= chunksPerLeaf);
+      var fits = hashed.GroupBy(e => prefix == 0 ? 0UL : e.Hash >> (64 - prefix)).All(g => g.Sum(e => ChunksFor(e.Name, e.Value)) <= chunksPerLeaf);
       if (fits) break;
     }
 
@@ -461,7 +540,7 @@ internal sealed class ZfsWriter {
       var chunks = leaf.AsSpan(leafHeader + (2 << leafHashShift));
       var nextChunk = 0;
       var cdByHash = new Dictionary<ulong, uint>();
-      foreach (var (name, value, hash) in members) {
+      foreach (var (name, intLength, value, hash) in members) {
         var cd = cdByHash.TryGetValue(hash, out var used) ? used + 1 : 0;
         cdByHash[hash] = cd;
         var entry = nextChunk++;
@@ -471,19 +550,17 @@ internal sealed class ZfsWriter {
         name.CopyTo(nameBytes, 0);
         nextChunk = WriteArray(chunks, nextChunk, nameBytes, chunkBytes);
         var valueChunk = nextChunk;
-        var valueBytes = new byte[8];
-        BinaryPrimitives.WriteUInt64BigEndian(valueBytes, value);
-        nextChunk = WriteArray(chunks, nextChunk, valueBytes, chunkBytes);
+        nextChunk = WriteArray(chunks, nextChunk, value, chunkBytes);
         var e = chunks.Slice(entry * chunkBytes, chunkBytes);
         e[0] = 252;                                                   // ZAP_CHUNK_ENTRY
-        e[1] = 8;                                                     // le_value_intlen
+        e[1] = (byte)intLength;                                       // le_value_intlen
         var bucket = (int)((hash >> (64 - leafHashShift - prefix)) & ((1UL << leafHashShift) - 1));
         BinaryPrimitives.WriteUInt16LittleEndian(e[2..], BinaryPrimitives.ReadUInt16LittleEndian(buckets[(bucket * 2)..]));   // le_next
         BinaryPrimitives.WriteUInt16LittleEndian(buckets[(bucket * 2)..], (ushort)entry);
         BinaryPrimitives.WriteUInt16LittleEndian(e[4..], (ushort)nameChunk);
         BinaryPrimitives.WriteUInt16LittleEndian(e[6..], (ushort)nameBytes.Length);
         BinaryPrimitives.WriteUInt16LittleEndian(e[8..], (ushort)valueChunk);
-        BinaryPrimitives.WriteUInt16LittleEndian(e[10..], 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(e[10..], (ushort)(value.Length / intLength));     // le_value_numints
         BinaryPrimitives.WriteUInt32LittleEndian(e[12..], cd);
         BinaryPrimitives.WriteUInt64LittleEndian(e[16..], hash);
       }
@@ -631,6 +708,7 @@ internal sealed class ZfsWriter {
     if (this._parity > 0 && outputs.Count < this._parity + 2)
       throw new ArgumentException($"ZFS: RAID-Z{this._parity} needs at least {this._parity + 2} devices.", nameof(outputs));
     this._devices = outputs.Count;
+    (this._compression, this._zstdLevel) = ZfsCompression.ParseWithLevel(this._compressionName, this._version);
     var poolGuid = Guid64();
     var leafGuids = outputs.Select(_ => Guid64()).ToArray();
     var raidz = this._parity > 0;
@@ -652,7 +730,7 @@ internal sealed class ZfsWriter {
 
     // DSL objects first, with placeholders for the bonuses that need sizes or later numbers.
     var rootDir = Add(this.NewObject(OtDslDir, OtDslDir, new byte[256], Sector, []));
-    var rootProps = Add(this.ZapObject(OtDslProps, this._compression == ZfsConstants.CompressOff ? [] : [("compression", (ulong)this._compression)]));
+    var rootProps = Add(this.ZapObject(OtDslProps, this._compression == ZfsConstants.CompressOff ? [] : [("compression", this.CompressionProperty)]));
     var mosDir = Add(this.NewObject(OtDslDir, OtDslDir, new byte[256], Sector, []));
     var mosProps = Add(this.ZapObject(OtDslProps, []));
     var mosChildren = Add(this.ZapObject(OtDslDirChildMap, []));
@@ -684,7 +762,9 @@ internal sealed class ZfsWriter {
     mos.Objects[originSnap] = this.NewObject(OtDslDataset, OtDslDataset, new byte[320], Sector, []);
     mos.Objects[originHeadDeadlist] = this.ZapObject(OtDeadlist, [("0", originHeadDeadBpobj)], OtDeadlistHeader, new byte[320]);
     mos.Objects[originHeadDeadBpobj] = this.NewObject(OtBpobj, OtBpobjHeader, new byte[48], MaxDataBlock, []);
-    mos.Objects[headDataset] = this.NewObject(OtDslDataset, OtDslDataset, new byte[320], Sector, []);
+    mos.Objects[headDataset] = this._zstdUsed
+      ? this.ZapObject(OtZapMetadata, [("org.freebsd:zstd_compress", 0)], OtDslDataset, new byte[320])
+      : this.NewObject(OtDslDataset, OtDslDataset, new byte[320], Sector, []);
     mos.Objects[headSnapNames] = this.ZapObject(OtDslSnapMap, []);
     mos.Objects[headDeadlist] = this.ZapObject(OtDeadlist, [("0", headDeadBpobj)], OtDeadlistHeader, new byte[320]);
     mos.Objects[headDeadBpobj] = this.NewObject(OtBpobj, OtBpobjHeader, new byte[48], MaxDataBlock, []);
@@ -720,14 +800,18 @@ internal sealed class ZfsWriter {
       return top;
     }
     NvList Config(int? device) {
-      var l = new NvList().Add("version", PoolVersion).Add("name", poolName).Add("state", 1UL).Add("txg", Txg)
+      var l = new NvList().Add("version", this._version).Add("name", poolName).Add("state", 1UL).Add("txg", Txg)
         .Add("pool_guid", poolGuid).Add("errata", 0UL).Add("hostname", "cwb");
       if (device is { } d)
         l.Add("top_guid", topGuid).Add("guid", leafGuids[d]).Add("vdev_children", 1UL).Add("vdev_tree", TopVdev(metaslabArray));
       else
         l.Add("vdev_children", 1UL).Add("vdev_tree", new NvList().Add("type", "root").Add("id", 0UL).Add("guid", poolGuid)
           .Add("create_txg", Txg).Add("children", new[] { TopVdev(metaslabArray) }));
-      l.Add("features_for_read", new NvList());
+      // the active features needed to read the MOS (hole_birth, embedded_data), as booleans
+      var forRead = new NvList();
+      if (this.Features)
+        foreach (var f in FeatureTable.Where(f => f.Mos)) forRead.Add(f.Guid, null);
+      l.Add("features_for_read", forRead);
       return l;
     }
     var configBytes = XdrNvListWriter.Pack(Config(null));
@@ -738,9 +822,34 @@ internal sealed class ZfsWriter {
     var configBlocks = configBytes.Chunk(ConfigBlock).Select(c => (byte[]?)c).ToList();
     var configObj = Add(this.NewObject(OtPackedNvList, OtPackedNvListSize, configBonus, ConfigBlock, configBlocks));
 
+    // feature flags: which are enabled (read / write lists, with their reference counts), their
+    // descriptions and the txg each was enabled in. spacemap_histogram counts the space maps; its
+    // count is filled in once they are known (it is the first entry of the write list).
+    var featureEntries = new List<(string Name, ulong Value)>();
+    DmuObject? featuresForWrite = null;
+    if (this.Features) {
+      ulong Refcount(string guid) => guid switch {
+        "com.delphix:enabled_txg" => (ulong)FeatureTable.Length,
+        "com.delphix:hole_birth" or "com.delphix:embedded_data" or "org.illumos:lz4_compress" => 1,
+        // zstd blocks activate zstd_compress on their dataset, whose object becomes a ZAP (extensible)
+        "com.delphix:extensible_dataset" or "org.freebsd:zstd_compress" => this._zstdUsed ? 1UL : 0,
+        _ => 0,
+      };
+      var forRead = Add(this.ZapObject(OtZapMetadata, FeatureTable.Where(f => f.ForRead).Select(f => (f.Guid, Refcount(f.Guid))).ToList()));
+      featuresForWrite = this.ZapObject(OtZapMetadata, FeatureTable.Where(f => !f.ForRead)
+        .OrderBy(f => f.Guid == "com.delphix:spacemap_histogram" ? 0 : 1).Select(f => (f.Guid, Refcount(f.Guid))).ToList());
+      var forWrite = Add(featuresForWrite);
+      var descriptions = Add(this.NewObject(OtZapMetadata, 0, [], FatZapBlock,
+        BuildFatZap(FeatureTable.Select(f => (f.Guid, 1, Encoding.ASCII.GetBytes(f.Description + "\0"))).ToList())));
+      var enabledTxg = Add(this.ZapObject(OtZapMetadata, FeatureTable.Select(f => (f.Guid, Txg)).ToList()));
+      featureEntries.AddRange([("features_for_read", forRead), ("features_for_write", forWrite),
+        ("feature_descriptions", descriptions), ("feature_enabled_txg", enabledTxg)]);
+    }
+
     mos.Objects[1] = this.ZapObject(OtObjectDirectory, [
       ("root_dataset", rootDir), ("config", configObj), ("sync_bplist", syncBplist), ("free_bpobj", freeBpobj),
-      ("deflate", 1), ("creation_version", PoolVersion),
+      ("deflate", 1), ("creation_version", this._version),
+      .. featureEntries,
     ]);
 
     // space maps: one per metaslab the pool's blocks reach, sized for a debug word and runs.
@@ -754,11 +863,14 @@ internal sealed class ZfsWriter {
     var spaceMaps = new ulong[mapsNeeded];
     for (var m = 0; m < mapsNeeded; ++m)
     {
-      // three block pointers leave a 64-byte bonus: a pool-version-28 space map header, no histogram
-      var map = this.NewObject(OtSpaceMap, OtSpaceMapHeader, new byte[24], Sector, [new byte[Sector]]);
-      map.BlockPointers = 3;
+      // version 28: three block pointers leave a 64-byte bonus, a header without histogram;
+      // spacemap_histogram: one block pointer and the whole 320-byte space_map_phys_t
+      var map = this.NewObject(OtSpaceMap, OtSpaceMapHeader, new byte[this.Features ? 320 : 24], Sector, [new byte[Sector]]);
+      map.BlockPointers = this.Features ? 1 : 3;
       spaceMaps[m] = Add(map);
     }
+    if (featuresForWrite != null)
+      BinaryPrimitives.WriteUInt64LittleEndian(featuresForWrite.Level0[0]!.Data.AsSpan(64), (ulong)mapsNeeded);
 
     this.AllocateObjectSet(mos, mosNext - 1);
     if (this._next > reach)
@@ -779,9 +891,11 @@ internal sealed class ZfsWriter {
       var limit = start + metaslabSize;
       var words = new List<ulong> { 2UL << 62 | 1UL << 50 | Txg };     // debug entry: ALLOC, sync pass 1, txg
       long allocatedHere = 0;
+      var here = new List<(long, long)>();
       foreach (var (from, to) in ranges) {
         var lo = Math.Max(from, start);
         var hi = Math.Min(to, limit);
+        if (lo < hi) here.Add((lo, hi));
         for (var at = lo; at < hi;) {
           var run = Math.Min(hi - at, 32768L * Sector);
           words.Add((ulong)((at - start) >> Ashift) << 16 | (ulong)((run >> Ashift) - 1));
@@ -799,6 +913,8 @@ internal sealed class ZfsWriter {
       BinaryPrimitives.WriteUInt64LittleEndian(map.Bonus, spaceMaps[m]);                       // smp_object
       BinaryPrimitives.WriteUInt64LittleEndian(map.Bonus.AsSpan(8), (ulong)(words.Count * 8)); // smp_length
       BinaryPrimitives.WriteInt64LittleEndian(map.Bonus.AsSpan(16), end - start);             // smp_alloc
+      if (this.Features)
+        SpaceMapHistogram(map.Bonus.AsSpan(64), start, limit, here, Ashift);
       BinaryPrimitives.WriteUInt64LittleEndian(metaslabArrayData.AsSpan(m * 8), spaceMaps[m]);
     }
     metaslabArrayData.CopyTo(mos.Objects[metaslabArray].Level0[0]!.Data, 0);
@@ -885,11 +1001,11 @@ internal sealed class ZfsWriter {
           pieces[columns[c].Child].Add((columns[c].Offset, encoded[c]));
     }
     for (var d = 0; d < outputs.Count; ++d)
-      WriteDevice(outputs[d], device, pieces[d], XdrNvListWriter.Pack(Config(d)), guidSum, now, mos.Root);
+      WriteDevice(outputs[d], device, pieces[d], XdrNvListWriter.Pack(Config(d)), guidSum, now, mos.Root, this._version);
   }
 
   /// <summary>One device: every block at its offset, then the four labels with their uberblock.</summary>
-  private static void WriteDevice(Stream image, long device, List<(long At, byte[] Data)> pieces, byte[] labelList, ulong guidSum, ulong now, Block mosRoot) {
+  private static void WriteDevice(Stream image, long device, List<(long At, byte[] Data)> pieces, byte[] labelList, ulong guidSum, ulong now, Block mosRoot, ulong version) {
     image.SetLength(0);
     image.SetLength(device);
     const long dataStart = 4L * 1024 * 1024;
@@ -912,7 +1028,7 @@ internal sealed class ZfsWriter {
       var slot = 1 << Math.Clamp(Ashift, ZfsConstants.MinUberblockShift, ZfsConstants.MaxUberblockShift);
       var ub = new byte[slot];
       BinaryPrimitives.WriteUInt64LittleEndian(ub, ZfsConstants.UberblockMagic);
-      BinaryPrimitives.WriteUInt64LittleEndian(ub.AsSpan(8), PoolVersion);
+      BinaryPrimitives.WriteUInt64LittleEndian(ub.AsSpan(8), version);
       BinaryPrimitives.WriteUInt64LittleEndian(ub.AsSpan(16), Txg);
       BinaryPrimitives.WriteUInt64LittleEndian(ub.AsSpan(24), guidSum);
       BinaryPrimitives.WriteUInt64LittleEndian(ub.AsSpan(32), now);
@@ -925,6 +1041,30 @@ internal sealed class ZfsWriter {
       image.Write(ub);
     }
     image.Flush();
+  }
+
+  /// <summary>
+  /// A space map's histogram of free regions (<c>docs/ZFS-ON-DISK.md</c>, "Feature flags"): 32
+  /// counters, region sizes <c>2^(i + shift)</c> to below <c>2^(i + shift + 1)</c>; larger regions count
+  /// in the last bucket, weighted by their size class.
+  /// </summary>
+  internal static void SpaceMapHistogram(Span<byte> histogram, long start, long end, IReadOnlyList<(long Start, long End)> allocated, int shift) {
+    var counts = new ulong[32];
+    var at = start;
+    void Free(long length) {
+      if (length <= 0) return;
+      var bucket = 63 - (int)ulong.LeadingZeroCount((ulong)length) - shift;
+      if (bucket < 0) return;
+      var index = Math.Min(bucket, 31);
+      counts[index] += 1UL << (bucket - index);
+    }
+    foreach (var (from, to) in allocated.OrderBy(r => r.Start)) {
+      Free(from - at);
+      at = Math.Max(at, to);
+    }
+    Free(end - at);
+    for (var i = 0; i < 32; ++i)
+      BinaryPrimitives.WriteUInt64LittleEndian(histogram[(i * 8)..], counts[i]);
   }
 
   /// <summary>Seals a label-area block with its trailing <c>zio_eck_t</c>: SHA-256 with the device offset as verifier.</summary>

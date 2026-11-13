@@ -324,6 +324,50 @@ Charges follow the block: allocated bytes from `psize` rounded to the sector, co
 `psize`, uncompressed bytes `lsize` for file data (see "Editing a pool", "Accounting"); the
 written filesystem's dataset and directories record those three sums.
 
+### Feature flags (version 5000)
+
+With `Version` 5000 the writer marks the pool as feature-flag pool (version 5000 in the labels,
+the MOS config and the uberblock; `creation_version` 5000) and enables these features at txg 4:
+
+| Feature (guid) | List | Reference count written | Why |
+| --- | --- | --- | --- |
+| `com.delphix:enabled_txg` | write | the number of enabled features | every enabling after it records its txg |
+| `com.delphix:hole_birth` | read | 1 | active from enabling on |
+| `com.delphix:embedded_data` | read | 1 | active from enabling on |
+| `org.illumos:lz4_compress` | read | 1 | active from enabling on |
+| `com.delphix:spacemap_histogram` | write | the number of space-map objects | each space map carries a histogram |
+| `com.delphix:empty_bpobj` | write | 0 | enabled, not used |
+| `com.delphix:extensible_dataset` | read | objects turned into ZAPs (1 with zstd, else 0) | |
+| `org.freebsd:zstd_compress` | read | datasets holding zstd blocks (1 or 0) | per-dataset feature |
+
+The lists are MOS ZAPs of type `DMU_OTN_ZAP_METADATA` (0xC4) named in the object directory:
+`features_for_read` and `features_for_write` (guid → reference count; a feature flagged
+read-only-compatible goes to the write list, the rest to the read list),
+`feature_descriptions` (a fat ZAP, guid → the description as 1-byte integers including the NUL)
+and `feature_enabled_txg` (guid → txg). The labels' and MOS config's `features_for_read` nvlist
+lists, as booleans, the active features needed to read the MOS: `hole_birth` and
+`embedded_data`.
+
+- **spacemap_histogram**: a space map dnode has one block pointer and the full 320-byte
+  `space_map_phys_t` bonus: object, length, allocated bytes, five pad words, then 32 counters of
+  the metaslab's *free* regions, counter `i` for regions of `2^(i + ashift)` up to below
+  `2^(i + ashift + 1)` bytes; larger regions add `2^(class − 31)` to the last counter.
+- **embedded_data**: a file data block whose compressed stream (before padding) is at most 112
+  bytes is stored in its block pointer: payload in words 0-5, 7-9 and 11-15, the properties word
+  with logical size − 1 (25 bits), payload size − 1 (7 bits), compression, the embedded bit 39,
+  embedded type 0 (data), object type and level; logical birth in word 10. It takes no space; it
+  is charged only its logical size as uncompressed bytes. The decision comes before rounding to a
+  sector: a 512-byte block that compresses to 20 bytes is embedded.
+- **lz4**: a big-endian `u32` stream length, then one LZ4 block; `on` means lz4 here.
+- **zstd**: big-endian `u32` frame length, a big-endian `u32` holding the zstd version (low 24 bits,
+  10405 written) and level (high 8 bits), then the frame without its magic. The `compression`
+  property is `16 | level << 7`. The dataset holding zstd blocks gets the feature: its object
+  becomes a ZAP (type 0xC4, the dataset bonus kept) with the entry `org.freebsd:zstd_compress` = 0.
+
+`zdb -d` checks the per-dataset counts and that the space-map count equals the number of space
+maps with histograms; the kernel reports each feature active or enabled as written
+(`Compression.Tests/Zfs/ZfsFeatureWriteTests.cs`).
+
 ## Editing a pool
 
 `FileSystem.Zfs.ZfsPoolEditor` adds and removes files in an existing single-device pool of
@@ -406,6 +450,42 @@ new block goes to every side of a mirror, or as its data and parity columns ("Wr
 to the RAID-Z's devices; the space maps take the RAID-Z `asize`, the accounting the `dsize`
 (deflate ratio). The new uberblock goes into the four labels of every device. A degraded pool
 (a child missing) is not edited.
+
+**Feature-flag pools (version 5000).** The enabled features and their reference counts are
+the entries of `features_for_read` and `features_for_write`. An edit is refused while one of
+these is active: block_cloning, device_removal, obsolete_counts, zpool_checkpoint, draid,
+async_destroy, allocation_classes, livelist, raidz_expansion, redacted_datasets — and while any
+feature not known to the editor is. What the active ones ask of an edit:
+
+- **spacemap_v2**: a space map may hold two-word entries — word 0: prefix `11` in bits 62-63, run
+  − 1 in bits 24-59, vdev in bits 0-23 (0 for "none" in a metaslab's own map); word 1: bit 63 set
+  for FREE, offset in bits 0-62; units as for one-word entries. Rewritten maps may use one-word
+  entries only.
+- **spacemap_histogram**: every rewritten map keeps the 320-byte header with its histogram of
+  free regions; a new map object adds 1 to the feature's count.
+- **log_spacemap**: the object directory's `com.delphix:log_spacemap_zap` maps each txg (key in
+  lower-case hex) to a log space map — a space map of shift 9 and start 0 whose two-word entries
+  name the top-level vdev and absolute offsets. The MOS `config` object's top-level vdev names its
+  ZAP (`com.delphix:vdev_zap_top`), whose `com.delphix:ms_unflushed_phys_txgs` is an object of one
+  `u64` per metaslab: the txg from which on the logs hold that metaslab's changes (0 = none). A
+  metaslab's allocated space is its own map plus, in txg order, the entries of every log whose
+  txg is at least its unflushed txg. A metaslab whose map the edit rewrites is flushed in the new
+  txg: its unflushed txg becomes the new txg, and an empty log space map is registered for that
+  txg, because every unflushed txg must name an existing log (the kernel's import refuses
+  otherwise). That log is a space map object too and counts towards spacemap_histogram.
+- **userobj_accounting**: the user and group objects also count objects, key `obj-<hex id>`, one
+  per object whose dnode has flag bit 3 (`USEROBJUSED_ACCOUNTED`); rewritten znodes gain the bit.
+- **project_quota**: a 4 KiB object set block holds the project-used object at 0x800; projects are
+  charged like users and groups, the project being `ZPL_PROJID` when the znode's flags carry
+  `0x0000800000000000` (`ZFS_PROJID`), else 0.
+- **lz4_compress / zstd_compress**: `on` means lz4; zstd is written only into datasets whose object
+  already carries the zstd feature, so the edit never has to activate it; elsewhere a zstd property
+  is written uncompressed. A property value keeps the zstd level above its low 7 bits.
+- **embedded_data**: freeing an embedded block frees no space; its logical size leaves the
+  dataset's uncompressed bytes.
+- hole_birth, large_blocks, large_dnode, the checksum features, head_errlog, zilsaxattr,
+  vdev_zaps_v2, bookmarks and encryption need nothing more; encrypted datasets themselves are not
+  edited.
 
 ### Intent log
 
