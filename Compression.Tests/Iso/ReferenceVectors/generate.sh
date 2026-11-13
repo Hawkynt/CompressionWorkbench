@@ -1,6 +1,6 @@
 #!/bin/bash
 # Regenerates the Rock Ridge reference images in this directory. Documentation, not a
-# build input. Needs xorriso and guestfish (libguestfs-tools); no root.
+# build input. Needs xorriso, genisoimage and guestfish (libguestfs-tools); no root.
 #
 # xorriso writes the images; the Linux kernel's isofs driver (inside the libguestfs
 # appliance) reads them back, resolving Rock Ridge names, symbolic links, relocated deep
@@ -35,8 +35,19 @@ common=(-for_backup -rockridge on -compliance no_force_dots
         -map "$T" / -set_filter --zisofs /big.txt /zeros.bin --)
 xorriso -outdev "$WORK/rr.iso" -joliet off "${common[@]}" -commit 2>/dev/null
 xorriso -outdev "$WORK/rr-joliet.iso" -joliet on "${common[@]}" -commit 2>/dev/null
-# mkisofs emulation relocates the 11-level directory into rr_moved with RE/CL entries.
+# mkisofs emulation; xorriso records the 11-level directory where it is (Rock Ridge deep
+# paths), it does not relocate it.
 xorriso -as mkisofs -R -o "$WORK/rr-moved.iso" "$T" 2>/dev/null
+
+# genisoimage does relocate: a folder below the eighth level moves into rr_moved (RE), a CL
+# placeholder stays at its real place and its ".." carries PL. Rock Ridge and Joliet.
+R="$WORK/reloc"
+mkdir -p "$R/a/b/c/d/e/f/g/h/i/j" "$R/sub"
+printf 'nine levels down\n' > "$R/a/b/c/d/e/f/g/h/i/j/deep.txt"
+printf 'small file\n' > "$R/sub/small.txt"
+printf 'eight\n' > "$R/a/b/c/d/e/f/g/at-eight.txt"
+genisoimage -quiet -R -J -V RELOCATED -o "$WORK/rr-relocated.iso" "$R"
+gzip -9 -n -c "$WORK/rr-relocated.iso" > "$OUT/rr-relocated.iso.gz"
 
 inner=$(cat <<'EOF' | base64 -w0
 cd /sysroot
