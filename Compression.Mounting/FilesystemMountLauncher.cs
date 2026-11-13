@@ -40,9 +40,12 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
     ArgumentException.ThrowIfNullOrWhiteSpace(target);
     cancellationToken.ThrowIfCancellationRequested();
 
-    var descriptor = FormatRegistry.GetById(formatId)
-      ?? throw new ArgumentException($"Format '{formatId}' is not registered.", nameof(formatId));
-    _ = descriptor;
+    // "Raw"/"Unknown" are explicit opt-ins for formats that have no registered
+    // parser, never a silent fallback for a recognized but malformed container.
+    if (!formatId.Equals("Raw", StringComparison.OrdinalIgnoreCase) &&
+        !formatId.Equals("Unknown", StringComparison.OrdinalIgnoreCase) &&
+        FormatRegistry.GetById(formatId) is null)
+      throw new ArgumentException($"Format '{formatId}' is not registered.", nameof(formatId));
 
     var backend = this._backends.GetBackend(requestedPlan.BackendId);
     FileStream? source = null;
