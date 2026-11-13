@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Lib;
+using Compression.Mounting;
 using Compression.Registry;
 
 namespace Compression.Tests.Mounting;
