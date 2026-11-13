@@ -329,7 +329,7 @@ internal sealed class UharcLzpDecoder {
   // ── Literals ───────────────────────────────────────────────────────────
 
   private byte DecodeLiteral() {
-    var context = this.LiteralContext();
+    var context = LiteralContext(this._history);
     var excluded = this._excludedPosition == NoPosition ? -1 : this._window[this._excludedPosition];
     var symbol = this.DecodeSymbol(context, excluded);
     this.UpdateLiteral(context, symbol);
@@ -340,10 +340,11 @@ internal sealed class UharcLzpDecoder {
     return (byte)symbol;
   }
 
-  private int LiteralContext() {
-    var last = (int)(this._history & 0xFF);
-    var before = (int)((this._history >> 8) & 0xFF);
-    switch (this._history & 0xFFFF) {
+  /// <summary>Literal model context of the byte that follows <paramref name="history"/> (complemented bytes, newest lowest).</summary>
+  internal static int LiteralContext(uint history) {
+    var last = (int)(history & 0xFF);
+    var before = (int)((history >> 8) & 0xFF);
+    switch (history & 0xFFFF) {
       case 0xFFFF: return 314;
       case 0xD1DF: return 315;
       case 0xD3DF: return 316;

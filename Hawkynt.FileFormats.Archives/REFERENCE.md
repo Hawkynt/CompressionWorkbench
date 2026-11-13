@@ -33190,7 +33190,7 @@ One file or directory of a UHARC archive.
 
 #### `UharcFormatDescriptor`
 
-UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors, and UHARC 0.2 archives. Archives of 0.3 and 0.4 are refused. Creates 0.6 archives, stored or LZP-packed, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
+UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store and LZP modes (`-m0`, `-mz`), with passwords; and UHARC 0.2 archives. Archives of 0.3, and 0.4 ALZ and PPM streams, are refused. Creates 0.6 archives, stored or LZP-packed, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
 
@@ -33216,7 +33216,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 #### `UharcReader`
 
-Reads UHARC 0.6 archives (magic `UHA\x06`) as written by UHARC 0.6/0.6a/0.6b, and UHARC 0.2 archives (`UHA\x02`). Layout and codecs are described in docs/UHARC-ON-DISK.md.
+Reads UHARC 0.6 archives (magic `UHA\x06`) as written by UHARC 0.6/0.6a/0.6b, UHARC 0.4 archives (`UHA\x04`) and UHARC 0.2 archives (`UHA\x02`). Layout and codecs are described in docs/UHARC-ON-DISK.md.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -33229,7 +33229,7 @@ Reads UHARC 0.6 archives (magic `UHA\x06`) as written by UHARC 0.6/0.6a/0.6b, an
 | `MethodName` | `string MethodName { get; }` | Gets the name of the compression mode, as `uharc l` prints it (0.2: the mode switch). |
 | `Method` | `int Method { get; }` | Gets the stream method byte (see `MethodName`). |
 | `PackedSize` | `long PackedSize { get; }` | Gets the size of the packed solid stream. |
-| `Version` | `int Version { get; }` | Gets the format version: 6 for UHARC 0.6, 2 for UHARC 0.2. |
+| `Version` | `int Version { get; }` | Gets the format version: 6 for UHARC 0.6, 4 for 0.4, 3 for 0.3, 2 for 0.2. |
 | `Extract` | `byte[] Extract(UharcEntry entry)` | Extracts and CRC-verifies one file. |
 
 ### Namespace `FileFormat.Ult`

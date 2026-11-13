@@ -288,7 +288,7 @@ internal sealed class UharcLzpEncoder {
   // ── Literals ───────────────────────────────────────────────────────────
 
   private void EncodeLiteral(byte symbol) {
-    var context = this.LiteralContext();
+    var context = UharcLzpDecoder.LiteralContext(this._history);
     var excluded = this._excludedPosition == NoPosition ? -1 : this._window[this._excludedPosition];
     if (symbol == excluded)
       throw new InvalidOperationException("UHARC: literal equals the excluded byte.");
@@ -298,21 +298,6 @@ internal sealed class UharcLzpEncoder {
     this._excludedPosition = this._predictedPosition != NoPosition && symbol == this._window[this._predictedPosition]
       ? (this._predictedPosition + 1) & this._mask
       : NoPosition;
-  }
-
-  private int LiteralContext() {
-    var last = (int)(this._history & 0xFF);
-    var before = (int)((this._history >> 8) & 0xFF);
-    switch (this._history & 0xFFFF) {
-      case 0xFFFF: return 314;
-      case 0xD1DF: return 315;
-      case 0xD3DF: return 316;
-    }
-
-    if (last == 0xDF && UharcLzpDecoder.IsNonLetter[before])
-      return 317;
-
-    return !UharcLzpDecoder.IsNonLetter[last] && UharcLzpDecoder.IsNonLetter[before] ? last + 123 : last;
   }
 
   private void EncodeSymbol(int context, int excluded, int symbol) {

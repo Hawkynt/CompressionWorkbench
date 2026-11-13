@@ -44,6 +44,28 @@ same inputs, with `uharc a -y -r <switches> <archive>`; DOSBox gave the inputs t
 | `v02-mm-m3.uha` | mm | `-m3` | the multimedia literal modes |
 | `v02-runs-m2.uha` | runs | `-m2` | byte runs |
 
+The `v04-*` archives were written by **UHARC 0.4 BETA** (`UHARC04.EXE`, Win32, 28 Dec 2001, MD5
+`72fbcde29093186d9027a8ba2feac7f1`) from the same inputs, with
+`uharc04 a -y -d0 -r -ed <switches> <archive> <files>`; it stored the inputs' times as
+`2005-10-01 11:00:00`. The `dates` set carries one time per file (see `genfx.py`):
+
+| Archive | Set | Switches | What it pins |
+| --- | --- | --- | --- |
+| `v04-basic-m0.uha` | basic | `-m0` | 0.4 container, directories, empty file, LZP name table, LZW date/size tables |
+| `v04-basic-mz.uha` / `v04-basic-mz-pw.uha` | basic | `-mz` / `-mz -pwsecret` | 0.4 LZP; enciphered tables and stream, password `secret` |
+| `v04-reset-mz.uha` / `v04-reset-mz1.uha` | reset | `-mz` / `-mz -md1` | 0.4 LZP model resets; a 1 KiB window |
+| `v04-exe-mz.uha` | exe | `-mz` | the executable filter behind 0.4 LZP |
+| `v04-mm-mz.uha` | mm | `-mz`, files `pic.bmp u8.wav s16.wav` | the multimedia delta filter behind 0.4 LZP |
+| `v04-runs-mz.uha` | runs | `-mz` | 0.4 LZP runs and 256-byte copies |
+| `v04-dates-mz.uha` | dates | `-mz` | per-file dates and times, two directory levels |
+
+`UHARC04.EXE t` reports "All files OK" for every `v04-*` archive.
+
+Every archive here is also tested by the unpacker of unuharc_recon
+(<https://github.com/roytam1/unuharc_recon>, revision
+`37f1953ac57609b95ab738bb45991d6d00415789`, built from source and run as a black box), which
+reports "All files OK" for each of them.
+
 Which selectors a stream uses is the encoder's choice, recorded here so a regression in one
 predictor shows up as a failing fixture rather than a silent gap.
 
