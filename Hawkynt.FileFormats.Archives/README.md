@@ -474,7 +474,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Origami | `Origami` |  | R |  | [GitHub](https://github.com/dr4k0nia/Origami) |
 | Papaw | `Papaw` |  | R |  | [GitHub](https://github.com/dimkr/papaw) |
 | PEtite | `Petite` |  | R |  | [un4seen.com](https://www.un4seen.com/petite/) |
-| [PKLITE (DOS exe)](https://en.wikipedia.org/wiki/PKLITE) | `PkLite` |  | R |  | [Archive Team](http://fileformats.archiveteam.org/wiki/PKLITE) |
+| [PKLITE (DOS exe)](https://en.wikipedia.org/wiki/PKLITE) | `PkLite` |  | R | Restores PKLITE 1.00-2.01 EXE and COM files (extra, large and 1.20 variants included); files from PKLITE 1.15 and 2.01 come back byte-identical to `pklite -x` and UNP 4.11 (Deark conversion) | [Archive Team](http://fileformats.archiveteam.org/wiki/PKLITE) |
 | Shrinkler | `Shrinkler` |  | R |  | [GitHub](https://github.com/askeksa/Shrinkler) |
 | Silent_Packer | `SilentPacker` |  | R |  | [GitHub](https://github.com/SilentVoid13/Silent_Packer) |
 | [Themida](https://en.wikipedia.org/wiki/Themida) | `Themida` |  | R |  | [oreans.com](https://www.oreans.com/themida.php) |
@@ -500,7 +500,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | RLPack | Unpack | Own `{sourceRva, destinationRva}` block table, one bare LZMA or aPLib stream per section; x86 call/jump filter reversed. All 130 corpus samples decompress. |
 | WinUpack | Unpack | Upack's LZMA-idiom range coder plus call/jump filter, driven by the loader's parameter block; both container shapes decode. |
 | Yoda's Crypter | Unpack | Stub walker replays the per-build byte cipher and restores the original entry point; 129 of 130 corpus samples decrypt. |
-| LZEXE (DOS) | Unpack | Stub header read, LZ77 image decoded, relocation table and header rebuilt; checked against UNP 4.11 on files the real packer made (see `Compression.Tests/ExePackers/DosVectors`). |
+| LZEXE / PKLITE (DOS) | Unpack | Stubs walked, LZ77 images decoded, relocation tables and headers rebuilt; checked against UNP 4.11 and `pklite -x` on files the real packers made (see `Compression.Tests/ExePackers/DosVectors`). |
 | GZEXE / BZEXE | Unpack | Shell wrappers with embedded gzip / bzip2 payload; the original executable is restored statically. |
 | Papaw | Unpack | ELF wrapper with obfuscated XZ/LZMA2 payload; appended original restored. |
 | GoPacker | Unpack | Appended Zstandard executable payload restored. |

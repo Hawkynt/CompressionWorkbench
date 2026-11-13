@@ -49,7 +49,7 @@ public static class ExecutablePackerHandlers {
     new DescriptorExecutablePackerHandler(new CrinklerFormatDescriptor()),
     new DescriptorExecutablePackerHandler(new KkrunchyFormatDescriptor()),
     new DosExePackerHandler(LzExeUnpacker.Instance),
-    new DescriptorExecutablePackerHandler(new PkLiteFormatDescriptor()),
+    new DosExePackerHandler(PkLiteUnpacker.Instance),
     new DescriptorExecutablePackerHandler(new ShrinklerFormatDescriptor()),
     new DescriptorExecutablePackerHandler(new VmProtectFormatDescriptor()),
 
