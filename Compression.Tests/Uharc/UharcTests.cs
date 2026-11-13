@@ -93,6 +93,9 @@ public class UharcTests {
   [TestCase("v04-runs-mw.uha", "runs", null, true)]
   [TestCase("v04-reset-mw1.uha", "reset", null, true)]
   [TestCase("v04-exe-mw.uha", "exe", null, true)]
+  [TestCase("fax-m2.uha", "fax", null, true)]
+  [TestCase("fax-mx.uha", "fax", null, true)]
+  [TestCase("v04-fax-mz.uha", "fax", null, true)]
   [Category("HappyPath"), Category("ThemVsUs")]
   public void GivenArchiveUharcWrote_WhenExtracted_ThenEveryFileMatchesItsInput(string archive, string set, string? password, bool wholeSet) {
     var reader = Open(archive, password);
@@ -305,6 +308,29 @@ public class UharcTests {
     var data = Vector("v02-basic-m2.uha");
     data[^3] ^= 0x40;
     Assert.That(() => new UharcReader(new MemoryStream(data)), Throws.InstanceOf<InvalidDataException>());
+  }
+
+  // ── Fax pages ──────────────────────────────────────────────────────────
+
+  [Test, Category("Boundary")]
+  public void GivenFaxFlag_WhenAFileIsNotPageSized_ThenItIsLeftAlone() {
+    var data = new byte[UharcFaxFilter.PageSize - 1];
+    data[0] = 0x80;
+    UharcFaxFilter.Restore(data);
+    Assert.That(data[0], Is.EqualTo(0x80));
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenTransposedPage_WhenRestored_ThenBandColumnsBecomeRows() {
+    var data = new byte[UharcFaxFilter.PageSize];
+    data[0] = 0x80;        // band 0, column 0: row 0
+    data[1728 + 9] = 0x01; // band 1, column 9: row 15
+    UharcFaxFilter.Restore(data);
+    Assert.Multiple(() => {
+      Assert.That(data[0], Is.EqualTo(0x80));
+      Assert.That(data[15 * 216 + 1], Is.EqualTo(0x40));
+      Assert.That(data.Count(b => b != 0), Is.EqualTo(2));
+    });
   }
 
   // ── UHARC 0.4 ──────────────────────────────────────────────────────────
