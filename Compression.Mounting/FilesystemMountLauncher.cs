@@ -69,7 +69,8 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
           LeaveOpen: false
         ),
         password,
-        volumeParameters
+        volumeParameters,
+        sourceName: Path.GetFileName(imagePath)
       );
 
       // The opened namespace can be more specific than the probe (for example a
