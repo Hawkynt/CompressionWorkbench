@@ -3,9 +3,15 @@ using System.Text;
 
 namespace FileSystem.Zfs;
 
-/// <summary>One ZAP entry: a name and its integer array.</summary>
+/// <summary>
+/// One ZAP entry: a name and its integer array. In a ZAP keyed by 64-bit integers (the dedup
+/// tables) <see cref="Key"/> holds the key and <see cref="Name"/> its hex digits.
+/// </summary>
 internal sealed record ZfsZapEntry(string Name, int IntegerLength, ulong[] Values) {
   public ulong Value => this.Values.Length > 0 ? this.Values[0] : 0;
+
+  /// <summary>The key words of a ZAP keyed by 64-bit integers, else <see langword="null"/>.</summary>
+  public ulong[]? Key { get; init; }
 }
 
 /// <summary>
@@ -22,6 +28,14 @@ internal static class ZfsZap {
   private const byte ChunkEntry = 252;
   private const byte ChunkArray = 251;
   private const ushort ChainEnd = 0xFFFF;
+
+  /// <summary>zap_flags: 48-bit hashes, keys that are 64-bit integer arrays, keys that are their own hash.</summary>
+  public const ulong FlagHash64 = 1, FlagUint64Key = 2, FlagPreHashedKey = 4;
+
+  /// <summary>A fat ZAP header's zap_flags (0 for a micro ZAP).</summary>
+  public static ulong FlagsOf(byte[] first) =>
+    first.Length >= 104 && BinaryPrimitives.ReadUInt64LittleEndian(first) == ZfsConstants.ZbtHeader
+      ? BinaryPrimitives.ReadUInt64LittleEndian(first.AsSpan(96)) : 0;
 
   /// <summary>Decodes the ZAP whose logical blocks <paramref name="readBlock"/> returns, block 0 first.</summary>
   public static List<ZfsZapEntry> Decode(Func<ulong, byte[]> readBlock, ulong maxBlockId) {
@@ -52,18 +66,19 @@ internal static class ZfsZap {
     if (BinaryPrimitives.ReadUInt64LittleEndian(header.AsSpan(8)) != ZfsConstants.ZapMagic)
       throw new InvalidDataException("ZFS: fat ZAP header magic mismatch.");
     var entries = new List<ZfsZapEntry>();
+    var integerKeys = (FlagsOf(header) & FlagUint64Key) != 0;
     for (ulong id = 1; id <= maxBlockId; ++id) {
       var block = readBlock(id);
       if (block.Length < LeafHeaderSize
           || BinaryPrimitives.ReadUInt64LittleEndian(block) != ZfsConstants.ZbtLeaf
           || BinaryPrimitives.ReadUInt32LittleEndian(block.AsSpan(24)) != ZfsConstants.ZapLeafMagic)
         continue;
-      DecodeLeaf(block, entries);
+      DecodeLeaf(block, entries, integerKeys);
     }
     return entries;
   }
 
-  private static void DecodeLeaf(byte[] block, List<ZfsZapEntry> entries) {
+  private static void DecodeLeaf(byte[] block, List<ZfsZapEntry> entries, bool integerKeys) {
     var shift = 63 - ulong.LeadingZeroCount((ulong)block.Length);
     var hashEntries = 1 << ((int)shift - 5);
     var chunkBase = LeafHeaderSize + 2 * hashEntries;
@@ -80,9 +95,19 @@ internal static class ZfsZap {
       if (valueIntLength is not (1 or 2 or 4 or 8))
         throw new InvalidDataException($"ZFS: ZAP value integer length {valueIntLength}.");
 
-      var nameBytes = ReadArray(block, chunkBase, chunkCount, nameChunk, nameInts);
-      var nameLength = nameBytes.AsSpan().IndexOf((byte)0);
-      var name = Encoding.UTF8.GetString(nameBytes, 0, nameLength < 0 ? nameBytes.Length : nameLength);
+      ulong[]? key = null;
+      string name;
+      if (integerKeys) {
+        // keys of 64-bit integers, most significant byte first like every leaf array
+        var keyBytes = ReadArray(block, chunkBase, chunkCount, nameChunk, nameInts * 8);
+        key = new ulong[nameInts];
+        for (var k = 0; k < nameInts; ++k) key[k] = BinaryPrimitives.ReadUInt64BigEndian(keyBytes.AsSpan(k * 8));
+        name = string.Join(':', key.Select(k => k.ToString("x16")));
+      } else {
+        var nameBytes = ReadArray(block, chunkBase, chunkCount, nameChunk, nameInts);
+        var nameLength = nameBytes.AsSpan().IndexOf((byte)0);
+        name = Encoding.UTF8.GetString(nameBytes, 0, nameLength < 0 ? nameBytes.Length : nameLength);
+      }
 
       var valueBytes = ReadArray(block, chunkBase, chunkCount, valueChunk, valueInts * valueIntLength);
       var values = new ulong[valueInts];
@@ -93,7 +118,7 @@ internal static class ZfsZap {
           x = (x << 8) | valueBytes[v * valueIntLength + k];
         values[v] = x;
       }
-      entries.Add(new(name, valueIntLength, values));
+      entries.Add(new(name, valueIntLength, values) { Key = key });
     }
   }
 

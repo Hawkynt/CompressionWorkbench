@@ -1,10 +1,11 @@
 using System.Buffers.Binary;
+using System.Numerics;
 using System.Text;
 
 namespace FileSystem.Zfs;
 
 /// <summary>
-/// Adds and removes files in an existing pool of version 28 or 5000 (one device, a mirror or a RAID-Z), the way a
+/// Adds and removes files in an existing pool of version 28 or 5000 (devices, mirrors, RAID-Z, striped), the way a
 /// transaction group of OpenZFS would (<c>docs/ZFS-ON-DISK.md</c>, "Editing a pool"): every
 /// changed block is written anew elsewhere (copy-on-write) up to a new MOS, the blocks it
 /// replaces go back to the space maps, the dataset, directory and user accounting follow,
@@ -13,10 +14,11 @@ namespace FileSystem.Zfs;
 /// <remarks>
 /// The edit is planned completely in memory before a byte is written, so any refusal leaves the
 /// image untouched; new blocks are written first and the uberblocks last. Space freed by the edit
-/// is not reused by the same edit, so the previous uberblocks still name intact trees. Refused:
-/// active features the editor does not keep consistent (block cloning, device removal, …), degraded pools and several top-level vdevs, pool checkpoints, freeing a
-/// block that a snapshot still holds, gang and deduplicated blocks, an unreplayed intent log,
-/// normalised or case-insensitive filesystems, and datasets with a refreservation.
+/// is not reused by the same edit, so the previous uberblocks still name intact trees. A block a
+/// snapshot still holds goes to the deadlist, a gang block frees its whole tree and a deduplicated
+/// one gives up a reference in its dedup table. Refused: active features the editor does not keep
+/// consistent (block cloning, device removal, …), degraded pools, pool checkpoints, an unreplayed
+/// intent log, normalised or case-insensitive filesystems, and datasets with a refreservation.
 /// </remarks>
 internal static class ZfsPoolEditor {
   /// <summary>One file (or, with <c>Data</c> null, one directory) to add or replace.</summary>
@@ -33,7 +35,7 @@ internal static class ZfsPoolEditor {
   private const byte OtZapMetadata = 0xC4;                        // DMU_OTN_ZAP_METADATA
   private const byte FlagUsedBytes = 1, FlagUserUsedAccounted = 2, FlagSpill = 4, FlagUserObjUsedAccounted = 8;
   private const ulong ZfsProjectFlag = 0x0000800000000000UL;   // ZFS_PROJID: the znode carries a project id
-  private const int UsedHead = 0, UsedChild = 2, UsedChildReserve = 3, UsedRefReservation = 4;
+  private const int UsedHead = 0, UsedSnap = 1, UsedChild = 2, UsedChildReserve = 3, UsedRefReservation = 4;
   private const int UserUsedAt = 0x400, GroupUsedAt = 0x600, ProjectUsedAt = 0x800;
 
   private static readonly string[] SaZnodeLayout = [
@@ -572,6 +574,9 @@ internal static class ZfsPoolEditor {
     public required byte[] Block;
     public required byte[] OldRoot;
     public ulong PrevSnapTxg;
+    /// <summary>Blocks the previous snapshot still holds that the edit no longer references: they go to the deadlist.</summary>
+    public readonly List<byte[]> Held = [];
+    public long HeldUsed, HeldCompressed, HeldUncompressed;
     public required Dnode Meta;
     public readonly Dictionary<ulong, Dnode> Loaded = [];
     public readonly SortedSet<ulong> Dirty = [];
@@ -726,32 +731,67 @@ internal static class ZfsPoolEditor {
       return block;
     }
 
+    /// <summary>What a block is charged: allocated (deflated) bytes of all its DVAs, physical bytes, and logical bytes for data.</summary>
+    private (long Used, long Compressed, long Uncompressed) ChargeOf(ZfsBlockPointer bp) {
+      if (bp.IsEmbedded) return (0, 0, IsMetadata(bp) ? 0 : bp.LogicalSize);
+      long used = 0;
+      foreach (var dva in bp.Dvas)
+        if (!dva.IsEmpty) used += this._s.Tops[(int)dva.Vdev].Charged((long)dva.AllocatedSectors << ZfsConstants.SectorShift);
+      return (used, bp.PhysicalSize, IsMetadata(bp) ? bp.PhysicalSize : bp.LogicalSize);
+    }
+
+    /// <summary>
+    /// A block the edit no longer references: freed, or — when born at or before the previous
+    /// snapshot, which still holds it — kept and put on the dataset's deadlist.
+    /// </summary>
     private void FreePointer(Os os, Dnode? d, byte[] raw) {
       if (IsHole(raw)) return;
       var bp = ZfsBlockPointer.Read(raw);
-      if (bp.IsEmbedded) {
-        // nothing allocated; only its logical size was charged
-        if (bp.LogicalBirth <= os.PrevSnapTxg)
-          throw new NotSupportedException("ZFS: a snapshot still holds a block the edit would free; it is not edited.");
-        if (!IsMetadata(bp)) os.Uncompressed -= bp.LogicalSize;
+      var (used, compressed, uncompressed) = this.ChargeOf(bp);
+      if (d != null) d.Used -= used;
+      if (bp.LogicalBirth <= os.PrevSnapTxg) {
+        os.Held.Add(raw);
+        os.HeldUsed += used;
+        os.HeldCompressed += compressed;
+        os.HeldUncompressed += uncompressed;
         return;
       }
-      if (((U64(raw, 0x30) >> 62) & 1) != 0)
-        throw new NotSupportedException("ZFS: freeing a deduplicated block is not supported.");
-      if (bp.LogicalBirth <= os.PrevSnapTxg)
-        throw new NotSupportedException("ZFS: a snapshot still holds a block the edit would free; it is not edited.");
-      long total = 0;
+      os.Used -= used;
+      os.Compressed -= compressed;
+      os.Uncompressed -= uncompressed;
+      if (bp.IsEmbedded) return;                                    // nothing allocated
+      if (((U64(raw, 0x30) >> 62) & 1) != 0) {
+        // the dedup table owns the space: one reference fewer, freed when none is left
+        this._dedupFrees.Add(raw);
+        return;
+      }
+      this.FreeSpace(bp, 0);
+    }
+
+    /// <summary>
+    /// Returns a block's space to the metaslabs: every DVA, and for a gang DVA its header and,
+    /// through it, every child block (themselves possibly gang blocks).
+    /// </summary>
+    private void FreeSpace(ZfsBlockPointer bp, int depth) {
+      if (depth > 16) throw new InvalidDataException("ZFS: gang blocks nest too deeply.");
+      byte[]? header = null;
       foreach (var dva in bp.Dvas) {
         if (dva.IsEmpty) continue;
-        if (dva.Gang) throw new NotSupportedException("ZFS: freeing a gang block is not supported.");
-        var size = (long)dva.AllocatedSectors << ZfsConstants.SectorShift;
-        this.Free((int)dva.Vdev, dva.Offset, size);
-        total += this._s.Tops[(int)dva.Vdev].Charged(size);
+        var top = this._s.Tops[(int)dva.Vdev];
+        if (!dva.Gang) {
+          this.Free((int)dva.Vdev, dva.Offset, (long)dva.AllocatedSectors << ZfsConstants.SectorShift);
+          continue;
+        }
+        // a gang DVA's size counts header and children; the metaslab gave each copy of the header alone
+        this.Free((int)dva.Vdev, dva.Offset, top.AllocatedSize(ZfsConstants.GangHeaderSize));
+        header ??= this._s.Pool.TopLevelVdevs[dva.Vdev].Read(dva.Offset, ZfsConstants.GangHeaderSize);
       }
-      os.Used -= total;
-      os.Compressed -= bp.PhysicalSize;
-      os.Uncompressed -= IsMetadata(bp) ? bp.PhysicalSize : bp.LogicalSize;
-      if (d != null) d.Used -= total;
+      if (header == null) return;
+      // every copy of the header names the same children, which carry their own copies
+      for (var i = 0; i < 3; ++i) {
+        var child = ZfsBlockPointer.Read(header.AsSpan(i * Bp));
+        if (!child.IsHole) this.FreeSpace(child, depth + 1);
+      }
     }
 
     // ── trees ──────────────────────────────────────────────────────────────
@@ -777,7 +817,6 @@ internal static class ZfsPoolEditor {
       if (IsHole(raw)) return;
       var bp = ZfsBlockPointer.Read(raw);
       if (!bp.IsEmbedded && bp.Level > 0) {
-        if (bp.Dvas.Any(v => v.Gang)) throw new NotSupportedException("ZFS: freeing a gang block is not supported.");
         var data = this._s.Pool.ReadBlock(bp, cache: false);
         for (var at = 0; at + Bp <= data.Length; at += Bp)
           this.FreeSubtree(os, d, new TreeNode { Raw = data.AsSpan(at, Bp).ToArray() });
@@ -1514,7 +1553,10 @@ internal static class ZfsPoolEditor {
         this.Load(mos, fs.HeadObject);
         mos.Dirty.Add(fs.HeadObject);
         this.TouchDirChain(fs.DirObject);
+        if (fs.Os.Held.Count > 0) this.PlanDeadlist(fs);
       }
+      if (this._dedupFrees.Count > 0) this.PlanDedup();
+      if (this._emptyBpobjReleased > 0) this.ReleaseEmptyBpobj();
       this.TouchDirChain(this.MosDirectory());
 
       // space maps: every metaslab the guess names is rewritten whole
@@ -1567,10 +1609,360 @@ internal static class ZfsPoolEditor {
         });
       }
 
+      this.FlushZapEdits();
       this.CommitObjset(mos);
     }
 
     private int _newMaps;
+    private int _emptyBpobjReleased;
+    private const byte OtBpobj = 5, OtBpobjHeader = 6;
+    private const int BpobjBlock = 128 * 1024;
+
+    /// <summary>
+    /// The blocks a snapshot still holds go on the head dataset's deadlist: each into the bpobj of the
+    /// deadlist entry with the largest minimum txg below its birth (an entry still on the shared empty
+    /// bpobj gets a bpobj of its own). The previous snapshot's unique bytes grow by what only it
+    /// references now (<c>docs/ZFS-ON-DISK.md</c>, "Snapshots and deadlists").
+    /// </summary>
+    private void PlanDeadlist(Fs fs) {
+      var mos = this._mos;
+      var head = this.Load(mos, fs.HeadObject).Bonus;
+      var deadlistObject = U64(head, 64);
+      var prevObject = U64(head, 8);
+      var entries = mos.Old.Zap(deadlistObject, "deadlist").Select(e => (MinTxg: Convert.ToUInt64(e.Name, 16), Bpobj: e.Value))
+        .OrderBy(e => e.MinTxg).ToList();
+      var emptyBpobj = mos.Old.Zap(1, "MOS object directory").FirstOrDefault(e => e.Name == "empty_bpobj")?.Value ?? 0;
+
+      var prev = this.Load(mos, prevObject);
+      mos.Dirty.Add(prevObject);
+      var prevBonus = prev.Bonus;
+      var prevChildOfHead = U64(prevBonus, 24) == fs.HeadObject;
+      var prevPrevTxg = U64(prevBonus, 16);
+
+      var groups = new SortedDictionary<int, List<byte[]>>();
+      foreach (var raw in fs.Os.Held) {
+        var birth = ZfsBlockPointer.Read(raw).LogicalBirth;
+        var index = entries.FindLastIndex(e => e.MinTxg < birth);
+        if (index < 0) throw new InvalidDataException("ZFS: a held block is older than every deadlist entry.");
+        if (!groups.TryGetValue(index, out var list)) groups[index] = list = [];
+        list.Add(raw);
+        if (prevChildOfHead && birth > prevPrevTxg) Add64(prevBonus, 96, this.ChargeOf(ZfsBlockPointer.Read(raw)).Used);
+      }
+
+      var replaced = new Dictionary<ulong, ulong>();
+      long used = 0, compressed = 0, uncompressed = 0;
+      foreach (var (index, list) in groups) {
+        var bpobj = entries[index].Bpobj;
+        Dnode d;
+        if (bpobj == emptyBpobj) {
+          d = Dnode.Create(OtBpobj, OtBpobjHeader, 48, BpobjBlock, 17, 1, FlagUsedBytes);
+          var fresh = this.NewObject(mos, d);
+          replaced[entries[index].MinTxg] = fresh;
+          ++this._emptyBpobjReleased;
+          bpobj = fresh;
+        } else {
+          d = this.Load(mos, bpobj);
+          mos.Dirty.Add(bpobj);
+        }
+        var bonus = d.Bonus;
+        var count = U64(bonus, 0);
+        var blockSize = d.DataBlockSize;
+        var perBlock = (ulong)(blockSize / Bp);
+        var changes = new Dictionary<ulong, byte[]>();
+        foreach (var raw in list) {
+          var blockId = count / perBlock;
+          if (!changes.TryGetValue(blockId, out var data)) {
+            data = new byte[blockSize];
+            if (!d.IsNew && blockId <= mos.Old.RequireDnode(bpobj, "bpobj").MaxBlockId && count % perBlock != 0)
+              mos.Old.ReadBlock(mos.Old.RequireDnode(bpobj, "bpobj"), blockId).AsSpan(0, blockSize).CopyTo(data);
+            changes[blockId] = data;
+          }
+          StoredPointer(raw).CopyTo(data.AsSpan((int)(count % perBlock) * Bp));
+          ++count;
+          var (u, c, x) = this.ChargeOf(ZfsBlockPointer.Read(raw));
+          Add64(bonus, 8, u);
+          Add64(bonus, 16, c);
+          Add64(bonus, 24, x);
+          used += u;
+          compressed += c;
+          uncompressed += x;
+        }
+        W64(bonus, 0, count);
+        var blocks = new Dictionary<ulong, NewBlock?>();
+        foreach (var (blockId, data) in changes) {
+          var block = this.AllocBlock(mos, d, blockSize, OtBpobj, 0);
+          block.Data = data;
+          blocks[blockId] = block;
+        }
+        this.SetBlocks(mos, d, blocks);
+      }
+
+      // the deadlist's header totals, and entries moved off the empty bpobj
+      var deadlist = this.Load(mos, deadlistObject);
+      mos.Dirty.Add(deadlistObject);
+      Add64(deadlist.Bonus, 0, used);
+      Add64(deadlist.Bonus, 8, compressed);
+      Add64(deadlist.Bonus, 16, uncompressed);
+      if (replaced.Count > 0)
+        this.RewriteZap(mos, deadlistObject, list => {
+          for (var i = 0; i < list.Count; ++i)
+            if (replaced.TryGetValue(Convert.ToUInt64(list[i].Name, 16), out var obj)) list[i] = (list[i].Name, obj);
+        });
+    }
+
+    /// <summary>A block pointer as a bpobj stores it: no fill (free flag clear), no checksum unless deduplicated, an embedded one without its payload.</summary>
+    private static byte[] StoredPointer(byte[] raw) {
+      var stored = raw.ToArray();
+      if (IsEmbedded(raw)) {
+        stored.AsSpan().Clear();
+        W64(stored, 0x30, U64(raw, 0x30));
+        W64(stored, 0x50, U64(raw, 0x50));
+        return stored;
+      }
+      if (((U64(raw, 0x30) >> 62) & 1) == 0) stored.AsSpan(0x60, 32).Clear();
+      W64(stored, 0x58, 0);
+      return stored;
+    }
+
+    /// <summary>empty_bpobj counts the deadlist entries sharing the empty bpobj; at 0 that object goes.</summary>
+    private void ReleaseEmptyBpobj() {
+      var mos = this._mos;
+      var count = mos.Old.Zap(this._s.FeaturesForWrite, "features_for_write").FirstOrDefault(e => e.Name == "com.delphix:empty_bpobj")
+        ?? throw new InvalidDataException("ZFS: empty_bpobj is not in the write list.");
+      var remaining = count.Value - (ulong)this._emptyBpobjReleased;
+      this.RewriteZap(mos, this._s.FeaturesForWrite, entries => {
+        var at = entries.FindIndex(e => e.Name == "com.delphix:empty_bpobj");
+        entries[at] = (entries[at].Name, remaining);
+      });
+      if (remaining != 0) return;
+      var emptyBpobj = mos.Old.Zap(1, "MOS object directory").First(e => e.Name == "empty_bpobj").Value;
+      this.RewriteZap(mos, 1, entries => entries.RemoveAll(e => e.Name == "empty_bpobj"));
+      this.FreeObject(mos, emptyBpobj);
+    }
+
+    // ── dedup tables ───────────────────────────────────────────────────────
+
+    private readonly List<byte[]> _dedupFrees = [];
+
+    /// <summary>zio_checksum names by checksum id, as the dedup tables' object names spell them.</summary>
+    private static readonly string[] ChecksumNames = [
+      "inherit", "on", "off", "label", "gang_header", "zilog", "fletcher2", "fletcher4", "sha256",
+      "zilog2", "noparity", "sha512", "skein", "edonr", "blake3",
+    ];
+    private static readonly string[] DdtClasses = ["ditto", "duplicate", "unique"];
+    private const int DdtClassDuplicate = 1, DdtClassUnique = 2;
+    private const int DdtPhysSize = 64, DdtPhysTypes = 4, DdtPhysBytes = DdtPhysSize * DdtPhysTypes;
+    private const int DdtStatWords = 8, DdtHistogramWords = 64 * DdtStatWords;
+    private const byte DdtLittleEndian = 0x80, DdtFunctionMask = 0x7F;
+
+    private sealed class DdtEntry {
+      public required ulong[] Key;
+      public required byte[] Phys;
+      public int Class;
+      public required int OldClass;
+      public ulong[]? OldStat;
+      public byte[]? Sample;
+    }
+
+    /// <summary>
+    /// Deduplicated blocks the edit drops: each takes one reference off its dedup-table entry, which
+    /// moves to the unique class at one reference, frees its space and leaves the table at none.
+    /// Each class's histogram follows its entries, and a checksum's tables go when they are empty
+    /// (<c>docs/ZFS-ON-DISK.md</c>, "Dedup tables").
+    /// </summary>
+    private void PlanDedup() {
+      var mos = this._mos;
+      var directory = mos.Old.Zap(1, "MOS object directory").ToDictionary(e => e.Name, e => e.Value, StringComparer.Ordinal);
+      if (!directory.TryGetValue("DDT-statistics", out var statisticsObject))
+        throw new InvalidDataException("ZFS: a deduplicated block, but the pool keeps no dedup statistics.");
+      var statistics = mos.Old.Zap(statisticsObject, "DDT statistics").ToDictionary(e => e.Name, e => e.Values, StringComparer.Ordinal);
+      var directoryRemovals = new HashSet<string>(StringComparer.Ordinal);
+      var directoryAdditions = new List<(string Name, ulong Value)>();
+      var statisticsUpdates = new Dictionary<string, ulong[]?>(StringComparer.Ordinal);
+
+      foreach (var group in this._dedupFrees.GroupBy(raw => (int)((U64(raw, 0x30) >> 40) & 0xFF))) {
+        if (group.Key >= ChecksumNames.Length) throw new InvalidDataException($"ZFS: a deduplicated block with checksum {group.Key}.");
+        var names = DdtClasses.Select(c => $"DDT-{ChecksumNames[group.Key]}-zap-{c}").ToArray();
+        var objects = names.Select(n => directory.GetValueOrDefault(n)).ToArray();
+        var table = new Dictionary<string, DdtEntry>(StringComparer.Ordinal);
+        ulong flags = 0;
+        byte type = 0;
+        for (var c = 0; c < DdtClasses.Length; ++c) {
+          if (objects[c] == 0) continue;
+          var dnode = mos.Old.RequireDnode(objects[c], "dedup table");
+          flags = ZfsZap.FlagsOf(mos.Old.ReadBlock(dnode, 0));
+          type = dnode.Type;
+          foreach (var e in mos.Old.Zap(dnode))
+            table[e.Name] = new DdtEntry {
+              Key = e.Key ?? throw new InvalidDataException("ZFS: a dedup table not keyed by integers."),
+              Phys = DecodeDdtPhys(e), Class = c, OldClass = c,
+            };
+        }
+
+        foreach (var raw in group) {
+          var key = DdtKey(raw);
+          if (!table.TryGetValue(string.Join(':', key.Select(k => k.ToString("x16"))), out var entry))
+            throw new InvalidDataException("ZFS: a deduplicated block is missing from its dedup table.");
+          entry.OldStat ??= this.DdtStat(entry);
+          entry.Sample = raw;
+          var p = SelectDdtPhys(entry.Phys, raw);
+          var refcnt = U64(entry.Phys, p * DdtPhysSize + 48);
+          if (refcnt == 0) throw new InvalidDataException("ZFS: a dedup table entry has fewer references than blocks point at it.");
+          W64(entry.Phys, p * DdtPhysSize + 48, refcnt - 1);
+        }
+
+        // as a sync would leave the touched entries: unreferenced copies freed, the class following the count
+        var histograms = names.Select(n => statistics.TryGetValue(n, out var h) && h.Length == DdtHistogramWords ? h.ToArray() : new ulong[DdtHistogramWords]).ToArray();
+        var changed = new HashSet<int>();
+        foreach (var entry in table.Values.Where(e => e.OldStat != null)) {
+          ulong total = 0;
+          for (var p = 0; p < DdtPhysTypes; ++p) {
+            var phys = entry.Phys.AsSpan(p * DdtPhysSize, DdtPhysSize);
+            if (U64(phys, 56) == 0) continue;
+            // a ditto copy (no longer made) goes whenever its entry is synced
+            if (p == 0 || U64(phys, 48) == 0) {
+              this.FreeDdtPhys(entry.Sample!, phys);
+              phys.Clear();
+              continue;
+            }
+            total += U64(phys, 48);
+          }
+          AddDdtStat(histograms[entry.OldClass], entry.OldStat!, negate: true);
+          changed.Add(entry.OldClass);
+          entry.Class = total == 0 ? -1 : total > 1 ? DdtClassDuplicate : DdtClassUnique;
+          if (entry.Class < 0) continue;
+          AddDdtStat(histograms[entry.Class], this.DdtStat(entry), negate: false);
+          changed.Add(entry.Class);
+        }
+
+        var anyLeft = table.Values.Any(e => e.Class >= 0);
+        for (var c = 0; c < DdtClasses.Length; ++c) {
+          if (!anyLeft) {
+            // the last entry of this checksum gone: its tables and their histograms go
+            if (objects[c] == 0) continue;
+            directoryRemovals.Add(names[c]);
+            statisticsUpdates[names[c]] = null;
+            this.FreeObject(mos, objects[c]);
+            continue;
+          }
+          if (!changed.Contains(c)) continue;
+          var members = table.Values.Where(e => e.Class == c).Select(DdtZapEntry).ToList();
+          if (objects[c] != 0) {
+            statisticsUpdates[names[c]] = histograms[c];
+            this.EditZap(mos, objects[c], list => {
+              list.Clear();
+              list.AddRange(members);
+            });
+          } else if (members.Count > 0) {
+            var d = Dnode.Create(type, 0, 0, ZfsWriter.FatZapBlock, 15, 3, FlagUsedBytes);
+            var obj = this.NewObject(mos, d);
+            var (blockSize, blocks) = ZfsWriter.BuildZap(members, fat: true, flags);
+            this.WriteContents(mos, d, blocks, blockSize);
+            directoryAdditions.Add((names[c], obj));
+            statisticsUpdates[names[c]] = histograms[c];
+          }
+        }
+      }
+
+      if (directoryRemovals.Count > 0 || directoryAdditions.Count > 0)
+        this.RewriteZap(mos, 1, entries => {
+          entries.RemoveAll(e => directoryRemovals.Contains(e.Name));
+          entries.AddRange(directoryAdditions);
+        });
+      if (statisticsUpdates.Count > 0)
+        this.EditZap(mos, statisticsObject, entries => {
+          entries.RemoveAll(e => statisticsUpdates.ContainsKey(e.Name));
+          foreach (var (name, histogram) in statisticsUpdates)
+            if (histogram != null) entries.Add(new ZfsZapEntry(name, 8, histogram));
+        });
+    }
+
+    /// <summary>A dedup-table key: the block's checksum, then its sizes and compression (the crypt bit stays clear).</summary>
+    private static ulong[] DdtKey(byte[] raw) =>
+      [U64(raw, 0x60), U64(raw, 0x68), U64(raw, 0x70), U64(raw, 0x78), U64(raw, 0x30) & ((1UL << 39) - 1)];
+
+    /// <summary>The copy (single, double, triple or ditto) that holds this block: same first DVA, same physical birth.</summary>
+    private static int SelectDdtPhys(byte[] phys, byte[] raw) {
+      var birth = U64(raw, 0x48) != 0 ? U64(raw, 0x48) : U64(raw, 0x50);
+      for (var p = 0; p < DdtPhysTypes; ++p) {
+        var at = p * DdtPhysSize;
+        if (U64(phys, at) == U64(raw, 0) && U64(phys, at + 8) == U64(raw, 8) && U64(phys, at + 56) == birth) return p;
+      }
+      throw new InvalidDataException("ZFS: no copy in its dedup table entry matches a deduplicated block.");
+    }
+
+    /// <summary>A dedup table value: a version byte (function, byte order), then the four copies, zero-length encoded when that is shorter.</summary>
+    private static byte[] DecodeDdtPhys(ZfsZapEntry e) {
+      if (e.IntegerLength != 1 || e.Values.Length < 1) throw new InvalidDataException("ZFS: a dedup table value is not a byte array.");
+      var stored = e.Values.Select(v => (byte)v).ToArray();
+      var phys = new byte[DdtPhysBytes];
+      var function = stored[0] & DdtFunctionMask;
+      if (function == ZfsConstants.CompressZle)
+        Compression.Core.Transforms.ZleEncoding.Decode(stored.AsSpan(1), phys);
+      else if (function is ZfsConstants.CompressOff or ZfsConstants.CompressInherit && stored.Length - 1 >= DdtPhysBytes)
+        stored.AsSpan(1, DdtPhysBytes).CopyTo(phys);
+      else
+        throw new InvalidDataException($"ZFS: a dedup table value compressed with {function}.");
+      if ((stored[0] & DdtLittleEndian) == 0)
+        for (var i = 0; i < DdtPhysBytes; i += 8) phys.AsSpan(i, 8).Reverse();
+      return phys;
+    }
+
+    private static ZfsZapEntry DdtZapEntry(DdtEntry entry) {
+      var encoded = Compression.Core.Transforms.ZleEncoding.Encode(entry.Phys);
+      byte[] stored = encoded.Length < DdtPhysBytes
+        ? [(byte)(ZfsConstants.CompressZle | DdtLittleEndian), .. encoded]
+        : [(byte)(ZfsConstants.CompressOff | DdtLittleEndian), .. entry.Phys];
+      return new ZfsZapEntry(string.Join(':', entry.Key.Select(k => k.ToString("x16"))), 1, stored.Select(b => (ulong)b).ToArray()) { Key = entry.Key };
+    }
+
+    /// <summary>
+    /// ddt_stat of one entry: per copy present, one block of the key's sizes and its deflated
+    /// allocation, and as many referenced blocks as its count.
+    /// </summary>
+    private ulong[] DdtStat(DdtEntry entry) {
+      var stat = new ulong[DdtStatWords];
+      var lsize = ((entry.Key[4] & 0xFFFF) + 1) << ZfsConstants.SectorShift;
+      var psize = (((entry.Key[4] >> 16) & 0xFFFF) + 1) << ZfsConstants.SectorShift;
+      for (var p = 0; p < DdtPhysTypes; ++p) {
+        var at = p * DdtPhysSize;
+        if (U64(entry.Phys, at + 56) == 0) continue;
+        ulong dsize = 0;
+        for (var d = 0; d < 3; ++d) {
+          var word = U64(entry.Phys, at + d * 16);
+          var asize = (long)(word & 0xFFFFFF) << ZfsConstants.SectorShift;
+          var vdev = (int)(word >> 32);
+          if (asize != 0 && vdev < this._s.Tops.Count) dsize += (ulong)this._s.Tops[vdev].Charged(asize);
+        }
+        var refcnt = U64(entry.Phys, at + 48);
+        stat[0] += 1;
+        stat[1] += lsize;
+        stat[2] += psize;
+        stat[3] += dsize;
+        stat[4] += refcnt;
+        stat[5] += lsize * refcnt;
+        stat[6] += psize * refcnt;
+        stat[7] += dsize * refcnt;
+      }
+      return stat;
+    }
+
+    /// <summary>Adds (or takes away) an entry's stat in the histogram bucket of its referenced-block count's highest bit.</summary>
+    private static void AddDdtStat(ulong[] histogram, ulong[] stat, bool negate) {
+      if (stat[4] == 0) return;
+      var bucket = 63 - BitOperations.LeadingZeroCount(stat[4]);
+      for (var i = 0; i < DdtStatWords; ++i)
+        histogram[bucket * DdtStatWords + i] = negate
+          ? unchecked(histogram[bucket * DdtStatWords + i] - stat[i])
+          : unchecked(histogram[bucket * DdtStatWords + i] + stat[i]);
+    }
+
+    /// <summary>Frees one copy's DVAs: <paramref name="sample"/> is a block pointer of the entry, standing in for everything but the DVAs.</summary>
+    private void FreeDdtPhys(byte[] sample, ReadOnlySpan<byte> phys) {
+      var raw = sample.ToArray();
+      phys[..48].CopyTo(raw);
+      this.FreeSpace(ZfsBlockPointer.Read(raw), 0);
+    }
 
     /// <summary>A new space map object: with spacemap_histogram one block pointer and the 320-byte header, else three and 24 bytes.</summary>
     private Dnode NewSpaceMap(int blockSize) {
@@ -1610,15 +2002,49 @@ internal static class ZfsPoolEditor {
     private Dnode? _logSpacemap;
     private ulong _logSpacemapObject;
 
-    /// <summary>Rewrites a MOS ZAP of single-integer entries after <paramref name="change"/> edits its entries.</summary>
-    private void RewriteZap(Os os, ulong obj, Action<List<(string Name, ulong Value)>> change) {
-      var entries = os.Old.Zap(obj, "ZAP").Select(e => (e.Name, e.Value)).ToList();
-      change(entries);
-      var d = this.Load(os, obj);
-      os.Dirty.Add(obj);
-      this.FreeTree(os, d, spill: false);
-      var (blockSize, blocks) = ZfsWriter.BuildZap(entries);
-      this.WriteContents(os, d, blocks, blockSize);
+    /// <summary>
+    /// Rewrites a MOS ZAP after <paramref name="change"/> edits its single-integer entries; entries
+    /// holding other values (arrays, strings) are kept as they are.
+    /// </summary>
+    private void RewriteZap(Os os, ulong obj, Action<List<(string Name, ulong Value)>> change) =>
+      this.EditZap(os, obj, all => {
+        static bool Simple(ZfsZapEntry e) => e.IntegerLength == 8 && e.Values.Length == 1 && e.Key == null;
+        var simple = all.Where(Simple).Select(e => (e.Name, e.Value)).ToList();
+        var others = all.Where(e => !Simple(e)).ToList();
+        change(simple);
+        all.Clear();
+        all.AddRange(others);
+        all.AddRange(simple.Select(e => new ZfsZapEntry(e.Name, 8, [e.Value])));
+      });
+
+    private readonly SortedDictionary<ulong, List<Action<List<ZfsZapEntry>>>> _zapEdits = [];
+
+    /// <summary>
+    /// Queues a change to a MOS ZAP's entries. Every change to one object is applied together by
+    /// <see cref="FlushZapEdits"/>, so two parts of the plan editing the same ZAP both land.
+    /// </summary>
+    private void EditZap(Os os, ulong obj, Action<List<ZfsZapEntry>> change) {
+      if (os != this._mos) throw new InvalidOperationException("ZFS: only MOS ZAPs are queued.");
+      if (!this._zapEdits.TryGetValue(obj, out var list)) this._zapEdits[obj] = list = [];
+      list.Add(change);
+    }
+
+    /// <summary>Rewrites every queued ZAP whole; a fat ZAP stays fat and keeps its flags.</summary>
+    private void FlushZapEdits() {
+      var mos = this._mos;
+      foreach (var (obj, changes) in this._zapEdits) {
+        var dnode = mos.Old.RequireDnode(obj, "ZAP");
+        var entries = mos.Old.Zap(dnode);
+        var first = mos.Old.ReadBlock(dnode, 0);
+        var fat = U64(first, 0) == ZfsConstants.ZbtHeader;
+        foreach (var change in changes) change(entries);
+        var d = this.Load(mos, obj);
+        mos.Dirty.Add(obj);
+        this.FreeTree(mos, d, spill: false);
+        var (blockSize, blocks) = ZfsWriter.BuildZap(entries, fat, ZfsZap.FlagsOf(first));
+        this.WriteContents(mos, d, blocks, blockSize);
+      }
+      this._zapEdits.Clear();
     }
 
     /// <summary>
@@ -1713,12 +2139,25 @@ internal static class ZfsPoolEditor {
       foreach (var fs in this._filesystems) {
         var root = this.SealObjset(fs.Os);
         var head = this.Load(mos, fs.HeadObject).Bonus;
-        Add64(head, 72, fs.Os.Used);
-        Add64(head, 80, fs.Os.Compressed);
-        Add64(head, 88, fs.Os.Uncompressed);
+        // held blocks leave what the head references, not what it uniquely holds or its directory uses
+        Add64(head, 72, fs.Os.Used - fs.Os.HeldUsed);
+        Add64(head, 80, fs.Os.Compressed - fs.Os.HeldCompressed);
+        Add64(head, 88, fs.Os.Uncompressed - fs.Os.HeldUncompressed);
         Add64(head, 96, fs.Os.Used);
         root.CopyTo(head[128..]);
         this.Transfer(fs.DirObject, fs.Os.Used, fs.Os.Compressed, fs.Os.Uncompressed, fs.Os.Used, UsedRefReservation, UsedHead);
+        if (fs.Os.HeldUsed != 0) {
+          // they are now charged to the directory's snapshots — those born after its origin (a
+          // clone's older blocks were never charged to it)
+          var dir = this.Load(mos, fs.DirObject).Bonus;
+          var origin = U64(dir, 24);
+          var originTxg = origin == 0 ? 0 : U64(mos.Old.RequireDnode(origin, "origin snapshot").Bonus, 56);
+          var moved = fs.Os.Held.Select(raw => ZfsBlockPointer.Read(raw)).Where(bp => bp.LogicalBirth > originTxg).Sum(bp => this.ChargeOf(bp).Used);
+          if ((U64(dir, 96) & 1) != 0 && moved != 0) {
+            Add64(dir, 104 + UsedHead * 8, -moved);
+            Add64(dir, 104 + UsedSnap * 8, moved);
+          }
+        }
       }
 
       foreach (var (g, plan) in this._maps) {

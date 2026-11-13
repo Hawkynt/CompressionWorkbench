@@ -446,7 +446,7 @@ Tux3,,filesystem,,,,,,,Y,1,,Tux3,Y,,,READ-ONLY-BUT-SOURCES-WRITE,tux3 mkfs,read 
 "VxFS (Veritas, incl. cluster CFS)",cfs,filesystem,,,,,,,Y,1,,VxFs,Y,Y,Y,OK,,
 XFS,xfs;sgi,filesystem,,,,,,,Y,1,,Xfs,Y,Y,,OK,,
 zFS (z/OS),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-ZFS,zfs,filesystem,,,,,,,Y,1,,Zfs,Y,Y,Y,OK,,"writes pool version 28 or 5000 (feature flags, lz4, zstd, embedded blocks) images, single-device, n-way mirror, RAID-Z1/2/3 or striped (file data uncompressed, lzjb, gzip-1..9 or zle), and adds/removes files in version 28 and 5000 pools in place, mirrors and RAID-Z too (OpenZFS-made ones included); zdb -bcc finds them leak-free and the OpenZFS kernel module imports and scrubs them with 0 errors"
+ZFS,zfs,filesystem,,,,,,,Y,1,,Zfs,Y,Y,Y,OK,,"writes pool version 28 or 5000 (feature flags, lz4, zstd, embedded blocks) images, single-device, n-way mirror, RAID-Z1/2/3 or striped (file data uncompressed, lzjb, gzip-1..9 or zle), and adds/removes files in version 28 and 5000 pools in place, mirrors and RAID-Z too (OpenZFS-made ones included), freeing snapshot-held blocks to the deadlist and gang and deduplicated blocks; zdb -bcc finds them leak-free and the OpenZFS kernel module imports and scrubs them with 0 errors"
 bcachefs,,filesystem,,,,,,,Y,1,,BcacheFs,Y,Y,Y,OK,,
 NOVA,,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: persistent-memory file system with only an out-of-tree kernel module; no userspace tool and no image
 3FS (Fire-Flyer),deepseek,filesystem,,,,,,,Y,1,,,,,,MISSING,,
