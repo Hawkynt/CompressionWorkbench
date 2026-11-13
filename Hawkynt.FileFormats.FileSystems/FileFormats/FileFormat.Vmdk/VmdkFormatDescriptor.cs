@@ -14,7 +14,7 @@ namespace FileFormat.Vmdk;
 ///   <item><description><c>https://en.wikipedia.org/wiki/VMDK</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
+public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable, IRandomAccessBlockDeviceProvider {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -68,6 +68,75 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Gets the description.
   /// </summary>
   public string Description => "VMware virtual disk";
+
+  /// <summary>
+  /// Exposes guest sectors through the shared block-device contract. All
+  /// supported layouts are readable; only a validated, plain monolithic-sparse
+  /// image can be written through the existing grain allocator.
+  /// </summary>
+  public IRandomAccessBlockDevice OpenBlockDevice(Stream image, bool writable, bool leaveOpen = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (!image.CanRead || !image.CanSeek)
+      throw new ArgumentException("VMDK sector access requires a readable, seekable backing stream.", nameof(image));
+
+    Stream view;
+    if (writable) {
+      if (!image.CanWrite)
+        throw new NotSupportedException("Writable VMDK sector access requires a writable backing source.");
+      view = VmdkStream.TryOpen(image)
+        ?? throw new NotSupportedException(
+          "Only validated, non-delta, uncompressed monolithic-sparse VMDK images permit mounted writes.");
+    } else {
+      view = VmdkVirtualDisk.Open(image)
+        ?? throw new InvalidDataException("The source does not contain a supported VMDK virtual disk.");
+    }
+
+    try {
+      var blocks = new StreamBlockDevice(view, logicalBlockSize: 512, writable, leaveOpen: false);
+      return new VmdkBlockDevice(blocks, image, leaveOpen);
+    } catch {
+      view.Dispose();
+      throw;
+    }
+  }
+
+  private sealed class VmdkBlockDevice(
+      IRandomAccessBlockDevice inner,
+      Stream source,
+      bool leaveOpen) : IRandomAccessBlockDevice {
+    private bool _disposed;
+
+    public BlockDeviceGeometry Geometry => inner.Geometry;
+    public bool CanWrite => inner.CanWrite;
+
+    public int ReadBlocks(long firstBlock, Span<byte> destination) {
+      ObjectDisposedException.ThrowIf(this._disposed, this);
+      return inner.ReadBlocks(firstBlock, destination);
+    }
+
+    public void WriteBlocks(long firstBlock, ReadOnlySpan<byte> data) {
+      ObjectDisposedException.ThrowIf(this._disposed, this);
+      inner.WriteBlocks(firstBlock, data);
+    }
+
+    public void Trim(long firstBlock, long blockCount) {
+      ObjectDisposedException.ThrowIf(this._disposed, this);
+      inner.Trim(firstBlock, blockCount);
+    }
+
+    public void Flush() {
+      ObjectDisposedException.ThrowIf(this._disposed, this);
+      inner.Flush();
+    }
+
+    public void Dispose() {
+      if (this._disposed)
+        return;
+      this._disposed = true;
+      try { inner.Dispose(); }
+      finally { if (!leaveOpen) source.Dispose(); }
+    }
+  }
 
   // ── IArchiveFormatOperations ──────────────────────────────────────
 

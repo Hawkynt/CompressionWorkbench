@@ -21,6 +21,24 @@ public sealed record RebuildFilesystemEntry(
 }
 
 /// <summary>
+/// One file or directory in a streaming whole-image rebuild. Each file provides
+/// an independently owned read stream, so its length is not constrained by
+/// managed byte-array indexing or the aggregate size of the namespace.
+/// </summary>
+internal sealed record SpoolingRebuildFilesystemEntry(
+  string Path,
+  FilesystemNodeKind Kind,
+  long Length,
+  Func<Stream>? OpenRead
+) {
+  public static SpoolingRebuildFilesystemEntry File(string path, long length, Func<Stream> openRead)
+    => new(path, FilesystemNodeKind.RegularFile, length, openRead);
+
+  public static SpoolingRebuildFilesystemEntry Directory(string path)
+    => new(path, FilesystemNodeKind.Directory, 0, null);
+}
+
+/// <summary>
 /// Performs a verified whole-image rebuild and publishes it to a mutable image
 /// stream only after the candidate image has been built successfully. The old
 /// image is retained in a temporary stream and restored if publication fails.
@@ -134,13 +152,32 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
     Stream candidate,
     IReadOnlyList<RebuildFilesystemEntry> entries);
 
+  internal delegate void RebuildImageFromStreams(
+    Stream output,
+    IReadOnlyList<SpoolingRebuildFilesystemEntry> entries);
+
+  internal delegate void ValidateImageFromStreams(
+    Stream candidate,
+    IReadOnlyList<SpoolingRebuildFilesystemEntry> entries);
+
+  /// <summary>
+  /// Optional explicitly qualified direct mutation publisher. The delegate
+  /// MUST journal, validate and restore the entire source on failure.
+  /// </summary>
+  internal delegate void CommitImageInPlace(
+    Stream image,
+    IReadOnlyList<SpoolingRebuildFilesystemEntry> entries);
+
   private sealed class Node {
     public required FilesystemNodeId Id;
     public required FilesystemNodeKind Kind;
     public required FilesystemNodeId Parent;
     public required string Name;
     public required byte[] Data;
+    public FileStream? Spool;
     public bool Linked = true;
+
+    public long Length => Spool?.Length ?? Data.LongLength;
   }
 
   private readonly object _gate = new();
@@ -148,12 +185,17 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
   private readonly bool _leaveOpen;
   private readonly RebuildImage? _rebuild;
   private readonly ValidateImage? _validate;
+  private RebuildImageFromStreams? _streamRebuild;
+  private ValidateImageFromStreams? _streamValidate;
+  private CommitImageInPlace? _streamInPlace;
   private readonly Dictionary<FilesystemNodeId, Node> _nodes = [];
   private readonly Dictionary<FilesystemNodeId, Dictionary<string, Node>> _children = [];
   private readonly StringComparer _nameComparer;
   private ulong _nextNodeValue;
   private bool _dirty;
   private bool _disposed;
+  private readonly long _maxTotalContentBytes;
+  private long _allocatedContentBytes;
 
   public MutableRebuildFilesystemSession(
       FilesystemDriverProfile profile,
@@ -161,7 +203,9 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
       IEnumerable<RebuildFilesystemEntry> entries,
       RebuildImage? rebuild,
       ValidateImage? validate = null,
-      bool leaveOpen = true) {
+      bool leaveOpen = true,
+      long maxTotalContentBytes = long.MaxValue) {
+    ArgumentOutOfRangeException.ThrowIfNegative(maxTotalContentBytes);
     ArgumentNullException.ThrowIfNull(profile);
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(entries);
@@ -183,6 +227,7 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
     _nameComparer = (profile.Capabilities & FilesystemDriverCapabilities.CaseSensitiveNames) != 0
       ? StringComparer.Ordinal
       : StringComparer.OrdinalIgnoreCase;
+    _maxTotalContentBytes = maxTotalContentBytes;
 
     RootNodeId = new(1, 1);
     _nextNodeValue = RootNodeId.Value;
@@ -197,6 +242,78 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
     _children.Add(root.Id, NewChildMap());
 
     BuildNamespace(entries);
+    foreach (var node in _nodes.Values.Where(static node => node.Kind == FilesystemNodeKind.RegularFile)) {
+      if (node.Data.LongLength > _maxTotalContentBytes - _allocatedContentBytes)
+        throw new NotSupportedException($"Mutable namespace exceeds the {_maxTotalContentBytes:N0}-byte session content budget.");
+      _allocatedContentBytes += node.Data.LongLength;
+    }
+  }
+
+  /// <summary>
+  /// Opens the same stable-inode mutable namespace with all regular-file
+  /// payloads on disk. Streaming serializers consume independently opened
+  /// streams; even a multi-gigabyte member never becomes one managed array.
+  /// </summary>
+  internal static MutableRebuildFilesystemSession OpenSpooling(
+      FilesystemDriverProfile profile,
+      Stream image,
+      IEnumerable<SpoolingRebuildFilesystemEntry> entries,
+      RebuildImageFromStreams rebuild,
+      ValidateImageFromStreams? validate = null,
+      bool leaveOpen = true,
+      CommitImageInPlace? journalledInPlaceCommit = null) {
+    ArgumentNullException.ThrowIfNull(entries);
+    ArgumentNullException.ThrowIfNull(rebuild);
+
+    var originals = entries.ToArray();
+    var filesystem = new MutableRebuildFilesystemSession(
+      profile,
+      image,
+      originals.Select(static entry => new RebuildFilesystemEntry(
+        entry.Path, entry.Kind, ReadOnlyMemory<byte>.Empty)),
+      static (_, _) => throw new NotSupportedException("The session uses streaming rebuild delegates."),
+      leaveOpen: leaveOpen);
+
+    try {
+      lock (filesystem._gate) {
+        foreach (var original in originals.Where(static entry => entry.Kind == FilesystemNodeKind.RegularFile)) {
+          ArgumentOutOfRangeException.ThrowIfNegative(original.Length);
+          var path = NormalizePath(original.Path);
+          var node = filesystem._nodes.Values.Single(node =>
+            node.Kind == FilesystemNodeKind.RegularFile && filesystem.BuildPath(node) == path);
+          using var reader = (original.OpenRead ?? throw new InvalidDataException(
+            $"Stream source for '{path}' was not supplied."))();
+          var spool = CreateSpool();
+          try {
+            var bytesLeft = original.Length;
+            var buffer = new byte[64 * 1024];
+            while (bytesLeft > 0) {
+              var read = reader.Read(buffer.AsSpan(0, checked((int)Math.Min(bytesLeft, buffer.Length))));
+              if (read <= 0)
+                throw new InvalidDataException($"Entry '{path}' ends before its declared {original.Length} bytes.");
+              spool.Write(buffer.AsSpan(0, read));
+              bytesLeft -= read;
+            }
+            if (reader.ReadByte() >= 0)
+              throw new InvalidDataException($"Entry '{path}' exceeds its declared {original.Length} bytes.");
+            spool.Flush();
+            node.Spool = spool;
+            filesystem._allocatedContentBytes = checked(filesystem._allocatedContentBytes + original.Length);
+          } catch {
+            spool.Dispose();
+            throw;
+          }
+        }
+        filesystem._streamRebuild = rebuild;
+        filesystem._streamValidate = validate;
+        filesystem._streamInPlace = journalledInPlaceCommit;
+      }
+      return filesystem;
+    } catch {
+      filesystem._dirty = false;
+      filesystem.Dispose();
+      throw;
+    }
   }
 
   public FilesystemDriverProfile Profile { get; }
@@ -206,7 +323,7 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
     lock (_gate) {
       ThrowIfDisposed();
       var node = RequireNode(nodeId);
-      var size = node.Kind == FilesystemNodeKind.RegularFile ? node.Data.LongLength : 0;
+      var size = node.Kind == FilesystemNodeKind.RegularFile ? node.Length : 0;
       return new(node.Id, node.Kind, size, size, LinkCount: node.Linked ? 1U : 0U);
     }
   }
@@ -374,11 +491,21 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
       if (_rebuild is null)
         throw new NotSupportedException("This filesystem session has no complete-image rebuilder.");
 
-      var snapshot = CaptureLinkedEntries();
-      WholeImageRebuildCommitter.Replace(
-        _image,
-        candidate => _rebuild(candidate, snapshot),
-        _validate is null ? null : candidate => _validate(candidate, snapshot));
+      if (_streamRebuild is { } streaming) {
+        var staged = CaptureLinkedStreamingEntries();
+        if (_streamInPlace is { } journalled)
+          journalled(_image, staged);
+        else
+          WholeImageRebuildCommitter.Replace(_image,
+            candidate => streaming(candidate, staged),
+            _streamValidate is null ? null : candidate => _streamValidate(candidate, staged));
+      } else {
+        var snapshot = CaptureLinkedEntries();
+        WholeImageRebuildCommitter.Replace(
+          _image,
+          candidate => _rebuild(candidate, snapshot),
+          _validate is null ? null : candidate => _validate(candidate, snapshot));
+      }
       _dirty = false;
     }
   }
@@ -390,13 +517,17 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
     lock (_gate) {
       if (_disposed)
         return;
-      if (_dirty)
-        Flush();
-      _disposed = true;
+      try {
+        if (_dirty)
+          Flush();
+      } finally {
+        _disposed = true;
+        foreach (var node in _nodes.Values)
+          node.Spool?.Dispose();
+        if (!_leaveOpen)
+          _image.Dispose();
+      }
     }
-
-    if (!_leaveOpen)
-      _image.Dispose();
   }
 
   private void BuildNamespace(IEnumerable<RebuildFilesystemEntry> entries) {
@@ -449,6 +580,45 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
         : RebuildFilesystemEntry.File(BuildPath(node), node.Data))
       .OrderBy(static entry => entry.Path, StringComparer.Ordinal)
       .ToArray();
+
+  private IReadOnlyList<SpoolingRebuildFilesystemEntry> CaptureLinkedStreamingEntries()
+    => _nodes.Values
+      .Where(node => node.Linked && node.Id != RootNodeId)
+      .Select(node => node.Kind == FilesystemNodeKind.Directory
+        ? SpoolingRebuildFilesystemEntry.Directory(BuildPath(node))
+        : SpoolingRebuildFilesystemEntry.File(
+          BuildPath(node), node.Length, () => OpenNodeRead(node)))
+      .OrderBy(static entry => entry.Path, StringComparer.Ordinal)
+      .ToArray();
+
+  private static Stream OpenNodeRead(Node node) {
+    if (node.Spool is null)
+      return new MemoryStream(node.Data, writable: false);
+    node.Spool.Flush();
+    return new FileStream(node.Spool.Name, FileMode.Open, FileAccess.Read,
+      FileShare.ReadWrite | FileShare.Delete, 64 * 1024, FileOptions.SequentialScan);
+  }
+
+  private static FileStream CreateSpool() {
+    var path = Path.Combine(Path.GetTempPath(), $"cwb-node-{Guid.NewGuid():N}.tmp");
+    return new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite,
+      FileShare.ReadWrite | FileShare.Delete, 64 * 1024, FileOptions.DeleteOnClose | FileOptions.RandomAccess);
+  }
+
+  private void EnsureSpool(Node node) {
+    if (node.Spool is not null)
+      return;
+    var spool = CreateSpool();
+    try {
+      if (node.Data.Length != 0)
+        spool.Write(node.Data);
+      node.Spool = spool;
+      node.Data = [];
+    } catch {
+      spool.Dispose();
+      throw;
+    }
+  }
 
   private string BuildPath(Node node) {
     var parts = new List<string>();
@@ -507,6 +677,17 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
 
   private void MarkDirty() => _dirty = true;
 
+  private void EnsureContentBudget(long previousSize, long newSize) {
+    // Called only while holding _gate. Deleted but still-open file nodes
+    // remain budgeted because this session keeps them alive for stable handles.
+    var growth = newSize - previousSize;
+    if (growth > 0 && growth > _maxTotalContentBytes - _allocatedContentBytes)
+      throw new IOException($"Writable mount exceeds the {_maxTotalContentBytes:N0}-byte content budget.");
+  }
+
+  private void AccountContentResize(long previousSize, long newSize)
+    => _allocatedContentBytes = checked(_allocatedContentBytes + newSize - previousSize);
+
   private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
   private static string NormalizePath(string path) {
@@ -541,7 +722,7 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
         lock (owner._gate) {
           ThrowIfDisposed();
           owner.ThrowIfDisposed();
-          return node.Data.LongLength;
+          return node.Length;
         }
       }
     }
@@ -554,9 +735,11 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
           throw new UnauthorizedAccessException("This file handle was not opened for reading.");
         if (offset < 0)
           throw new ArgumentOutOfRangeException(nameof(offset));
-        if (offset >= node.Data.LongLength || destination.IsEmpty)
+        if (offset >= node.Length || destination.IsEmpty)
           return 0;
-        var count = (int)Math.Min(destination.Length, node.Data.LongLength - offset);
+        var count = (int)Math.Min(destination.Length, node.Length - offset);
+        if (node.Spool is { } spool)
+          return RandomAccess.Read(spool.SafeFileHandle, destination[..count], offset);
         node.Data.AsSpan(checked((int)offset), count).CopyTo(destination);
         return count;
       }
@@ -570,14 +753,32 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
           throw new UnauthorizedAccessException("This file handle was not opened for writing.");
         if (offset < 0)
           throw new ArgumentOutOfRangeException(nameof(offset));
+        if (source.IsEmpty)
+          return;
         var end = checked(offset + source.Length);
+        if (owner._streamRebuild is not null) {
+          owner.EnsureSpool(node);
+          var oldLength = node.Length;
+          owner.EnsureContentBudget(oldLength, Math.Max(oldLength, end));
+          try {
+            RandomAccess.Write(node.Spool!.SafeFileHandle, source, offset);
+          } finally {
+            owner.AccountContentResize(oldLength, node.Length);
+            owner.MarkDirty();
+          }
+          return;
+        }
+
         if (end > Array.MaxLength)
           throw new NotSupportedException($"The managed rebuild session currently limits one mutable file to {Array.MaxLength:N0} bytes.");
-        if (end > node.Data.LongLength)
+        if (end > node.Data.LongLength) {
+          var previousSize = node.Data.LongLength;
+          owner.EnsureContentBudget(previousSize, end);
           Array.Resize(ref node.Data, checked((int)end));
+          owner.AccountContentResize(previousSize, end);
+        }
         source.CopyTo(node.Data.AsSpan(checked((int)offset)));
-        if (!source.IsEmpty)
-          owner.MarkDirty();
+        owner.MarkDirty();
       }
     }
 
@@ -588,11 +789,19 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
         if ((access & FileAccess.Write) == 0)
           throw new UnauthorizedAccessException("This file handle was not opened for writing.");
         owner.RequireCapability(FilesystemDriverCapabilities.Truncate, "truncate files");
-        if (length < 0 || length > Array.MaxLength)
+        if (length < 0 || (owner._streamRebuild is null && length > Array.MaxLength))
           throw new ArgumentOutOfRangeException(nameof(length));
-        if (length == node.Data.LongLength)
+        if (length == node.Length)
           return;
-        Array.Resize(ref node.Data, checked((int)length));
+        var previousSize = node.Length;
+        owner.EnsureContentBudget(previousSize, length);
+        if (owner._streamRebuild is not null) {
+          owner.EnsureSpool(node);
+          node.Spool!.SetLength(length);
+        } else {
+          Array.Resize(ref node.Data, checked((int)length));
+        }
+        owner.AccountContentResize(previousSize, length);
         owner.MarkDirty();
       }
     }

@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Lib;
+using Compression.Mounting;
 using Compression.Registry;
 
 namespace Compression.Tests.Mounting;
@@ -98,6 +99,99 @@ public sealed class MutableRebuildFilesystemSessionTests {
 
     backing.Position = 0;
     Assert.That(backing.ToArray(), Is.EqualTo(original));
+  }
+
+  [Test]
+  [Category("Mounting")]
+  public void SpoolingSessionSupportsFileOffsetsAboveTwoGiBWithoutManagedArrayAllocation() {
+    var profile = new FilesystemDriverProfile(
+      "streamed-test", "spooled rebuild",
+      FilesystemMountCapabilityResolver.CoreReadCapabilities |
+      FilesystemMountCapabilityResolver.CoreWriteCapabilities,
+      FilesystemMutationModel.WholeImageRebuild,
+      CanMount: true, CanMountWritable: true, []);
+    using var image = new MemoryStream();
+    using var session = MutableRebuildFilesystemSession.OpenSpooling(
+      profile, image, [],
+      rebuild: static (destination, files) => {
+        Assert.That(files.Count, Is.EqualTo(1));
+        var staged = files[0];
+        Assert.That(staged.Length, Is.EqualTo((long)int.MaxValue + 10L));
+        using var source = staged.OpenRead!();
+        source.Position = staged.Length - 1;
+        Assert.That(source.ReadByte(), Is.EqualTo(0xA7));
+        destination.WriteByte(0x17);
+      });
+    var node = session.CreateFile(session.RootNodeId, "huge.dat");
+    const long large = (long)int.MaxValue + 10;
+    using (var handle = session.OpenFile(node, FileAccess.ReadWrite)) {
+      handle.SetLength(large);
+      handle.Write(large - 1, [0xA7]);
+      Span<byte> last = stackalloc byte[1];
+      Assert.That(handle.Length, Is.EqualTo(large));
+      Assert.That(handle.Read(large - 1, last), Is.EqualTo(1));
+      Assert.That(last[0], Is.EqualTo(0xA7));
+    }
+    session.Flush();
+    Assert.That(image.ToArray(), Is.EqualTo(new byte[] { 0x17 }));
+  }
+
+  [Test]
+  [Category("Mounting")]
+  public void MutableSessionEnforcesAggregateContentQuotaWithoutCorruptingExistingData() {
+    var capabilities =
+      FilesystemDriverCapabilities.EnumerateDirectories |
+      FilesystemDriverCapabilities.ReadData |
+      FilesystemDriverCapabilities.RandomAccess |
+      FilesystemDriverCapabilities.StableNodeIds |
+      FilesystemDriverCapabilities.WriteData |
+      FilesystemDriverCapabilities.Truncate |
+      FilesystemDriverCapabilities.CreateFile |
+      FilesystemDriverCapabilities.DeleteFile |
+      FilesystemDriverCapabilities.Rename |
+      FilesystemDriverCapabilities.Flush;
+
+    var profile = new FilesystemDriverProfile(
+      "budget-test",
+      "bounded mutable namespace",
+      capabilities,
+      FilesystemMutationModel.WholeImageRebuild,
+      CanMount: true,
+      CanMountWritable: true,
+      []);
+    using var image = new MemoryStream();
+    using var filesystem = new MutableRebuildFilesystemSession(
+      profile,
+      image,
+      [RebuildFilesystemEntry.File("original.bin", "abcd"u8.ToArray())],
+      rebuild: static (destination, entries) => {
+        foreach (var entry in entries.Where(static item => item.Kind == FilesystemNodeKind.RegularFile))
+          destination.Write(entry.Data.Span);
+      },
+      maxTotalContentBytes: 8);
+    var original = filesystem.Lookup(filesystem.RootNodeId, "original.bin")!.Value;
+    var second = filesystem.CreateFile(filesystem.RootNodeId, "second.bin");
+    using var firstHandle = filesystem.OpenFile(original, FileAccess.ReadWrite);
+    using var secondHandle = filesystem.OpenFile(second, FileAccess.ReadWrite);
+
+    secondHandle.Write(100, ReadOnlySpan<byte>.Empty);
+    Assert.That(secondHandle.Length, Is.Zero, "A zero-length write past EOF must not allocate data.");
+
+    Assert.Throws<IOException>(() => secondHandle.Write(0, "12345"u8));
+    Assert.Multiple(() => {
+      Assert.That(firstHandle.Length, Is.EqualTo(4));
+      Assert.That(secondHandle.Length, Is.Zero);
+    });
+
+    firstHandle.SetLength(2);
+    secondHandle.Write(0, "12345"u8);
+    Assert.Multiple(() => {
+      Assert.That(firstHandle.Length, Is.EqualTo(2));
+      Assert.That(secondHandle.Length, Is.EqualTo(5));
+    });
+    Assert.Throws<IOException>(() => secondHandle.SetLength(7));
+    Assert.That(secondHandle.Length, Is.EqualTo(5));
+    filesystem.Flush();
   }
 
   private static byte[] ReadAll(IFilesystemSession filesystem, FilesystemNodeId nodeId) {
