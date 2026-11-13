@@ -3,22 +3,23 @@ using Compression.Registry;
 namespace Compression.Mounting;
 
 /// <summary>
-/// A deliberately qualified, bounded write-back bridge for ordinary ZIP, 7z
-/// and RAR archives. The existing format editor performs all container writes;
-/// the mounted namespace never rewrites compressed blocks itself.
+/// Capability-qualified, bounded archive mount bridge. Native modifiers edit
+/// a staged copy of the source; WORM-only creators reconstruct a complete
+/// candidate archive in a temporary file. Neither mutates the live image
+/// until verified publication at Flush.
 /// </summary>
 /// <remarks>
-/// Only unencrypted, regular-file/directory profiles that fit in a bounded
-/// in-memory namespace qualify. Every flush starts from an immutable source
-/// snapshot, stages editor operations off the live image and verifies every
-/// resulting file before transactional publication. Unqualified inputs retain
-/// their generic read-only projection.
+/// Only unencrypted ordinary archive entries that fit in a bounded in-memory
+/// namespace qualify. Creator-only formats additionally require a successful
+/// lossless no-op round trip before mounted writes are advertised. Filesystem
+/// images and structured pseudo-archives are not promoted by WORM capability
+/// alone. Unsafe formats continue to mount read-only.
 /// </remarks>
 internal static class MutableArchiveMountSession {
   private const long MaxWritableContentBytes = 64L * 1024 * 1024;
-  private static readonly HashSet<string> QualifiedFormats = new(StringComparer.OrdinalIgnoreCase) {
-    "Zip", "SevenZip", "Rar",
-  };
+  private const string UnsafeProfileMessage =
+    "Writable archive mounts require ordinary unencrypted entries with safe unique names, " +
+    "no links, and at most 64 MiB of logical content.";
 
   public static FilesystemDriverProfile Probe(
       IFormatDescriptor descriptor,
@@ -33,31 +34,47 @@ internal static class MutableArchiveMountSession {
     try {
       source.Position = 0;
       var entries = ((IArchiveFormatOperations)descriptor).List(source, password);
-      if (!QualifiesEntries(entries))
-        return basic with {
-          Limitations = basic.Limitations.Append(
-            "Writable archive mounts require unencrypted, non-link entries with unique, safe paths and at most 64 MiB of logical content.").ToArray(),
-        };
+      if (!QualifiesEntries(entries) ||
+          (entries.Any(static entry => entry.IsDirectory) &&
+           !descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsDirectories)))
+        return WithLimitation(basic, UnsafeProfileMessage);
+
+      var hasNativeEditor = HasNativeEditor(descriptor);
+      if (!hasNativeEditor) {
+        // CanCreate is WORM, not a promise that re-creating an existing image
+        // preserves its names, payloads and metadata. Prove that first, using
+        // a throwaway candidate. The live archive is not touched.
+        using var snapshot = MountSourceSnapshot.Capture(source);
+        var original = ReadEntries((IArchiveFormatOperations)descriptor, snapshot, password);
+        using var candidate = CreateCandidate();
+        RecreateArchive(descriptor, candidate, original, entries);
+        VerifyRecreatedSource((IArchiveFormatOperations)descriptor, snapshot, candidate, password);
+      }
+
+      var directoryCapabilities = descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsDirectories)
+        ? FilesystemDriverCapabilities.CreateDirectory | FilesystemDriverCapabilities.RemoveDirectory
+        : FilesystemDriverCapabilities.None;
 
       return new FilesystemDriverProfile(
         descriptor.Id,
-        "qualified mutable archive write-back",
+        hasNativeEditor ? "qualified native archive editor" : "qualified WORM copy rebuild",
         FilesystemMountCapabilityResolver.CoreReadCapabilities |
         FilesystemMountCapabilityResolver.CoreWriteCapabilities |
-        FilesystemDriverCapabilities.CreateDirectory |
-        FilesystemDriverCapabilities.RemoveDirectory |
+        directoryCapabilities |
         FilesystemDriverCapabilities.CaseSensitiveNames |
         FilesystemDriverCapabilities.CasePreservingNames,
         FilesystemMutationModel.WholeImageRebuild,
         CanMount: true,
         CanMountWritable: true,
         [
-          "Writes are staged in memory and published as a verified whole-image transaction at flush/unmount.",
-          "Only regular files and directories are writable; encryption, links, and archive-specific metadata mutations are not emulated.",
-          "An interrupted host write-back is not crash-atomic; avoid using the archive concurrently in another application.",
+          hasNativeEditor
+            ? "Native archive edit operations run on a private candidate copy before verified publication."
+            : "WORM-only archive creation reconstructs the complete image in a temporary file on every flush.",
+          "The mount provides regular-file writes with stable handles; archive links and unsupported metadata remain read-only.",
+          "Publication to an ordinary host file is not crash-atomic; do not edit the archive concurrently.",
         ]);
-    } catch (Exception ex) when (ex is InvalidDataException or IOException or NotSupportedException or ArgumentException) {
-      return basic;
+    } catch (Exception ex) when (ex is InvalidDataException or IOException or NotSupportedException or ArgumentException or OverflowException or UnauthorizedAccessException) {
+      return WithLimitation(basic, $"Write-back qualification refused: {ex.Message}");
     } finally {
       source.Position = position;
     }
@@ -75,47 +92,66 @@ internal static class MutableArchiveMountSession {
       throw new NotSupportedException("The backing archive stream is not writable.");
 
     var archive = (IArchiveFormatOperations)descriptor;
-    var modifier = (IArchiveModifiable)descriptor;
+    var modifier = HasNativeEditor(descriptor) ? (IArchiveModifiable)descriptor : null;
+    var creator = CanRecreate(descriptor) ? (IArchiveCreatable)descriptor : null;
     var sourceSnapshot = MountSourceSnapshot.Capture(source);
     try {
       var original = ReadEntries(archive, sourceSnapshot, password);
       var initial = original.ToDictionary(static entry => entry.Path, StringComparer.Ordinal);
       var explicitlyStored = ReadStoredNames(archive, sourceSnapshot, password);
+      List<ArchiveEntryInfo> originalEntries;
+      using (var reader = sourceSnapshot.OpenRead())
+        originalEntries = archive.List(reader, password);
+      var sourceEntryMap = originalEntries.ToDictionary(
+        static entry => NormalizePath(entry.Name), StringComparer.Ordinal);
 
       MutableRebuildFilesystemSession.RebuildImage rebuild = (candidate, current) => {
-        var final = current.ToDictionary(static entry => entry.Path, StringComparer.Ordinal);
-        using (var snapshot = sourceSnapshot.OpenRead())
-          snapshot.CopyTo(candidate);
-        candidate.Position = 0;
-
-        var removed = explicitlyStored
-          .Where(item => !final.ContainsKey(item.Key))
-          .Select(static item => item.Value)
-          .OrderByDescending(static name => name.Length)
-          .ToArray();
-        if (removed.Length != 0)
-          modifier.Remove(candidate, removed);
-
-        var additions = new List<ArchiveInputInfo>();
-        foreach (var entry in current) {
-          if (entry.Kind == FilesystemNodeKind.Directory) {
-            // Parents of files are implied by archive paths; only explicitly
-            // empty directories need an entry when absent from the input.
-            if (!initial.ContainsKey(entry.Path) &&
-                !current.Any(item => item.Path.StartsWith(entry.Path + "/", StringComparison.Ordinal)))
-              additions.Add(new(entry.Path, entry.Path + "/", IsDirectory: true));
-            continue;
-          }
-
-          if (!initial.TryGetValue(entry.Path, out var prior) ||
-              prior.Kind != entry.Kind || !prior.Data.Span.SequenceEqual(entry.Data.Span))
-            additions.Add(ArchiveInputInfo.InMemory(entry.Path, entry.Data.ToArray()));
+        if (modifier is null) {
+          RecreateArchive(descriptor, candidate, current, originalEntries);
+          return;
         }
 
-        if (additions.Count != 0)
-          modifier.Add(candidate, additions);
+        try {
+          var final = current.ToDictionary(static entry => entry.Path, StringComparer.Ordinal);
+          candidate.SetLength(0);
+          candidate.Position = 0;
+          using (var snapshot = sourceSnapshot.OpenRead())
+            snapshot.CopyTo(candidate);
+          candidate.Position = 0;
 
-        candidate.Position = 0;
+          var removed = explicitlyStored
+            .Where(item => !final.ContainsKey(item.Key))
+            .Select(static item => item.Value)
+            .OrderByDescending(static name => name.Length)
+            .ToArray();
+          if (removed.Length != 0)
+            modifier.Remove(candidate, removed);
+
+          var additions = new List<ArchiveInputInfo>();
+          foreach (var entry in current) {
+            if (entry.Kind == FilesystemNodeKind.Directory) {
+              // Ordinary parent directories are implied by file paths.
+              if (!initial.ContainsKey(entry.Path) &&
+                  !current.Any(item => item.Path.StartsWith(entry.Path + "/", StringComparison.Ordinal)))
+                additions.Add(new(entry.Path, entry.Path + "/", IsDirectory: true));
+              continue;
+            }
+
+            if (!initial.TryGetValue(entry.Path, out var prior) ||
+                prior.Kind != entry.Kind || !prior.Data.Span.SequenceEqual(entry.Data.Span))
+              additions.Add(MakeInput(entry, sourceEntryMap.GetValueOrDefault(entry.Path)));
+          }
+
+          if (additions.Count != 0)
+            modifier.Add(candidate, additions);
+
+          candidate.Position = 0;
+        } catch (NotSupportedException) when (creator is not null) {
+          // A modifier may support only some on-disk profiles. If a safe
+          // creator exists, abandon its partially modified private copy and
+          // reconstruct the entire archive instead.
+          RecreateArchive(descriptor, candidate, current, originalEntries);
+        }
       };
 
       MutableRebuildFilesystemSession.ValidateImage validate = (candidate, current) => {
@@ -136,13 +172,34 @@ internal static class MutableArchiveMountSession {
           using var extracted = archive.OpenEntry(candidate, file.Name, password);
           if (!EqualsExact(extracted, wanted.Data.Span))
             throw new InvalidDataException($"Archive write-back verification failed for '{path}'.");
+
+          // WORM reconstruction must not silently reset the timestamps of
+          // untouched entries. A writer that cannot retain them is rejected
+          // before the live file is published.
+          if (sourceEntryMap.TryGetValue(path, out var before) && before.LastModified is { } oldTime &&
+              initial.TryGetValue(path, out var previous) &&
+              previous.Data.Span.SequenceEqual(wanted.Data.Span) &&
+              file.LastModified != oldTime)
+            throw new InvalidDataException($"Archive write-back changed the timestamp of untouched '{path}'.");
         }
 
         foreach (var directory in current.Where(static entry => entry.Kind == FilesystemNodeKind.Directory)) {
-          if (current.Any(item => item.Path.StartsWith(directory.Path + "/", StringComparison.Ordinal)))
-            continue;
-          if (!actual.Any(item => item.IsDirectory && NormalizePath(item.Name) == directory.Path))
-            throw new InvalidDataException($"Archive write-back discarded empty directory '{directory.Path}'.");
+          var required = explicitlyStored.ContainsKey(directory.Path) ||
+            !current.Any(item => item.Path.StartsWith(directory.Path + "/", StringComparison.Ordinal));
+          if (required && !actual.Any(item => item.IsDirectory && NormalizePath(item.Name) == directory.Path))
+            throw new InvalidDataException($"Archive write-back discarded directory '{directory.Path}'.");
+        }
+
+        if (archive is IArchiveSemanticMetadataProvider semantic) {
+          IReadOnlyDictionary<string, string> expectedProperties;
+          using (var reader = sourceSnapshot.OpenRead())
+            expectedProperties = semantic.GetContainerProperties(reader);
+          candidate.Position = 0;
+          var publishedProperties = semantic.GetContainerProperties(candidate);
+          if (expectedProperties.Count != publishedProperties.Count ||
+              expectedProperties.Any(item =>
+                !publishedProperties.TryGetValue(item.Key, out var value) || value != item.Value))
+            throw new InvalidDataException("Archive write-back changed unrelated container metadata.");
         }
       };
 
@@ -157,16 +214,30 @@ internal static class MutableArchiveMountSession {
   }
 
   private static bool Eligible(IFormatDescriptor descriptor, string? password)
-    => QualifiedFormats.Contains(descriptor.Id)
+    => descriptor.Category == FormatCategory.Archive
+      && descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsMultipleEntries)
       && string.IsNullOrEmpty(password)
       && descriptor is IArchiveFormatOperations
+      && descriptor is not IRandomAccessBlockDeviceProvider
+      && (HasNativeEditor(descriptor) || CanRecreate(descriptor));
+
+  private static bool HasNativeEditor(IFormatDescriptor descriptor)
+    => descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify)
       && descriptor is IArchiveModifiable;
+
+  private static bool CanRecreate(IFormatDescriptor descriptor)
+    => descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate)
+      && descriptor is IArchiveCreatable;
+
+  private static FilesystemDriverProfile WithLimitation(FilesystemDriverProfile baseProfile, string reason)
+    => baseProfile with { Limitations = baseProfile.Limitations.Append(reason).ToArray() };
 
   private static bool QualifiesEntries(IReadOnlyList<ArchiveEntryInfo> entries) {
     var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     long total = 0;
     foreach (var entry in entries) {
       if (entry.IsEncrypted || entry.IsSymlink || entry.LinkTarget is not null ||
+          entry.Kind is not null ||
           entry.OriginalSize < 0 || entry.OriginalSize > MaxWritableContentBytes)
         return false;
 
@@ -183,6 +254,83 @@ internal static class MutableArchiveMountSession {
       }
     }
     return true;
+  }
+
+
+  private static FileStream CreateCandidate() {
+    var path = Path.Combine(Path.GetTempPath(), $"cwb-mount-probe-{Guid.NewGuid():N}.tmp");
+    return new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite,
+      FileShare.None, 128 * 1024, FileOptions.DeleteOnClose);
+  }
+
+  private static ArchiveInputInfo MakeInput(RebuildFilesystemEntry entry, ArchiveEntryInfo? original) {
+    ArchiveEntryMetadata? metadata = original?.LastModified is { } modified
+      ? new(LastWriteTimeUtc: new DateTimeOffset(
+        modified.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(modified, DateTimeKind.Utc) : modified.ToUniversalTime()))
+      : null;
+    return entry.Kind == FilesystemNodeKind.Directory
+      ? new ArchiveInputInfo(entry.Path, entry.Path + "/", IsDirectory: true, Metadata: metadata)
+      : ArchiveInputInfo.InMemory(entry.Path, entry.Data.ToArray(), metadata);
+  }
+
+  private static void RecreateArchive(
+      IFormatDescriptor descriptor,
+      Stream candidate,
+      IReadOnlyList<RebuildFilesystemEntry> entries,
+      IReadOnlyList<ArchiveEntryInfo> originalEntries) {
+    if (descriptor is not IArchiveCreatable creator)
+      throw new NotSupportedException("This format cannot recreate an archive from files.");
+
+    var sourceNames = originalEntries.ToDictionary(
+      static entry => NormalizePath(entry.Name), StringComparer.Ordinal);
+    var supportsDirectories = descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsDirectories);
+    var inputs = new List<ArchiveInputInfo>(entries.Count);
+    long total = 0;
+
+    foreach (var entry in entries) {
+      var original = sourceNames.GetValueOrDefault(entry.Path);
+      if (entry.Kind == FilesystemNodeKind.Directory) {
+        var explicitlyStored = original?.IsDirectory == true;
+        var empty = !entries.Any(other => other.Path.StartsWith(entry.Path + "/", StringComparison.Ordinal));
+        if (!explicitlyStored && !empty)
+          continue; // Parent exists implicitly through its descendants.
+        if (!supportsDirectories)
+          throw new NotSupportedException($"Archive '{descriptor.Id}' cannot store an empty directory.");
+      } else if (entry.Kind != FilesystemNodeKind.RegularFile) {
+        throw new NotSupportedException("Archive recreation only supports ordinary files and directories.");
+      } else {
+        total = checked(total + entry.Data.Length);
+      }
+
+      var input = MakeInput(entry, original);
+      if (descriptor is IArchiveWriteConstraints constraints &&
+          !constraints.CanAccept(input, out var reason))
+        throw new NotSupportedException(
+          $"Archive '{descriptor.Id}' refuses '{entry.Path}': {reason ?? constraints.AcceptedInputsDescription}");
+      inputs.Add(input);
+    }
+
+    if (descriptor is IArchiveWriteConstraints limits &&
+        limits.MaxTotalArchiveSize is { } max && total > max)
+      throw new NotSupportedException($"Archive '{descriptor.Id}' exceeds its {max:N0}-byte input limit.");
+
+    candidate.SetLength(0);
+    candidate.Position = 0;
+    creator.Create(candidate, inputs, new FormatCreateOptions());
+    candidate.Position = 0;
+  }
+
+  private static void VerifyRecreatedSource(
+      IArchiveFormatOperations archive,
+      MountSourceSnapshot source,
+      Stream candidate,
+      string? password) {
+    using var original = source.OpenRead();
+    var before = ArchiveSemanticManifest.Capture(original, archive, password);
+    candidate.Position = 0;
+    var after = ArchiveSemanticManifest.Capture(candidate, archive, password);
+    before.RequireSameAs(after, "WORM archive mount qualification");
+    candidate.Position = 0;
   }
 
   private static List<RebuildFilesystemEntry> ReadEntries(
