@@ -467,7 +467,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [gzexe](https://en.wikipedia.org/wiki/Gzip) | `Gzexe` |  | R |  | [gnu.org](https://www.gnu.org/software/gzip/manual/gzip.html) |
 | Huan | `Huan` |  | R |  | [GitHub](https://github.com/frkngksl/Huan) |
 | kkrunchy | `Kkrunchy` |  | R |  | [GitHub](https://github.com/farbrausch/fr_public) |
-| [LZEXE (DOS exe)](https://en.wikipedia.org/wiki/LZEXE) | `LzExe` |  | R |  | [Archive Team](http://fileformats.archiveteam.org/wiki/LZEXE) |
+| [LZEXE (DOS exe)](https://en.wikipedia.org/wiki/LZEXE) | `LzExe` |  | R | Restores LZEXE 0.90/0.91/1.00a programs: image, relocations and registers equal UNP 4.11's restoration, minimum allocation as LZEXE recorded it (Deark conversion) | [Archive Team](http://fileformats.archiveteam.org/wiki/LZEXE) |
 | MEW | `Mew` |  | R |  | [GitHub](https://github.com/horsicq/Detect-It-Easy) |
 | MPRESS | `MPress` |  | R |  | [matcode.com](https://matcode.com/) |
 | NsPack | `NsPack` |  | R |  | [GitHub](https://github.com/horsicq/Detect-It-Easy) |
@@ -500,6 +500,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | RLPack | Unpack | Own `{sourceRva, destinationRva}` block table, one bare LZMA or aPLib stream per section; x86 call/jump filter reversed. All 130 corpus samples decompress. |
 | WinUpack | Unpack | Upack's LZMA-idiom range coder plus call/jump filter, driven by the loader's parameter block; both container shapes decode. |
 | Yoda's Crypter | Unpack | Stub walker replays the per-build byte cipher and restores the original entry point; 129 of 130 corpus samples decrypt. |
+| LZEXE (DOS) | Unpack | Stub header read, LZ77 image decoded, relocation table and header rebuilt; checked against UNP 4.11 on files the real packer made (see `Compression.Tests/ExePackers/DosVectors`). |
 | GZEXE / BZEXE | Unpack | Shell wrappers with embedded gzip / bzip2 payload; the original executable is restored statically. |
 | Papaw | Unpack | ELF wrapper with obfuscated XZ/LZMA2 payload; appended original restored. |
 | GoPacker | Unpack | Appended Zstandard executable payload restored. |

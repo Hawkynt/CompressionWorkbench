@@ -772,7 +772,7 @@ Lizard (LZ5),liz,compression,,,,,,,,0,,Lizard,Y,Y,,OURS-ONLY,,
 Windows Shell Link,lnk,archive,,,,,,,,0,,Lnk,Y,Y,,OURS-ONLY,,
 FS-1015 LPC-10,lpc10;lpc,media,,,,,,,,0,,Lpc10,Y,Y,,OURS-ONLY,,
 Commodore Lynx archive,lnx,archive,,,,,,,,0,,Lynx,Y,Y,Y,OURS-ONLY,,
-LZEXE (DOS exe),,archive,,,,,,,,0,,LzExe,Y,,,OURS-ONLY,,
+LZEXE (DOS exe),,archive,,,,,,,,0,https://github.com/jsummers/deark,LzExe,Y,,,OURS-ONLY,,"0.90/0.91/1.00a programs restored (Deark MIT conversion); image, relocations and registers equal UNP 4.11's restoration of LZEXE 0.91 and 1.00a files, minimum allocation as LZEXE recorded it; no 0.90 sample available; writing refused (would need LZEXE's stub)"
 LZG (Lzg),lzg,compression,,,,,,,,0,,Lzg,Y,Y,,OURS-ONLY,,
 LZHAM (Lzham),lzham,compression,,,,,,,,0,https://github.com/richgel999/lzham_codec,Lzham,Y,Y,,OURS-ONLY,,"lzhamtest's LZH0 file layout; our files are byte-identical to lzhamtest -t0's at the same dictionary size and level; the table update rate is not recorded, so files written with lzhamtest -h<rate> other than 8 need the rate passed to the decoder"
 HLS Playlist (M3U8),m3u8;m3u,archive,,,,,,,,0,,M3u8,Y,,,OURS-ONLY,,
