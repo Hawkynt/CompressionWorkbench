@@ -400,6 +400,13 @@ last link goes is freed with its spill block, its extended-attribute directory (
 `ZPL_XATTR`) and an external ACL object (`znode_phys_t` offset 176); a directory goes with
 everything beneath it and its parent loses a link.
 
+**Mirrors and RAID-Z.** An edit of a pool whose one top-level vdev is a mirror or a RAID-Z
+needs every child device; a device is matched to its child by the `guid` in its own label. Each
+new block goes to every side of a mirror, or as its data and parity columns ("Writing RAID-Z")
+to the RAID-Z's devices; the space maps take the RAID-Z `asize`, the accounting the `dsize`
+(deflate ratio). The new uberblock goes into the four labels of every device. A degraded pool
+(a child missing) is not edited.
+
 ### Intent log
 
 An object set's `zil_header_t` sits at 0x200: claim txg, replay sequence, the first log block

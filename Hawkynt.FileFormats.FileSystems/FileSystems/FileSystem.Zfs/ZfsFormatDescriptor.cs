@@ -20,9 +20,11 @@ namespace FileSystem.Zfs;
 /// <remarks>
 /// Create writes a new single-device pool (version 28, one ZPL version 3 filesystem holding the
 /// inputs) with <see cref="ZfsWriter"/>; OpenZFS's <c>zdb -bcc</c> finds no leaks in it and the
-/// kernel module imports, scrubs and mounts it. Add and Remove edit an existing single-device
-/// version 28 pool in place, in one new transaction group (<see cref="ZfsPoolEditor"/>) — pools
-/// OpenZFS made included; anything that editor refuses is left untouched.
+/// kernel module imports, scrubs and mounts it; <c>CreatePool</c> writes mirrors and RAID-Z.
+/// Add and Remove edit an existing single-device version 28 pool in place, in one new
+/// transaction group (<see cref="ZfsPoolEditor"/>), and <c>AddToPool</c>/<c>RemoveFromPool</c>
+/// do so for mirrors and RAID-Z — pools OpenZFS made included; anything that editor refuses is
+/// left untouched.
 /// </remarks>
 public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   /// <summary>Gets the id.</summary>
@@ -164,10 +166,29 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
-    var additions = inputs.Select(i => new ZfsPoolEditor.Addition(i.ArchiveName, i.IsDirectory ? null : i.ReadContent(),
-      i.Metadata?.LastWriteTimeUtc?.UtcDateTime)).ToList();
-    ZfsPoolEditor.Edit(archive, additions, []);
+    ZfsPoolEditor.Edit(archive, Additions(inputs), []);
   }
+
+  /// <summary>
+  /// Adds or replaces files in a pool spread over <paramref name="devices"/> — every device of a
+  /// mirror or RAID-Z, in any order — in place, as <see cref="Add(Stream, IReadOnlyList{ArchiveInputInfo})"/> does for one device.
+  /// </summary>
+  public void AddToPool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(devices);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ZfsPoolEditor.Edit(devices, Additions(inputs), []);
+  }
+
+  /// <summary>Removes files and directories from a pool spread over <paramref name="devices"/>, in place.</summary>
+  public void RemoveFromPool(IReadOnlyList<Stream> devices, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(devices);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    ZfsPoolEditor.Edit(devices, [], entryNames.Where(n => n is not (MetadataName or FullName)).ToList());
+  }
+
+  private static List<ZfsPoolEditor.Addition> Additions(IReadOnlyList<ArchiveInputInfo> inputs) =>
+    inputs.Select(i => new ZfsPoolEditor.Addition(i.ArchiveName, i.IsDirectory ? null : i.ReadContent(),
+      i.Metadata?.LastWriteTimeUtc?.UtcDateTime)).ToList();
 
   /// <summary>Removes files and directories (with everything beneath them) from an existing pool, in place.</summary>
   public void Remove(Stream archive, string[] entryNames) {

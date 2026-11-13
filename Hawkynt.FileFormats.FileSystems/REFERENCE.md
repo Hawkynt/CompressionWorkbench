@@ -21221,11 +21221,13 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `AddToPool` | `void AddToPool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files in a pool spread over `devices` — every device of a mirror or RAID-Z, in any order — in place, as `Add` does for one device. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files and directories in an existing pool, in place: one new transaction group, copy-on-write, freed blocks returned to the space maps. Paths of child datasets (`child/…`, as listed) go into that dataset. |
 | `CreatePool` | `void CreatePool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a new pool (version 28) over `devices`: one device, or with two or more an n-way mirror of equally sized devices, each holding every block, or with the option `Layout` = `raidz1`, `raidz2` or `raidz3` a RAID-Z (at least parity + 2 devices). Other options as for `Create`. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a new single-device pool (version 28) whose one filesystem holds `inputs`. The option `PoolName` names the pool (default `cwb`); `Compression` sets how file data is compressed and the filesystem's `compression` property: `off` (default), `on`/`lzjb`, `gzip`, `gzip-1`…`gzip-9` or `zle`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts the pool's files (links as files holding their target). |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the pool's files. Never throws: an image that cannot be read lists as `FULL.zfs` plus a `metadata.ini` saying why. |
+| `RemoveFromPool` | `void RemoveFromPool(IReadOnlyList<Stream> devices, string[] entryNames)` | Removes files and directories from a pool spread over `devices`, in place. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files and directories (with everything beneath them) from an existing pool, in place. |
 
 #### `ZfsReader`
