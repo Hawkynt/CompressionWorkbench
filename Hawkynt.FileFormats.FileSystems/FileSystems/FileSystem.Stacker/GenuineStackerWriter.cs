@@ -52,7 +52,11 @@ public sealed class GenuineStackerWriter {
   private int _realFirstData;
   private const int AmapStart = FatStart + 3;                    // 5 (informational)
 
-  /// <summary>Stacker major version recorded in the decoded superblock (&lt; 410 ⇒ v3).</summary>
+  /// <summary>
+  /// Stacker major version: 3 stamps 300 into the decoded superblock, 4 stamps 410 (dmsdos detects
+  /// the volume as "stacker version 3 CVF" / "stacker version 4 CVF" accordingly). Any other value is
+  /// refused by <see cref="Build"/>.
+  /// </summary>
   public int Version { get; init; } = 3;
 
   /// <summary>Optional inner-volume label (≤11 chars). Empty = no label entry.</summary>
@@ -244,7 +248,11 @@ public sealed class GenuineStackerWriter {
       plain[idx] = (byte)v; plain[idx + 1] = (byte)(v >> 8);
       plain[idx + 2] = (byte)(v >> 16); plain[idx + 3] = (byte)(v >> 24);
     }
-    P16(0x60, this.Version < 410 ? 300 : 410);
+    P16(0x60, this.Version switch {
+      3 => 300,
+      4 => 410,
+      _ => throw new ArgumentOutOfRangeException(nameof(this.Version), this.Version, "Stacker version must be 3 or 4."),
+    });
     P16(0x62, Ss);
     P32(0x6C, totalSects);
     P16(0x70, BootBlock);

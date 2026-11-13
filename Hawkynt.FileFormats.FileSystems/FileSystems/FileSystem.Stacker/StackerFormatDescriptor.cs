@@ -76,8 +76,8 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new(Key: "Version", DisplayName: "Stacker version", Kind: FormatOptionKind.Enum, Default: "3",
       AllowedValues: ["3", "4"],
-      Description: "Stacker format version stamped into the volume superblock. 3 = Stacker 3.x (MS-DOS 6 era); "
-        + "4 = Stacker 4.x. The dmsdos driver reads both."),
+      Description: "Stacker format version stamped into the volume superblock: 3 = Stacker 3.x (MS-DOS 6 era), "
+        + "4 = Stacker 4.x. dmsdos detects each as that version and reads both. Edits keep the version."),
     new(Key: "VolumeLabel", DisplayName: "Volume label", Kind: FormatOptionKind.String, Default: "",
       Description: "Optional 11-char inner-volume label written to the root directory."),
     new(Key: "Timestamp", DisplayName: "File timestamp", Kind: FormatOptionKind.String, Default: "",
@@ -120,8 +120,11 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     ArgumentNullException.ThrowIfNull(inputs);
     ArgumentNullException.ThrowIfNull(options);
     var (method, level) = CvfCodecChoice.Resolve(options, "auto", Codecs);
+    var version = options.GetOptionInt("Version", 3);
+    if (version is not (3 or 4))
+      throw new ArgumentException($"Stacker version {version} is not supported; choose 3 or 4.", nameof(options));
     var writer = new GenuineStackerWriter {
-      Version = options.GetOptionInt("Version", 3),
+      Version = version,
       VolumeLabel = options.GetOption("VolumeLabel", ""),
       Timestamp = FatDirStamp.Parse(options.GetOption("Timestamp", "")),
       CompressionMethod = method,
@@ -201,7 +204,7 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
         keep.RemoveAll(k => GenuineCvfVolume.LeafLower(k.Name) == GenuineCvfVolume.LeafLower(n));
         keep.Add((n, d));
       }
-    var writer = new GenuineStackerWriter { Version = reader.Version, VolumeLabel = reader.VolumeLabel, CompressionMethod = CvfLzMethod.Auto, CompressionLevel = 2 };
+    var writer = new GenuineStackerWriter { Version = reader.Version >= 410 ? 4 : 3, VolumeLabel = reader.VolumeLabel, CompressionMethod = CvfLzMethod.Auto, CompressionLevel = 2 };
     foreach (var (n, d) in keep) writer.AddFile(n, d);
     return writer.Build();
   }
