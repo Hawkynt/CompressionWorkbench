@@ -75,7 +75,7 @@ internal static class MutableArchiveMountSession {
 
     var archive = (IArchiveFormatOperations)descriptor;
     var modifier = (IArchiveModifiable)descriptor;
-    var sourceSnapshot = DerivedFilesystemSnapshot.Capture(source);
+    var sourceSnapshot = MountSourceSnapshot.Capture(source);
     try {
       var original = ReadEntries(archive, sourceSnapshot, password);
       var initial = original.ToDictionary(static entry => entry.Path, StringComparer.Ordinal);
@@ -88,7 +88,8 @@ internal static class MutableArchiveMountSession {
         candidate.Position = 0;
 
         var removed = explicitlyStored
-          .Where(name => !final.ContainsKey(name))
+          .Where(item => !final.ContainsKey(item.Key))
+          .Select(static item => item.Value)
           .OrderByDescending(static name => name.Length)
           .ToArray();
         if (removed.Length != 0)
@@ -184,7 +185,7 @@ internal static class MutableArchiveMountSession {
 
   private static List<RebuildFilesystemEntry> ReadEntries(
       IArchiveFormatOperations archive,
-      DerivedFilesystemSnapshot snapshot,
+      MountSourceSnapshot snapshot,
       string? password) {
     List<ArchiveEntryInfo> listed;
     using (var reader = snapshot.OpenRead())
@@ -210,14 +211,14 @@ internal static class MutableArchiveMountSession {
     return results;
   }
 
-  private static HashSet<string> ReadStoredNames(
+  private static Dictionary<string, string> ReadStoredNames(
       IArchiveFormatOperations archive,
-      DerivedFilesystemSnapshot snapshot,
+      MountSourceSnapshot snapshot,
       string? password) {
     using var reader = snapshot.OpenRead();
     return archive.List(reader, password)
-      .Select(static entry => NormalizePath(entry.Name))
-      .ToHashSet(StringComparer.Ordinal);
+      .ToDictionary(static entry => NormalizePath(entry.Name),
+        static entry => entry.Name, StringComparer.Ordinal);
   }
 
   private static string NormalizePath(string name) {
