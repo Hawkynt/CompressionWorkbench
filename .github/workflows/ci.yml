@@ -136,6 +136,18 @@ jobs:
       - name: Build
         run: dotnet build CompressionWorkbench.slnx --configuration Release --no-restore
 
+      # Real Linux FUSE kernel traversal and write-back, not a synthetic
+      # IFilesystemSession-only smoke test. Runners without /dev/fuse skip.
+      - name: Native FUSE archive mount integration (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y fuse3 libfuse3-3
+          sudo modprobe fuse || true
+          if [ ! -c /dev/fuse ]; then sudo mknod -m 666 /dev/fuse c 10 229 || true; fi
+          if [ -c /dev/fuse ]; then sudo chmod 666 /dev/fuse; fi
+          dotnet test Compression.Tests --configuration Release --no-build --filter 'FullyQualifiedName~Compression.Tests.Mounting.NativeFuseArchiveMountIntegrationTests' --logger 'trx;LogFileName=fuse-native-archive-tests.trx'
+
       # Verify the four NuGet meta-packages still pack on every PR / push.
       # This catches regressions in the bundling target (filter excludes for
       # Compression.Core / Registry, ProjectReference path resolution, etc.)
@@ -284,6 +296,38 @@ jobs:
       - name: Install 7-Zip (Windows)
         if: matrix.os == 'windows-latest'
         run: choco install 7zip -y
+
+      # Hard gate for NSIS installer creation: the writer needs NSIS 3's own exehead stubs, which
+      # are native code and not shipped. Linux takes them from the distribution's nsis package
+      # (/usr/share/nsis/Stubs); Windows unpacks the official NSIS 3.10 zip, hash-pinned. 7-Zip and
+      # our reader must extract every variant, and on Windows the installer itself must install
+      # exactly the payload when run with /S /D=.
+      - name: Install NSIS stubs (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get install -y nsis
+          echo "NSISDIR=/usr/share/nsis" >> "$GITHUB_ENV"
+
+      - name: Install NSIS stubs (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'nsis-3.10.zip'
+          Invoke-WebRequest -UserAgent 'Wget/1.21' -Uri 'https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download' -OutFile $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'fcdce3229717a2a148e7cda0ab5bdb667f39d8fb33ede1da8dabc336bd5ad110') { throw "nsis-3.10.zip SHA-256 mismatch: $hash" }
+          Expand-Archive $zip -DestinationPath $env:RUNNER_TEMP -Force
+          "NSISDIR=$(Join-Path $env:RUNNER_TEMP 'nsis-3.10')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: NSIS installer oracle
+        if: ${{ !cancelled() }}
+        env:
+          CWB_REQUIRE_NSIS_STUBS: "1"
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release --no-build
+          --filter "FullyQualifiedName~Compression.Tests.Nsis.NsisInstallerWriterTests"
+          --logger "trx;LogFileName=nsis-writer-tests.trx"
 
       # Unlike the broad external tier below, this is a hard gate: real
       # fsck.gfs2 must accept our ExHash metadata and the Linux driver must mount
