@@ -591,6 +591,8 @@ public sealed class MutableRebuildFilesystemSession : IFilesystemSession {
           throw new UnauthorizedAccessException("This file handle was not opened for writing.");
         if (offset < 0)
           throw new ArgumentOutOfRangeException(nameof(offset));
+        if (source.IsEmpty)
+          return;
         var end = checked(offset + source.Length);
         if (end > Array.MaxLength)
           throw new NotSupportedException($"The managed rebuild session currently limits one mutable file to {Array.MaxLength:N0} bytes.");
