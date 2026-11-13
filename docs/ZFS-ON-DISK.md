@@ -432,8 +432,22 @@ Columns `0..P−1` are parity, the rest data in order. With `P = 1`, columns 0 a
 trade places (child and offset) when bit 20 of the block offset is set. The data is
 the concatenation of the data columns, cut to `s`. Parity column 0 is the XOR of
 the data columns (each zero-padded to its length), which recovers one missing data
-column; the Q and R syndromes are not implemented, so RAID-Z2/3 needs every data
-column present.
+column; the reader does not solve with the Q and R syndromes, so it needs every data
+column of a RAID-Z2/3 block present.
+
+**Writing RAID-Z.** A block of physical size `s` takes `asize` sectors on the vdev:
+`n = ceil(s / 2^a)` data sectors, plus `P · ceil(n / (D − P))` parity sectors, rounded up to a
+multiple of `P + 1` (the padding sectors are allocated, never written). The DVA's `asize` and
+the space maps carry that size. The writer fills the data columns in order with the block's
+bytes (zero-padded to whole sectors) and computes the parity columns, each as long as column 0,
+over the data columns in order, a short column counting as zeros: P = XOR of the columns;
+Q = `Q·2 ⊕ D` and R = `R·4 ⊕ D` per byte, multiplication in GF(2^8) with polynomial 0x11D
+(`x·2` = `x << 1`, XOR 0x1D when the top bit was set). The label's `vdev_tree` is {`type`
+"raidz", `id` 0, `guid`, `nparity` P, the metaslab and size keys, `children` [the devices]}; its
+`asize` is D × the devices' own `asize`. Datasets are charged `dsize` = `asize` in 512-byte
+units × the vdev's deflate ratio `2^17 / (asize of a 128 KiB block in 512-byte units)` (integer
+division; 512 on plain and mirror vdevs, where `dsize` = `asize`). Dnodes' `dn_used` counts the
+same `dsize`.
 
 Mirror, replacing and spare vdevs hold full copies on every child. dRAID and indirect
 (removed) vdevs are refused.

@@ -78,7 +78,7 @@ internal static class ZfsOracle {
       $"mkdir -p $HOME/cwbzfs-work/cache; cd {wsl}; truncate -s 512M scratch.img; " +
       $"printf 'run\\nmkfs ext4 /dev/sda\\nmount /dev/sda /\\nmkdir /out\\n{uploads}upload inner.sh /inner.sh\\n" +
       "debug sh \"sh /sysroot/inner.sh > /sysroot/log.txt 2>&1\"\\ndownload /log.txt log.txt\\n" +
-      "download /out/pool.manifest pool.manifest\\n' | timeout 900 guestfish -a scratch.img 2>&1");
+      "download /out/pool.manifest pool.manifest\\n' | timeout 300 guestfish -a scratch.img 2>&1");
     var logPath = Path.Combine(dir, "log.txt");
     var log = File.Exists(logPath) ? File.ReadAllText(logPath) : "";
     if (!File.Exists(Path.Combine(dir, "pool.manifest")) && !log.Contains("IMPORT-FAILED"))

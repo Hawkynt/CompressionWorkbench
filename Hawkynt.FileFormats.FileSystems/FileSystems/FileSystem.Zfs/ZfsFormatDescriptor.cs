@@ -129,8 +129,9 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <summary>
   /// Writes a new pool (version 28) over <paramref name="devices"/>: one device, or with two or
-  /// more an n-way mirror of equally sized devices, each holding every block. Options as for
-  /// <see cref="Create"/>.
+  /// more an n-way mirror of equally sized devices, each holding every block, or with the option
+  /// <c>Layout</c> = <c>raidz1</c>, <c>raidz2</c> or <c>raidz3</c> a RAID-Z (at least parity + 2
+  /// devices). Other options as for <see cref="Create"/>.
   /// </summary>
   public void CreatePool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(devices);
@@ -144,6 +145,14 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       else
         writer.AddFile(input.ArchiveName, input.ReadContent(), modified);
     }
+    writer.Parity = options.GetOption("Layout", "mirror").Trim().ToLowerInvariant() switch {
+      "mirror" or "" => 0,
+      "raidz" or "raidz1" => 1,
+      "raidz2" => 2,
+      "raidz3" => 3,
+      var other => throw new ArgumentException($"ZFS: layout '{other}' is not mirror, raidz1, raidz2 or raidz3."),
+    };
+    if (devices.Count == 1 && writer.Parity > 0) throw new ArgumentException("ZFS: RAID-Z needs several devices.");
     writer.Build(devices, options.GetOption("PoolName", "cwb"));
   }
 

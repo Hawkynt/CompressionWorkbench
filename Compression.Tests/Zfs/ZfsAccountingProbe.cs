@@ -27,8 +27,8 @@ internal static class ZfsAccountingProbe {
   private static ulong U64(ReadOnlySpan<byte> b, int at) => BinaryPrimitives.ReadUInt64LittleEndian(b[at..]);
 
   /// <summary>Ledgers by filesystem path (<c>""</c> for the root dataset) and <c>$MOS</c>.</summary>
-  public static Dictionary<string, Ledger> Probe(byte[] image) {
-    using var pool = new ZfsPool([new MemoryStream(image, writable: false)], leaveOpen: false);
+  public static Dictionary<string, Ledger> Probe(params byte[][] devices) {
+    using var pool = new ZfsPool(devices.Select(d => (Stream)new MemoryStream(d, writable: false)).ToList(), leaveOpen: false);
     var result = new Dictionary<string, Ledger>(StringComparer.Ordinal);
     var mos = pool.Mos;
     var directory = mos.Zap(1, "object directory").ToDictionary(e => e.Name, e => e.Value, StringComparer.Ordinal);
@@ -65,12 +65,20 @@ internal static class ZfsAccountingProbe {
     return result;
   }
 
+  /// <summary>What a 512-byte unit of allocation is charged: 512 on plain vdevs, less on RAID-Z (its deflate ratio).</summary>
+  private static long DeflateRatio(ZfsPool pool) {
+    var tree = pool.Config.List("vdev_tree")!;
+    if (tree.String("type") != "raidz") return 512;
+    return ZfsRaidzVdev.DeflateRatio(tree.Lists("children").Length, (int)tree.UInt64("nparity")!.Value, (int)tree.UInt64("ashift")!.Value);
+  }
+
   private static Space CountObjset(ZfsPool pool, ZfsBlockPointer root, Ledger? ledger) {
     long used = 0, compressed = 0, uncompressed = 0;
+    var ratio = DeflateRatio(pool);
     void Count(ZfsBlockPointer bp) {
       if (bp.IsHole || bp.IsEmbedded) return;
       foreach (var dva in bp.Dvas)
-        if (!dva.IsEmpty) used += (long)dva.AllocatedSectors << 9;
+        if (!dva.IsEmpty) used += dva.AllocatedSectors * ratio;
       compressed += bp.PhysicalSize;
       var metadata = bp.Level > 0 || bp.Type is not (19 or 23 or 25 or 26 or 49);
       uncompressed += metadata ? bp.PhysicalSize : bp.LogicalSize;
