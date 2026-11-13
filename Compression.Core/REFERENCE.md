@@ -8026,8 +8026,8 @@ Common entry point for filesystem frontends. Native filesystem providers are alw
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Assess` | `static FilesystemDriverReadinessReport Assess(IFormatDescriptor descriptor, Stream image, FilesystemDriverTarget target, string password = null)` |  |
-| `Open` | `static IFilesystemSession Open(IFormatDescriptor descriptor, Stream image, FilesystemOpenOptions options, string password = null)` |  |
-| `Probe` | `static FilesystemDriverProfile Probe(IFormatDescriptor descriptor, Stream image, string password = null)` |  |
+| `Open` | `static IFilesystemSession Open(IFormatDescriptor descriptor, Stream image, FilesystemOpenOptions options, string password = null, bool preserveFileIdentity = false)` |  |
+| `Probe` | `static FilesystemDriverProfile Probe(IFormatDescriptor descriptor, Stream image, string password = null, bool preserveFileIdentity = false)` |  |
 
 #### `FilesystemDriverProfile`
 
@@ -9400,7 +9400,7 @@ Implements `IDisposable`, `IFilesystemSession`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `MutableRebuildFilesystemSession` | `MutableRebuildFilesystemSession(FilesystemDriverProfile profile, Stream image, IEnumerable<RebuildFilesystemEntry> entries, RebuildImage rebuild, ValidateImage validate = null, bool leaveOpen = true)` |  |
+| `MutableRebuildFilesystemSession` | `MutableRebuildFilesystemSession(FilesystemDriverProfile profile, Stream image, IEnumerable<RebuildFilesystemEntry> entries, RebuildImage rebuild, ValidateImage validate = null, bool leaveOpen = true, long maxTotalContentBytes = 9223372036854775807)` |  |
 | `Profile` | `FilesystemDriverProfile Profile { get; }` |  |
 | `RootNodeId` | `FilesystemNodeId RootNodeId { get; }` |  |
 | `BeginTransaction` | `IFilesystemTransaction BeginTransaction()` |  |
