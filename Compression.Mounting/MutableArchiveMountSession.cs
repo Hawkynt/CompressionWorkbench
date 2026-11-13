@@ -109,7 +109,7 @@ internal static class MutableArchiveMountSession {
     } finally {
       source.Position = savedPosition;
     }
-    if (large)
+    if (large || descriptor.Id == "Zip")
       return SpoolingArchiveMountSession.Open(descriptor, source, password, profile);
 
     var modifier = HasNativeEditor(descriptor) ? (IArchiveModifiable)descriptor : null;
