@@ -642,14 +642,15 @@ Implements `IBuildingBlock`.
 
 #### `AceBlockedCompressor`
 
-Writes ACE 2.0 blocked streams (compression type 2): LZ77 with the four repeat-distance codes, optionally behind the EXE filter (x86 CALL targets made absolute) or the DELTA filter (bytes split into planes and differenced), chosen per member by trial. One instance per archive; with `solid` the dictionary carries over between members as the decoder's does.
+Writes ACE 2.0 blocked streams (compression type 2): LZ77 with the four repeat-distance codes, optionally behind the EXE filter (x86 CALL targets made absolute) or the DELTA filter (bytes split into planes and differenced), or in the SOUND (audio predictor) or PIC (pixel predictor) mode, chosen per member by trial. One instance per archive; with `solid` the dictionary carries over between members as the decoder's does.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AceBlockedCompressor` | `AceBlockedCompressor(int dictionaryBits = 20, bool solid = false)` | Creates a compressor with a dictionary of 2^`dictionaryBits` bytes. |
 | `DictionaryBits` | `int DictionaryBits { get; }` | Dictionary size in bits (what the file header's parameter field records). |
-| `LastMode` | `string LastMode { get; }` | The filter the last `Compress` call chose: "lz77", "exe" or "delta:N". |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses one member, trying the plain, EXE and DELTA layouts and keeping the smallest. |
+| `ForcedMode` | `string ForcedMode { get; set; }` | Encodes every member with one layout instead of the smallest (null, the default: choose by size): "sound:N" puts the whole member in SOUND mode N (3 to 6) whatever it holds, "pic:W:P" codes rows of W bytes with P interleaved planes from the start and the remainder as LZ77. A layout that does not fit the data throws `ArgumentException`. |
+| `LastMode` | `string LastMode { get; }` | The filter the last `Compress` call chose: "lz77", "exe", "delta:N", "sound:N" (N the mode number) or "pic". |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses one member, trying the plain, EXE, DELTA, SOUND (WAVE files) and PIC (BMP files) layouts and keeping the smallest. |
 | `RegisterStored` | `void RegisterStored(ReadOnlySpan<byte> data)` | Tells a solid compressor about a member that was stored: the decoder adds stored bytes to its dictionary too. |
 
 #### `AceBlowfish`
@@ -711,6 +712,7 @@ Decompresses ACE members. One instance serves a whole archive: the LZ77 dictiona
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AceDecompressor` | `AceDecompressor()` |  |
+| `LastModes` | `IReadOnlyList<int> LastModes { get; }` | The mode instructions the last ACE 2.0 member switched to, in stream order. |
 | `DecompressComment` | `static byte[] DecompressComment(ReadOnlySpan<byte> packed)` | Decodes an archive or file comment: a 15-bit length, one LZ77-sized Huffman tree, then literals and copies whose source is found through a hash of the two preceding bytes. |
 | `Decompress` | `byte[] Decompress(ReadOnlyMemory<byte> packed, long size, int compressionType, int dictionaryBits)` | Decodes one member of `size` bytes compressed with `compressionType`. |
 
