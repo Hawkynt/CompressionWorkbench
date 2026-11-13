@@ -30,6 +30,7 @@ it (`UNP e -k- P<n> U<n>`), committed only where it differs from `T<n>`.
 | `lzexe100.P1/P2.EXE` | LZEXE 1.00a, same command | sac.sk `lzexe100.zip` (`ac0277ee…7be6fe75`) | `lzexe.U<n>.EXE` (identical to the 0.91 restorations) |
 | `pklite115.P1/P2.EXE`, `.P5.COM` | PKLITE 1.15, `PKLITE T<n> P<n>` | simtel20 `PKLTE115.ZIP` | UNP and `PKLITE -x` both give `T<n>` byte for byte |
 | `pklite201.P1/P2.EXE`, `.P5.COM` | PKLITE 2.01 shareware, same command | sac.sk `pklts201.exe` (`46095353…f7687436`) | UNP and `PKLITE -x` both give `T<n>` byte for byte |
+| `exepack406.P1/P2.EXE` | Microsoft EXEPACK 4.06 (MASM 5.1), `EXEPACK T<n>.EXE P<n>.EXE` | archive.org `microsoft-macro-assembler-5.1-5.25.-7z` | `exepack406.U<n>.EXE` |
 
 UNP 4.11: `unp411.zip` (sha256 `45681a35…4fc342bf`), from the F1GP file archive.
 
@@ -39,5 +40,8 @@ UNP 4.11: `unp411.zip` (sha256 `45681a35…4fc342bf`), from the F1GP file archiv
   write them paragraph-normalised; UNP also writes its own minimum allocation, while the
   unpacker restores the value LZEXE recorded. Ours is UNP's output with bytes 10-11 equal to
   the original's.
+- **EXEPACK** rounds the image up to whole paragraphs and groups relocations by 64 KiB
+  segment; UNP and the unpacker agree on both. The unpacker sizes the minimum allocation to
+  keep the packed program's total memory (0x40 and 0x48 paragraphs here), UNP otherwise.
 - UNP 4.11 cut a PKLITE 2.01 restoration of a 176 KiB third test program short at 128 KiB;
   `PKLITE -x` and the unpacker restored it in full. It is not committed.
