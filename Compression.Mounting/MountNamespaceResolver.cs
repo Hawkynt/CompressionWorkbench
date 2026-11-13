@@ -90,7 +90,8 @@ public static class MountNamespaceResolver {
       if (source.CanSeek) source.Position = 0;
       session = options.ReadOnly
         ? FilesystemDriverDerivation.Open(
-          descriptor, source, options with { LeaveOpen = true }, password)
+          descriptor, source, options with { LeaveOpen = true }, password,
+          preserveFileIdentity: source is FileStream)
         : MutableArchiveMountSession.Open(descriptor, source, password);
     } else {
       if (!options.ReadOnly)
