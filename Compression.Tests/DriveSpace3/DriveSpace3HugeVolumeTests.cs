@@ -48,7 +48,7 @@ public class DriveSpace3HugeVolumeTests {
     // add and remove files through the descriptor (rebuild path) and verify.
     var files = BigSet(200, 96 * 1024, 5);
     var d = new DriveSpace3FormatDescriptor();
-    var opts = new FormatCreateOptions { FormatSpecific = new Dictionary<string, string> { ["Compatibility"] = "Genuine" } };
+    var opts = new FormatCreateOptions();
     using var ms = new MemoryStream();
     d.Create(ms, files.Select(f => ArchiveInputInfo.InMemory(f.Name, f.Data)).ToList(), opts);
 

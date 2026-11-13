@@ -48,14 +48,14 @@ public class CvfOptimizerTests {
   public void Optimize_DoubleSpace_PicksHighestEffortMethod() {
     var desc = new DoubleSpaceFormatDescriptor();
     var payload = CompressiblePayload();
-    var src = CreateSourceCvf(desc, payload, "ds-lz77");
+    var src = CreateSourceCvf(desc, payload, "ds");
 
     try {
       var origBytes = File.ReadAllBytes(src);
       var result = CvfOptimizer.Optimize(src, desc);
 
       Assert.Multiple(() => {
-        Assert.That(result.MethodUsed, Is.EqualTo("ds-lz77++"),
+        Assert.That(result.MethodUsed, Is.EqualTo("ds++"),
           "Optimizer should pick the most-'+' non-stored method published by the descriptor.");
         Assert.That(result.OriginalSize, Is.EqualTo(origBytes.LongLength));
         Assert.That(result.OptimizedSize, Is.GreaterThan(0));
@@ -83,14 +83,14 @@ public class CvfOptimizerTests {
   }
 
   [Test, Category("Optimize")]
-  public void Optimize_DriveSpace_PicksDsLz77PlusPlus() {
+  public void Optimize_DriveSpace_PicksJmPlusPlus() {
     var desc = new DriveSpaceFormatDescriptor();
     var payload = CompressiblePayload();
-    var src = CreateSourceCvf(desc, payload, "ds-lz77");
+    var src = CreateSourceCvf(desc, payload, "jm");
 
     try {
       var result = CvfOptimizer.Optimize(src, desc);
-      Assert.That(result.MethodUsed, Is.EqualTo("ds-lz77++"));
+      Assert.That(result.MethodUsed, Is.EqualTo("jm++"));
     } finally {
       if (File.Exists(src)) File.Delete(src);
     }
@@ -101,10 +101,7 @@ public class CvfOptimizerTests {
   // =========================================================================
 
   [Test, Category("Optimize")]
-  public void Optimize_DriveSpace3_PicksDsLz77PlusPlus_ForCompressibleInput() {
-    // DriveSpace 3 now publishes the full four-tier set ("stored", "ds-lz77",
-    // "ds-lz77+", "ds-lz77++") — the optimizer must pick the most-'+' non-
-    // stored method, same as for ds-lz77.
+  public void Optimize_DriveSpace3_PicksAutoPlusPlus_ForCompressibleInput() {
     var desc = new DriveSpace3FormatDescriptor();
     var payload = CompressiblePayload();
     var src = CreateSourceCvf(desc, payload, "stored");
@@ -112,8 +109,8 @@ public class CvfOptimizerTests {
     try {
       var result = CvfOptimizer.Optimize(src, desc);
       Assert.Multiple(() => {
-        Assert.That(result.MethodUsed, Is.EqualTo("ds-lz77++"),
-          "Optimizer should pick the most-'+' non-stored method (ds-lz77++).");
+        Assert.That(result.MethodUsed, Is.EqualTo("auto++"),
+          "Optimizer should pick the most-'+' non-stored method (auto++).");
         Assert.That(result.OriginalSize, Is.GreaterThan(0));
         Assert.That(File.Exists(src), Is.True);
       });

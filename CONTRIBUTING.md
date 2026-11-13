@@ -36,6 +36,14 @@ The solution uses the `.slnx` XML solution format. `Directory.Build.props` appli
 
 ## Test
 
+
+Fixtures run in parallel (`Compression.Tests/TestParallelism.cs`); the tests inside one fixture
+run in order. Keep every fixture independent: its own temp directory (`Guid`-named), its own
+device-mapper or mount names, no fixed paths shared with another fixture, no process-wide
+settings. A fixture that must change process-wide state (the current directory, an environment
+variable, a global switch or observer) is marked `[NonParallelizable]` with the reason beside it.
+Add `-- NUnit.NumberOfTestWorkers=1` to run the suite sequentially, as the performance step does.
+
 ### Default tier
 
 The tier that must pass. It excludes every category that needs an external tool

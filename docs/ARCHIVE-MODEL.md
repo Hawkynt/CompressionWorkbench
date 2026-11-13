@@ -187,7 +187,7 @@ new FormatOptionDescriptor(
     Key: "Method", DisplayName: "Compression", Kind: FormatOptionKind.Enum,
     Default: "Auto", AllowedValues: ["Stored", "JM", "SQ", "Auto"],
     Description: "…explain each value + 3rd-party/OS compatibility…",
-    DependsOn: "Compatibility=Genuine")   // cascading: only shown when applicable
+    DependsOn: "Compress=true")   // cascading: only shown when applicable
 ```
 
 `Kind` ∈ `String | Integer | Boolean | Enum`; `DependsOn` gates an option on

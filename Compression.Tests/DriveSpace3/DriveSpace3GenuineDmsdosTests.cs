@@ -25,7 +25,6 @@ public class DriveSpace3GenuineDmsdosTests {
 
   [Test, Category("DriverProof")]
   [TestCase(CvfLzMethod.Stored)]
-  [TestCase(CvfLzMethod.Ds)]
   [TestCase(CvfLzMethod.Jm)]
   [TestCase(CvfLzMethod.Sq)]
   [TestCase(CvfLzMethod.Auto)]

@@ -37,11 +37,18 @@ internal static class DmsdosCache {
   public static string CvfTest(string buildDir) => Path.Combine(buildDir, "cvftest");
   public static string DcRead(string buildDir) => Path.Combine(buildDir, "dcread");
 
+  private static readonly object FillGate = new();
+
   /// <summary>
   /// Returns the path to a built dmsdos <c>build/</c> directory, or <c>null</c>
   /// if the tools cannot be produced on this machine.
   /// </summary>
   public static string? EnsureTools() {
+    // Parallel fixtures share this cache: one fill at a time, the rest then hit the cache.
+    lock (FillGate) return EnsureToolsUnlocked();
+  }
+
+  private static string? EnsureToolsUnlocked() {
     var explicitDir = Environment.GetEnvironmentVariable("CWB_DMSDOS_BUILD");
     if (!string.IsNullOrEmpty(explicitDir) && File.Exists(Path.Combine(explicitDir, "cvftest")))
       return explicitDir;

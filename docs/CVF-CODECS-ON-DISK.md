@@ -14,6 +14,7 @@ alone, with dmsdos run only as a black box; the container layouts (MDFAT, AMAP, 
 | dmsdos (Frank Gockel, Pavel Pisa, Jaroslav Fojtik; GPL), <https://github.com/sandsmark/dmsdos>, master as of 2026-10 | 2 — licence-incompatible | Read as a description of behaviour to write this document; its library is the **black-box oracle** that produced the reference vectors and that reads our output back. No code was taken. |
 | RFC 1974, *PPP Stac LZS Compression Protocol* (and RFC 2395) | 3 — standard | The LZS token grammar SD-3 uses. |
 | dmsdos `doc/dmsdos.doc` | 4 — project documentation | Method names: JM-0-0 *Normal*, JM-0-1 *High*, SQ-0-0 *Ultra* for DriveSpace 3; SD-3 / SD-4 for Stacker 3 / 4. |
+| Microsoft KB Q138310 (Plus! `Drvspace.txt`), <https://jeffpar.github.io/kbarchive/kb/138/Q138310/> | 3 — vendor documentation | DriveSpace 3's HiPack and UltraPack formats, chosen per file by Compression Agent |
 
 The constants in the tables below (offset classes, length extensions, run tokens) are copied
 exactly; they are arbitrary-but-agreed values.
@@ -33,6 +34,41 @@ evidence obtainable on this machine, and it is stated as such in every test that
 An SD-3 stream can never start with either word: its first token must be a literal (there is
 nothing to copy from yet), so its first bit is 0 and its first byte is below `0x80`, ruling out
 `81 00`; and for `44 53` the second token would be a long-offset match reaching before the start.
+
+**Which codecs real Stacker writes.** The dmsdos documentation lists the Stacker methods as SD-3
+(Stacker 3, no header; usable on Stacker 3 and 4) and `0x81-0` = SD-4 (Stacker 4 only). It describes
+writing DS-0-0 to a Stacker volume only as dmsdos's own write option, "not the native Stacker format",
+and no Stac documentation or Stacker-written sample was found that uses DS. So DS is not part of the
+Stacker format: `GenuineStackerWriter` writes stored, SD-3 and (Stacker 4 only) SD-4 clusters, and
+`GenuineStackerReader` refuses a DS payload in any Stacker cluster, whole or fragmented. dmsdos itself
+picks the decoder from the first word regardless of volume type, which is why it reads such a cluster.
+
+### Which codecs each Microsoft product writes
+
+The dmsdos documentation's method table records which driver writes which header (separately from
+dmsdos's own write options):
+
+| Header | Written by | Volume |
+|---|---|---|
+| `DS-0-2` | MS-DOS 6.0 / 6.2 DoubleSpace | version 2 (16 sectors per cluster) |
+| `DS-0-0` | Windows 95 on DoubleSpace volumes | version 2 |
+| `JM-0-0` | MS-DOS 6.22 DriveSpace, and Windows 95 DriveSpace 3 (*Normal*) | version 2 / version 3 |
+| `JM-0-1` | Windows 95 DriveSpace 3 *High* | version 3 (64 sectors per cluster) |
+| `SQ-0-0` | Windows 95 DriveSpace 3 *Ultra* | version 3 |
+
+Microsoft's Plus! readme (KB Q138310) names the DriveSpace 3 formats HiPack and UltraPack, chosen per
+file by Compression Agent. So:
+
+* **Created** — DoubleSpace: stored or DS clusters (`DS-0-0`). DriveSpace: stored or JM clusters
+  (`JM-0-0`). DriveSpace 3: stored, JM (`JM-0-0`) or SQ clusters, Auto choosing the smaller of the two
+  per cluster. Every other codec is refused with the reason.
+* **Read** — a version-2 volume: DS and JM, since the container does not record which product wrote
+  it; an SQ cluster is refused, as only DriveSpace 3 writes SQ. A version-3 volume: JM, SQ and DS (DS is
+  kept readable because DoubleSpace and DriveSpace volumes can be upgraded to DriveSpace 3; whether an
+  upgrade leaves DS clusters behind is not established, as no such volume was available). Edits rebuild
+  with the codec the volume already uses.
+* **Not written:** `DS-0-2` and `JM-0-1` — both decode identically to the `-0-0` versions; our encoders
+  stamp version 0.
 
 ### Stacker AMAP flags
 
@@ -68,14 +104,30 @@ Measured with dmsdos as a black box: volumes were built with candidate layouts a
   | 4 | 4·*n* | one entry per further piece: 16-bit little-endian sector, sector count − 1, one byte that was 0 in every accepted volume |
 
 * The compressed payload (chosen by its first word as for any Stacker cluster; SD-3 and SD-4 were
-  verified, a DS payload was not read by dmsdos in this position) starts right after the entries, at byte 4 + 4·*n* of the first piece, and continues through the
+  verified; dmsdos did not read a DS payload in this position, and `GenuineStackerReader` refuses one) starts right after the entries, at byte 4 + 4·*n* of the first piece, and continues through the
   pieces in list order. A stored payload is not possible: dmsdos decompresses fragmented clusters.
 * Accepted: one to three further pieces, first pieces of one and two sectors, SD-3 and SD-4 payloads.
   Not established: the meaning of the entries' fourth byte (perhaps the sector's high bits on volumes
   past 65535 sectors) — `GenuineStackerReader` refuses an entry where it is non-zero.
 
-Suballocated clusters (bit 7 and bit 5 set) are refused by `GenuineStackerReader`; their layout has
-not been measured.
+### Stacker suballocated clusters — partly measured
+
+Suballocated clusters (bit 7 and bit 5 set) are refused by `GenuineStackerReader`: their layout is not
+established. What dmsdos showed as a black box (trial volumes read with `dcread`):
+
+* It looks for the signature `34 12` (the word `0x1234`) in the **last two bytes of the AMAP run's first
+  sector**. Without it — or with it at the start of the run or at the end of the run's last sector —
+  dmsdos reports the suballocation signature as not found and refuses the cluster.
+* With the signature in place and the 30 bytes before it (offsets 480..509) all zero, dmsdos reports the
+  suballocation as not present and refuses the cluster.
+* With any non-zero byte among those 30 bytes, dmsdos decodes the run as a compressed stream starting
+  at the first byte of that first sector — so the trailer fields before the signature describe the
+  suballocated data, but which field means what (offsets, lengths, owning clusters) was not
+  established. Refuted: a payload placed after a header sector, read from the next sector.
+
+### DriveSpace 3 fragmented clusters
+
+Not measured: no trial volumes were built, and `GenuineDvr3Reader` does not read them.
 
 ## 🔢 DS-0-x and JM-0-x
 
@@ -109,8 +161,8 @@ JM distance code: `0` + 6 bits (*d*), `1 0` + 8 bits (64 + *v*), `1 1` + 12 bits
 
 **Sync.** Distance 4415 (`0x113F`, the all-ones 12-bit long form) is a sync marker with no length:
 it may appear where the decoded position is a multiple of 512, and one must follow the last byte
-of the cluster (DS: `1 1 1` + 12 ones; JM: `1 0` + `1 1` + 12 ones). Stacker's use of the DS
-decoder does not require the final sync.
+of the cluster (DS: `1 1 1` + 12 ones; JM: `1 0` + `1 1` + 12 ones). dmsdos's DS decoder on a
+Stacker volume does not require the final sync (but see above: DS is not a Stacker codec).
 
 Copies may overlap (distance shorter than length) and are performed byte by byte.
 
@@ -220,11 +272,12 @@ full 15-bit limit for both codes.
   `CvfReferenceVectorTests` decodes every one to its input. The README there says how they were
   made.
 * `GenuineStackerDmsdosTests`, `DriveSpace3GenuineDmsdosTests` and the DoubleSpace driver gate in
-  `ExternalFsInteropTests` have dmsdos mount volumes our writers produced — Stacker with SD-3, SD-4,
-  DS and Auto clusters among them — and read every file back byte-exact.
+  `ExternalFsInteropTests` have dmsdos mount volumes our writers produced — Stacker 3 with SD-3 and
+  Stacker 4 with SD-3/SD-4 clusters among them — and read every file back byte-exact.
 
 ## ⚠️ Not covered
 
-* **DriveSpace 3 fragmented clusters** (an MDFAT flag dmsdos itself describes as guessed) and
-  **Stacker suballocated clusters** are not read: no layout has been measured for either.
+* **DriveSpace 3 fragmented clusters** (an MDFAT flag dmsdos itself describes as guessed) are not
+  read: no layout has been measured. **Stacker suballocated clusters** are not read: their trailer is
+  only partly measured (see above).
 * No Microsoft or Stac tool has produced or read any of these streams on this machine.

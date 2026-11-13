@@ -54,6 +54,8 @@ internal static class FreeDosCache {
     }
   }
 
+  private static readonly object FillGate = new();
+
   /// <summary>
   /// Returns the cached path to <c>FD14LIVE.iso</c>, fetching + extracting on
   /// first use. Returns <c>null</c> on any failure — callers must
@@ -64,6 +66,11 @@ internal static class FreeDosCache {
   /// </para>
   /// </summary>
   public static string? EnsureLiveCdIso() {
+    // Parallel fixtures share this cache: one fill at a time, the rest then hit the cache.
+    lock (FillGate) return EnsureLiveCdIsoUnlocked();
+  }
+
+  private static string? EnsureLiveCdIsoUnlocked() {
     // 1. Honor explicit env var first — air-gapped CI / dev machines can stage
     //    the ISO out-of-band and skip the network round-trip.
     var explicitPath = Environment.GetEnvironmentVariable("CWB_FREEDOS_ISO");
@@ -81,7 +88,9 @@ internal static class FreeDosCache {
         var bytes = _http.Value.GetByteArrayAsync(LiveCdZipUrl).GetAwaiter().GetResult();
         if (!Sha256OfBytes(bytes).Equals(LiveCdZipSha256, StringComparison.OrdinalIgnoreCase))
           return null; // Tampered mirror — refuse to cache a mystery blob.
-        File.WriteAllBytes(zipPath, bytes);
+        var partial = zipPath + "." + Guid.NewGuid().ToString("N") + ".partial";
+        File.WriteAllBytes(partial, bytes);
+        File.Move(partial, zipPath, overwrite: true);
       } catch (HttpRequestException) {
         return null; // offline / DNS / 4xx / 5xx
       } catch (TaskCanceledException) {

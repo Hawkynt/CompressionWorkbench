@@ -12,8 +12,8 @@ namespace Compression.Lib;
 /// Parsing agrees with <see cref="Compression.Registry.MethodNameParser"/>, which
 /// is what the writers on the far side of the registry boundary read the same
 /// string with. It used to strip exactly one trailing '+' where that parser strips
-/// all of them and counts, so the two read one input two ways: "ds-lz77++" reached
-/// the CVF writers as "ds-lz77+", and a caller who asked for the third effort tier
+/// all of them and counts, so the two read one input two ways: "jm++" reached
+/// the CVF writers as "jm+", and a caller who asked for the third effort tier
 /// silently got the second.
 /// </remarks>
 public readonly record struct MethodSpec(string Name, bool Optimize) {

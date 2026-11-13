@@ -1,5 +1,3 @@
-using System;
-using System.IO;
 using Compression.Registry;
 using FileSystem.Stacker;
 
@@ -20,62 +18,60 @@ public class StackerDetectionTests {
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    Assert.That(d is IFormatOptionsSchema schema && schema.OptionsSchema.Any(o => o.Key == "Compatibility"), Is.False,
+      "Stacker writes one layout only; there is no layout choice to offer.");
   }
 
-  // A self-produced STACVOL: banner + Stacker Control Block (BPB) + inner FAT12.
   [Test, Category("HappyPath")]
-  public void Detect_WrittenVolume_ParsesBannerAndScb() {
-    var w = new StackerWriter { Version = 3, VolumePath = "C:\\STACVOL.DSK" };
-    w.AddFile("HELLO.TXT", System.Text.Encoding.ASCII.GetBytes("hello stacker"));
-    var img = w.Build();
+  public void GivenAVolumeCreatedByTheDescriptor_WhenDetected_ThenItIsStacker() {
+    var image = Create(new FormatCreateOptions());
 
-    using var r = new StackerReader(new MemoryStream(img));
-    Assert.That(r.ValidHeader, Is.True);
-    Assert.That(r.Version, Is.EqualTo(3));
-    Assert.That(r.VolumeName, Does.Contain("STACVOL.DSK"));
-    Assert.That(r.SectorsPerCluster, Is.GreaterThan(0));
-    Assert.That(r.NumberOfFats, Is.EqualTo(2));
-    Assert.That(r.RootEntries, Is.EqualTo(512));
-    Assert.That(r.Entries, Has.Some.Matches<StackerEntry>(e => e.Name == "HELLO.TXT"));
+    Assert.That(Compression.Lib.FormatDetector.DetectByMagic(image.AsSpan(0, 4096)).ToString(), Is.EqualTo("Stacker"));
   }
 
-  // Detection grounded in a REAL Stacker volume produced by the genuine Stacker
-  // 3.10 CREATE tool under MS-DOS 6.22, staged at ~/.cw-qemu/real_stacker_v3.dsk.
+  [Test, Category("HappyPath")]
+  public void GivenDefaultOptions_WhenCreated_ThenTheVolumeIsTheRealStacvolLayout() {
+    var image = Create(new FormatCreateOptions());
+
+    using var reader = new GenuineStackerReader(new MemoryStream(image));
+    Assert.That(reader.Entries.Select(e => e.Name), Is.EquivalentTo(new[] { "DATA.BIN" }));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_List_Extract() {
+    var d = new StackerFormatDescriptor();
+    using var ms = new MemoryStream(Create(new FormatCreateOptions()));
+    var entries = d.List(ms, null);
+    Assert.That(entries, Has.Some.Matches<ArchiveEntryInfo>(e => e.Name == "DATA.BIN"));
+  }
+
+  [Test, Category("Sad")]
+  public void GivenAnImageWithoutTheStackerBanner_WhenListed_ThenItIsRejected() {
+    var img = new byte[2048];
+    img[0] = 0xFF; img[1] = 0xFF; img[2] = 0xFF;
+
+    Assert.That(() => new StackerFormatDescriptor().List(new MemoryStream(img), null), Throws.InstanceOf<InvalidDataException>());
+  }
+
+  [Test, Category("Sad")]
+  public void GivenAnUnknownCodec_WhenCreated_ThenItIsRefused()
+    => Assert.That(() => Create(new FormatCreateOptions { MethodName = "stacker-lzs" }), Throws.InstanceOf<ArgumentException>());
+
+  // A real Stacker volume produced by the Stacker 3.10 CREATE tool under MS-DOS 6.22, staged at
+  // ~/.cw-qemu/real_stacker_v3.dsk.
   [Test, Category("ExternalInterop")]
   public void Detect_RealStackerVolume() {
     var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     var path = Path.Combine(home, ".cw-qemu", "real_stacker_v3.dsk");
     if (!File.Exists(path))
       Assert.Ignore("Real Stacker STACVOL not staged at ~/.cw-qemu/real_stacker_v3.dsk.");
-    using var r = new StackerReader(File.OpenRead(path));
-    Assert.That(r.ValidHeader, Is.True, "our reader must recognize a genuine Stacker STACVOL.");
-    Assert.That(r.Version, Is.EqualTo(3));
-    Assert.That(r.VolumeName, Does.Contain("STACVOL.DSK"));
-    // Genuine SCB/BPB fields verified byte-for-byte against the oracle image.
-    Assert.That(r.SectorsPerCluster, Is.EqualTo(16));
-    Assert.That(r.NumberOfFats, Is.EqualTo(2));
-    Assert.That(r.SectorsPerFat, Is.EqualTo(12));
-    Assert.That(r.RootEntries, Is.EqualTo(512));
+    using var reader = new GenuineStackerReader(File.OpenRead(path));
+    Assert.That(reader.Version, Is.LessThan(410), "a Stacker 3 volume");
   }
 
-  [Test, Category("Sad")]
-  public void Detect_NotStacker_HasNoValidHeader() {
-    var img = new byte[2048];
-    img[0] = 0xFF; img[1] = 0xFF; img[2] = 0xFF;
-    using var r = new StackerReader(new MemoryStream(img));
-    Assert.That(r.ValidHeader, Is.False);
-    Assert.That(r.Entries, Is.Empty);
-  }
-
-  [Test, Category("HappyPath")]
-  public void Descriptor_List_Extract() {
-    var w = new StackerWriter();
-    w.AddFile("DATA.BIN", new byte[] { 1, 2, 3, 4, 5 });
-    var img = w.Build();
-
-    var d = new StackerFormatDescriptor();
-    using var ms = new MemoryStream(img);
-    var entries = d.List(ms, null);
-    Assert.That(entries, Has.Some.Matches<ArchiveEntryInfo>(e => e.Name == "DATA.BIN"));
+  private static byte[] Create(FormatCreateOptions options) {
+    using var ms = new MemoryStream();
+    ((IArchiveCreatable)new StackerFormatDescriptor()).Create(ms, [ArchiveInputInfo.InMemory("DATA.BIN", [1, 2, 3, 4, 5])], options);
+    return ms.ToArray();
   }
 }

@@ -2300,9 +2300,7 @@ public class ExternalFsInteropTests {
   public void DoubleSpace_OurImage_DmsdosAccepts(Compression.Core.FileSystems.Cvf.CvfLzMethod method) {
     // Driver-proof: the independent dmsdos driver (built on demand via
     // DmsdosCache) must detect our genuine DoubleSpace/DriveSpace v2 CVF,
-    // mount it, and read every file back byte-exact. The feature-rich
-    // DoubleSpaceWriter emits a self-consistent (non-genuine) layout; the
-    // driver-genuine emitter is GenuineCvfWriter, proven here.
+    // mount it, and read every file back byte-exact.
     DmsdosOracle.Require();
 
     var files = new (string Name, byte[] Data)[] {
@@ -2337,12 +2335,12 @@ public class ExternalFsInteropTests {
   // a single source of truth.
 
   /// <summary>Drives a DBLSPACE.EXE / DRVSPACE.EXE /CHKDSK run inside DOSBox-X
-  /// against a CVF produced by our writer with the given variant. Skips
+  /// against a CVF produced by our writer with the given codec. Skips
   /// cleanly with an actionable hint when any prerequisite is missing.</summary>
   private void RunCvfChkdskGate(
     string envVarPrimary,
     string envVarFallback,
-    CvfVariant variant,
+    Compression.Core.FileSystems.Cvf.CvfLzMethod method,
     string driverName,
     string productLabel) {
     var msdosImg = Environment.GetEnvironmentVariable(envVarPrimary);
@@ -2362,9 +2360,9 @@ public class ExternalFsInteropTests {
         $"(not classic DOSBox) because only DOSBox-X loads {driverName}.BIN reliably.");
     }
 
-    var dbl = new DoubleSpaceWriter { Variant = variant };
+    var dbl = new GenuineCvfWriter { CompressionMethod = method };
     dbl.AddFile("HELLO.TXT", "Test from CompressionWorkbench"u8.ToArray());
-    var cvfPath = Path.Combine(this._tmpDir, $"test_{variant}.cvf");
+    var cvfPath = Path.Combine(this._tmpDir, $"test_{method}.cvf");
     File.WriteAllBytes(cvfPath, dbl.Build());
 
     var hostShareDir = this._tmpDir;
@@ -2412,27 +2410,25 @@ public class ExternalFsInteropTests {
     });
   }
 
-  /// <summary>DBLSPACE gate — MS-DOS 6.0/6.2, CvfVariant.DoubleSpace60, signature
-  /// <c>DBLS</c>. Env var: <c>CWB_MSDOS_DBLSPACE_BOOT_IMG</c> (or legacy
+  /// <summary>DBLSPACE gate — MS-DOS 6.0/6.2, DS-0-0 clusters. Env var: <c>CWB_MSDOS_DBLSPACE_BOOT_IMG</c> (or legacy
   /// <c>CWB_MSDOS_BOOT_IMG</c>). Runs <c>DBLSPACE /CHKDSK D:</c> in DOSBox-X.</summary>
   [Test]
   public void DoubleSpace_OurImage_DblspaceChkdsk() =>
     this.RunCvfChkdskGate(
       envVarPrimary: "CWB_MSDOS_DBLSPACE_BOOT_IMG",
       envVarFallback: "CWB_MSDOS_BOOT_IMG",
-      variant: CvfVariant.DoubleSpace60,
+      method: Compression.Core.FileSystems.Cvf.CvfLzMethod.Ds,
       driverName: "DBLSPACE",
       productLabel: "MS-DOS 6.0/6.2 DoubleSpace");
 
-  /// <summary>DRVSPACE gate — MS-DOS 6.22+, CvfVariant.DriveSpace62, signature
-  /// <c>DVRS</c>. Env var: <c>CWB_MSDOS_DRVSPACE_BOOT_IMG</c> (or legacy
+  /// <summary>DRVSPACE gate — MS-DOS 6.22+, JM-0-0 clusters. Env var: <c>CWB_MSDOS_DRVSPACE_BOOT_IMG</c> (or legacy
   /// <c>CWB_MSDOS622_BOOT_IMG</c>). Runs <c>DRVSPACE /CHKDSK D:</c> in DOSBox-X.</summary>
   [Test]
   public void DriveSpace_OurImage_DrvspaceChkdsk() =>
     this.RunCvfChkdskGate(
       envVarPrimary: "CWB_MSDOS_DRVSPACE_BOOT_IMG",
       envVarFallback: "CWB_MSDOS622_BOOT_IMG",
-      variant: CvfVariant.DriveSpace62,
+      method: Compression.Core.FileSystems.Cvf.CvfLzMethod.Jm,
       driverName: "DRVSPACE",
       productLabel: "MS-DOS 6.22 DriveSpace");
 
@@ -2554,7 +2550,7 @@ internal static class FsInteropToolbox {
   public static bool WslHasUfsKernelModule { get; } = DetectWslUfsModule();
   public static bool WslHasAdfsKernelModule { get; } = DetectWslAdfsModule();
 
-  private static readonly Dictionary<string, bool> _wslToolCache = new(StringComparer.Ordinal);
+  private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _wslToolCache = new(StringComparer.Ordinal); // fixtures run in parallel
 
   private static bool DetectWslPasswordlessSudo() {
     if (!WslAvailable) return false;

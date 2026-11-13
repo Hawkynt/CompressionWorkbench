@@ -43,6 +43,8 @@ internal static class RetroImageCache {
   public static string? Fetch(string url, string sha256, string localName) =>
     FetchInternal(url, sha256, localName, decompressGz: false);
 
+  private static readonly object FillGate = new();
+
   /// <summary>
   /// Fetches a gzipped disk image (<c>.d64.gz</c> etc.), decompresses it, verifies
   /// the decompressed bytes' sha256 matches <paramref name="sha256OfDecompressed"/>,
@@ -53,6 +55,11 @@ internal static class RetroImageCache {
     FetchInternal(url, sha256OfDecompressed, localName, decompressGz: true);
 
   private static string? FetchInternal(string url, string expectedSha256, string localName, bool decompressGz) {
+    // Parallel fixtures share this cache: one fill at a time, the rest then hit the cache.
+    lock (FillGate) return FetchInternalUnlocked(url, expectedSha256, localName, decompressGz);
+  }
+
+  private static string? FetchInternalUnlocked(string url, string expectedSha256, string localName, bool decompressGz) {
     var localPath = Path.Combine(CacheDir, localName);
     // Cache hit: trust if sha matches.
     if (File.Exists(localPath) && Sha256Of(localPath).Equals(expectedSha256, StringComparison.OrdinalIgnoreCase))
@@ -73,7 +80,9 @@ internal static class RetroImageCache {
         // Hash mismatch — don't cache a mystery blob; surface as unavailable.
         return null;
       }
-      File.WriteAllBytes(localPath, bytes);
+      var partial = localPath + "." + Guid.NewGuid().ToString("N") + ".partial";
+      File.WriteAllBytes(partial, bytes);
+      File.Move(partial, localPath, overwrite: true);
       return localPath;
     } catch (HttpRequestException) {
       return null;  // offline, DNS, 4xx, 5xx
