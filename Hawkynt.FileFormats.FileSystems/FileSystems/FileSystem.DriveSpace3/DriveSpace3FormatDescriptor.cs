@@ -8,41 +8,36 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.DriveSpace3;
 
 /// <summary>
-/// Descriptor for Microsoft DriveSpace 3 CVF (Windows 95 Plus! Pack, 1995).
-/// Distinguished from DoubleSpace/DriveSpace 2 by the <c>MS_DSP3</c> MDBPB
-/// signature at file offset 3 and the <c>DVR3</c> CvfSignature at offset 36.
-/// That <c>MS_DSP3</c> layout is CompressionWorkbench's own (see the <c>Compatibility</c> option);
-/// real DriveSpace 3 volumes are the <c>MSDBL6.0</c> container written by
-/// <see cref="GenuineDvr3Writer"/>, whose JM and SQ clusters dmsdos reads.
+/// Microsoft DriveSpace 3 compressed volume file (Windows 95 Plus! Pack / OSR2): the real
+/// <c>MSDBL6.0</c> container with 32 KiB clusters, version 3 and a 5-byte MDFAT, whose clusters are
+/// stored or compressed per cluster (JM-0-x <i>Normal/High</i>, SQ-0-0 <i>Ultra</i>, DS-0-x). Volumes
+/// are written only in the layout the independent dmsdos driver mounts ("drivespace 3 CVF"); edits
+/// rebuild the volume.
 /// <para>
-/// Read/write/modify/defrag are delegated to the shared DoubleSpace
-/// infrastructure (<see cref="DoubleSpaceWriter"/> routed through
-/// <see cref="CvfVariant.DriveSpace3"/>, <see cref="DoubleSpaceReader"/> with
-/// DS LZ77 clusters, <see cref="DoubleSpaceExtentMap"/>,
-/// <see cref="DoubleSpaceBlockMover"/>) — the on-disk MDBPB+MDFAT+BitFAT
-/// layout is byte-compatible across the whole CVF family; only the OEM bytes
-/// and inner-cluster codec differ. This brings DriveSpace 3 to full parity
-/// with DoubleSpace/DriveSpace 6.22 for defrag, wipe-empty, modify, extent
-/// map and block mover.
+/// Shares the <c>.cvf</c> extension and the <c>MSDBL6.0</c> name with DoubleSpace/DriveSpace; its
+/// signature additionally requires 64 sectors per cluster, which wins detection for these volumes.
 /// </para>
-/// <para>
-/// Shares the <c>.cvf</c> extension with DoubleSpace; FormatDetector
-/// disambiguates by magic.
-/// </para>
-///
 /// References:
 /// <list type="bullet">
-///   <item><description><c>https://github.com/sandsmark/dmsdos</c> — dmsdos, the GPL Linux CVF driver whose source + <c>doc/dmsdos.doc</c> are the de-facto DriveSpace 3 on-disk specification (5-byte MDFAT, JM and SQ cluster codecs)</description></item>
+///   <item><description><c>docs/CVF-CODECS-ON-DISK.md</c> — the cluster codecs, measured against dmsdos</description></item>
 ///   <item><description>Microsoft Plus! for Windows 95 documentation (DriveSpace 3) — original vendor description</description></item>
-///   <item><description><c>https://en.wikipedia.org/wiki/DriveSpace</c> — Wikipedia overview of the CVF family</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/DriveSpace</c> — overview of the CVF family</description></item>
 /// </list>
 /// </summary>
-public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // The optimization adapters are keyed on this descriptor's runtime type, so the
   // registration has to have run before any instance can be looked up. Doing it from
   // the type initializer gives exactly that guarantee without a module initializer.
   static DriveSpace3FormatDescriptor() => DriveSpace3OptimizationRegistration.Register();
+
+  private static readonly IReadOnlyDictionary<string, CvfLzMethod> Codecs = new Dictionary<string, CvfLzMethod> {
+    ["jm"] = CvfLzMethod.Jm,
+    ["sq"] = CvfLzMethod.Sq,
+    ["ds"] = CvfLzMethod.Ds,
+    ["auto"] = CvfLzMethod.Auto,
+  };
+
   /// <inheritdoc />
   public string Id => "DriveSpace3";
   /// <inheritdoc />
@@ -51,428 +46,138 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   public FormatCategory Category => FormatCategory.Archive;
   /// <inheritdoc />
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <inheritdoc />
   public string DefaultExtension => ".cvf";
   /// <inheritdoc />
-  // Extension-shared with DoubleSpace; detection routes by MS_DSP3 magic.
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
+  // Extension-shared with DoubleSpace; detection routes by the signature below.
   public IReadOnlyList<string> Extensions => [];
   /// <inheritdoc />
   public IReadOnlyList<string> CompoundExtensions => [];
   /// <inheritdoc />
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    new("MS_DSP3"u8.ToArray(), Offset: 3, Confidence: 0.95),
+    // "MSDBL6.0", any bytes per sector, then 64 sectors per cluster.
+    new([.. "MSDBL6.0"u8, 0x00, 0x00, 64], Offset: 3, Confidence: 0.95,
+      Mask: [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0xFF]),
   ];
   /// <inheritdoc />
-  // Four-tier effort set matches the DoubleSpace/DriveSpace ds-lz77 family:
-  // base / + / ++ are routed through DsCompression.CompressDriveSpace(data, effort),
-  // with the per-cluster shrink-or-store fallback inside DsCompression
-  // applying at every tier.
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [
-    new("stored",   "Stored (no compression)"),
-    new("ds-lz77",   "DS LZ77"),
-    new("ds-lz77+",  "DS LZ77 (lazy matching, slower better ratio)"),
-    new("ds-lz77++", "DS LZ77 (Zopfli-style iteration, best ratio)"),
-  ];
+  public IReadOnlyList<FormatMethodInfo> Methods { get; } = CvfCodecChoice.Methods(
+    ("jm", "DriveSpace 3 JM-0-x LZ77 (Normal/High)"),
+    ("sq", "DriveSpace 3 SQ-0-0 (Ultra; DEFLATE)"),
+    ("ds", "DoubleSpace DS-0-x LZ77"),
+    ("auto", "Smallest of DS, JM and SQ per cluster"));
   /// <inheritdoc />
   public string? TarCompressionFormatId => null;
   /// <inheritdoc />
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Microsoft DriveSpace 3 CVF (Win95 Plus! Pack 1995). Shares the
-  /// DoubleSpace MDBPB+MDFAT+BitFAT infrastructure (extent map, block mover,
-  /// planner-driven defrag, wipe-empty, add/remove via rebuild). Per-cluster
-  /// payload is DriveSpace's DS LZ77 with the four-tier effort set — <c>ds-lz77</c> (greedy),
-  /// <c>ds-lz77+</c> (lazy matching), <c>ds-lz77++</c> (iterated multi-pass).
-  /// The shrink-or-store fallback inside the codec emits a stored CVF run
-  /// when the compressed payload would not shrink the cluster, so
-  /// incompressible regions are not penalised at any effort level.
-  /// </summary>
+  /// <inheritdoc />
   public string Description =>
-    "Microsoft DriveSpace 3 CVF (Win95 Plus! Pack 1995) — defrag/wipe/modify/extent-map/block-mover parity with DoubleSpace via shared MDBPB infrastructure; per-cluster DS LZ77 with full effort tiers (greedy / lazy / iterated) and stored-run fallback at every tier.";
+    "Microsoft DriveSpace 3 compressed volume file, Windows 95 (MSDBL6.0 container, 32 KiB clusters; stored, JM, SQ or DS clusters). "
+    + "Created volumes are mounted by the dmsdos driver.";
 
-  // ── IFormatOptionsSchema ──────────────────────────────────────────────────
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
-    new FormatOptionDescriptor(
-      Key: "Compatibility",
-      DisplayName: "On-disk layout",
-      Kind: FormatOptionKind.Enum,
-      Default: "Extended",
-      AllowedValues: ["Genuine", "Extended"],
-      Description:
-        "Genuine — the real Windows 95 DriveSpace 3 layout (MSDBL6.0 container, 32 KB "
-        + "clusters, version flag 3, 5-byte MDFAT, inner FAT16). Mounted and read "
-        + "byte-exact by the independent dmsdos driver (and the real Win95 Plus!/OSR2 "
-        + "DriveSpace 3 driver). Clusters are STORED (uncompressed); single flat root "
-        + "directory; up to ~511 clusters. Choose this for interoperability with real "
-        + "DriveSpace tooling.\n"
-        + "Extended — CompressionWorkbench's feature layout (MS_DSP3/DVR3 header). Adds "
-        + "per-cluster DS LZ77 compression, long filenames, in-place add/remove, defrag "
-        + "and block-mover support, but is readable ONLY by CompressionWorkbench — NOT "
-        + "by the genuine DriveSpace driver or dmsdos."),
-    new FormatOptionDescriptor(
-      Key: "VolumeLabel", DisplayName: "Volume label", Kind: FormatOptionKind.String,
-      Default: "",
-      Description: "Optional 11-char inner-volume label written to the root directory (Genuine layout only).",
-      DependsOn: "Compatibility=Genuine"),
-    new FormatOptionDescriptor(
-      Key: "Timestamp", DisplayName: "File timestamp", Kind: FormatOptionKind.String,
-      Default: "",
-      Description: "Optional ISO-8601 date/time (e.g. 1996-08-24) stamped on every file's "
-        + "FAT directory entry. Blank leaves the date/time unset (Genuine layout only).",
-      DependsOn: "Compatibility=Genuine"),
-    new FormatOptionDescriptor(
-      Key: "Method", DisplayName: "Compression", Kind: FormatOptionKind.Enum,
-      Default: "Auto",
-      AllowedValues: ["Stored", "JM", "SQ", "Auto"],
-      Description: "Per-cluster compression for the Genuine layout. Stored = none. "
-        + "JM = DriveSpace 3 'JM-0-x' LZ (Normal/High). SQ = DriveSpace 3 'SQ-0-0' (Ultra; "
-        + "DEFLATE). Both are read by the real driver and dmsdos. Auto = per cluster keep the "
-        + "smallest of all codecs, falling back to stored.",
-      DependsOn: "Compatibility=Genuine"),
-    new FormatOptionDescriptor(
-      Key: "Level", DisplayName: "Compression level", Kind: FormatOptionKind.Integer,
-      Default: "2",
-      Description: "Codec search effort (1 = fast, higher = better ratio, slower).",
-      DependsOn: "Compatibility=Genuine"),
-    new FormatOptionDescriptor(
-      Key: "ForceCompress", DisplayName: "Force compression", Kind: FormatOptionKind.Boolean,
-      Default: "false",
-      Description: "Keep the compressed form even when it does not shrink a cluster "
-        + "(overrides the per-cluster auto-best stored fallback).",
-      DependsOn: "Compatibility=Genuine"),
+    new(Key: "VolumeLabel", DisplayName: "Volume label", Kind: FormatOptionKind.String, Default: "",
+      Description: "Optional 11-char inner-volume label written to the root directory."),
+    new(Key: "Timestamp", DisplayName: "File timestamp", Kind: FormatOptionKind.String, Default: "",
+      Description: "Optional ISO-8601 date/time (e.g. 1996-08-24) stamped on every file's FAT directory entry. "
+        + "Blank leaves the date/time unset."),
+    new(Key: "Method", DisplayName: "Compression", Kind: FormatOptionKind.Enum, Default: "Auto",
+      AllowedValues: ["Stored", "JM", "SQ", "DS", "Auto"],
+      Description: "Per-cluster compression. Stored = none. JM = 'JM-0-x' LZ (Normal/High). "
+        + "SQ = 'SQ-0-0' (Ultra; DEFLATE). DS = DoubleSpace 'DS-0-x' LZ. Auto = per cluster the smallest, "
+        + "else stored. dmsdos reads all of them."),
+    new(Key: "Level", DisplayName: "Compression level", Kind: FormatOptionKind.Integer, Default: "2",
+      Description: "Codec search effort (1 = fast, up to 4; higher = better ratio, slower)."),
+    new(Key: "ForceCompress", DisplayName: "Force compression", Kind: FormatOptionKind.Boolean, Default: "false",
+      Description: "Keep the compressed form even when it does not shrink a cluster."),
   ];
 
-  private static CvfLzMethod ParseMethod(string s) => s.ToLowerInvariant() switch {
-    "ds" => CvfLzMethod.Ds,
-    "jm" => CvfLzMethod.Jm,
-    "sq" => CvfLzMethod.Sq,
-    "auto" => CvfLzMethod.Auto,
-    _ => CvfLzMethod.Stored,
-  };
+  // The DriveSpace 3 container: MSDBL6.0, 64 sectors per cluster (boot byte 13) and version 3
+  // (boot byte 51) — distinct from DoubleSpace/DriveSpace version 2 (16 sectors per cluster).
+  internal static bool IsDriveSpace3(byte[] data) =>
+    data.Length > 0x34
+    && System.Text.Encoding.ASCII.GetString(data, 3, 8) == "MSDBL6.0"
+    && data[0x0D] == 64
+    && data[0x33] == 3;
 
-  // =========================================================================
-  //                         Archive read / extract
-  // =========================================================================
+  private static GenuineDvr3Reader Open(byte[] data) =>
+    IsDriveSpace3(data)
+      ? new GenuineDvr3Reader(new MemoryStream(data))
+      : throw new InvalidDataException("DriveSpace 3: not an MSDBL6.0 volume with 64-sector clusters and version 3.");
 
   /// <inheritdoc />
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var data = ReadAll(stream);
-    if (IsGenuineDvr3(data)) {
-      using var g = new GenuineDvr3Reader(new MemoryStream(data));
-      return g.Entries.Select((e, i) => new ArchiveEntryInfo(
-        i, e.Name, e.Size, e.Size, "stored", e.IsDirectory, false, null)).ToList();
-    }
-    using var r = new DoubleSpaceReader(new MemoryStream(data));
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Size, -1, "ds-lz77", e.IsDirectory, false, null)).ToList();
+    using var reader = Open(GenuineCvfVolume.ReadAll(stream));
+    return reader.Entries.Select((e, i) => new ArchiveEntryInfo(
+      i, e.Name, e.Size, -1, "cvf", e.IsDirectory, false, null)).ToList();
   }
 
   /// <inheritdoc />
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var data = ReadAll(stream);
-    if (IsGenuineDvr3(data)) {
-      using var g = new GenuineDvr3Reader(new MemoryStream(data));
-      foreach (var e in g.Entries) {
-        if (e.IsDirectory) continue;
-        if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
-        WriteFile(outputDir, e.Name, g.Extract(e));
-      }
-      return;
-    }
-    using var r = new DoubleSpaceReader(new MemoryStream(data));
-    foreach (var e in r.Entries) {
+    using var reader = Open(GenuineCvfVolume.ReadAll(stream));
+    foreach (var e in reader.Entries) {
       if (e.IsDirectory) continue;
-      if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      if (files is { Length: > 0 } && !MatchesFilter(e.Name, files)) continue;
+      WriteFile(outputDir, e.Name, reader.Extract(e));
     }
   }
-
-  // =========================================================================
-  //                            Archive create
-  // =========================================================================
 
   /// <inheritdoc />
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     ArgumentNullException.ThrowIfNull(options);
-
-    if (options.GetOption("Compatibility", "Extended").Equals("Genuine", StringComparison.OrdinalIgnoreCase)) {
-      var gw = new GenuineDvr3Writer {
-        VolumeLabel = options.GetOption("VolumeLabel", ""),
-        Timestamp = FatDirStamp.Parse(options.GetOption("Timestamp", "")),
-        CompressionMethod = ParseMethod(options.GetOption("Method", "JM")),
-        CompressionLevel = options.GetOptionInt("Level", 2),
-        ForceCompress = options.GetOptionBool("ForceCompress", false),
-      };
-      foreach (var (name, data) in FlatFiles(inputs))
-        gw.AddFile(name, data);
-      output.Write(gw.Build());
-      return;
-    }
-
-    var w = new DoubleSpaceWriter {
-      Variant = CvfVariant.DriveSpace3,
-      MethodName = MethodWithEffort(options),
+    var (method, level) = CvfCodecChoice.Resolve(options, "auto", Codecs);
+    var writer = new GenuineDvr3Writer {
+      VolumeLabel = options.GetOption("VolumeLabel", ""),
+      Timestamp = FatDirStamp.Parse(options.GetOption("Timestamp", "")),
+      CompressionMethod = method,
+      CompressionLevel = level,
+      ForceCompress = options.GetOptionBool("ForceCompress", false),
     };
     foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
-    output.Write(w.Build());
+      writer.AddFile(name, data);
+    output.Write(writer.Build());
   }
 
-  // The genuine Win95 DriveSpace 3 container: MSDBL6.0 signature, 64 sectors per
-  // cluster (boot byte 13) and version flag 3 (boot byte 51) — distinct from the
-  // Extended MS_DSP3 layout and from DoubleSpace/DriveSpace v2 (16 sec/cluster).
-  private static bool IsGenuineDvr3(byte[] data) =>
-    data.Length > 0x34
-    && System.Text.Encoding.ASCII.GetString(data, 3, 8) == "MSDBL6.0"
-    && data[0x0D] == 64
-    && data[0x33] == 3;
+  /// <summary>Adds files by rebuilding the volume (equal names are replaced).</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) => RebuildInPlace(archive, inputs, null);
 
-  private static byte[] ReadAll(Stream stream) {
-    if (stream.CanSeek) stream.Position = 0;
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    return ms.ToArray();
-  }
+  /// <summary>Removes files by rebuilding the volume without them.</summary>
+  public void Remove(Stream archive, string[] entryNames) => RebuildInPlace(archive, null, entryNames);
 
-  // =========================================================================
-  //                       Modify (add / remove via rebuild)
-  // =========================================================================
+  /// <summary>Repacks the volume's clusters contiguously and drops free sectors; returns bytes reclaimed.</summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)
+    => RebuildInPlace(image, null, null);
 
-  /// <inheritdoc />
-  /// <summary>
-  /// True in-place add via the shared MDBPB-aware
-  /// <see cref="DoubleSpaceInPlaceModifier"/>. BitFAT bits flip, MDFAT
-  /// cluster-allocation entries are written in place, inner FAT chains
-  /// extended, and VFAT dirents are inserted into the root directory
-  /// without rewriting any unrelated bytes. Clusters are DS LZ77 runs.
-  /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    var data = ReadAll(archive);
-    if (IsGenuineDvr3(data)) { WriteBack(archive, RebuildGenuine(data, inputs, null)); return; }
-    DoubleSpaceInPlaceModifier.Add(archive, inputs);
-  }
+  /// <summary>Defragments by rebuilding: every file's clusters end up contiguous.</summary>
+  public void Defragment(Stream archive) => RebuildInPlace(archive, null, null);
 
-  /// <inheritdoc />
-  /// <summary>
-  /// True in-place remove via the shared MDBPB-aware
-  /// <see cref="DoubleSpaceInPlaceModifier"/>. Walks the inner FAT chain,
-  /// zeros each physical run, clears BitFAT bits, zeros MDFAT entries,
-  /// zeros inner FAT chain, and scratches the dirent (+ LFN chain) with 0xE5.
-  /// </summary>
-  public void Remove(Stream archive, string[] entryNames) {
-    var data = ReadAll(archive);
-    if (IsGenuineDvr3(data)) { WriteBack(archive, RebuildGenuine(data, null, entryNames)); return; }
-    DoubleSpaceInPlaceModifier.Remove(archive, entryNames);
-  }
+  /// <summary>Defragments by rebuilding; the rebuild leaves no gaps, whatever <paramref name="options"/> asks for.</summary>
+  public void Defragment(Stream archive, DefragOptions options) => RebuildInPlace(archive, null, null);
 
-  // Rebuild a genuine DVR3 image from its current contents — the basis for
-  // add/remove/defrag/purge on the WORM-style genuine layout. Reading every
-  // file and re-emitting packs clusters contiguously (defrag), re-runs the
-  // auto-best compressor (optimize/shrink) and drops any stale/unused sectors
-  // (purge). The inner volume label is preserved.
-  private static byte[] RebuildGenuine(byte[] data, IReadOnlyList<ArchiveInputInfo>? add, string[]? remove) {
-    using var r = new GenuineDvr3Reader(new MemoryStream(data));
-    var keep = new List<(string Name, byte[] Data)>();
-    var removeSet = remove is null ? null : new HashSet<string>(remove.Select(LeafLower));
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (removeSet is not null && removeSet.Contains(LeafLower(e.Name))) continue;
-      keep.Add((e.Name, r.Extract(e)));
-    }
+  // Reading every file and re-emitting packs clusters contiguously, recompresses every cluster
+  // with the smallest codec and drops stale sectors; the inner volume label is kept.
+  internal static long RebuildInPlace(Stream image, IReadOnlyList<ArchiveInputInfo>? add, string[]? remove) {
+    var data = GenuineCvfVolume.ReadAll(image);
+    using var reader = Open(data);
+    var removeSet = remove is null ? null : new HashSet<string>(remove.Select(GenuineCvfVolume.LeafLower));
+    var keep = reader.Entries
+      .Where(e => !e.IsDirectory && (removeSet is null || !removeSet.Contains(GenuineCvfVolume.LeafLower(e.Name))))
+      .Select(e => (e.Name, Data: reader.Extract(e)))
+      .ToList();
     if (add is not null)
       foreach (var (n, d) in FlatFiles(add)) {
-        keep.RemoveAll(k => LeafLower(k.Name) == LeafLower(n));
+        keep.RemoveAll(k => GenuineCvfVolume.LeafLower(k.Name) == GenuineCvfVolume.LeafLower(n));
         keep.Add((n, d));
       }
-    var w = new GenuineDvr3Writer {
-      VolumeLabel = r.VolumeLabel,
-      CompressionMethod = CvfLzMethod.Auto,
-      CompressionLevel = 2,
-    };
-    foreach (var (n, d) in keep) w.AddFile(n, d);
-    return w.Build();
+    var writer = new GenuineDvr3Writer { VolumeLabel = reader.VolumeLabel, CompressionMethod = CvfLzMethod.Auto, CompressionLevel = 2 };
+    foreach (var (n, d) in keep) writer.AddFile(n, d);
+    var rebuilt = writer.Build();
+    GenuineCvfVolume.WriteBack(image, rebuilt);
+    return Math.Max(0, data.Length - rebuilt.Length);
   }
-
-  private static string LeafLower(string name) {
-    var slash = Math.Max(name.LastIndexOf('/'), name.LastIndexOf('\\'));
-    return (slash >= 0 ? name[(slash + 1)..] : name).ToLowerInvariant();
-  }
-
-  private static void WriteBack(Stream s, byte[] img) {
-    s.Position = 0; s.SetLength(img.Length); s.Write(img); s.Position = 0;
-  }
-
-  // =========================================================================
-  //                         Filesystem extent map
-  // =========================================================================
-
-  /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
-    => DoubleSpaceExtentMap.Enumerate(image);
-
-  // =========================================================================
-  //                              Wipe empty
-  // =========================================================================
-
-  /// <summary>
-  /// Zeros all unused space in the CVF image: every physical sector in the DATA
-  /// region not claimed by a live file/directory run, plus any gaps outside the
-  /// metadata regions, is overwritten with zeros. Cluster-tip wiping is not
-  /// applicable to a CVF — the DATA region holds compressed/stored runs whose
-  /// physical byte length is unrelated to the logical (uncompressed) file size.
-  /// </summary>
-  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
-    ArgumentNullException.ThrowIfNull(image);
-    var data = ReadAll(image);
-    if (IsGenuineDvr3(data)) {
-      // Purge: a fresh rebuild contains only live clusters packed contiguously,
-      // so no stale/unused payload sectors survive.
-      var before = data.Length;
-      var rebuilt = RebuildGenuine(data, null, null);
-      WriteBack(image, rebuilt);
-      return Math.Max(0, before - rebuilt.Length);
-    }
-    image.Position = 0;
-    var imageSize = image.Length;
-    var extents = DoubleSpaceExtentMap.Enumerate(image);
-    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
-  }
-
-  // =========================================================================
-  //                         IFilesystemBlockMover
-  // =========================================================================
-
-  /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
-    var mover = new DoubleSpaceBlockMover();
-    image.Position = 0;
-    using var ms = new MemoryStream();
-    image.CopyTo(ms);
-    mover.Init(ms.ToArray());
-    mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
-  }
-
-  /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
-    var mover = new DoubleSpaceBlockMover();
-    image.Position = 0;
-    using var ms = new MemoryStream();
-    image.CopyTo(ms);
-    mover.Init(ms.ToArray());
-    mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
-  }
-
-  // =========================================================================
-  //                            Defragmentation
-  // =========================================================================
-
-  /// <inheritdoc />
-  public void Defragment(Stream archive)
-    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
-
-  /// <summary>
-  /// Mode-aware CVF defragmentor. Supports planner-driven in-place defrag
-  /// (using <see cref="DefragPlanner"/> + <see cref="DoubleSpaceBlockMover"/>)
-  /// with rebuild fallback on error — same shape as
-  /// <see cref="DoubleSpaceFormatDescriptor.Defragment(Stream, DefragOptions)"/>.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) {
-    ArgumentNullException.ThrowIfNull(options);
-
-    var data = ReadAll(archive);
-    if (IsGenuineDvr3(data)) { WriteBack(archive, RebuildGenuine(data, null, null)); return; }
-
-    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
-      try {
-        DefragmentWithPlanner(archive, options);
-        return;
-      } catch (Exception planFailure) {
-        // A silent fallback looks exactly like a successful in-place
-        // defragmentation from outside, so the reason is reported.
-        options.OnProgress?.Invoke(new DefragProgressEvent(
-          "fallback", 0, -1, -1, archive.Length, null,
-          $"In-place planning declined ({planFailure.GetType().Name}: " +
-          $"{FirstLine(planFailure.Message)}); rebuilding instead"));
-        archive.Position = 0;
-      }
-    }
-
-    DefragmentWithRebuild(archive, options);
-  }
-
-  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
-    archive.Position = 0;
-    var imageSize = archive.Length;
-
-    using var bpbMs = new MemoryStream();
-    archive.CopyTo(bpbMs);
-    var imageData = bpbMs.ToArray();
-
-    var mover = new DoubleSpaceBlockMover();
-    mover.Init(imageData);
-
-    var extents = DoubleSpaceExtentMap.Enumerate(new MemoryStream(imageData)).ToList();
-    options.OnProgress?.Invoke(new DefragProgressEvent(
-      Phase: "scanning", Fraction: 0, CurrentReadOffset: 0, CurrentWriteOffset: -1,
-      ImageSize: imageSize, BlockMap: extents, Status: "Analysing layout"));
-
-    var moves = DefragPlanner.Plan(
-      extents, mover.DataRegionByteStart, imageSize, mover.BytesPerSector,
-      options.Profile, options.Mode, Math.Max(1, options.InterleaveStride),
-      options.HoleSize, options.HoleAt);
-
-    if (moves.Count == 0) {
-      options.OnProgress?.Invoke(new DefragProgressEvent(
-        Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
-        ImageSize: imageSize, BlockMap: extents, Status: "Already defragmented"));
-      return;
-    }
-
-    DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize, () => {
-      archive.Position = 0;
-      using var reread = new MemoryStream();
-      archive.CopyTo(reread);
-      imageData = reread.ToArray();
-      mover.Init(imageData);
-    });
-
-    archive.Position = 0;
-    var postExtents = DoubleSpaceExtentMap.Enumerate(new MemoryStream(imageData)).ToList();
-    options.OnProgress?.Invoke(new DefragProgressEvent(
-      Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
-      ImageSize: imageSize, BlockMap: postExtents, Status: "Defragmentation complete"));
-  }
-
-  private static void DefragmentWithRebuild(Stream archive, DefragOptions options) {
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        using var r = new DoubleSpaceReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
-      },
-      buildImage: files => {
-        var w = new DoubleSpaceWriter { Variant = CvfVariant.DriveSpace3 };
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
-  }
-
-  /// <summary>The first line of a message, for a one-line progress note.</summary>
-  private static string FirstLine(string message) {
-    var end = message.IndexOf('\n');
-    return end < 0 ? message : message[..end].TrimEnd('\r');
-  }
-
 }

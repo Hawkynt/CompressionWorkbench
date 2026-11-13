@@ -3,13 +3,12 @@ using Compression.Registry;
 namespace FileSystem.Stacker;
 
 /// <summary>
-/// The ordinary Extended Stacker rebuild uses <see cref="StackerWriter"/>, whose
-/// default is per-cluster LZS compression with stored fallback. Genuine-layout
-/// Method/Level knobs are compatibility-path options and therefore are not exposed
-/// as generic filesystem compression probe axes here.
+/// Stacker rebuilds compress every cluster; the <c>Method</c> option (stored, DS, SD-3, SD-4, Auto)
+/// is the probe axis.
 /// </summary>
 internal static class StackerOptimizationRegistration {
   internal static void Register()
     => FilesystemOptimizationAdapters.RegisterCompression<StackerFormatDescriptor>(
-      transparentCompression: true);
+      transparentCompression: true,
+      new FilesystemCompressionParameter("Method"));
 }

@@ -1,175 +1,33 @@
-# Microsoft DriveSpace 3 (DVR3) CVF — format notes
+# Microsoft DriveSpace 3 CVF — format notes
 
-> **Driver-verification status (2026-09-05).**
-> - **`GenuineDvr3Writer` is driver-proven (read), for every codec it can
->   emit:** the independent `dmsdos` driver detects its output as
->   "drivespace 3 CVF", mounts it, and reads every file back **byte-exact**.
->   `DriveSpace3GenuineDmsdosTests` runs that gate once per `CvfLzMethod` —
->   `Stored`, `Ds`, `Jm`, `Sq` and `Auto` — so the compressed cluster paths are
->   proven against the driver, not only against ourselves.
-> - **The legacy `DriveSpace3Writer` (`MS_DSP3` / `DVR3` / offset-36) is NOT
->   genuine:** `dmsdos` rejects it (`cvftest` → "not a known CVF"). Its `MS_DSP3` /
->   offset-36 assumptions below were never confirmed against a real driver and are
->   wrong about genuine DriveSpace 3; it is retained only for self-round-trip.
->
-> Genuine DriveSpace 3 is a member of the DOS **`MSDBL6.0` / `MSDSP6.0`** CVF
-> family (same container as `FileSystem.DoubleSpace.GenuineCvfWriter`) with
-> `sectors/cluster = 64` (boot byte 13), `version_flag = 3` (boot byte 51),
-> **5-byte MDFAT entries** (102 per sector + 2 pad bytes;
-> `pos = (s_dcluster+cl)*5 + ((s_dcluster+cl)/102)*2 + 512*mdfatstart`; stored
-> cluster = flags 3 / size_lo = size_hi = 63) and an inner **FAT16** volume —
-> exactly as `GenuineDvr3Writer` emits. The offset-36 notes below describe only
-> the legacy self-format.
+> **Verification status.**
+> - **Every volume `DriveSpace3FormatDescriptor.Create` writes is mounted by the independent `dmsdos`
+>   driver** ("drivespace 3 CVF") and read back byte-exact — for every published codec (stored, JM,
+>   SQ, DS, Auto), and again after an add and a remove (`CvfCreateDmsdosTests`,
+>   `DriveSpace3GenuineDmsdosTests`).
+> - **Cluster codecs:** JM-0-0 (*Normal*), JM-0-1 (*High*), SQ-0-0 (*Ultra*) and DS-0-x are specified
+>   in [`docs/CVF-CODECS-ON-DISK.md`](../../../docs/CVF-CODECS-ON-DISK.md) and decoded by
+>   `CvfLzCodec`, pinned to 32 KiB clusters the dmsdos compressors wrote (`CvfReferenceVectorTests`).
+> - **One layout only.** The writer produces nothing but the container below; edits (add, remove,
+>   defragment, wipe) rebuild the volume and keep its label. Fragmented clusters are not read.
 
-Clean-room notes for the on-disk shape of a Microsoft DriveSpace 3 Compressed
-Volume File (CVF), as shipped with the Windows 95 Plus! Pack (1995) and OSR2.
-No driver code was copied; only format facts were extracted.
+DriveSpace 3 (Windows 95 Plus! Pack, OSR2) is a member of the DOS **`MSDBL6.0`** CVF family — the same
+container as DoubleSpace/DriveSpace version 2 (`FileSystem.DoubleSpace.GenuineCvfWriter`) — told apart by:
+
+| Field | DriveSpace 3 | DoubleSpace / DriveSpace |
+|---|---|---|
+| Sectors per cluster (boot byte 13) | 64 (32 KiB clusters) | 16 (8 KiB) |
+| Version (boot byte 51) | 3 | 2 |
+| MDFAT entry | 5 bytes, 102 per sector + 2 pad bytes: `pos = (s_dcluster+cl)*5 + ((s_dcluster+cl)/102)*2 + 512*mdfatstart` | 4 bytes |
+| Inner volume | FAT16 | FAT12 |
+
+A stored cluster carries flags 3 (used + uncompressed) with on-disk and decoded sizes both 63 (64
+sectors). A compressed cluster starts with its 4-byte method header and is decoded by `CvfLzCodec`.
+
+Detection: the `MSDBL6.0` OEM name plus 64 sectors per cluster. A DriveSpace 3 volume that reaches the
+DoubleSpace descriptor by its `.cvf` name is handed to the DriveSpace 3 code.
 
 **Confirmed against the dmsdos documentation**
-(<https://github.com/sandsmark/dmsdos/tree/master/doc>, `dmsdos.doc`): cluster
-size is **32 KB for DriveSpace 3** (= 64 sectors/cluster, what `GenuineDvr3Writer`
-emits) versus 8 KB for the other compressed filesystems. Per-cluster compression
-is an orthogonal codec keyed by a 4-byte header — `JM-0-0` (DriveSpace 3 *Normal*,
-shared with DOS 6.22 DriveSpace), `JM-0-1` (*High*), `SQ-0-0` (*Ultra*).
-`GenuineDvr3Writer` emits stored clusters (MDFAT flag = used + uncompressed) or
-`DS`/`JM`/`SQ`-compressed ones through `Compression.Core.FileSystems.Cvf.CvfLzCodec`,
-selected per `CvfLzMethod`; all of them are read back byte-exact by `dmsdos`.
-
-## Correction to the "MSDBL inner-base @0x27" assumption
-
-DriveSpace 3 (`MS_DSP3` / `DVR3`) does **not** use the DOS-6.22 `MSDBL6.x`
-inner-FAT-base substructure (the `u16 @0x27` inner-volume base sector that the
-`FileSystem.DoubleSpace.GenuineCvfWriter` / `DoubleSpaceReader` real-MSDBL path
-relies on). Instead the genuine OSR2 DVR3 image uses the **offset-36 CVF-field
-header** with the inner FAT volume mapped at file offset 0:
-
-```
-header sector 0  : MDBPB (standard BPB + CVF fields at 0x24/36)
-inner reserved   : MDBPB itself (1 reserved sector)
-inner FAT1/FAT2  : two 16-sector FAT16 copies
-inner root dir   : 32 sectors (512 dir entries)
-inner data area  : per-cluster mirror (starts at firstDataSector)
-MDFAT region     : MdfatStart .. +MdfatLen sectors
-BitFAT region    : BitFatStart .. +BitFatLen sectors
-DATA region      : DataStart .. (physical compressed/stored runs)
-```
-
-This is exactly the layout `FileSystem.DriveSpace3.DriveSpace3Reader` /
-`DriveSpace3Writer` already implement (the offset-44 family), and the existing
-reader reads the genuine `drvspace3.cvf` byte-exact — see the round-trip test
-`Genuine_DVR3_StoredCluster_Layout_RoundTrips`.
-
-## MDBPB (sector 0) — field map of the legacy `MS_DSP3` / offset-36 self-format
-
-Everything from here to the end of this section describes the **legacy**
-`DriveSpace3Writer` shape, not what `GenuineDvr3Writer` emits. The two differ on
-exactly the fields that matter: 8 sectors/cluster here against 64 in the genuine
-`MSDSP6.x` family, and 4-byte MDFAT entries here against 5-byte ones there. Read
-the status note at the top before taking any number below as genuine.
-
-| Offset | Size | Field                | Genuine value           |
-|-------:|-----:|----------------------|-------------------------|
-| 0x00   | 3    | JMP                  | `EB 58 90`              |
-| 0x03   | 8    | OEM name             | `"MS_DSP3"` + 1 NUL pad |
-| 0x0B   | 2    | bytes/sector         | 512                     |
-| 0x0D   | 1    | sectors/cluster      | 8 (→ 4096-byte cluster) |
-| 0x0E   | 2    | reserved sectors     | 1                       |
-| 0x10   | 1    | FAT count            | 2                       |
-| 0x11   | 2    | root dir entries     | 512                     |
-| 0x13   | 2    | total sectors (16)   | 32827                   |
-| 0x15   | 1    | media descriptor     | `0xF8`                  |
-| 0x16   | 2    | sectors per FAT      | 16                      |
-| 0x18   | 2    | sectors per track    | 63                      |
-| 0x1A   | 2    | heads                | 255                     |
-| 0x24   | 4    | **CvfSignature**     | `"DVR3"`                |
-| 0x28   | 4    | CVF version          | `0x00030300`            |
-| 0x2C   | 4    | **MdfatStart** (sec) | 32777                   |
-| 0x30   | 4    | **MdfatLen** (sec)   | 32                      |
-| 0x34   | 4    | **BitFatStart**(sec) | 32809                   |
-| 0x38   | 4    | **BitFatLen** (sec)  | 1                       |
-| 0x3C   | 4    | **DataStart** (sec)  | 32810                   |
-| 0x40   | 4    | **DataLen** (sec)    | 17                      |
-| 0x48   | 4    | inner cluster count  | 4089                    |
-| 0x1FE  | 2    | boot signature       | `55 AA`                 |
-
-The CvfSignature lives at file offset 36 (0x24); MdfatStart at 44 (0x2C). These
-are the same offsets the DoubleSpace/DriveSpace 6.x `DBLS`/`DVRS` headers use —
-only the OEM string (`MS_DSP3`) and CvfSignature (`DVR3`) changed for DVR3.
-
-## MDFAT entry encoding — confirmed
-
-Each inner-volume cluster index `C` maps to a little-endian `u32` at
-`MdfatStart*512 + C*4`:
-
-```
-bits  0..20  physical sector offset within the DATA region
-bits 21..27  run length in sectors (1..127)
-bits 28..31  flags: 1 = stored, 2 = compressed, 0 = free/unallocated
-```
-
-The absolute byte offset of a run is `(DataStart + physSector) * 512`. Clusters
-0 and 1 are reserved (entry = 0). In the oracle image only cluster 2 is used:
-`raw = 0x10200000` → phys = 0, run = 1 sector, flags = 1 (stored).
-
-## Per-run framing — confirmed (stored)
-
-Each physical run begins with a 2-byte little-endian header:
-
-```
-bits  0..11  payload length minus 1   (so 1..4096 bytes)
-bit  15      0 = stored verbatim, 1 = compressed (codec payload follows)
-```
-
-For the genuine `HELLO.TXT` (18 bytes) the run was:
-
-```
-11 00  43 57 42 5F 43 56 46 5F 50 52 4F 4F 46 5F 4F 4B 0D 0A
-^^^^^  header: (0x0011 & 0x0FFF)+1 = 18, bit15 = 0 (stored)
-       payload: "CWB_CVF_PROOF_OK\r\n"  (18 bytes)
-```
-
-The reader (`DriveSpace3Reader`) decodes this exactly; round-trip is
-byte-identical.
-
-## Inner FAT12/16 volume — confirmed
-
-The inner volume is a normal FAT16 image embedded at file offset 0:
-`reserved(1) + 2*FAT(16) + root(32)` → first data sector 65. The root directory
-holds standard 8.3 (and VFAT LFN) entries; `HELLO.TXT` at cluster 2, size 18.
-File data is read by walking the inner FAT chain and resolving each cluster
-through the MDFAT to its physical run, then decoding the run framing.
-
-## Per-cluster compression codec (HiPack / UltraPack)
-
-> **Update (2026-10).** The genuine `MSDSP6.x` family keys each cluster by its
-> 4-byte header: HiPack is `JM-0-1` (the JM bitstream with version byte 1) and
-> UltraPack is `SQ-0-0` (a raw DEFLATE body). Both, and `JM-0-0`, are specified in
-> [`docs/CVF-CODECS-ON-DISK.md`](../../../docs/CVF-CODECS-ON-DISK.md) and decoded by
-> `CvfLzCodec`, pinned to 32 KiB clusters the dmsdos compressors wrote
-> (`CvfReferenceVectorTests`). Fragmented DriveSpace 3 clusters are still not
-> read.
-
-DriveSpace 3 replaced the DOS-6.x DS-LZ77 codec with an LZ77 + Huffman
-("HiPack" / "UltraPack") scheme. **None of the three locally available oracle
-images (`drvspace3.cvf`, `drvspace62.cvf`, `dblspace60.cvf`) contain a single
-compressed cluster** — every used cluster is a small stored run — so the
-genuine HiPack bit-stream layout (Huffman table framing, window/dictionary init,
-block-count bytes) could **not** be derived from local resources.
-
-The legacy `MS_DSP3` self-format once carried an invented "MS LZH" codec
-(DEFLATE-shaped, 4 KiB window) that no real stream was ever matched to. It
-was removed: that layout now stores DriveSpace's DS LZ77 runs, as DriveSpace
-6.22 does, and real DriveSpace 3 compression is the JM and SQ codecs above.
-
-## Remaining for the Win95 driver-mount proof
-
-The genuine **reader** path is proven against a real Microsoft DVR3 image
-(`drvspace3.cvf` extracted from a MS-DOS/Win95 guest): our reader lists and
-extracts `HELLO.TXT` byte-exact. What is *not* yet proven locally:
-
-1. **Our writer mounted by the real Win95 DriveSpace 3 driver.** Requires a
-   Windows 95 guest with DRVSPACE.VXD/.BIN (the DOS 6.22 guest used elsewhere
-   does not load the DVR3 driver). Handled separately.
-2. **Genuine HiPack/UltraPack codec bit-compatibility.** Needs a real DVR3
-   image with an actually-compressed cluster as an oracle (none available
-   locally). Our codec is round-trip-correct but framing is our own.
+(<https://github.com/sandsmark/dmsdos/tree/master/doc>, `dmsdos.doc`): cluster size is 32 KiB for
+DriveSpace 3 against 8 KiB for the other compressed filesystems; per-cluster compression is keyed by
+the 4-byte header (`JM-0-0` *Normal*, `JM-0-1` *High*, `SQ-0-0` *Ultra*).

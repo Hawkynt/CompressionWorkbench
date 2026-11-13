@@ -1,30 +1,26 @@
 #pragma warning disable CS1591
+using Compression.Core.FileSystems.Cvf;
 using Compression.Core.Layout;
 using Compression.Registry;
+using FileSystem.DoubleSpace;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Stacker;
 
 /// <summary>
-/// Descriptor for the Stacker STACVOL compressed volume (Stac Electronics,
-/// MS-DOS) — the historical predecessor of Microsoft's DoubleSpace (DOS 6.0)
-/// and DriveSpace (DOS 6.22 / Win 95). A STACVOL wraps a compressed inner
-/// FAT12 volume behind an ASCII banner and a Stacker Control Block (BPB);
-/// clusters are STORED verbatim or Stac-LZS compressed (RFC 1967/2395).
-/// Detection is by the ASCII "STACKER" banner at file offset 0.
-///
-/// Existing-image add/replace/remove is implemented by a flavor-preserving
-/// rebuild: genuine STACVOL images remain genuine STACVOL images and Extended
-/// images remain Extended. Under the repository's capability contract this is
-/// R/W even though it is not a byte-local mutation.
-///
+/// Stacker STACVOL compressed volume (Stac Electronics, MS-DOS) — the predecessor of Microsoft's
+/// DoubleSpace. A STACVOL wraps an inner FAT12 volume behind the "STACKER" banner, an obfuscated
+/// superblock, an emulated boot block and an interleaved AMAP; clusters are stored or compressed per
+/// cluster (SD-3, SD-4 or DS). Volumes are written only in the layout the independent dmsdos driver
+/// mounts; edits rebuild the volume, keeping its label.
+/// <para>
 /// References:
 /// <list type="bullet">
-///   <item><description><c>https://github.com/sandsmark/dmsdos</c> — dmsdos driver — the de-facto public documentation of the STACVOL layout and cluster compression</description></item>
-///   <item><description><c>https://www.rfc-editor.org/rfc/rfc1967</c> — LZS-DCP (the Stac LZS algorithm)</description></item>
-///   <item><description><c>https://www.rfc-editor.org/rfc/rfc2395</c> — LZS in IPsec — independent description of the same algorithm</description></item>
-///   <item><description><c>https://en.wikipedia.org/wiki/Stac_Electronics</c> — Wikipedia article</description></item>
+///   <item><description><c>docs/CVF-CODECS-ON-DISK.md</c> — the cluster codecs and fragmented clusters, measured against dmsdos</description></item>
+///   <item><description><c>https://www.rfc-editor.org/rfc/rfc1974</c> — Stac LZS, the token grammar of SD-3</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Stac_Electronics</c> — overview</description></item>
 /// </list>
+/// </para>
 /// </summary>
 public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
@@ -32,355 +28,181 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   // registration has to have run before any instance can be looked up. Doing it from
   // the type initializer gives exactly that guarantee without a module initializer.
   static StackerFormatDescriptor() => StackerOptimizationRegistration.Register();
-  // IArchiveShrinkable uses the interface default: a verified extract →
-  // re-create rebuild that only replaces the image when the result round-trips
-  // AND is smaller; otherwise the original bytes are copied through unchanged.
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
+
+  private static readonly IReadOnlyDictionary<string, CvfLzMethod> Codecs = new Dictionary<string, CvfLzMethod> {
+    ["sd3"] = CvfLzMethod.Sd3,
+    ["sd4"] = CvfLzMethod.Sd4,
+    ["ds"] = CvfLzMethod.Ds,
+    ["auto"] = CvfLzMethod.Auto,
+  };
+
+  /// <inheritdoc />
   public string Id => "Stacker";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
+  /// <inheritdoc />
   public string DisplayName => "Stacker CVF";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
+  /// <inheritdoc />
   public FormatCategory Category => FormatCategory.Archive;
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
+  /// <inheritdoc />
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract
     | FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
+  /// <inheritdoc />
   public string DefaultExtension => ".sta";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
+  /// <inheritdoc />
   public IReadOnlyList<string> Extensions => [".sta", ".stk"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
+  /// <inheritdoc />
   public IReadOnlyList<string> CompoundExtensions => [];
-  /// <summary>
-  /// Gets the magic signatures.
-  /// </summary>
+  /// <inheritdoc />
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // ASCII "STACKER" at offset 0 — the start of the STACVOL banner sector
-    // ("STACKER  version  N    volume:  <path>"), verified against a STACVOL
-    // produced by the genuine Stacker 3.10 CREATE tool.
+    // ASCII "STACKER" at offset 0 — the start of the STACVOL banner sector.
     new([0x53, 0x54, 0x41, 0x43, 0x4B, 0x45, 0x52], Offset: 0, Confidence: 0.90),
   ];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stacker-lzs", "Stacker LZS")];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
+  /// <inheritdoc />
+  public IReadOnlyList<FormatMethodInfo> Methods { get; } = CvfCodecChoice.Methods(
+    ("sd3", "Stacker 3 SD-3 (LZS)"),
+    ("sd4", "Stacker 4 SD-4 (Huffman-coded LZ77)"),
+    ("ds", "DoubleSpace DS LZ77"),
+    ("auto", "Smallest of SD-3, SD-4 and DS per cluster"));
+  /// <inheritdoc />
   public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
+  /// <inheritdoc />
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
+  /// <inheritdoc />
   public string Description =>
-    "Stacker STACVOL (Stac Electronics, MS-DOS) — banner + Stacker Control Block parsed, "
-    + "inner FAT12 directory walked, STORED and Stac-LZS clusters read/written. "
-    + "Choose the 'Genuine' layout for byte-exact compatibility with the real Stacker "
-    + "driver / dmsdos, or 'Extended' for CompressionWorkbench-only LZS compression.";
+    "Stacker STACVOL (Stac Electronics, MS-DOS): obfuscated superblock, interleaved AMAP, inner FAT12; "
+    + "stored, SD-3, SD-4 or DS clusters (fragmented clusters read). Created volumes are mounted by the dmsdos driver.";
 
-  // ── IFormatOptionsSchema ──────────────────────────────────────────────────
-  /// <summary>
-  /// Gets the options schema.
-  /// </summary>
+  /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
-    new FormatOptionDescriptor(
-      Key: "Compatibility",
-      DisplayName: "On-disk layout",
-      Kind: FormatOptionKind.Enum,
-      Default: "Extended",
-      AllowedValues: ["Genuine", "Extended"],
-      Description:
-        "Genuine — the real Stac Electronics STACVOL layout (obfuscated superblock + "
-        + "emulated boot block + interleaved AMAP). Mounted and read byte-exact by the "
-        + "independent dmsdos driver (and by the original Stacker 3.x/4.x DOS driver). "
-        + "Clusters are STORED (uncompressed); single flat root directory; up to ~511 "
-        + "clusters. Use this for interoperability with real Stacker tooling.\n"
-        + "Extended — CompressionWorkbench's own layout (STKMAP01 sector-map trailer) with "
-        + "Stac-LZS per-cluster compression. Smaller images, but readable ONLY by "
-        + "CompressionWorkbench — NOT by the genuine Stacker driver or dmsdos."),
-    new FormatOptionDescriptor(
-      Key: "Version",
-      DisplayName: "Stacker version",
-      Kind: FormatOptionKind.Enum,
-      Default: "3",
+    new(Key: "Version", DisplayName: "Stacker version", Kind: FormatOptionKind.Enum, Default: "3",
       AllowedValues: ["3", "4"],
-      Description:
-        "Stacker format version stamped into the volume superblock. 3 = Stacker 3.x "
-        + "(MS-DOS 6 era); 4 = Stacker 4.x. The dmsdos driver reads both. Applies to the "
-        + "Genuine layout only.",
-      DependsOn: "Compatibility=Genuine"),
-    new FormatOptionDescriptor(
-      Key: "VolumeLabel", DisplayName: "Volume label", Kind: FormatOptionKind.String,
-      Default: "",
-      Description: "Optional 11-char inner-volume label written to the root directory (Genuine layout only).",
-      DependsOn: "Compatibility=Genuine"),
-    new FormatOptionDescriptor(
-      Key: "Timestamp", DisplayName: "File timestamp", Kind: FormatOptionKind.String,
-      Default: "",
-      Description: "Optional ISO-8601 date/time (e.g. 1994-02-01) stamped on every file's "
-        + "FAT directory entry. Blank leaves the date/time unset (Genuine layout only).",
-      DependsOn: "Compatibility=Genuine"),
-    new FormatOptionDescriptor(
-      Key: "Method", DisplayName: "Compression", Kind: FormatOptionKind.Enum,
-      Default: "Auto",
+      Description: "Stacker format version stamped into the volume superblock. 3 = Stacker 3.x (MS-DOS 6 era); "
+        + "4 = Stacker 4.x. The dmsdos driver reads both."),
+    new(Key: "VolumeLabel", DisplayName: "Volume label", Kind: FormatOptionKind.String, Default: "",
+      Description: "Optional 11-char inner-volume label written to the root directory."),
+    new(Key: "Timestamp", DisplayName: "File timestamp", Kind: FormatOptionKind.String, Default: "",
+      Description: "Optional ISO-8601 date/time (e.g. 1994-02-01) stamped on every file's FAT directory entry. "
+        + "Blank leaves the date/time unset."),
+    new(Key: "Method", DisplayName: "Compression", Kind: FormatOptionKind.Enum, Default: "Auto",
       AllowedValues: ["Stored", "DS", "SD3", "SD4", "Auto"],
-      Description: "Per-cluster compression for the Genuine layout. Stored = none. "
-        + "DS = the 'DS' LZ stream the Stacker driver (and dmsdos) decode. SD3 = Stacker 3 "
-        + "native LZS codec (no header, check byte). SD4 = Stacker 4 native Huffman codec "
-        + "(header 0x0081). Auto = per cluster keep the smallest of DS/SD3/SD4, else stored.",
-      DependsOn: "Compatibility=Genuine"),
-    new FormatOptionDescriptor(
-      Key: "Level", DisplayName: "Compression level", Kind: FormatOptionKind.Integer,
-      Default: "2",
-      Description: "Codec search effort (1 = fast, higher = better ratio, slower).",
-      DependsOn: "Compatibility=Genuine"),
-    new FormatOptionDescriptor(
-      Key: "ForceCompress", DisplayName: "Force compression", Kind: FormatOptionKind.Boolean,
-      Default: "false",
+      Description: "Per-cluster compression. Stored = none. SD3 = Stacker 3 LZS codec (no header, check byte). "
+        + "SD4 = Stacker 4 Huffman codec (header 0x0081). DS = the 'DS' LZ stream. "
+        + "Auto = per cluster the smallest of DS/SD3/SD4, else stored."),
+    new(Key: "Level", DisplayName: "Compression level", Kind: FormatOptionKind.Integer, Default: "2",
+      Description: "Codec search effort (1 = fast, up to 4; higher = better ratio, slower)."),
+    new(Key: "ForceCompress", DisplayName: "Force compression", Kind: FormatOptionKind.Boolean, Default: "false",
       Description: "Keep the compressed form even when it does not shrink a cluster. A compressed run "
-        + "filling a whole cluster cannot be told from a stored one on Stacker, so such a cluster is still stored.",
-      DependsOn: "Compatibility=Genuine"),
+        + "filling a whole cluster cannot be told from a stored one on Stacker, so such a cluster is still stored."),
   ];
 
-  private static Compression.Core.FileSystems.Cvf.CvfLzMethod ParseMethod(string s) => s.ToLowerInvariant() switch {
-    "ds" => Compression.Core.FileSystems.Cvf.CvfLzMethod.Ds,
-    "sd4" => Compression.Core.FileSystems.Cvf.CvfLzMethod.Sd4,
-    "sd3" => Compression.Core.FileSystems.Cvf.CvfLzMethod.Sd3,
-    "auto" => Compression.Core.FileSystems.Cvf.CvfLzMethod.Auto,
-    _ => Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored,
-  };
+  private static GenuineStackerReader Open(byte[] data) => new(new MemoryStream(data));
 
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
+  /// <inheritdoc />
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var data = ReadAll(stream);
-    if (TryGenuine(data, out var g))
-      return g!.Entries.Select((e, i) => new ArchiveEntryInfo(
-        i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
-    using var r = new StackerReader(new MemoryStream(data));
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Size, e.Size, "Stacker-LZS", e.IsDirectory, false, null)).ToList();
+    using var reader = Open(GenuineCvfVolume.ReadAll(stream));
+    return reader.Entries.Select((e, i) => new ArchiveEntryInfo(
+      i, e.Name, e.Size, -1, "cvf", e.IsDirectory, false, null)).ToList();
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
+  /// <inheritdoc />
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var data = ReadAll(stream);
-    if (TryGenuine(data, out var g)) {
-      foreach (var e in g!.Entries) {
-        if (e.IsDirectory) continue;
-        if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
-        WriteFile(outputDir, e.Name, g.Extract(e));
-      }
-      return;
-    }
-    using var r = new StackerReader(new MemoryStream(data));
-    foreach (var e in r.Entries) {
+    using var reader = Open(GenuineCvfVolume.ReadAll(stream));
+    foreach (var e in reader.Entries) {
       if (e.IsDirectory) continue;
-      if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      if (files is { Length: > 0 } && !MatchesFilter(e.Name, files)) continue;
+      WriteFile(outputDir, e.Name, reader.Extract(e));
     }
   }
 
-  /// <summary>
-  /// Performs the create operation.
-  /// </summary>
+  /// <inheritdoc />
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     ArgumentNullException.ThrowIfNull(options);
-
-    var genuine = options.GetOption("Compatibility", "Extended")
-      .Equals("Genuine", StringComparison.OrdinalIgnoreCase);
-
-    byte[] image;
-    if (genuine) {
-      var w = new GenuineStackerWriter {
-        Version = options.GetOptionInt("Version", 3),
-        VolumeLabel = options.GetOption("VolumeLabel", ""),
-        Timestamp = FatDirStamp.Parse(options.GetOption("Timestamp", "")),
-        CompressionMethod = ParseMethod(options.GetOption("Method", "Auto")),
-        CompressionLevel = options.GetOptionInt("Level", 2),
-        ForceCompress = options.GetOptionBool("ForceCompress", false),
-      };
-      foreach (var input in inputs) {
-        if (input.IsDirectory) continue;
-        w.AddFile(Path.GetFileName(input.ArchiveName), input.ReadContent());
-      }
-      image = w.Build();
-    } else {
-      var w = new StackerWriter();
-      foreach (var input in inputs) {
-        if (input.IsDirectory) continue;
-        w.AddFile(Path.GetFileName(input.ArchiveName), input.ReadContent());
-      }
-      image = w.Build();
-    }
-
-    output.Write(image, 0, image.Length);
+    var (method, level) = CvfCodecChoice.Resolve(options, "auto", Codecs);
+    var writer = new GenuineStackerWriter {
+      Version = options.GetOptionInt("Version", 3),
+      VolumeLabel = options.GetOption("VolumeLabel", ""),
+      Timestamp = FatDirStamp.Parse(options.GetOption("Timestamp", "")),
+      CompressionMethod = method,
+      CompressionLevel = level,
+      ForceCompress = options.GetOptionBool("ForceCompress", false),
+    };
+    foreach (var (name, data) in FlatFiles(inputs))
+      writer.AddFile(name, data);
+    output.Write(writer.Build());
   }
 
-  // Reads the whole stream once so we can probe both layouts non-destructively.
-  private static byte[] ReadAll(Stream stream) {
-    if (stream.CanSeek) stream.Position = 0;
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    return ms.ToArray();
-  }
-
-  // Genuine STACVOLs carry the obfuscated 0x1A0A superblock signature; the
-  // reader throws InvalidDataException for the Extended (STKMAP01) layout.
-  private static bool TryGenuine(byte[] data, out GenuineStackerReader? reader) {
-    try {
-      reader = new GenuineStackerReader(new MemoryStream(data));
-      return true;
-    } catch (InvalidDataException) {
-      reader = null;
-      return false;
-    }
-  }
-
-  // ── Modify / defrag / purge (rebuild) ─────────────────────────────────────
-
-  /// <summary>
-  /// Adds the supplied entry to the target container.
-  /// </summary>
+  /// <summary>Adds files by rebuilding the volume (equal names are replaced).</summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(inputs);
-    WriteBack(archive, Rebuild(ReadAll(archive), inputs, null));
+    GenuineCvfVolume.WriteBack(archive, Rebuild(GenuineCvfVolume.ReadAll(archive), inputs, null));
   }
 
-  /// <summary>
-  /// Removes the specified entry from the target container.
-  /// </summary>
+  /// <summary>Removes files by rebuilding the volume without them.</summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(entryNames);
-    WriteBack(archive, Rebuild(ReadAll(archive), null, entryNames));
+    GenuineCvfVolume.WriteBack(archive, Rebuild(GenuineCvfVolume.ReadAll(archive), null, entryNames));
   }
 
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
+  /// <summary>Defragments by rebuilding: every file's clusters end up contiguous.</summary>
   public void Defragment(Stream archive)
-    => WriteBack(archive, Rebuild(ReadAll(archive), null, null));
+    => GenuineCvfVolume.WriteBack(archive, Rebuild(GenuineCvfVolume.ReadAll(archive), null, null));
+
+  /// <summary>Defragments by rebuilding; the rebuild leaves no gaps, whatever <paramref name="options"/> asks for.</summary>
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
   /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options)
-    => this.Defragment(archive);
-
-  /// <summary>
-  /// Shrinks the CVF by repacking it through the flavor-preserving rebuild —
-  /// a genuine STACVOL stays a genuine STACVOL (label kept, auto-best
-  /// recompression), an Extended image stays Extended — instead of the
-  /// interface default, whose plain re-create would silently convert a
-  /// driver-compatible genuine volume into the CompressionWorkbench-only
-  /// Extended layout. The rebuilt image is emitted only when it lists the
-  /// same file set AND is smaller; otherwise the original bytes are copied
-  /// through unchanged, so Shrink never corrupts or grows the source.
+  /// Shrinks the volume by rebuilding it (label kept, every cluster recompressed with the smallest
+  /// codec). The rebuilt image is emitted only when it lists the same file set AND is smaller;
+  /// otherwise the original bytes are copied through unchanged, so Shrink never corrupts or grows
+  /// the source.
   /// </summary>
   public void Shrink(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
-    var data = ReadAll(input);
+    var data = GenuineCvfVolume.ReadAll(input);
     byte[]? rebuilt;
     try {
       rebuilt = Rebuild(data, null, null);
-      // Verify the repack is non-lossy before trusting it: same leaf-name multiset.
       var before = this.List(new MemoryStream(data), null)
-        .Where(e => !e.IsDirectory).Select(e => LeafLower(e.Name)).Order().ToList();
+        .Where(e => !e.IsDirectory).Select(e => GenuineCvfVolume.LeafLower(e.Name)).Order().ToList();
       var after = this.List(new MemoryStream(rebuilt), null)
-        .Where(e => !e.IsDirectory).Select(e => LeafLower(e.Name)).Order().ToList();
+        .Where(e => !e.IsDirectory).Select(e => GenuineCvfVolume.LeafLower(e.Name)).Order().ToList();
       if (!before.SequenceEqual(after))
         rebuilt = null;
-    } catch {
+    } catch (Exception e) when (e is InvalidDataException or NotSupportedException) {
       rebuilt = null;
     }
     output.Position = 0;
     output.SetLength(0);
-    output.Write(rebuilt is not null && rebuilt.Length > 0 && rebuilt.Length < data.Length ? rebuilt : data);
+    output.Write(rebuilt is { Length: > 0 } && rebuilt.Length < data.Length ? rebuilt : data);
   }
 
-  /// <summary>Purges unused space by repacking; returns bytes reclaimed.</summary>
+  /// <summary>Repacks the volume's clusters contiguously and drops free sectors; returns bytes reclaimed.</summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
-    var data = ReadAll(image);
+    var data = GenuineCvfVolume.ReadAll(image);
     var rebuilt = Rebuild(data, null, null);
-    WriteBack(image, rebuilt);
+    GenuineCvfVolume.WriteBack(image, rebuilt);
     return Math.Max(0, data.Length - rebuilt.Length);
   }
 
-  // Read every file and re-emit: contiguous AMAP packing (defrag), auto-best
-  // recompression (optimize/shrink) and a fresh image (purge). Works for the
-  // genuine layout (preserving the volume label) and the Extended self-format.
+  // Read every file and re-emit: contiguous AMAP packing (defrag), smallest-codec recompression
+  // (optimize/shrink) and a fresh image (purge). The volume label is kept.
   private static byte[] Rebuild(byte[] data, IReadOnlyList<ArchiveInputInfo>? add, string[]? remove) {
-    var keep = new List<(string Name, byte[] Data)>();
-    var removeSet = remove is null ? null : new HashSet<string>(remove.Select(LeafLower));
-    var label = "";
-    var genuine = TryGenuine(data, out var gr);
-    if (genuine) {
-      label = gr!.VolumeLabel;
-      foreach (var e in gr.Entries) {
-        if (e.IsDirectory) continue;
-        if (removeSet is not null && removeSet.Contains(LeafLower(e.Name))) continue;
-        keep.Add((e.Name, gr.Extract(e)));
-      }
-    } else {
-      using var r = new StackerReader(new MemoryStream(data));
-      foreach (var e in r.Entries) {
-        if (e.IsDirectory) continue;
-        if (removeSet is not null && removeSet.Contains(LeafLower(e.Name))) continue;
-        keep.Add((e.Name, r.Extract(e)));
-      }
-    }
+    using var reader = Open(data);
+    var removeSet = remove is null ? null : new HashSet<string>(remove.Select(GenuineCvfVolume.LeafLower));
+    var keep = reader.Entries
+      .Where(e => !e.IsDirectory && (removeSet is null || !removeSet.Contains(GenuineCvfVolume.LeafLower(e.Name))))
+      .Select(e => (e.Name, Data: reader.Extract(e)))
+      .ToList();
     if (add is not null)
-      foreach (var input in add) {
-        if (input.IsDirectory) continue;
-        var n = Path.GetFileName(input.ArchiveName);
-        keep.RemoveAll(k => LeafLower(k.Name) == LeafLower(n));
-        keep.Add((n, input.ReadContent()));
+      foreach (var (n, d) in FlatFiles(add)) {
+        keep.RemoveAll(k => GenuineCvfVolume.LeafLower(k.Name) == GenuineCvfVolume.LeafLower(n));
+        keep.Add((n, d));
       }
-
-    if (genuine) {
-      var w = new GenuineStackerWriter {
-        VolumeLabel = label,
-        CompressionMethod = Compression.Core.FileSystems.Cvf.CvfLzMethod.Auto,
-        CompressionLevel = 2,
-      };
-      foreach (var (n, d) in keep) w.AddFile(n, d);
-      return w.Build();
-    } else {
-      var w = new StackerWriter();
-      foreach (var (n, d) in keep) w.AddFile(n, d);
-      return w.Build();
-    }
-  }
-
-  private static string LeafLower(string name) {
-    var slash = Math.Max(name.LastIndexOf('/'), name.LastIndexOf('\\'));
-    return (slash >= 0 ? name[(slash + 1)..] : name).ToLowerInvariant();
-  }
-
-  private static void WriteBack(Stream s, byte[] img) {
-    s.Position = 0; s.SetLength(img.Length); s.Write(img); s.Position = 0;
+    var writer = new GenuineStackerWriter { Version = reader.Version, VolumeLabel = reader.VolumeLabel, CompressionMethod = CvfLzMethod.Auto, CompressionLevel = 2 };
+    foreach (var (n, d) in keep) writer.AddFile(n, d);
+    return writer.Build();
   }
 }

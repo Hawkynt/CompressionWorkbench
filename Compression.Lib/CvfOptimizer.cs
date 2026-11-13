@@ -6,19 +6,16 @@ namespace Compression.Lib;
 /// <summary>
 /// Re-encodes a CVF (DoubleSpace / DriveSpace / DriveSpace 3 Compressed Volume
 /// File) using the highest-effort compression method the descriptor publishes,
-/// letting the writer's per-cluster shrink-or-store fallback transparently
-/// handle incompressible runs. Commits via <see cref="AtomicFileWriter"/>.
+/// letting the writer's per-cluster stored fallback transparently handle
+/// incompressible clusters. Commits via <see cref="AtomicFileWriter"/>.
 /// <para>
-/// <b>Design rationale.</b> CVF effort tiers are monotone: <c>ds-lz77++</c>
-/// always beats (or ties) <c>ds-lz77+</c> which always beats <c>ds-lz77</c>
-/// on compressible data. Trying every method at the container level wastes
-/// CPU. Worse, the "stored vs compressed" decision is already made
-/// <em>per-cluster</em> inside the writer (see
-/// <see cref="FileSystem.DoubleSpace.DsCompression"/>): if the encoded
-/// payload would not fit the 12-bit CVF size cap or is no smaller than the
-/// raw input, a stored CVF run is emitted. So the right optimisation knob
-/// is "always pick the highest-effort method; let the per-cluster fallback
-/// handle the rest". That is what this class does.
+/// <b>Design rationale.</b> CVF effort tiers raise the encoder's search depth:
+/// <c>auto++</c> searches deeper than <c>auto+</c>, which searches deeper than
+/// <c>auto</c>, and <c>auto</c> already keeps the smallest codec per cluster.
+/// The "stored vs compressed" decision is made <em>per cluster</em> inside the
+/// writer: a cluster whose payload would not be smaller is stored. So the
+/// optimisation knob is "pick the highest-effort method; let the per-cluster
+/// fallback handle the rest". That is what this class does.
 /// </para>
 /// </summary>
 public static class CvfOptimizer {
@@ -27,7 +24,7 @@ public static class CvfOptimizer {
   /// Result of a single CVF optimization pass.
   /// </summary>
   /// <param name="MethodUsed">The non-stored method id that was applied
-  /// (e.g. <c>ds-lz77++</c>, <c>ds-lz77</c>, or <c>stored</c> if the
+  /// (e.g. <c>auto++</c>, <c>jm</c>, or <c>stored</c> if the
   /// descriptor only publishes a stored method).</param>
   /// <param name="OriginalSize">Source CVF size in bytes before re-encoding.</param>
   /// <param name="OptimizedSize">Re-encoded CVF size in bytes after the

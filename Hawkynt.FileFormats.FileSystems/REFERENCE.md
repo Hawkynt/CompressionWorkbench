@@ -10030,33 +10030,7 @@ Builds a Commodore 1581 D81 disk image from a set of files, filling in the heade
 
 ### Namespace `FileSystem.DoubleSpace`
 
-[`CvfVariant`](#cvfvariant) · [`DoubleSpaceBlockMover`](#doublespaceblockmover) · [`DoubleSpaceEntry`](#doublespaceentry) · [`DoubleSpaceExtentMap`](#doublespaceextentmap) · [`DoubleSpaceFormatDescriptor`](#doublespaceformatdescriptor) · [`DoubleSpaceInPlaceModifier`](#doublespaceinplacemodifier) · [`DoubleSpaceReader`](#doublespacereader) · [`DoubleSpaceWriter`](#doublespacewriter) · [`DriveSpaceFormatDescriptor`](#drivespaceformatdescriptor) · [`DsCompression`](#dscompression) · [`GenuineCvfReader`](#genuinecvfreader) · [`GenuineCvfWriter`](#genuinecvfwriter)
-
-#### `CvfVariant`
-
-Variant of the CVF (Compressed Volume File) being produced.
-
-| Value | Numeric | Summary |
-| --- | --- | --- |
-| `DoubleSpace60` | `0` | MS-DOS 6.0 DoubleSpace. OEM name `MSDSP6.0`, CvfSignature `DBLS`. Codec: DS LZ77 (4 KiB window). |
-| `DriveSpace62` | `1` | MS-DOS 6.22 DriveSpace. OEM name `MSDSP6.2`, CvfSignature `DVRS`. Codec: DS LZ77 (8 KiB window). |
-| `DriveSpace30` | `2` | Windows 95 OSR2 DriveSpace 3.0. OEM name `DRVSPACE`, CvfSignature `DVRS`. Codec: DS LZ77 (8 KiB window). |
-| `DriveSpace3` | `3` | Windows 95 Plus! Pack (1995) DriveSpace 3. OEM name `MS_DSP3`, CvfSignature `DVR3`. Codec: DriveSpace JM LZ77 (8 KiB window). This layout is CompressionWorkbench's own; real DriveSpace 3 volumes are written by `GenuineDvr3Writer`. |
-
-#### `DoubleSpaceBlockMover`
-
-In-place DoubleSpace/DriveSpace CVF block mover. Moves compressed cluster runs within the DATA region and patches the MDFAT + BitFAT + inner FAT chain so the file remains reachable at its new physical location. Unlike a plain FAT block mover that moves raw cluster bytes and patches a FAT chain, DoubleSpace has a two-level indirection: the inner FAT maps files to logical clusters, and the MDFAT maps logical clusters to physical sector offsets within the DATA region. A "move" here relocates the compressed run in the DATA region and patches the MDFAT entry for the corresponding logical cluster to point at the new physical sector offset. The inner FAT chain is unchanged (logical cluster numbers don't move).
-
-Implements `IFilesystemBlockMover`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `DoubleSpaceBlockMover` | `DoubleSpaceBlockMover()` |  |
-| `BytesPerSector` | `int BytesPerSector { get; }` | Bytes per sector. |
-| `DataRegionByteStart` | `long DataRegionByteStart { get; }` | Byte offset of the DATA region start. |
-| `Init` | `void Init(byte[] image)` | Initialises the mover by parsing MDBPB fields from `image`. Must be called before any move operations. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Patches MDFAT and BitFAT after a raw extent move within the DATA region. Finds the MDFAT entry whose physical sector range matches the old offset, rewrites it to point at the new physical sector, and updates BitFAT bits accordingly (clears old sectors, sets new sectors). The inner FAT chain is NOT touched because logical cluster numbers do not change during a physical move — only the MDFAT indirection changes. |
+[`DoubleSpaceEntry`](#doublespaceentry) · [`DoubleSpaceFormatDescriptor`](#doublespaceformatdescriptor) · [`DoubleSpaceReader`](#doublespacereader) · [`DriveSpaceFormatDescriptor`](#drivespaceformatdescriptor) · [`GenuineCvfReader`](#genuinecvfreader) · [`GenuineCvfWriter`](#genuinecvfwriter)
 
 #### `DoubleSpaceEntry`
 
@@ -10069,135 +10043,81 @@ Represents a double space entry.
 | `Name` | `string Name { get; init; }` | Gets or sets the name. |
 | `Size` | `long Size { get; init; }` | Gets or sets the size. |
 
-#### `DoubleSpaceExtentMap`
-
-Walks a DoubleSpace/DriveSpace CVF image and yields the actual on-disk byte layout: metadata regions (MDBPB, inner FAT, root dir, MDFAT, BitFAT), every compressed/stored cluster run per file (mapped through MDFAT), and free physical sectors in the DATA region.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream image)` | Enumerates the on-disk layout of a CVF image. Parses the MDBPB, walks the inner FAT chain per file, resolves each logical cluster through the MDFAT to its physical sector run in the DATA region, and emits one `DefragBlockInfo` per contiguous physical run per file. |
-
 #### `DoubleSpaceFormatDescriptor`
 
-References: `https://github.com/sandsmark/dmsdos` — dmsdos, the GPL Linux CVF driver whose source + `doc/dmsdos.doc` are the de-facto MDBPB/MDFAT/BitFAT on-disk specificationMicrosoft MS-DOS 6 documentation (DoubleSpace chapter) — original vendor description of the compressed volume file`https://en.wikipedia.org/wiki/DriveSpace` — Wikipedia article covering DoubleSpace and its successors
+Microsoft DoubleSpace compressed volume file (MS-DOS 6.0 / 6.2): the real `MSDBL6.0` container — MDBPB, MDFAT, BitFAT and an inner FAT12 volume whose clusters are stored or compressed per cluster (DS-0-x, JM-0-x). Volumes are written only in the layout the independent dmsdos driver mounts ("drivespace CVF version 2"); edits rebuild the volume. References: `docs/CVF-CODECS-ON-DISK.md` — the cluster codecs, measured against dmsdosMicrosoft MS-DOS 6 documentation (DoubleSpace chapter) — original vendor description of the compressed volume file`https://en.wikipedia.org/wiki/DriveSpace` — overview of DoubleSpace and its successors
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DoubleSpaceFormatDescriptor` | `DoubleSpaceFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Microsoft DoubleSpace compressed volume file (MS-DOS 6.0). Spec-compliant MDBPB + MDFAT + BitFAT + DATA layout. Inner FAT16 volume with VFAT long filenames. Writer emits stored (uncompressed) runs; the JM/DSS LZ payload variant is a future enhancement (see `DoubleSpaceWriter`). |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Gets the options schema. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | True in-place add: BitFAT bits flip, MDFAT cluster-allocation entries are written in place, inner FAT chains extended, and VFAT dirents are inserted into the root directory without rewriting any unrelated bytes. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware CVF defragmentor. Supports planner-driven in-place defrag (using `DefragPlanner` + `DoubleSpaceBlockMover`) with rebuild fallback on error. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | True in-place remove: walks the inner FAT chain, zeros each physical run, clears BitFAT bits, zeros MDFAT entries, zeros inner FAT chain, and scratches the dirent (+ LFN chain) with 0xE5. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the CVF image: every physical sector in the DATA region not claimed by a live file/directory run, plus any gaps outside the metadata regions, is overwritten with zeros. Cluster-tip wiping is not applicable to a CVF: the DATA region holds compressed/stored sector runs whose physical byte length is unrelated to the logical (uncompressed) file size recorded in the inner FAT directory. Zeroing a tail by logical-size offset would corrupt the encoded run, so only whole free sectors are cleared. |
-
-#### `DoubleSpaceInPlaceModifier`
-
-True in-place modifier for Microsoft DoubleSpace / DriveSpace CVF images. Mutates the MDBPB-driven volume structure directly: BitFAT bits flip, MDFAT cluster-allocation entries are written in place, inner FAT chains are extended/zeroed at the cluster slot, VFAT root dirents are added/ scratched in place, and physical compressed runs are placed in the DATA region without rewriting any unrelated bytes. Unlike the `ModifyRebuilder` path, this modifier never rebuilds the image. Bytes outside the touched cluster slot, MDFAT entry, BitFAT byte, FAT chain entry, dirent record and freshly-allocated physical run are guaranteed byte-identical.Scope. Add, Remove, and Replace target the inner root directory only. Subdirectory mutation is not supported (legacy CVF images created by DBLSPACE/DRVSPACE never used subdirs as a normal authoring pattern). The variant (DoubleSpace 6.0 / DriveSpace 6.22 / DriveSpace 3.0) is auto-detected from the OEM signature so the same modifier services both descriptors.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Add` | `static void Add(Stream image, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces) files in-place. For each input: walks the inner FAT to find `count` free logical clusters, allocates a contiguous physical run at the end of the in-use DATA region, compresses each cluster, writes MDFAT + BitFAT + inner FAT entries in place, and writes the VFAT dirent (+ LFN chain) into the first free dirent slots of the root directory. If an input name matches an existing entry, the old entry's clusters are freed first (so the slot can be re-used and the old physical run is wiped). |
-| `Remove` | `static void Remove(Stream image, string[] entryNames)` | Removes the named entries in place. For each entry: walks the inner FAT chain, zeros each physical compressed run, clears BitFAT bits for the freed sectors, zeros the MDFAT entries, zeros the inner FAT chain, and scratches the dirent + LFN chain by writing 0xE5 into byte 0 of each dirent. Bytes outside those allocation-table slots and the freed physical runs are guaranteed byte-identical to the source image. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds files by rebuilding the volume (equal names are replaced). |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` | Defragments by rebuilding: every file's clusters end up contiguous. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Defragments by rebuilding; the rebuild leaves no gaps, whatever `options` asks for. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files by rebuilding the volume without them. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Repacks the volume's clusters contiguously and drops free sectors; returns bytes reclaimed. |
 
 #### `DoubleSpaceReader`
 
-Reads Microsoft DoubleSpace / DriveSpace Compressed Volume Files (CVF). The MDBPB (offset 0) starts with a standard FAT BPB (first 36 bytes) and is followed by CVF-specific fields at offset 36 (CvfSignature, CvfVersion, MdfatStart/Len, BitFatStart/Len, DataStart/Len). The reader follows the MDFAT indirection when available and falls back to the inline inner data region otherwise.
+Reads a real MS-DOS 6.x DoubleSpace / DriveSpace compressed volume file (OEM name `MSDBL6.0` or `MSDBL6.2`) — the general reader behind `GenuineCvfReader`, used for real volumes whose geometry or directory tree the latter does not cover (subdirectories, long file names, other cluster sizes). The MDBPB at sector 0 points (word at 0x27) to the embedded inner FAT12 volume, whose boot sector carries the same `MSDBL` name; the MDFAT (sector word at 0x24 plus one, index base word at 0x2D) maps each inner cluster to its physical run. A stored run is read verbatim, a compressed one is decoded by `CvfLzCodec` from its method header.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DoubleSpaceReader` | `DoubleSpaceReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `DoubleSpaceReader`. |
-| `CvfSignature` | `string CvfSignature { get; }` | Raw CvfSignature at offset 36 (`DBLS`, `DVRS`, or `DVR3`). |
 | `Entries` | `IReadOnlyList<DoubleSpaceEntry> Entries { get; }` | Gets the entries. |
-| `IsDriveSpace3` | `bool IsDriveSpace3 { get; }` | True for CompressionWorkbench's own extended DriveSpace 3 layout, detected by the 7-char `MS_DSP3` prefix in the OEM area (the 8th byte is a NUL pad). Its clusters use the same DS LZ77 runs as DriveSpace 6.22. |
-| `IsDriveSpace` | `bool IsDriveSpace { get; }` | True if DriveSpace (any), false if DoubleSpace 6.0. |
-| `Signature` | `string Signature { get; }` | OEM name in the MDBPB: `MSDSP6.0`, `MSDSP6.2`, `DRVSPACE`, or `MS_DSP3`. |
+| `Signature` | `string Signature { get; }` | OEM name in the MDBPB: `MSDBL6.0` or `MSDBL6.2`. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(DoubleSpaceEntry entry)` | Extracts file data. Traverses the inner FAT chain starting from the file's first cluster, resolves each cluster through the MDFAT (when available) to its compressed run in the DATA region, and decompresses. Falls back to the inner data region for clusters with no MDFAT mapping. |
-
-#### `DoubleSpaceWriter`
-
-Builds a spec-compliant Microsoft DoubleSpace / DriveSpace Compressed Volume File (CVF). Layout produced (in sector units, 512 B / sector): Sector 0 — MDBPB (Master DoubleSpace BIOS Parameter Block). First 36 bytes are a standard FAT BPB so the host can identify the volume. Offsets 36..71 are the CVF-specific fields (CvfSignature, CvfVersion, MdfatStart/Len, BitFatStart/Len, DataStart/Len, HostFatCopyStart).Inner FAT1/FAT2 — the inner FAT12/16 tables used by the compressed volume's filesystem.Inner root directory — fixed-size FAT12/16 root with 8.3 entries plus VFAT LFN chains for names that don't fit 8.3.MDFAT — one uint32 entry per logical cluster of the data area; maps logical cluster → first physical sector of the compressed run, run length in sectors and a flags nibble (0=free, 1=stored, 2=compressed).BitFAT — 1 bit per 8 KB region of the data area marking in-use regions.DATA region — compressed clusters packed as `DsCompression` blocks (2-byte header + payload). This writer emits only stored runs (header bit 15 clear) containing the raw cluster contents — the JM/DSS LZ variant is NOT produced. A real DRVSPACE.BIN driver accepts stored runs transparently.Codec selection: driven by `Variant`: `DoubleSpace60` → DS LZ77 (4 KiB window).`DriveSpace62` / `DriveSpace30` → DS LZ77 (8 KiB window).`DriveSpace3` (our own `MS_DSP3` layout) → DS LZ77 (8 KiB window), as DriveSpace 6.22. The 2-byte CVF run header (bit 15 = compressed, low 12 bits = size−1) is shared across all codecs, so the on-disk MDBPB + MDFAT + BitFAT layout is byte-compatible across the family — only the OEM bytes, CvfSignature and inner payload encoding change.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `DoubleSpaceWriter` | `DoubleSpaceWriter()` |  |
-| `CompressionLevel` | `byte CompressionLevel { get; set; }` | DriveSpace 3 (Win95 Plus! Pack) compression-level byte stored at MDBPB offset 76. Values 0..2 correspond to the "Standard", "HiPack", and "UltraPack" UI labels in Microsoft's tooling. Ignored by the codec itself; preserved for round-trip compatibility with third-party readers. Only emitted when `Variant` is `DriveSpace3`. |
-| `DriveSpace` | `bool DriveSpace { get; set; }` | Back-compat shim: `true` = any DriveSpace flavour, `false` = DoubleSpace 6.0. Setter targets DriveSpace 6.22. |
-| `EnableCompression` | `bool EnableCompression { get; set; }` | When `true` (default), per-cluster JM/LZ compression is attempted and the compressed payload is emitted whenever it shrinks the cluster. Clusters that do not compress are stored raw (MDFAT flags = 1). |
-| `MethodName` | `string MethodName { get; set; }` | Compression method id, following the writer's published method list (`stored`, `ds-lz77`, `ds-lz77+`, `ds-lz77++`). Parsed via `Parse` on each `Build`: an unknown base method falls back to `ds-lz77`; a trailing `+` bumps the parse-effort tier (1 = lazy matching, 2+ = iterated multi-pass). Defaults to `ds-lz77` for parity with what real DOS DBLSPACE/DRVSPACE drivers produce. Special id `stored` forces the legacy uncompressed-runs writer even when `EnableCompression` is on — useful for diagnostic images or for inputs where compression would only waste CPU. |
-| `Variant` | `CvfVariant Variant { get; set; }` | Which CVF variant to produce (signatures and CvfVersion differ). |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file. `name` may be a long filename; a VFAT LFN chain is emitted automatically. |
-| `AddFile` | `void AddFile(string name, byte[] data, bool compress)` | Adds a file with an explicit per-file compression opt-in. Use `compress`=`false` to force stored runs for that file even when `EnableCompression` is on (useful for mixed stored/compressed tests or for already-compressed payloads where LZ would only waste CPU). |
-| `Build` | `byte[] Build()` | Builds the complete CVF image. |
+| `Extract` | `byte[] Extract(DoubleSpaceEntry entry)` | Extracts file data: walks the inner FAT chain from the file's first cluster and resolves each cluster through the MDFAT to its stored or compressed run. |
 
 #### `DriveSpaceFormatDescriptor`
 
-References: `https://github.com/sandsmark/dmsdos` — dmsdos, the GPL Linux CVF driver whose source + `doc/dmsdos.doc` are the de-facto on-disk specification (incl. the JM-0-0 cluster codec)Microsoft MS-DOS 6.22 documentation (DriveSpace chapter) — original vendor description`https://en.wikipedia.org/wiki/DriveSpace` — Wikipedia overview
+Microsoft DriveSpace compressed volume file (MS-DOS 6.22): the same real `MSDBL6.0` version-2 container as `DoubleSpaceFormatDescriptor`, created with DriveSpace's JM-0-x codec by default. On disk the two cannot be told apart, so detection hands such a volume to the DoubleSpace descriptor; this one exists to create (and edit) DriveSpace volumes by name. References: `docs/CVF-CODECS-ON-DISK.md` — the cluster codecs, measured against dmsdosMicrosoft MS-DOS 6.22 documentation (DriveSpace chapter) — original vendor description`https://en.wikipedia.org/wiki/DriveSpace` — overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DriveSpaceFormatDescriptor` | `DriveSpaceFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Microsoft DriveSpace compressed volume file (MS-DOS 6.22+/Windows 95). Spec-compliant MDBPB + MDFAT + BitFAT + DATA layout. Inner FAT16 volume with VFAT long filenames. Writer emits stored (uncompressed) runs; the JM/DSS LZ payload variant is a future enhancement. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Sole tunable the DriveSpace writer honours: the per-cluster compression method. "stored" forces uncompressed runs; the ds-lz77 family selects the genuine DS LZ77 codec at increasing effort tiers (lazy matching, then Zopfli-style iteration). The geometry (MDBPB/MDFAT/BitFAT) is fixed. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | True in-place add: BitFAT bits flip, MDFAT cluster-allocation entries are written in place, inner FAT chains extended, and VFAT dirents are inserted into the root directory without rewriting any unrelated bytes. Variant auto-detected from the OEM signature in the existing image. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware CVF defragmentor. Supports planner-driven in-place defrag (using `DefragPlanner` + `DoubleSpaceBlockMover`) with rebuild fallback on error. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | True in-place remove: walks the inner FAT chain, zeros each physical run, clears BitFAT bits, zeros MDFAT entries, zeros inner FAT chain, and scratches the dirent (+ LFN chain) with 0xE5. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the CVF image: every physical sector in the DATA region not claimed by a live file/directory run, plus any gaps outside the metadata regions, is overwritten with zeros. Cluster-tip wiping is not applicable to a CVF: the DATA region holds compressed/stored sector runs whose physical byte length is unrelated to the logical (uncompressed) file size recorded in the inner FAT directory. Zeroing a tail by logical-size offset would corrupt the encoded run, so only whole free sectors are cleared. |
-
-#### `DsCompression`
-
-DoubleSpace / DriveSpace sector-level LZ77 compression. Each CVF "compressed run" consists of a 2-byte little-endian header plus a payload. In the header: bit 15 indicates compressed (`1`) or stored (`0`); bits 0..11 carry `payload_size − 1` (so a payload of 4096 B encodes as `0x0FFF`). The compression algorithm itself is delegated to `DoubleSpaceCompressor` (DBLS, 4 KiB window) and `DriveSpaceCompressor` (DVRS, 8 KiB window) in `Compression.Core.BuildingBlocks`. Both produce a stream prefixed with a 4-byte little-endian uncompressed-size header followed by the variable bit-length token sequence. When the compressed payload would not fit in the 12-bit header size field (> 4096 B) or is not smaller than the raw input, a stored run is emitted instead. On decode, the header's bit 15 picks the branch.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `CompressDriveSpace` | `static byte[] CompressDriveSpace(ReadOnlySpan<byte> input)` | Compresses using the DriveSpace LZ algorithm (8 KiB window) instead of DoubleSpace JM. The CVF header framing is identical so the reader handles both transparently. |
-| `CompressDriveSpace` | `static byte[] CompressDriveSpace(ReadOnlySpan<byte> input, int effort)` | DriveSpace variant with an explicit parse-effort tier — see `Compress`. |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> input)` | Compresses a single sector (at most 4096 B) using the DoubleSpace JM algorithm and returns the complete CVF run (2-byte header + payload). Falls back to a stored run if compression does not shrink the data. |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> input, int effort)` | Compresses with an explicit parse-effort tier (`0` = greedy, `1` = lazy matching, `2+` = iterated multi-pass) routed through `DsLz77Compressor`. Falls back to a stored run if compression does not shrink the data. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> block)` | Decompresses a single CVF run (2-byte header + payload). The compressed payload is decoded with the DoubleSpace/DriveSpace building block — both variants share the same token grammar, so a single decoder handles them. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds files by rebuilding the volume (equal names are replaced). |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` | Defragments by rebuilding: every file's clusters end up contiguous. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Defragments by rebuilding; the rebuild leaves no gaps, whatever `options` asks for. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files by rebuilding the volume without them. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Repacks the volume's clusters contiguously and drops free sectors; returns bytes reclaimed. |
 
 #### `GenuineCvfReader`
 
@@ -10215,7 +10135,7 @@ Implements `IDisposable`.
 
 #### `GenuineCvfWriter`
 
-Builds a genuine MS-DOS DoubleSpace/DriveSpace Compressed Volume File (CVF) in the on-disk shape a real DoubleSpace/DriveSpace driver mounts — verified by the independent GPL `dmsdos` driver (the Linux DoubleSpace/DriveSpace/Stacker driver): it mounts this writer's output, lists the inner directory, and reads every file back byte-exact (detected as "drivespace CVF version 2"). Unlike `DoubleSpaceWriter` (which emits the older `MSDSP*` / offset-36 layout our own reader round-trips), this writer reproduces the real `MSDBL6.0` container: Sector 0 — MDBPB: standard BPB (512 B/sector, 16 sec/cluster, 16 reserved, 1 FAT, 512 root entries, 128-sector FAT) plus the DoubleSpace geometry substructure (inner-volume base sector @0x27, root @0x29, first-data @0x2B, MDFAT index offset @0x2D, MDFAT-start-1 @0x24).Sector 130 — MDFAT: one little-endian u32 per inner-volume cluster at `(0x24+1)*512 + (0x2D + cluster)*4`; physical sector = `(entry & 0x1FFFFF) + 1`; stored clusters carry the run-length flag bits (0xFFC0… full, 0xC000… final).Sector 417 (inner base) — a complete FAT12 volume (boot, FAT, root directory, data) laid out contiguously; clusters are stored verbatim (no compression), which the driver reads transparently. The fixed geometry matches a ~557 KB compressed volume; files must fit the inner FAT12 data area (≈ 69 clusters of 8 KB).
+Builds a genuine MS-DOS DoubleSpace/DriveSpace Compressed Volume File (CVF) in the on-disk shape a real DoubleSpace/DriveSpace driver mounts — verified by the independent GPL `dmsdos` driver (the Linux DoubleSpace/DriveSpace/Stacker driver): it mounts this writer's output, lists the inner directory, and reads every file back byte-exact (detected as "drivespace CVF version 2"). The writer reproduces the real `MSDBL6.0` container: Sector 0 — MDBPB: standard BPB (512 B/sector, 16 sec/cluster, 16 reserved, 1 FAT, 512 root entries, 128-sector FAT) plus the DoubleSpace geometry substructure (inner-volume base sector @0x27, root @0x29, first-data @0x2B, MDFAT index offset @0x2D, MDFAT-start-1 @0x24).Sector 130 — MDFAT: one little-endian u32 per inner-volume cluster at `(0x24+1)*512 + (0x2D + cluster)*4`; physical sector = `(entry & 0x1FFFFF) + 1`; stored clusters carry the run-length flag bits (0xFFC0… full, 0xC000… final).Sector 417 (inner base) — a complete FAT12 volume (boot, FAT, root directory, data) laid out contiguously; clusters are stored verbatim (no compression), which the driver reads transparently. The fixed geometry matches a ~557 KB compressed volume; files must fit the inner FAT12 data area (≈ 69 clusters of 8 KB).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10345,7 +10265,7 @@ Builds a fresh, read-only DragonFS image (Libdragon / Nintendo 64) from a flat s
 
 ### Namespace `FileSystem.DriveSpace3`
 
-[`DriveSpace3Entry`](#drivespace3entry) · [`DriveSpace3FormatDescriptor`](#drivespace3formatdescriptor) · [`DriveSpace3Reader`](#drivespace3reader) · [`DriveSpace3Writer`](#drivespace3writer) · [`GenuineDvr3Reader`](#genuinedvr3reader) · [`GenuineDvr3Writer`](#genuinedvr3writer)
+[`DriveSpace3Entry`](#drivespace3entry) · [`DriveSpace3FormatDescriptor`](#drivespace3formatdescriptor) · [`GenuineDvr3Reader`](#genuinedvr3reader) · [`GenuineDvr3Writer`](#genuinedvr3writer)
 
 #### `DriveSpace3Entry`
 
@@ -10360,9 +10280,9 @@ One file entry inside a DriveSpace 3 CVF. Names with characters or lengths outsi
 
 #### `DriveSpace3FormatDescriptor`
 
-Descriptor for Microsoft DriveSpace 3 CVF (Windows 95 Plus! Pack, 1995). Distinguished from DoubleSpace/DriveSpace 2 by the `MS_DSP3` MDBPB signature at file offset 3 and the `DVR3` CvfSignature at offset 36. That `MS_DSP3` layout is CompressionWorkbench's own (see the `Compatibility` option); real DriveSpace 3 volumes are the `MSDBL6.0` container written by `GenuineDvr3Writer`, whose JM and SQ clusters dmsdos reads. Read/write/modify/defrag are delegated to the shared DoubleSpace infrastructure (`DoubleSpaceWriter` routed through `DriveSpace3`, `DoubleSpaceReader` with DS LZ77 clusters, `DoubleSpaceExtentMap`, `DoubleSpaceBlockMover`) — the on-disk MDBPB+MDFAT+BitFAT layout is byte-compatible across the whole CVF family; only the OEM bytes and inner-cluster codec differ. This brings DriveSpace 3 to full parity with DoubleSpace/DriveSpace 6.22 for defrag, wipe-empty, modify, extent map and block mover. Shares the `.cvf` extension with DoubleSpace; FormatDetector disambiguates by magic. References: `https://github.com/sandsmark/dmsdos` — dmsdos, the GPL Linux CVF driver whose source + `doc/dmsdos.doc` are the de-facto DriveSpace 3 on-disk specification (5-byte MDFAT, JM and SQ cluster codecs)Microsoft Plus! for Windows 95 documentation (DriveSpace 3) — original vendor description`https://en.wikipedia.org/wiki/DriveSpace` — Wikipedia overview of the CVF family
+Microsoft DriveSpace 3 compressed volume file (Windows 95 Plus! Pack / OSR2): the real `MSDBL6.0` container with 32 KiB clusters, version 3 and a 5-byte MDFAT, whose clusters are stored or compressed per cluster (JM-0-x Normal/High, SQ-0-0 Ultra, DS-0-x). Volumes are written only in the layout the independent dmsdos driver mounts ("drivespace 3 CVF"); edits rebuild the volume. Shares the `.cvf` extension and the `MSDBL6.0` name with DoubleSpace/DriveSpace; its signature additionally requires 64 sectors per cluster, which wins detection for these volumes. References: `docs/CVF-CODECS-ON-DISK.md` — the cluster codecs, measured against dmsdosMicrosoft Plus! for Windows 95 documentation (DriveSpace 3) — original vendor description`https://en.wikipedia.org/wiki/DriveSpace` — overview of the CVF family
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10371,58 +10291,23 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
 | `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` | Microsoft DriveSpace 3 CVF (Win95 Plus! Pack 1995). Shares the DoubleSpace MDBPB+MDFAT+BitFAT infrastructure (extent map, block mover, planner-driven defrag, wipe-empty, add/remove via rebuild). Per-cluster payload is DriveSpace's DS LZ77 with the four-tier effort set — `ds-lz77` (greedy), `ds-lz77+` (lazy matching), `ds-lz77++` (iterated multi-pass). The shrink-or-store fallback inside the codec emits a stored CVF run when the compressed payload would not shrink the cluster, so incompressible regions are not penalised at any effort level. |
+| `Description` | `string Description { get; }` |  |
 | `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | True in-place add via the shared MDBPB-aware `DoubleSpaceInPlaceModifier`. BitFAT bits flip, MDFAT cluster-allocation entries are written in place, inner FAT chains extended, and VFAT dirents are inserted into the root directory without rewriting any unrelated bytes. Clusters are DS LZ77 runs. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds files by rebuilding the volume (equal names are replaced). |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `Defragment` | `void Defragment(Stream archive)` |  |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware CVF defragmentor. Supports planner-driven in-place defrag (using `DefragPlanner` + `DoubleSpaceBlockMover`) with rebuild fallback on error — same shape as `Defragment`. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
+| `Defragment` | `void Defragment(Stream archive)` | Defragments by rebuilding: every file's clusters end up contiguous. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Defragments by rebuilding; the rebuild leaves no gaps, whatever `options` asks for. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | True in-place remove via the shared MDBPB-aware `DoubleSpaceInPlaceModifier`. Walks the inner FAT chain, zeros each physical run, clears BitFAT bits, zeros MDFAT entries, zeros inner FAT chain, and scratches the dirent (+ LFN chain) with 0xE5. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the CVF image: every physical sector in the DATA region not claimed by a live file/directory run, plus any gaps outside the metadata regions, is overwritten with zeros. Cluster-tip wiping is not applicable to a CVF — the DATA region holds compressed/stored runs whose physical byte length is unrelated to the logical (uncompressed) file size. |
-
-#### `DriveSpace3Reader`
-
-Reads CompressionWorkbench's own extended DriveSpace 3 layout (OEM name `MS_DSP3`, CvfSignature `DVR3`): the DOS 6.x DBLSPACE/DRVSPACE MDBPB + MDFAT + BitFAT + DATA chain. Real DriveSpace 3 volumes are read by `GenuineDvr3Reader`. Compressed runs (MDFAT flag = 2) are DriveSpace's DS LZ77 runs; stored runs (flag = 1) are returned verbatim. The inner FAT16 chain is walked starting from each entry's first cluster, with the MDFAT indirection resolving every cluster to its physical run in the DATA region. Clusters without a valid MDFAT mapping fall back to the inner-data mirror, mirroring the strategy used by `FileSystem.DoubleSpace.DoubleSpaceReader`.
-
-Implements `IDisposable`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `DriveSpace3Reader` | `DriveSpace3Reader(Stream stream)` | Parses the MDBPB and inner FAT directory from `stream`. Throws `InvalidDataException` if the image is too small or the OEM signature does not match `MS_DSP3`. |
-| `SignatureOffset` | `const int SignatureOffset` | Offset of the OEM magic signature in the MDBPB. |
-| `Signatures` | `static readonly byte[] Signatures` | Magic signature bytes (`MS_DSP3`) at offset 3. |
-| `CvfSignature` | `string CvfSignature { get; }` | Raw CvfSignature at offset 36 (`DVR3`). |
-| `Entries` | `IReadOnlyList<DriveSpace3Entry> Entries { get; }` | Gets the entries. |
-| `Signature` | `string Signature { get; }` | OEM name in the MDBPB. Always `MS_DSP3` for valid images. |
-| `ValidHeader` | `bool ValidHeader { get; }` | True once `Parse` has accepted the header. |
-| `BuildSurfaceMetadata` | `byte[] BuildSurfaceMetadata()` | Surfaces high-level metadata about the parsed CVF for tooling/UI inspection. Returns an INI-style key=value block. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(DriveSpace3Entry entry)` | Extracts the bytes of `entry` by walking the inner FAT chain from its first cluster, resolving each cluster through the MDFAT indirection and decoding the corresponding stored or DS LZ77 run. |
-
-#### `DriveSpace3Writer`
-
-Builds a spec-compliant Microsoft DriveSpace 3 CVF (Windows 95 Plus! Pack, 1995). On-disk layout mirrors the DOS 6.x DBLSPACE/DRVSPACE convention: MDBPB → inner FAT16 → inner root dir → MDFAT → BitFAT → DATA region. The only differences from `FileSystem.DoubleSpace.DoubleSpaceWriter` are: OEM name `MS_DSP3` at offset 3 (vs `MSDSP6.0`/`MSDSP6.2`).CvfSignature `DVR3` at offset 36.Per-cluster compression payload is DriveSpace's DS LZ77 (8 KiB window).A compression-level byte at offset 75 (DriveSpace 3 BPB extension). This writer emits either stored runs (MDFAT flag = 1) or DS LZ77-compressed runs (flag = 2), depending on whether the codec shrinks the cluster. The reader follows the inner FAT chain through the MDFAT indirection back to each compressed run, exactly as DoubleSpace does. Stage 2 self round-trip is the gating requirement; bit-stream parity with Microsoft's reference driver (DRVSPACE.BIN) is a future external-tool conformance gate.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `DriveSpace3Writer` | `DriveSpace3Writer()` |  |
-| `CompressionLevel` | `byte CompressionLevel { get; set; }` | DriveSpace 3 compression level byte stored at MDBPB offset 75. Values 0..2 correspond to the "Standard", "HiPack", and "UltraPack" levels in the Microsoft tooling. The actual encoder here ignores the field — it is preserved for round-trip compatibility with third-party readers. |
-| `EnableCompression` | `bool EnableCompression { get; set; }` | When `true` (default), per-cluster DS LZ77 compression is attempted and the compressed payload is emitted whenever it shrinks the cluster. Clusters that do not compress are stored raw (MDFAT flags = 1). |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file. Long filenames produce a VFAT LFN chain automatically. |
-| `AddFile` | `void AddFile(string name, byte[] data, bool compress)` | Adds a file with an explicit per-file compression opt-in. Use `compress`=`false` to force stored runs for that file even when `EnableCompression` is on. |
-| `Build` | `byte[] Build()` | Builds the complete CVF image. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files by rebuilding the volume without them. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Repacks the volume's clusters contiguously and drops free sectors; returns bytes reclaimed. |
 
 #### `GenuineDvr3Reader`
 
@@ -10440,7 +10325,7 @@ Implements `IDisposable`.
 
 #### `GenuineDvr3Writer`
 
-Builds a genuine Microsoft DriveSpace 3 Compressed Volume File (CVF) — the on-disk shape a real DriveSpace 3 driver mounts, verified by the independent GPL `dmsdos` driver (the Linux DoubleSpace/DriveSpace/Stacker driver), which detects this writer's output as "drivespace 3 CVF", mounts it, lists the inner directory and reads every file back byte-exact. Unlike `DriveSpace3Writer` (the older self-round-trip `MS_DSP3`/offset-36 layout — which the real driver rejects), DriveSpace 3 is in fact a member of the DOS `MSDBL6.0` CVF family: the same container as `GenuineCvfWriter`, but distinguished by `64` sectors per cluster (32 KB clusters, boot byte 13), a `version_flag = 3` (boot byte 51) and a 5-byte-per-entry MDFAT (102 entries per sector plus 2 pad bytes) instead of the 4-byte v2 entry. Clusters are stored uncompressed (MDFAT flags = 3: used + uncompressed) and identity-mapped through the MDFAT; the inner volume is FAT16. Inner-directory file sizes truncate each cluster's tail, so we store every cluster as a full 64-sector run with the unused tail zero-padded.
+Builds a genuine Microsoft DriveSpace 3 Compressed Volume File (CVF) — the on-disk shape a real DriveSpace 3 driver mounts, verified by the independent GPL `dmsdos` driver (the Linux DoubleSpace/DriveSpace/Stacker driver), which detects this writer's output as "drivespace 3 CVF", mounts it, lists the inner directory and reads every file back byte-exact. DriveSpace 3 is a member of the DOS `MSDBL6.0` CVF family: the same container as `GenuineCvfWriter`, but distinguished by `64` sectors per cluster (32 KB clusters, boot byte 13), a `version_flag = 3` (boot byte 51) and a 5-byte-per-entry MDFAT (102 entries per sector plus 2 pad bytes) instead of the 4-byte v2 entry. Clusters are stored uncompressed (MDFAT flags = 3: used + uncompressed) and identity-mapped through the MDFAT; the inner volume is FAT16. Inner-directory file sizes truncate each cluster's tail, so we store every cluster as a full 64-sector run with the unused tail zero-padded.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -18549,7 +18434,7 @@ Builds a freshly formatted SPIFFS image holding the given files, in the state SP
 
 ### Namespace `FileSystem.Stacker`
 
-[`GenuineStackerReader`](#genuinestackerreader) · [`GenuineStackerWriter`](#genuinestackerwriter) · [`StacLzs`](#staclzs) · [`StackerEntry`](#stackerentry) · [`StackerFormatDescriptor`](#stackerformatdescriptor) · [`StackerReader`](#stackerreader) · [`StackerWriter`](#stackerwriter)
+[`GenuineStackerReader`](#genuinestackerreader) · [`GenuineStackerWriter`](#genuinestackerwriter) · [`StackerEntry`](#stackerentry) · [`StackerFormatDescriptor`](#stackerformatdescriptor)
 
 #### `GenuineStackerReader`
 
@@ -18568,7 +18453,7 @@ Implements `IDisposable`.
 
 #### `GenuineStackerWriter`
 
-Builds a genuine Stac Electronics STACVOL — the on-disk shape a real Stacker driver mounts, verified by the independent GPL `dmsdos` driver, which detects this writer's output as "stacker version 3 CVF", mounts it, lists the inner directory and reads every file back byte-exact. Unlike `StackerWriter` (the older self-round-trip layout with the invented `STKMAP01` trailer — which the real driver rejects), the genuine STACVOL is shaped as: Sector 0 — SCB: the `"STACKER"` magic, a minimal FAT BPB (so the generic FAT layer parses sector 0 without crashing), the raw `0x1A0A` signature at 0x4e/0x4f, and the obfuscated superblock at 0x50 (0x30 bytes enciphered with the Stacker rolling-XOR cipher seeded at 0x4c). The decoded superblock carries the version (0x60), sector size (0x62), total sectors (0x6C), emulated-boot-block sector (0x70), AMAP start (0x74), FAT start (0x76) and data start (0x7a).Emulated boot block (at the 0x70 sector) — a standard BPB describing the inner FAT volume.Interleaved FAT + AMAP from the FAT-start sector: the AMAP (Stacker's MDFAT) sector for a cluster is `(area/6)*9 + area%6 + 3 + fatStart` where `area = cluster*3/512`. Each 3-byte entry stores the absolute physical sector and a stored-cluster flag (uncompressed); clusters are identity-mapped and read verbatim.
+Builds a genuine Stac Electronics STACVOL — the on-disk shape a real Stacker driver mounts, verified by the independent GPL `dmsdos` driver, which detects this writer's output as "stacker version 3 CVF", mounts it, lists the inner directory and reads every file back byte-exact. The STACVOL is shaped as: Sector 0 — SCB: the `"STACKER"` magic, a minimal FAT BPB (so the generic FAT layer parses sector 0 without crashing), the raw `0x1A0A` signature at 0x4e/0x4f, and the obfuscated superblock at 0x50 (0x30 bytes enciphered with the Stacker rolling-XOR cipher seeded at 0x4c). The decoded superblock carries the version (0x60), sector size (0x62), total sectors (0x6C), emulated-boot-block sector (0x70), AMAP start (0x74), FAT start (0x76) and data start (0x7a).Emulated boot block (at the 0x70 sector) — a standard BPB describing the inner FAT volume.Interleaved FAT + AMAP from the FAT-start sector: the AMAP (Stacker's MDFAT) sector for a cluster is `(area/6)*9 + area%6 + 3 + fatStart` where `area = cluster*3/512`. Each 3-byte entry stores the absolute physical sector and a stored-cluster flag (uncompressed); clusters are identity-mapped and read verbatim.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -18581,15 +18466,6 @@ Builds a genuine Stac Electronics STACVOL — the on-disk shape a real Stacker d
 | `VolumeLabel` | `string VolumeLabel { get; init; }` | Optional inner-volume label (≤11 chars). Empty = no label entry. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the root directory of the compressed volume. |
 | `Build` | `byte[] Build()` | Builds the STACVOL image bytes. |
-
-#### `StacLzs`
-
-Stac LZS (Hi/fn) compression as published in IETF RFC 1967 / RFC 2395. A bit-oriented LZ77 variant over a 2048-byte sliding history window with MSB-first bit packing. This is the scheme Stacker uses for compressed clusters inside a STACVOL.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static byte[] Compress(byte[] input)` | Compress `input` into a STORED-or-LZS stream. |
-| `Decompress` | `static byte[] Decompress(byte[] input, int expectedLength)` | Decompress an LZS stream into exactly `expectedLength` bytes. |
 
 #### `StackerEntry`
 
@@ -18606,73 +18482,35 @@ Represents a stacker entry.
 
 #### `StackerFormatDescriptor`
 
-Descriptor for the Stacker STACVOL compressed volume (Stac Electronics, MS-DOS) — the historical predecessor of Microsoft's DoubleSpace (DOS 6.0) and DriveSpace (DOS 6.22 / Win 95). A STACVOL wraps a compressed inner FAT12 volume behind an ASCII banner and a Stacker Control Block (BPB); clusters are STORED verbatim or Stac-LZS compressed (RFC 1967/2395). Detection is by the ASCII "STACKER" banner at file offset 0. Existing-image add/replace/remove is implemented by a flavor-preserving rebuild: genuine STACVOL images remain genuine STACVOL images and Extended images remain Extended. Under the repository's capability contract this is R/W even though it is not a byte-local mutation. References: `https://github.com/sandsmark/dmsdos` — dmsdos driver — the de-facto public documentation of the STACVOL layout and cluster compression`https://www.rfc-editor.org/rfc/rfc1967` — LZS-DCP (the Stac LZS algorithm)`https://www.rfc-editor.org/rfc/rfc2395` — LZS in IPsec — independent description of the same algorithm`https://en.wikipedia.org/wiki/Stac_Electronics` — Wikipedia article
+Stacker STACVOL compressed volume (Stac Electronics, MS-DOS) — the predecessor of Microsoft's DoubleSpace. A STACVOL wraps an inner FAT12 volume behind the "STACKER" banner, an obfuscated superblock, an emulated boot block and an interleaved AMAP; clusters are stored or compressed per cluster (SD-3, SD-4 or DS). Volumes are written only in the layout the independent dmsdos driver mounts; edits rebuild the volume, keeping its label. References: `docs/CVF-CODECS-ON-DISK.md` — the cluster codecs and fragmented clusters, measured against dmsdos`https://www.rfc-editor.org/rfc/rfc1974` — Stac LZS, the token grammar of SD-3`https://en.wikipedia.org/wiki/Stac_Electronics` — overview
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `StackerFormatDescriptor` | `StackerFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Gets the options schema. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
-| `Shrink` | `void Shrink(Stream input, Stream output)` | Shrinks the CVF by repacking it through the flavor-preserving rebuild — a genuine STACVOL stays a genuine STACVOL (label kept, auto-best recompression), an Extended image stays Extended — instead of the interface default, whose plain re-create would silently convert a driver-compatible genuine volume into the CompressionWorkbench-only Extended layout. The rebuilt image is emitted only when it lists the same file set AND is smaller; otherwise the original bytes are copied through unchanged, so Shrink never corrupts or grows the source. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Purges unused space by repacking; returns bytes reclaimed. |
-
-#### `StackerReader`
-
-Reads a Stacker STACVOL compressed volume (Stac Electronics, MS-DOS 1990-1993, the historical predecessor of Microsoft DoubleSpace/DriveSpace). A STACVOL is a host file wrapping a compressed inner FAT12 volume. Physical layout (512-byte sectors, little-endian) — see FORMAT-NOTES.md: sector 0/1: ASCII banner "STACKER version N volume: <path>".sector 2/3: Stacker Control Block — a DOS BPB describing the inner FAT12 volume (label `STACKER.VOL`), with a byte-identical backup at sector 3.the inner FAT12 image, whose clusters are resolved through a sector map (STORED verbatim, or Stac LZS compressed). The reader parses the genuine banner + SCB of real Stacker volumes and walks the inner FAT directory. Cluster payload is resolved through the explicit STORED/LZS sector map that `StackerWriter` emits; genuine empty volumes (no allocated clusters) list only the inner volume label.
-
-Implements `IDisposable`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `StackerReader` | `StackerReader(Stream stream)` | Initializes a new instance of `StackerReader`. |
-| `Entries` | `IReadOnlyList<StackerEntry> Entries { get; }` | Gets the entries. |
-| `InnerBootSectorOffset` | `long InnerBootSectorOffset { get; }` | Physical sector at which the inner FAT12 image begins (the SCB sector). |
-| `NumberOfFats` | `int NumberOfFats { get; }` | Gets or sets the number of fats. |
-| `ReservedSectors` | `int ReservedSectors { get; }` | Gets or sets the reserved sectors. |
-| `RootEntries` | `int RootEntries { get; }` | Gets or sets the root entries. |
-| `SectorsPerCluster` | `int SectorsPerCluster { get; }` | Gets or sets the sectors per cluster. |
-| `SectorsPerFat` | `int SectorsPerFat { get; }` | Gets or sets the sectors per fat. |
-| `ValidHeader` | `bool ValidHeader { get; }` | Gets a value indicating whether valid header. |
-| `Version` | `int Version { get; }` | Gets or sets the version. |
-| `VolumeName` | `string VolumeName { get; }` | Volume path from the SCB banner (e.g. `C:\STACVOL.DSK`). |
-| `VolumeSectors` | `long VolumeSectors { get; }` | Gets or sets the volume sectors. |
-| `BuildSurfaceMetadata` | `byte[] BuildSurfaceMetadata()` | Performs the build surface metadata operation. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(StackerEntry entry)` | Decodes the supplied input. |
-
-#### `StackerWriter`
-
-Emits a Stacker STACVOL that `StackerReader` round-trips byte-exact. The container reproduces the genuine banner + Stacker Control Block (BPB) and a real inner FAT12 image; file payload is laid out as STORED or Stac-LZS clusters tracked by the explicit STKMAP01 sector map documented in FORMAT-NOTES.md. Incompressible data is stored verbatim.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `StackerWriter` | `StackerWriter()` |  |
-| `Compress` | `bool Compress { get; init; }` | When true, clusters are LZS-compressed if that shrinks them; else STORED. |
-| `SectorsPerCluster` | `int SectorsPerCluster { get; init; }` | Gets or sets the sectors per cluster. |
-| `Version` | `int Version { get; init; }` | Gets or sets the version. |
-| `VolumePath` | `string VolumePath { get; init; }` | Gets or sets the volume path. |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
-| `Build` | `byte[] Build()` | Performs the build operation. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds files by rebuilding the volume (equal names are replaced). |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` | Defragments by rebuilding: every file's clusters end up contiguous. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Defragments by rebuilding; the rebuild leaves no gaps, whatever `options` asks for. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files by rebuilding the volume without them. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Shrinks the volume by rebuilding it (label kept, every cluster recompressed with the smallest codec). The rebuilt image is emitted only when it lists the same file set AND is smaller; otherwise the original bytes are copied through unchanged, so Shrink never corrupts or grows the source. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Repacks the volume's clusters contiguously and drops free sectors; returns bytes reclaimed. |
 
 ### Namespace `FileSystem.Svr4Bfs`
 

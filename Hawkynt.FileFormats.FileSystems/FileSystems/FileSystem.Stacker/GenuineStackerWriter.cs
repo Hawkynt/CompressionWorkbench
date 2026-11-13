@@ -11,9 +11,7 @@ namespace FileSystem.Stacker;
 /// which detects this writer's output as "stacker version 3 CVF", mounts it,
 /// lists the inner directory and reads every file back byte-exact.
 /// <para>
-/// Unlike <see cref="StackerWriter"/> (the older self-round-trip layout with the
-/// invented <c>STKMAP01</c> trailer — which the real driver <i>rejects</i>), the
-/// genuine STACVOL is shaped as:
+/// The STACVOL is shaped as:
 /// </para>
 /// <list type="bullet">
 ///   <item><b>Sector 0 — SCB:</b> the <c>"STACKER"</c> magic, a minimal FAT BPB

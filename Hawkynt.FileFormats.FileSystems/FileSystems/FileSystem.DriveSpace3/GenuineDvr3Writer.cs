@@ -12,9 +12,7 @@ namespace FileSystem.DriveSpace3;
 /// driver), which detects this writer's output as "drivespace 3 CVF", mounts it,
 /// lists the inner directory and reads every file back byte-exact.
 /// <para>
-/// Unlike <see cref="DriveSpace3Writer"/> (the older self-round-trip
-/// <c>MS_DSP3</c>/offset-36 layout — which the real driver <i>rejects</i>),
-/// DriveSpace 3 is in fact a member of the DOS <c>MSDBL6.0</c> CVF family: the
+/// DriveSpace 3 is a member of the DOS <c>MSDBL6.0</c> CVF family: the
 /// same container as <see cref="FileSystem.DoubleSpace.GenuineCvfWriter"/>, but
 /// distinguished by <c>64</c> sectors per cluster (32&#160;KB clusters,
 /// boot byte&#160;13), a <c>version_flag = 3</c> (boot byte&#160;51) and a

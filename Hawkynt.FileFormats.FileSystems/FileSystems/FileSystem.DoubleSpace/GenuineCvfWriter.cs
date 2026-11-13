@@ -12,9 +12,7 @@ namespace FileSystem.DoubleSpace;
 /// lists the inner directory, and reads every file back byte-exact
 /// (detected as "drivespace CVF version 2").
 /// <para>
-/// Unlike <see cref="DoubleSpaceWriter"/> (which emits the older
-/// <c>MSDSP*</c> / offset-36 layout our own reader round-trips), this writer
-/// reproduces the real <c>MSDBL6.0</c> container:
+/// The writer reproduces the real <c>MSDBL6.0</c> container:
 /// </para>
 /// <list type="bullet">
 ///   <item><b>Sector 0</b> — MDBPB: standard BPB (512 B/sector, 16 sec/cluster,

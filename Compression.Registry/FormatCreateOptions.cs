@@ -37,7 +37,7 @@ public sealed class FormatCreateOptions {
   /// </summary>
   /// <remarks>
   /// A writer offering more than one effort tier -- the DoubleSpace / DriveSpace
-  /// CVF codecs declare "ds-lz77", "ds-lz77+" and "ds-lz77++" -- cannot tell the
+  /// CVF codecs declare "jm", "jm+" and "jm++" -- cannot tell the
   /// second tier from the third through a bool.
   /// </remarks>
   public int OptimizeLevel {
