@@ -214,7 +214,7 @@ internal static class MutableArchiveMountSession {
   }
 
   private static bool Eligible(IFormatDescriptor descriptor, string? password)
-    => descriptor.Category == FormatCategory.Archive
+    => (descriptor.Category is FormatCategory.Archive or FormatCategory.CompoundTar)
       && descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsMultipleEntries)
       && string.IsNullOrEmpty(password)
       && descriptor is IArchiveFormatOperations
