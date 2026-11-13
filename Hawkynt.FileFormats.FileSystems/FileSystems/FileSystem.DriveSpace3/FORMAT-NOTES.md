@@ -9,6 +9,12 @@
 >   only those are created (JM and SQ). DS-0-x clusters are read but never written. All are specified
 >   in [`docs/CVF-CODECS-ON-DISK.md`](../../../docs/CVF-CODECS-ON-DISK.md) and decoded by
 >   `CvfLzCodec`, pinned to 32 KiB clusters the dmsdos compressors wrote (`CvfReferenceVectorTests`).
+> - **Not accepted by MS-DOS 7.1's `DRVSPACE.BIN`.** Booted with `DrvSpace=1` and our volume as
+>   `C:\DRVSPACE.000`, the 7.1 driver mounts our DoubleSpace / DriveSpace version-2 volumes but leaves
+>   a DriveSpace 3 volume unmounted (stored, JM and SQ alike). No volume a Microsoft tool wrote in this
+>   format was available to measure the system-area words against (the version-2 container needed
+>   such a set — see `FileSystem.DoubleSpace/FORMAT-NOTES.md`), so the layout below is proven against
+>   `dmsdos` only.
 > - **One layout only.** The writer produces nothing but the container below; edits (add, remove,
 >   defragment, wipe) rebuild the volume and keep its label. Fragmented clusters are not read.
 
