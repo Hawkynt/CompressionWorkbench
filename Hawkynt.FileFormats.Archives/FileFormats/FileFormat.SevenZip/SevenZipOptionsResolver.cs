@@ -16,6 +16,9 @@ internal static class SevenZipOptionsResolver {
     "bzip2" => SevenZipCodec.BZip2,
     "ppmd" => SevenZipCodec.PPMd,
     "copy" or "store" => SevenZipCodec.Copy,
+    "zstd" => SevenZipCodec.Zstd,
+    "brotli" => SevenZipCodec.Brotli,
+    "lz4" => SevenZipCodec.Lz4,
     _ => SevenZipCodec.Lzma2,
   };
 

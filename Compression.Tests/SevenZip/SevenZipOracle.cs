@@ -18,9 +18,47 @@ internal static class SevenZipOracle {
     return ToolPath!;
   }
 
+  /// <summary>
+  /// The 7-Zip-zstd command line (mcmilk/7-Zip-zstd), or <see langword="null"/>: the path in
+  /// <c>CWB_7ZIP_ZSTD</c>, else its default install location. A plain 7-Zip with 7-Zip-zstd's
+  /// <c>Codecs\</c> plugin folder beside it (release asset <c>Codecs-x64.7z</c>) is the same coder set.
+  /// </summary>
+  public static string? ZstdToolPath { get; } = new[] {
+    Environment.GetEnvironmentVariable("CWB_7ZIP_ZSTD"),
+    @"C:\Program Files\7-Zip-Zstandard\7z.exe",
+    @"D:\PortableApps\7-Zip-Zstandard\7z.exe",
+  }.FirstOrDefault(p => !string.IsNullOrEmpty(p) && File.Exists(p));
+
+  /// <summary>Skips the calling test when 7-Zip-zstd is not available.</summary>
+  public static string RequireZstd() {
+    if (ZstdToolPath == null)
+      Assert.Ignore("7-Zip-zstd not found (set CWB_7ZIP_ZSTD to its 7z.exe).");
+    return ZstdToolPath!;
+  }
+
+  /// <summary>Whether <paramref name="codec"/> is one only 7-Zip-zstd reads.</summary>
+  public static bool NeedsZstd(FileFormat.SevenZip.SevenZipCodec codec)
+    => codec is FileFormat.SevenZip.SevenZipCodec.Zstd or FileFormat.SevenZip.SevenZipCodec.Brotli or FileFormat.SevenZip.SevenZipCodec.Lz4;
+
+  /// <summary>The oracle that reads <paramref name="codec"/>: 7-Zip, or 7-Zip-zstd for its own coders.</summary>
+  public static string RequireFor(FileFormat.SevenZip.SevenZipCodec codec) => NeedsZstd(codec) ? RequireZstd() : Require();
+
   /// <summary>Runs 7-Zip with <paramref name="args"/> in <paramref name="workingDirectory"/>.</summary>
-  public static (int ExitCode, string Output) Run(string workingDirectory, params string[] args) {
-    var psi = new ProcessStartInfo(Require()) {
+  public static (int ExitCode, string Output) Run(string workingDirectory, params string[] args) => RunTool(Require(), workingDirectory, args);
+
+  /// <summary>Runs 7-Zip-zstd and fails the test unless it exits 0.</summary>
+  public static string RunZstdOk(string workingDirectory, params string[] args) => RunToolOk(RequireZstd(), workingDirectory, args);
+
+  /// <summary>Runs the 7-Zip at <paramref name="tool"/> and fails the test unless it exits 0.</summary>
+  public static string RunToolOk(string tool, string workingDirectory, params string[] args) {
+    var (exit, output) = RunTool(tool, workingDirectory, args);
+    Assert.That(exit, Is.EqualTo(0), $"{Path.GetFileName(tool)} {string.Join(' ', args)} exited {exit}:\n{output}");
+    return output;
+  }
+
+  /// <summary>Runs the 7-Zip at <paramref name="tool"/> with <paramref name="args"/> in <paramref name="workingDirectory"/>.</summary>
+  public static (int ExitCode, string Output) RunTool(string tool, string workingDirectory, params string[] args) {
+    var psi = new ProcessStartInfo(tool) {
       WorkingDirectory = workingDirectory,
       RedirectStandardOutput = true,
       RedirectStandardError = true,
@@ -48,11 +86,7 @@ internal static class SevenZipOracle {
   }
 
   /// <summary>Runs 7-Zip and fails the test unless it exits 0.</summary>
-  public static string RunOk(string workingDirectory, params string[] args) {
-    var (exit, output) = Run(workingDirectory, args);
-    Assert.That(exit, Is.EqualTo(0), $"7z {string.Join(' ', args)} exited {exit}:\n{output}");
-    return output;
-  }
+  public static string RunOk(string workingDirectory, params string[] args) => RunToolOk(Require(), workingDirectory, args);
 
   /// <summary>Text with plenty of repetition: the case every coder compresses.</summary>
   public static byte[] Text(int size, int seed) {

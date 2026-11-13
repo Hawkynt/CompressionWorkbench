@@ -40,6 +40,7 @@ public sealed partial class SevenZipWriter : IDisposable {
   private readonly string? _password;
   private readonly bool _encryptHeaders;
   private readonly bool _compressHeaders;
+  private readonly int _level;
   private readonly List<SevenZipSource> _entries = [];
 
   /// <summary>Solid blocks larger than this are streamed through the coders rather than assembled in memory.</summary>
@@ -75,10 +76,15 @@ public sealed partial class SevenZipWriter : IDisposable {
   /// whenever that is smaller. An encrypted header is always packed. A plain header (the default)
   /// keeps the archive open to in-place appends and removals.
   /// </param>
+  /// <param name="level">
+  /// The level of the Zstandard, Brotli and LZ4 coders on 7-Zip-zstd's scale (Zstandard 1-22,
+  /// Brotli 0-11, LZ4 1-12; clamped), recorded in the coder properties. Default 3, 7-Zip-zstd's.
+  /// </param>
   public SevenZipWriter(Stream stream, SevenZipCodec codec, bool leaveOpen = false,
       int dictionarySize = 1 << 23, int ppmdOrder = 6, int ppmdMemorySize = 1 << 24,
       SevenZipFilter filter = SevenZipFilter.None, int deltaDistance = 1,
-      string? password = null, bool encryptHeaders = false, bool compressHeaders = false) {
+      string? password = null, bool encryptHeaders = false, bool compressHeaders = false,
+      int level = SevenZipZstdFamilyCoders.DefaultLevel) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanSeek)
       throw new ArgumentException("Stream must be seekable.", nameof(stream));
@@ -98,6 +104,7 @@ public sealed partial class SevenZipWriter : IDisposable {
     this._password = string.IsNullOrEmpty(password) ? null : password;
     this._encryptHeaders = encryptHeaders && this._password != null;
     this._compressHeaders = compressHeaders;
+    this._level = level;
 
     // Write placeholder signature header (32 zero bytes)
     var placeholder = new byte[SevenZipConstants.SignatureHeaderSize];
@@ -598,6 +605,12 @@ public sealed partial class SevenZipWriter : IDisposable {
       case SevenZipCodec.Copy:
         coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecCopy.ToArray() };
         return data;
+      case SevenZipCodec.Zstd or SevenZipCodec.Brotli or SevenZipCodec.Lz4: {
+        using var ms = new MemoryStream();
+        SevenZipZstdFamilyCoders.Encode(codec, new MemoryStream(data, writable: false), ms, this._level);
+        coder = new SevenZipCoder { CodecId = SevenZipZstdFamilyCoders.CodecId(codec), Properties = SevenZipZstdFamilyCoders.Properties(codec, this._level) };
+        return ms.ToArray();
+      }
       default:
         throw new NotSupportedException($"Unsupported codec: {codec}");
     }

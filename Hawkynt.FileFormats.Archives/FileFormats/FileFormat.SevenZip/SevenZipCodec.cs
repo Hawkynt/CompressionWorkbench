@@ -21,4 +21,13 @@ public enum SevenZipCodec {
 
   /// <summary>Copy (store without compression).</summary>
   Copy = 5,
+
+  /// <summary>Zstandard, as the 7-Zip-zstd coder 04 F7 11 01 writes it.</summary>
+  Zstd = 6,
+
+  /// <summary>Brotli, as the 7-Zip-zstd coder 04 F7 11 02 writes it (3 MiB chunks behind skippable-frame headers).</summary>
+  Brotli = 7,
+
+  /// <summary>LZ4, as the 7-Zip-zstd coder 04 F7 11 04 writes it (4 MiB chunks behind skippable-frame headers).</summary>
+  Lz4 = 8,
 }
