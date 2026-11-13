@@ -44,15 +44,22 @@ internal static class SpoolingArchiveMountSession {
           return;
         }
 
+        List<ArchiveEntryInfo> baseline;
         if (copyOriginal) {
           candidate.SetLength(0);
           candidate.Position = 0;
           using var original = snapshot.OpenRead();
           original.CopyTo(candidate);
+          baseline = originals;
+        } else {
+          candidate.Position = 0;
+          baseline = archive.List(candidate, password);
         }
         candidate.Position = 0;
+        var baselineMap = baseline.ToDictionary(
+          static entry => Normalize(entry.Name), StringComparer.Ordinal);
 
-        var removed = originals
+        var removed = baseline
           .Where(e => !after.TryGetValue(Normalize(e.Name), out var now) ||
                       (e.IsDirectory ? FilesystemNodeKind.Directory : FilesystemNodeKind.RegularFile) != now.Kind)
           .Select(static e => e.Name)
@@ -66,16 +73,18 @@ internal static class SpoolingArchiveMountSession {
           var additions = new List<ArchiveInputInfo>();
           foreach (var entry in current) {
             if (entry.Kind == FilesystemNodeKind.Directory) {
-              var present = stored.TryGetValue(entry.Path, out var old) && old.IsDirectory;
+              var present = baselineMap.TryGetValue(entry.Path, out var old) && old.IsDirectory;
               var empty = !current.Any(other => other.Path.StartsWith(entry.Path + "/", StringComparison.Ordinal));
               if (!present && empty)
                 additions.Add(new(entry.Path, entry.Path + "/", IsDirectory: true));
               continue;
             }
-            var changed = !stored.TryGetValue(entry.Path, out var before) || before.IsDirectory ||
+            var changed = !baselineMap.TryGetValue(entry.Path, out var before) || before.IsDirectory ||
                           before.OriginalSize != entry.Length;
             if (!changed) {
-              using var oldReader = OpenEntry(archive, snapshot, before!.Name, password);
+              using var oldReader = copyOriginal
+                ? OpenEntry(archive, snapshot, before!.Name, password)
+                : OpenLiveEntry(archive, (FileStream)candidate, before!.Name, password);
               using var newReader = entry.OpenRead!();
               changed = !SameBytes(oldReader, newReader);
             }
@@ -93,7 +102,7 @@ internal static class SpoolingArchiveMountSession {
               temporary.Name,
               entry.Path,
               IsDirectory: false,
-              Metadata: Metadata(stored.GetValueOrDefault(entry.Path))));
+              Metadata: Metadata(baselineMap.GetValueOrDefault(entry.Path))));
           }
 
           if (additions.Count > 0)
@@ -227,6 +236,18 @@ internal static class SpoolingArchiveMountSession {
     var utc = date.Kind == DateTimeKind.Unspecified
       ? DateTime.SpecifyKind(date, DateTimeKind.Utc) : date.ToUniversalTime();
     return new(LastWriteTimeUtc: new DateTimeOffset(utc));
+  }
+
+  private static Stream OpenLiveEntry(IArchiveFormatOperations archive,
+      FileStream live, string name, string? password) {
+    var reader = new FileStream(live.Name, FileMode.Open, FileAccess.Read,
+      FileShare.ReadWrite | FileShare.Delete, 64 * 1024, FileOptions.RandomAccess);
+    try {
+      return new OwnedReadStream(archive.OpenEntry(reader, name, password), reader);
+    } catch {
+      reader.Dispose();
+      throw;
+    }
   }
 
   private static Stream OpenEntry(IArchiveFormatOperations ops,
