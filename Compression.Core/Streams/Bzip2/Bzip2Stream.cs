@@ -45,6 +45,16 @@ public sealed class Bzip2Stream : CompressionStream {
   public static Bzip2Stream OpenNsisDecoder(Stream stream, bool leaveOpen = false)
     => new(stream, CompressionStreamMode.Decompress, 9, leaveOpen) { _nsisVariant = true };
 
+  /// <summary>
+  /// Opens an encoder for the NSIS dialect <see cref="OpenNsisDecoder"/> reads: no stream header,
+  /// 0x31 before each 900k block, 0x17 after the last, no CRCs and no randomised blocks.
+  /// </summary>
+  /// <param name="stream">The stream to write to.</param>
+  /// <param name="leaveOpen">Whether to leave the inner stream open.</param>
+  /// <returns>A write-only compressing stream.</returns>
+  public static Bzip2Stream OpenNsisEncoder(Stream stream, bool leaveOpen = false)
+    => new(stream, CompressionStreamMode.Compress, 9, leaveOpen) { _nsisVariant = true };
+
   /// <inheritdoc />
   protected override int DecompressBlock(byte[] buffer, int offset, int count) {
     if (!this._headerRead && this._nsisVariant) {
@@ -84,6 +94,12 @@ public sealed class Bzip2Stream : CompressionStream {
   }
 
   private void WriteHeader() {
+    if (this._nsisVariant) {
+      this._bitWriter = new BitWriter<MsbBitOrder>(InnerStream);
+      this._compressor = new Bzip2Compressor(this._bitWriter, this._blockSize100k, nsisVariant: true);
+      return;
+    }
+
     // "BZ" + 'h' + block size digit
     InnerStream.WriteByte((byte)'B');
     InnerStream.WriteByte((byte)'Z');
