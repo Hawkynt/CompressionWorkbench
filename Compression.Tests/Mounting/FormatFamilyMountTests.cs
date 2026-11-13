@@ -113,6 +113,40 @@ public sealed class FormatFamilyMountTests {
     });
   }
 
+  [Test]
+  public void CloneCdSourceMountListsAndReadsRealSiblingImgAndSubFiles() {
+    var directory = Path.Combine(Path.GetTempPath(), $"cwb-ccd-mount-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(directory);
+    var stem = Path.Combine(directory, "disc");
+    var ccd = stem + ".ccd";
+    var img = stem + ".img";
+    var sub = stem + ".sub";
+    var rawImage = Enumerable.Range(0, 2352).Select(static index => (byte)index).ToArray();
+    var subchannel = Enumerable.Range(0, 96).Select(static index => (byte)(255 - index)).ToArray();
+    File.WriteAllText(ccd, "[CloneCD]\\nVersion=3\\n[Disc]\\nTocEntries=1\\nSessions=1\\n");
+    File.WriteAllBytes(img, rawImage);
+    File.WriteAllBytes(sub, subchannel);
+
+    try {
+      using var source = new FileStream(ccd, FileMode.Open, FileAccess.Read, FileShare.Read);
+      var probe = MountNamespaceResolver.Probe("CloneCd", source);
+      Assert.That(probe.Profile.CanMount, Is.True);
+
+      using var session = MountNamespaceResolver.Open(
+        "CloneCd", source, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+      Assert.Multiple(() => {
+        Assert.That(session.Enumerate(session.RootNodeId).Select(static entry => entry.Name),
+          Is.EquivalentTo(new[] { "FULL.ccd", "metadata.ini", "disc.img", "disc.sub" }));
+        Assert.That(ReadAll(session, "disc.img"), Is.EqualTo(rawImage));
+        Assert.That(ReadAll(session, "disc.sub"), Is.EqualTo(subchannel));
+        Assert.That(ReadAll(session, "metadata.ini").Length, Is.GreaterThan(0),
+          "Generated metadata must not be hidden behind a zero-length stat.");
+      });
+    } finally {
+      Directory.Delete(directory, recursive: true);
+    }
+  }
+
   private static byte[] ReadAll(IFilesystemSession session, string name) {
     var node = session.Lookup(session.RootNodeId, name);
     Assert.That(node, Is.Not.Null);
