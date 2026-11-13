@@ -145,9 +145,12 @@ jobs:
         continue-on-error: true
         run: |
           sudo apt-get install -y fuse3 libfuse3-3
-          if [ ! -c /dev/fuse ]; then
-            sudo modprobe fuse || true
-            if grep -Eq '(^|[[:space:]])fuse
+          sudo modprobe fuse || true
+          if [ ! -c /dev/fuse ]; then sudo mknod -m 666 /dev/fuse c 10 229 || true; fi
+          if [ -c /dev/fuse ]; then sudo chmod 666 /dev/fuse; fi
+          dotnet test Compression.Tests --configuration Release --no-build --filter 'FullyQualifiedName~Compression.Tests.Mounting.NativeFuseArchiveMountIntegrationTests' --logger 'trx;LogFileName=fuse-native-archive-tests.trx'
+
+      # Verify the four NuGet meta-packages still pack on every PR / push.
       # This catches regressions in the bundling target (filter excludes for
       # Compression.Core / Registry, ProjectReference path resolution, etc.)
       # before they reach release / nightly. We don't push or upload — the
@@ -155,9 +158,9 @@ jobs:
       # nightly / release workflows that consume them.
       #
       # NB: --no-build is intentionally omitted. The meta csprojs use a custom
-      # `_AddBundledAssembliesToPackage` target with `DependsOnTargets="ResolveReferences"`
+      # _AddBundledAssembliesToPackage target with DependsOnTargets="ResolveReferences"
       # which the SDK refuses to invoke under --no-build (NETSDK1085). The
-      # prior `dotnet build` step already produced up-to-date outputs so pack's
+      # prior dotnet build step already produced up-to-date outputs so pack's
       # build phase no-ops.
       - name: Verify NuGet meta-packages pack
         if: matrix.os == 'ubuntu-latest'
