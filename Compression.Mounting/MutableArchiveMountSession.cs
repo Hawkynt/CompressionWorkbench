@@ -344,6 +344,7 @@ internal static class MutableArchiveMountSession {
       throw new NotSupportedException("This archive cannot be safely materialized for writable mounting.");
 
     var results = new List<RebuildFilesystemEntry>(listed.Count);
+    var buffer = new byte[16 * 1024];
     foreach (var entry in listed) {
       var name = NormalizePath(entry.Name);
       if (entry.IsDirectory) {
@@ -354,12 +355,11 @@ internal static class MutableArchiveMountSession {
       using var contents = archive.OpenEntry(reader, entry.Name, password);
       using var output = new MemoryStream();
       var remaining = entry.OriginalSize;
-      Span<byte> buffer = stackalloc byte[16 * 1024];
       while (remaining > 0) {
-        var read = contents.Read(buffer[..(int)Math.Min(buffer.Length, remaining)]);
+        var read = contents.Read(buffer.AsSpan(0, (int)Math.Min(buffer.Length, remaining)));
         if (read == 0)
           throw new InvalidDataException($"Archive entry '{name}' ended before its declared length.");
-        output.Write(buffer[..read]);
+        output.Write(buffer.AsSpan(0, read));
         remaining -= read;
       }
       if (contents.ReadByte() >= 0)
