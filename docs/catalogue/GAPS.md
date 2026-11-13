@@ -87,7 +87,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 
 | # | Format | Status | Weight | What would make it real |
 | ---: | --- | --- | :---: | --- |
-| 1 | ISO 9660 | PARTIAL | 3 | The reader is complete. The writer still omits Rock Ridge SL, RE/CL and zisofs ZF. Rung 3 (ECMA-119, RRIP); oracle: xorriso and `isoinfo -R` in WSL. |
+| 1 | ISO 9660 | PARTIAL | 3 | Reading and writing are complete, Rock Ridge SL, RE/CL/PL and zisofs ZF included (proven with the kernel's isofs, xorriso, `isoinfo -R` and mkzftree). In-place editing still refuses images with interleaved files or relocated (RE/CL) directories; rewriting their directory chains is what remains. Rung 3 (ECMA-119, RRIP). |
 | 2 | ZIP | PARTIAL | 3 | WinZip JPEG (96) has an LGPL decoder in XADMaster but needs a WinZip-written sample. Certificate, 3DES and RC2 strong encryption need SecureZIP samples. |
 | 3 | NSIS | PARTIAL (read-only) | 3 | Creation needs a real exehead stub. NSIS is mostly zlib/libpng-licensed; makensis is the oracle. |
 | 4 | UPX | PARTIAL (read-only) | 3 | Writing refused: provable output needs UPX's GPL loader stubs. |
@@ -235,7 +235,7 @@ running real-world samples. The file named at the end of each row is where the l
 | Format | Ours | Sources | What is missing |
 | --- | --- | :---: | --- |
 | 7z | `SevenZip` | 7 | Deflate64, ARM64, RISC-V, Zstd/Brotli/LZ4 coders and external header references unsupported (SevenZipReader.cs) |
-| ISO 9660 (Joliet / Rock Ridge / El Torito) | `Iso` | 7 | Rock Ridge PX modes and TF times are not surfaced; interleaved files throw (IsoReader.cs) |
+| ISO 9660 (Joliet / Rock Ridge / El Torito) | `Iso` | 7 | nothing on read (Rock Ridge PX modes, TF times, SL, RE/CL and ZF and interleaved files are read); in-place editing refuses images with interleaved files or relocated directories (IsoTreeEditor.cs) |
 | ZIP | `Zip` | 7 | methods xz (95), JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs) |
 | LHA / LZH | `Lzh` | 6 | every method and header level of lhasa's test suite reads except LHARK's lk7; lh2, lh3, lhx, pm1 and pm2 are read-only; self-extracting executables are not opened (LhaReader.cs) |
 | StuffIt (classic + 5) | `StuffIt` | 4 | store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs) |
