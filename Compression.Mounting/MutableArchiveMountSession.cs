@@ -147,7 +147,8 @@ internal static class MutableArchiveMountSession {
       };
 
       var session = new MutableRebuildFilesystemSession(
-        profile, source, original, rebuild, validate, leaveOpen: true);
+        profile, source, original, rebuild, validate, leaveOpen: true,
+        maxTotalContentBytes: MaxWritableContentBytes);
       return new OwnedFilesystemSession(session, sourceSnapshot);
     } catch {
       sourceSnapshot.Dispose();
