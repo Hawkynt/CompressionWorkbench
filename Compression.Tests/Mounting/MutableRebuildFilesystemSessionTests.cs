@@ -128,11 +128,9 @@ public sealed class MutableRebuildFilesystemSessionTests {
       handle.SetLength(large);
       handle.Write(large - 1, [0xA7]);
       Span<byte> last = stackalloc byte[1];
-      Assert.Multiple(() => {
-        Assert.That(handle.Length, Is.EqualTo(large));
-        Assert.That(handle.Read(large - 1, last), Is.EqualTo(1));
-        Assert.That(last[0], Is.EqualTo(0xA7));
-      });
+      Assert.That(handle.Length, Is.EqualTo(large));
+      Assert.That(handle.Read(large - 1, last), Is.EqualTo(1));
+      Assert.That(last[0], Is.EqualTo(0xA7));
     }
     session.Flush();
     Assert.That(image.ToArray(), Is.EqualTo(new byte[] { 0x17 }));
