@@ -194,8 +194,19 @@ internal sealed class FuseFilesystemOperations : IDisposable {
       if (!this._inodes.TryGetNode(inode, out var nodeId))
         return FuseErrno.NoEntry;
       var node = this._filesystem.Stat(nodeId);
-      if ((mask & write) != 0 && this._readOnly)
-        return FuseErrno.ReadOnlyFileSystem;
+      if ((mask & write) != 0) {
+        if (this._readOnly)
+          return FuseErrno.ReadOnlyFileSystem;
+        if (node.Kind == FilesystemNodeKind.RegularFile && !Has(FilesystemDriverCapabilities.WriteData))
+          return FuseErrno.AccessDenied;
+        if (node.Kind == FilesystemNodeKind.Directory &&
+            !Has(FilesystemDriverCapabilities.CreateFile) &&
+            !Has(FilesystemDriverCapabilities.CreateDirectory) &&
+            !Has(FilesystemDriverCapabilities.DeleteFile) &&
+            !Has(FilesystemDriverCapabilities.RemoveDirectory) &&
+            !Has(FilesystemDriverCapabilities.Rename))
+          return FuseErrno.AccessDenied;
+      }
       if ((mask & execute) != 0 && node.Kind is not FilesystemNodeKind.Directory and not FilesystemNodeKind.SymbolicLink)
         return FuseErrno.AccessDenied;
       return FuseErrno.Success;
@@ -234,10 +245,10 @@ internal sealed class FuseFilesystemOperations : IDisposable {
       return FuseErrno.InvalidArgument;
     var writes = accessMode is OpenWriteOnly or OpenReadWrite;
     var truncates = (flags & OpenTruncate) != 0;
-    if (truncates && !writes)
-      return FuseErrno.InvalidArgument;
     if (this._readOnly && (writes || truncates))
       return FuseErrno.ReadOnlyFileSystem;
+    if (truncates && !writes)
+      return FuseErrno.InvalidArgument;
     if (writes && !Has(FilesystemDriverCapabilities.WriteData))
       return FuseErrno.NotSupported;
     if (truncates && !Has(FilesystemDriverCapabilities.Truncate))
