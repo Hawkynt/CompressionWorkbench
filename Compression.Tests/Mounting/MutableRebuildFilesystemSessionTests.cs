@@ -138,6 +138,9 @@ public sealed class MutableRebuildFilesystemSessionTests {
     using var firstHandle = filesystem.OpenFile(original, FileAccess.ReadWrite);
     using var secondHandle = filesystem.OpenFile(second, FileAccess.ReadWrite);
 
+    secondHandle.Write(100, ReadOnlySpan<byte>.Empty);
+    Assert.That(secondHandle.Length, Is.Zero, "A zero-length write past EOF must not allocate data.");
+
     Assert.Throws<IOException>(() => secondHandle.Write(0, "12345"u8));
     Assert.Multiple(() => {
       Assert.That(firstHandle.Length, Is.EqualTo(4));
