@@ -102,6 +102,43 @@ public sealed class MutableRebuildFilesystemSessionTests {
 
   [Test]
   [Category("Mounting")]
+  public void SpoolingSessionSupportsFileOffsetsAboveTwoGiBWithoutManagedArrayAllocation() {
+    var profile = new FilesystemDriverProfile(
+      "streamed-test", "spooled rebuild",
+      FilesystemMountCapabilityResolver.CoreReadCapabilities |
+      FilesystemMountCapabilityResolver.CoreWriteCapabilities,
+      FilesystemMutationModel.WholeImageRebuild,
+      CanMount: true, CanMountWritable: true, []);
+    using var image = new MemoryStream();
+    using var session = MutableRebuildFilesystemSession.OpenSpooling(
+      profile, image, [],
+      rebuild: static (destination, files) => {
+        Assert.That(files.Count, Is.EqualTo(1));
+        var staged = files[0];
+        Assert.That(staged.Length, Is.EqualTo((long)int.MaxValue + 10L));
+        using var source = staged.OpenRead!();
+        source.Position = staged.Length - 1;
+        Assert.That(source.ReadByte(), Is.EqualTo(0xA7));
+        destination.WriteByte(0x17);
+      });
+    var node = session.CreateFile(session.RootNodeId, "huge.dat");
+    const long large = (long)int.MaxValue + 10;
+    using (var handle = session.OpenFile(node, FileAccess.ReadWrite)) {
+      handle.SetLength(large);
+      handle.Write(large - 1, [0xA7]);
+      Span<byte> last = stackalloc byte[1];
+      Assert.Multiple(() => {
+        Assert.That(handle.Length, Is.EqualTo(large));
+        Assert.That(handle.Read(large - 1, last), Is.EqualTo(1));
+        Assert.That(last[0], Is.EqualTo(0xA7));
+      });
+    }
+    session.Flush();
+    Assert.That(image.ToArray(), Is.EqualTo(new byte[] { 0x17 }));
+  }
+
+  [Test]
+  [Category("Mounting")]
   public void MutableSessionEnforcesAggregateContentQuotaWithoutCorruptingExistingData() {
     var capabilities =
       FilesystemDriverCapabilities.EnumerateDirectories |
