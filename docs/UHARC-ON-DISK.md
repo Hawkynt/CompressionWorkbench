@@ -260,12 +260,36 @@ followed by a uniform value of 2 that says whether another group follows. Output
 go through the word transform; at *L* the stream switches to binary coding (below). A stream of
 nothing but text still codes *L*, usually a few bytes short of the end.
 
-**Resets.** Like LZP's, derived from the file sizes, with a span of 256 KiB (text) or 64 KiB
-(binary) and never beyond *L*. A reset clears the order-1 and order-0 rows and seeds the uniform rows, halves
+**Resets.** Derived from the file sizes: from the last reset point the coder looks 256 KiB
+(text) or 64 KiB (binary) ahead and walks the file ends up to the first one at or beyond that,
+but stops at a file end that reaches *L* or the start of the record file (below) as soon as it
+steps onto it. A reset clears the order-1 and order-0 rows and seeds the uniform rows, halves
 the class rows, quarters the order-2 records, resets the copy decisions, the stride detector,
 the cost averages and the linear-predictor scores, and finally codes the multimedia class as a
 uniform value of 10 (0 = none, 1..9 as ALZ's selectors 1..9, with contexts 0xF8 lower). The
 binary predictor's tables clear too.
+
+**File-size rules.** Just before that class is coded, the sizes of the file the new block ends
+with (*c*) and of the file before it (*p*) are compared with a fixed list, unless the block ends
+with the first file: (587984, 2988578) quarters the order-4 records twice; (481861, 426754)
+quarters them once; (1566200, 2934336) and (2934336, 438144) quarter the order-4 and the
+order-2 records; (3706306, 1498414), (513216, 246814), and a record-sized *c* after a
+non-record-sized *p* inside the record region clear the first record of every order-4 chain
+and the first 65536 order-2 records. They are sizes of standard compression-corpus files; the
+rules apply to any files of those sizes. Fixtures `sizes-mx-a` (481861 then 426754) and
+`sizes-mx-b` (513216 then 246814) are our own text and fail to decode without the rules; the
+other pairs (several MB each) are applied the same way but were not measured.
+
+**Record file** (filters bit 6). UHARC 0.6 sets the bit when the archive holds one particular
+1029744-byte spreadsheet of the Canterbury corpus (`kennedy.xls`); the same size with other
+content, or that file with 100 bytes changed, leaves it clear. With the bit, the record region
+starts at the end of the file before the first 1029744-byte file. From there on, in the
+output, symbol 0xFE escapes the next one: `FE FE` is a literal 0xFE and `FE x` the five bytes
+`00 00 03 03 x`; the binary predictor's stride-10 phase becomes "the bytes two and three back
+are `09 00`", and no level of it is trusted right after a 0x01. Stride 10 is armed from the
+start when the record file is the first file, else at the block where it begins. Measured on
+`kennedy.xls` alone, after `alice29.txt` and `ptt5`, and renamed: all decode only this way
+(a gated conformance test, `CWB_UHARC_CORPUS`, repeats it; the corpus is not committed).
 
 **Copies.** Before every byte a candidate position is chosen:
 

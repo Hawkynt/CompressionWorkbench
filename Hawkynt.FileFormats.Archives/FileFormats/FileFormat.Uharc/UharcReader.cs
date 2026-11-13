@@ -320,7 +320,8 @@ public sealed class UharcReader {
         UharcMethods.Rle => UharcRleDecoder.Decode(packed, offset, length, size),
         >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => UharcLz78Decoder.Decode(packed, offset, length, h.Method, size),
         >= UharcMethods.LzpFirst and <= UharcMethods.LzpLast => UharcLzpDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
-        >= UharcMethods.PpmFirst and <= UharcMethods.PpmLast => UharcPpmDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
+        >= UharcMethods.PpmFirst and <= UharcMethods.PpmLast => UharcPpmDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds,
+          recordModel: (h.Filters & UharcHeader.RecordFileModel) != 0),
         _ => UharcAlzDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
       };
     } catch (Exception e) when (e is IndexOutOfRangeException or ArgumentOutOfRangeException) {

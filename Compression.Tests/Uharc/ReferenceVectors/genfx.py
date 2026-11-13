@@ -129,6 +129,21 @@ while y < 2200:
     y += rng.randint(40, 60)
 put("fax/page.fax", bytes(page))
 
+# sizes: text files of the exact sizes PPM's file-size rules key on (481861 then 426754;
+# 513216 then 246814)
+rng = random.Random(21)
+SIZE_WORDS = ("model order context symbol escape record table window range coder stream archive "
+              "header block reset point size file text binary byte value count total").split()
+def sized_text(n):
+    out, size = [], 0
+    while size < n:
+        line = " ".join(SIZE_WORDS[(size // 97 + k * 7) % len(SIZE_WORDS)] for k in range(8)) + (".\r\n" if rng.random() < 0.97 else "!\r\n")
+        out.append(line)
+        size += len(line)
+    return "".join(out).encode()[:n]
+for name, size in [("a1.txt", 481861), ("a2.txt", 426754), ("b1.txt", 513216), ("b2.txt", 246814)]:
+    put("sizes/" + name, sized_text(size))
+
 for dirpath, dirs, files in os.walk(root):
     for f in files + dirs:
         os.utime(os.path.join(dirpath, f), (STAMP, STAMP))

@@ -31,6 +31,7 @@ Command, run inside the input set's directory:
 | `mm-mz.uha` | mm | `-mz`, files `pic.bmp u8.wav s16.wav` | LZP's BMP/WAV delta filter |
 | `exe-m2.uha` / `exe-mz.uha` | exe | `-m2` / `-mz` | E8/E9 + MZ relocation filter, ELF, and the 1 KiB threshold |
 | `fax-m2.uha` / `fax-mx.uha` | fax | `-m2` / `-mx` | the fax-page transpose (filters bit 7) behind ALZ and PPM |
+| `sizes-mx-a.uha` / `sizes-mx-b.uha` | sizes | `-mx`, files `a1.txt a2.txt` / `b1.txt b2.txt` | PPM's file-size rules: quartering, and clearing, at the matching reset points |
 
 The `v02-*` archives were written by **UHARC 0.2** (`UHARC.EXE`, DOS, 21 Dec 1997, from
 <https://archive.org/details/UHARC>, MD5 `6e2f0e8d0e6b83c0c05c9b406ce056fb`) in DOSBox, from the
