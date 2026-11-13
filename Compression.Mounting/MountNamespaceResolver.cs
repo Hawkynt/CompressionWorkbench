@@ -64,6 +64,11 @@ public static class MountNamespaceResolver {
           SingleFileMountProjection.Probe(descriptor, source),
           [$"file:{descriptor.Id}", "namespace:single-file-read-only"]);
 
+      if (ArchiveRebuildMountProjection.Probe(descriptor, source, password) is { } stagedProfile)
+        return new(
+          stagedProfile,
+          [$"archive:{descriptor.Id}", "namespace:staged-worm-rebuild"]);
+
       if (source.CanSeek) source.Position = 0;
       var archiveProfile = FilesystemDriverDerivation.Probe(descriptor, source, password);
       return new(
@@ -107,6 +112,9 @@ public static class MountNamespaceResolver {
       session = nested;
     } else if (descriptor is not IArchiveFormatOperations) {
       session = SingleFileMountProjection.Open(descriptor, source, options, sourceName);
+    } else if (!options.ReadOnly &&
+               descriptor is IArchiveFormatOperations and IArchiveCreatable) {
+      session = ArchiveRebuildMountProjection.Open(descriptor, source, password);
     } else {
       if (source.CanSeek) source.Position = 0;
       session = FilesystemDriverDerivation.Open(
