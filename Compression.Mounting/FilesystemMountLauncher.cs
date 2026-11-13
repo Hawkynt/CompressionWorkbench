@@ -53,25 +53,36 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
       source = OpenBackingSource(imagePath, requestedPlan.AccessMode);
 
       var probe = MountNamespaceResolver.Probe(formatId, source, password, volumeParameters);
+      var backingWritable = source.CanWrite;
       var resolvedPlan = this._backends.ResolveFilesystem(
         requestedPlan.BackendId,
         probe.Profile,
         requestedPlan.AccessMode,
-        source.CanWrite
+        backingWritable
       );
       EnsureSupported(resolvedPlan);
 
-      filesystem = MountNamespaceResolver.Open(
-        formatId,
-        source,
-        new FilesystemOpenOptions(
-          ReadOnly: requestedPlan.AccessMode == MountAccessMode.ReadOnly,
-          LeaveOpen: false
-        ),
-        password,
-        volumeParameters,
-        Path.GetFileName(imagePath)
-      );
+      if (requestedPlan.AccessMode == MountAccessMode.ReadWrite &&
+          probe.Layers.Contains("namespace:staged-worm-rebuild", StringComparer.Ordinal)) {
+        // The source handle must be closed before same-directory replacement
+        // (Windows will not rename an open archive without delete sharing).
+        source.Dispose();
+        source = null;
+        var descriptor = FormatRegistry.GetById(formatId)!;
+        filesystem = ArchiveRebuildMountProjection.OpenPath(descriptor, imagePath, password);
+      } else {
+        filesystem = MountNamespaceResolver.Open(
+          formatId,
+          source,
+          new FilesystemOpenOptions(
+            ReadOnly: requestedPlan.AccessMode == MountAccessMode.ReadOnly,
+            LeaveOpen: false
+          ),
+          password,
+          volumeParameters,
+          Path.GetFileName(imagePath)
+        );
+      }
 
       // The opened namespace can be more specific than the probe (for example a
       // container can resolve to FAT/NTFS after opening its logical block view).
@@ -81,7 +92,7 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
         requestedPlan.BackendId,
         filesystem.Profile,
         requestedPlan.AccessMode,
-        source.CanWrite
+        backingWritable
       );
       EnsureSupported(resolvedPlan);
 
