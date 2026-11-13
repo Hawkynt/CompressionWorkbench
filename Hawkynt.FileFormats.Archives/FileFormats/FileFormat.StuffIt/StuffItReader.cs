@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Compression.Core.Checksums;
+using Compression.Registry;
 
 namespace FileFormat.StuffIt;
 
@@ -11,8 +12,9 @@ namespace FileFormat.StuffIt;
 /// </summary>
 /// <remarks>
 /// Forks are decoded with methods 0 (store), 1 (RLE90), 2 (compress LZW), 3 (Huffman), 5 (LZAH),
-/// 13 (LZ+Huffman) and 15 (Arsenic). Method 8 (MW), 14 (installer) and encrypted forks are
-/// listed but refused on extraction. Layouts follow XADMaster's XADStuffItParser and
+/// 13 (LZ+Huffman) and 15 (Arsenic). StuffIt 5 forks encrypted with the password scheme (RC4) are
+/// decrypted when the password is given. Method 8 (MW), 14 (installer) and classic encrypted forks
+/// are listed but refused on extraction. Layouts follow XADMaster's XADStuffItParser and
 /// XADStuffIt5Parser (LGPL-2.1-or-later).
 /// </remarks>
 public sealed class StuffItReader : IDisposable {
@@ -28,13 +30,16 @@ public sealed class StuffItReader : IDisposable {
 
   private static ReadOnlySpan<byte> Sit5Banner => "StuffIt (c)1997-"u8;
 
-  private const string MacRomanHigh =
-    "ÄÅÇÉÑÖÜáàâäãåçéèêëíìîïñóòôöõúùûü†°¢£§•¶ß®©™´¨≠ÆØ∞±≤≥¥µ∂∑∏π∫ªºΩæø¿¡¬√ƒ≈∆«»… ÀÃÕŒœ–—“”‘’÷◊ÿŸ⁄€‹›ﬁﬂ‡·‚„‰ÂÊÁËÈÍÎÏÌÓÔÒÚÛÙıˆ˜¯˘˙˚¸˝˛ˇ";
+  // Apple Mac OS Roman mapping: https://www.unicode.org/Public/MAPPINGS/VENDORS/APPLE/ROMAN.TXT
+  internal const string MacRomanHigh =
+    "ÄÅÇÉÑÖÜáàâäãåçéèêëíìîïñóòôöõúùûü†°¢£§•¶ß®©™´¨≠ÆØ∞±≤≥¥µ∂∑∏π∫ªºΩæø¿¡¬√ƒ≈∆«»…\u00A0ÀÃÕŒœ–—“”‘’÷◊ÿŸ⁄€‹›ﬁﬂ‡·‚„‰ÂÊÁËÈÍÎÏÌÓÔ\uF8FFÒÚÛÙıˆ˜¯˘˙˚¸˝˛ˇ";
 
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
   private readonly List<StuffItEntry> _entries = [];
   private readonly long _base;
+  private readonly string? _password;
+  private byte[]? _passwordHash; // StuffIt 5: the archive's 5-byte password check value
   private bool _disposed;
 
   /// <summary>
@@ -43,9 +48,19 @@ public sealed class StuffItReader : IDisposable {
   /// <param name="stream">A seekable stream positioned at a classic or StuffIt 5 archive.</param>
   /// <param name="leaveOpen"><see langword="true"/> to leave <paramref name="stream"/> open after disposal.</param>
   /// <exception cref="InvalidDataException">The stream is not a StuffIt archive or its directory is damaged.</exception>
-  public StuffItReader(Stream stream, bool leaveOpen = false) {
+  public StuffItReader(Stream stream, bool leaveOpen = false) : this(stream, null, leaveOpen) { }
+
+  /// <summary>
+  /// Opens a StuffIt archive whose encrypted forks are to be decrypted with <paramref name="password"/>.
+  /// </summary>
+  /// <param name="stream">A seekable stream positioned at a classic or StuffIt 5 archive.</param>
+  /// <param name="password">The archive password, or <see langword="null"/>.</param>
+  /// <param name="leaveOpen"><see langword="true"/> to leave <paramref name="stream"/> open after disposal.</param>
+  /// <exception cref="InvalidDataException">The stream is not a StuffIt archive or its directory is damaged.</exception>
+  public StuffItReader(Stream stream, string? password, bool leaveOpen = false) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
+    this._password = password;
     this._base = stream.CanSeek ? stream.Position : 0;
     Span<byte> head = stackalloc byte[100];
     var got = stream.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
@@ -80,7 +95,7 @@ public sealed class StuffItReader : IDisposable {
     ObjectDisposedException.ThrowIf(this._disposed, this);
     if (entry.IsDirectory) return [];
     return this.ReadFork(entry, entry.DataForkOffset, entry.CompressedDataSize, entry.DataForkSize,
-      entry.DataMethod, entry.DataForkCrc16, "data fork");
+      entry.DataMethod, entry.DataForkCrc16, "data fork", entry.DataForkKey);
   }
 
   /// <summary>Extracts and verifies the resource fork of <paramref name="entry"/>.</summary>
@@ -89,13 +104,13 @@ public sealed class StuffItReader : IDisposable {
     ObjectDisposedException.ThrowIf(this._disposed, this);
     if (entry.IsDirectory) return [];
     return this.ReadFork(entry, entry.ResourceDataOffset, entry.CompressedResourceSize, entry.ResourceForkSize,
-      entry.ResourceMethod, entry.ResourceForkCrc16, "resource fork");
+      entry.ResourceMethod, entry.ResourceForkCrc16, "resource fork", entry.ResourceForkKey);
   }
 
-  private byte[] ReadFork(StuffItEntry entry, long offset, long compressedSize, long size, int method, ushort crc, string fork) {
+  private byte[] ReadFork(StuffItEntry entry, long offset, long compressedSize, long size, int method, ushort crc, string fork, byte[]? forkKey) {
     if (size == 0 && compressedSize == 0) return [];
-    if (entry.IsEncrypted)
-      throw new NotSupportedException($"'{entry.FileName}' ({fork}) is encrypted; StuffIt decryption is not supported.");
+    if (entry.IsEncrypted && !this.IsStuffIt5)
+      throw new NotSupportedException($"'{entry.FileName}' ({fork}) is encrypted; classic StuffIt decryption is not supported.");
     if (size > int.MaxValue || compressedSize > int.MaxValue)
       throw new NotSupportedException($"'{entry.FileName}' ({fork}) exceeds the 2 GiB in-memory limit.");
     if (offset < 0 || offset + compressedSize > this._stream.Length)
@@ -104,6 +119,7 @@ public sealed class StuffItReader : IDisposable {
     this._stream.Position = offset;
     var compressed = new byte[compressedSize];
     this._stream.ReadExactly(compressed);
+    if (entry.IsEncrypted) StuffIt5Crypto.Decrypt(compressed, this.ArchiveKey(entry), forkKey ?? throw new InvalidDataException($"'{entry.FileName}' ({fork}) is encrypted but carries no key."));
     var length = (int)size;
     var data = method switch {
       0 => compressed.Length == length ? compressed : throw new InvalidDataException($"'{entry.FileName}' ({fork}): stored size mismatch."),
@@ -120,6 +136,16 @@ public sealed class StuffItReader : IDisposable {
     if (method != 15 && Crc16.Compute(data) != crc)
       throw new InvalidDataException($"CRC-16 mismatch for '{entry.FileName}' ({fork}).");
     return data;
+  }
+
+  /// <summary>The 5-byte archive key, once the password has been checked against the archive.</summary>
+  private byte[] ArchiveKey(StuffItEntry entry) {
+    if (this._password is null)
+      throw new ArchivePasswordException($"'{entry.FileName}' is encrypted; a password is required.", passwordWasSupplied: false);
+    if (this._passwordHash is null)
+      throw new InvalidDataException("The StuffIt 5 archive has encrypted entries but no password check value.");
+    return StuffIt5Crypto.ArchiveKey(this._password, this._passwordHash)
+      ?? throw new ArchivePasswordException("Wrong password for this StuffIt archive.", passwordWasSupplied: true);
   }
 
   /// <summary>Human-readable name of a StuffIt method number.</summary>
@@ -216,6 +242,15 @@ public sealed class StuffItReader : IDisposable {
       throw new InvalidDataException($"StuffIt 5 archive version {h[82]} is not supported.");
     var rootCount = BinaryPrimitives.ReadUInt16BigEndian(h.AsSpan(92));
     var firstOffset = BinaryPrimitives.ReadUInt32BigEndian(h.AsSpan(94));
+    int archiveFlags = h[83];
+    if ((archiveFlags & StuffIt5Crypto.ArchiveFlagEncrypted) != 0) {
+      // Optional header parts come in this order: 14 bytes (flag 0x10), a comment-size pair (flag 0x20), the check value.
+      var at = this._base + 100 + ((archiveFlags & 0x10) != 0 ? 14 : 0) + ((archiveFlags & 0x20) != 0 ? 4 : 0);
+      var hashSize = this.ReadAt(at, 1)[0];
+      if (hashSize != StuffIt5Crypto.KeyLength)
+        throw new InvalidDataException($"StuffIt 5 password check value has {hashSize} bytes, not {StuffIt5Crypto.KeyLength}.");
+      this._passwordHash = this.ReadAt(at + 1, hashSize);
+    }
 
     var dirs = new Dictionary<long, string>();
     var pos = this._base + firstOffset;
@@ -243,6 +278,7 @@ public sealed class StuffItReader : IDisposable {
       var isDir = (flags & Sit5FlagDirectory) != 0;
       var crypted = (flags & Sit5FlagCrypted) != 0;
       int dataMethod = 0, childCount = 0;
+      byte[]? dataKey = null, resKey = null;
       if (isDir) {
         childCount = BinaryPrimitives.ReadUInt16BigEndian(this.ReadAt(pos, 2));
         pos += 2;
@@ -255,8 +291,12 @@ public sealed class StuffItReader : IDisposable {
         var mp = this.ReadAt(pos, 2);
         dataMethod = mp[0];
         int passLength = mp[1];
-        pos += 2 + (crypted && dataLength != 0 ? passLength : 0);
-        if (!crypted && passLength != 0)
+        pos += 2;
+        if (crypted && dataLength != 0) {
+          if (passLength != StuffIt5Crypto.KeyLength) throw new InvalidDataException($"StuffIt 5 entry key has {passLength} bytes, not {StuffIt5Crypto.KeyLength}.");
+          dataKey = this.ReadAt(pos, passLength);
+          pos += passLength;
+        } else if (passLength != 0)
           throw new InvalidDataException("StuffIt 5 entry has key material but is not marked encrypted.");
       }
 
@@ -283,7 +323,13 @@ public sealed class StuffItReader : IDisposable {
         resCrc = BinaryPrimitives.ReadUInt16BigEndian(r.AsSpan(8));
         resMethod = r[12];
         int passLength = r[13];
-        pos += 14 + (crypted && resLength != 0 ? passLength : 0);
+        pos += 14;
+        if (crypted && resLength != 0) {
+          if (passLength != StuffIt5Crypto.KeyLength) throw new InvalidDataException($"StuffIt 5 resource key has {passLength} bytes, not {StuffIt5Crypto.KeyLength}.");
+          resKey = this.ReadAt(pos, passLength);
+          pos += passLength;
+        } else if (passLength != 0)
+          throw new InvalidDataException("StuffIt 5 resource fork has key material but is not marked encrypted.");
       }
 
       var parent = dirs.GetValueOrDefault(parentOffset - this._base) ?? dirs.GetValueOrDefault(parentOffset);
@@ -307,6 +353,8 @@ public sealed class StuffItReader : IDisposable {
         DataForkSize = dataLength,
         CompressedDataSize = dataCompressed,
         DataForkCrc16 = dataCrc,
+        DataForkKey = dataKey,
+        ResourceForkKey = resKey,
         ResourceForkSize = resLength,
         CompressedResourceSize = resCompressed,
         ResourceForkCrc16 = resCrc,
