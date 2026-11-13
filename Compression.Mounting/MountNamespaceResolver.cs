@@ -128,6 +128,22 @@ public static class MountNamespaceResolver {
   }
 
   /// <summary>
+  /// Opens a local WORM archive with path-backed staging and journaled
+  /// same-directory publication. Unlike a generic stream mount, this overload
+  /// does not retain an open source handle across archive replacement.
+  /// </summary>
+  public static IFilesystemSession OpenStagedArchivePath(
+      string formatId,
+      string imagePath,
+      string? password = null) {
+    ArgumentException.ThrowIfNullOrWhiteSpace(formatId);
+    ArgumentException.ThrowIfNullOrWhiteSpace(imagePath);
+    var descriptor = FormatRegistry.GetById(formatId)
+      ?? throw new KeyNotFoundException($"Unknown archive format '{formatId}'.");
+    return ArchiveRebuildMountProjection.OpenPath(descriptor, imagePath, password);
+  }
+
+  /// <summary>
   /// The block view below <paramref name="descriptor"/>: plain containers expose theirs directly,
   /// encrypted ones only through the credentials, which are bound here so the rest of the
   /// resolution treats both alike. A missing or wrong passphrase surfaces as
