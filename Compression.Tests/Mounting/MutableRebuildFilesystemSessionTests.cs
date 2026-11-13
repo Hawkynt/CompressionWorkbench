@@ -100,6 +100,61 @@ public sealed class MutableRebuildFilesystemSessionTests {
     Assert.That(backing.ToArray(), Is.EqualTo(original));
   }
 
+  [Test]
+  [Category("Mounting")]
+  public void MutableSessionEnforcesAggregateContentQuotaWithoutCorruptingExistingData() {
+    var capabilities =
+      FilesystemDriverCapabilities.EnumerateDirectories |
+      FilesystemDriverCapabilities.ReadData |
+      FilesystemDriverCapabilities.RandomAccess |
+      FilesystemDriverCapabilities.StableNodeIds |
+      FilesystemDriverCapabilities.WriteData |
+      FilesystemDriverCapabilities.Truncate |
+      FilesystemDriverCapabilities.CreateFile |
+      FilesystemDriverCapabilities.DeleteFile |
+      FilesystemDriverCapabilities.Rename |
+      FilesystemDriverCapabilities.Flush;
+
+    var profile = new FilesystemDriverProfile(
+      "budget-test",
+      "bounded mutable namespace",
+      capabilities,
+      FilesystemMutationModel.WholeImageRebuild,
+      CanMount: true,
+      CanMountWritable: true,
+      []);
+    using var image = new MemoryStream();
+    using var filesystem = new MutableRebuildFilesystemSession(
+      profile,
+      image,
+      [RebuildFilesystemEntry.File("original.bin", "abcd"u8.ToArray())],
+      rebuild: static (destination, entries) => {
+        foreach (var entry in entries.Where(static item => item.Kind == FilesystemNodeKind.RegularFile))
+          destination.Write(entry.Data.Span);
+      },
+      maxTotalContentBytes: 8);
+    var original = filesystem.Lookup(filesystem.RootNodeId, "original.bin")!.Value;
+    var second = filesystem.CreateFile(filesystem.RootNodeId, "second.bin");
+    using var firstHandle = filesystem.OpenFile(original, FileAccess.ReadWrite);
+    using var secondHandle = filesystem.OpenFile(second, FileAccess.ReadWrite);
+
+    Assert.Throws<IOException>(() => secondHandle.Write(0, "12345"u8));
+    Assert.Multiple(() => {
+      Assert.That(firstHandle.Length, Is.EqualTo(4));
+      Assert.That(secondHandle.Length, Is.Zero);
+    });
+
+    firstHandle.SetLength(2);
+    secondHandle.Write(0, "12345"u8);
+    Assert.Multiple(() => {
+      Assert.That(firstHandle.Length, Is.EqualTo(2));
+      Assert.That(secondHandle.Length, Is.EqualTo(5));
+    });
+    Assert.Throws<IOException>(() => secondHandle.SetLength(7));
+    Assert.That(secondHandle.Length, Is.EqualTo(5));
+    filesystem.Flush();
+  }
+
   private static byte[] ReadAll(IFilesystemSession filesystem, FilesystemNodeId nodeId) {
     using var handle = filesystem.OpenFile(nodeId, FileAccess.Read);
     var result = new byte[checked((int)handle.Length)];
