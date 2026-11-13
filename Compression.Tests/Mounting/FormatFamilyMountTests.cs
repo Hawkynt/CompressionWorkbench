@@ -147,6 +147,46 @@ public sealed class FormatFamilyMountTests {
     }
   }
 
+  [Test]
+  public void UnknownD90ImageRemainsAccessibleOnlyAsAnExplicitRawReadOnlyFile() {
+    var payload = Enumerable.Range(0, 256).Select(static value => (byte)value).ToArray();
+    using var source = new MemoryStream(payload, writable: false);
+    var probe = MountNamespaceResolver.Probe("Unknown", source);
+    Assert.Multiple(() => {
+      Assert.That(probe.Profile.CanMount, Is.True);
+      Assert.That(probe.Profile.CanMountWritable, Is.False);
+      Assert.That(probe.Layers, Is.EqualTo(new[] { "format:Unknown", "namespace:opaque-read-only" }));
+    });
+
+    using var session = MountNamespaceResolver.Open(
+      "Unknown", source,
+      new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true),
+      sourceName: "disk.d90");
+    Assert.That(ReadAll(session, "disk.d90"), Is.EqualTo(payload));
+    Assert.Throws<NotSupportedException>(() => MountNamespaceResolver.Open(
+      "Unknown", source, new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true)));
+    Assert.Throws<KeyNotFoundException>(() => MountNamespaceResolver.Probe("NotRegistered", source));
+  }
+
+  [Test]
+  public void PngUsesItsExistingStructuredReadOnlyPseudoArchiveRatherThanOpaqueFallback() {
+    // Tiny valid PNG. The own PNG descriptor, not the host's image decoder,
+    // projects FULL.png plus independently exposed chunks and metadata.
+    var png = Convert.FromBase64String(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO/a9xAAAAAASUVORK5CYII=");
+    using var source = new MemoryStream(png, writable: false);
+    var probe = MountNamespaceResolver.Probe("Png", source);
+    Assert.Multiple(() => {
+      Assert.That(probe.Profile.CanMount, Is.True);
+      Assert.That(probe.Profile.CanMountWritable, Is.False);
+      Assert.That(probe.Layers.Last(), Is.EqualTo("namespace:derived-read-only"));
+    });
+
+    using var session = MountNamespaceResolver.Open(
+      "Png", source, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    Assert.That(ReadAll(session, "FULL.png"), Is.EqualTo(png));
+  }
+
   private static byte[] ReadAll(IFilesystemSession session, string name) {
     var node = session.Lookup(session.RootNodeId, name);
     Assert.That(node, Is.Not.Null);
