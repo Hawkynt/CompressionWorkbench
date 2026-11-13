@@ -44,10 +44,18 @@ public static class MountNamespaceResolver {
         return nested;
 
       if (source.CanSeek) source.Position = 0;
-      var archiveProfile = FilesystemDriverDerivation.Probe(descriptor, source, password);
+      if (descriptor is IArchiveFormatOperations) {
+        var archiveProfile = MutableArchiveMountSession.Probe(descriptor, source, password);
+        return new(
+          archiveProfile,
+          [$"archive:{descriptor.Id}", archiveProfile.CanMountWritable
+            ? "namespace:qualified-write-back"
+            : "namespace:derived-read-only"]);
+      }
+
       return new(
-        archiveProfile,
-        [$"archive:{descriptor.Id}", "namespace:derived-read-only"]);
+        RawContentFilesystemSession.ProfileFor(descriptor, source),
+        [$"format:{descriptor.Id}", "namespace:opaque-read-only"]);
     } finally {
       if (source.CanSeek)
         source.Position = savedPosition;
@@ -59,7 +67,8 @@ public static class MountNamespaceResolver {
       Stream source,
       FilesystemOpenOptions options,
       string? password = null,
-      IReadOnlyDictionary<string, string>? volumeParameters = null) {
+      IReadOnlyDictionary<string, string>? volumeParameters = null,
+      string? sourceName = null) {
     ArgumentException.ThrowIfNullOrWhiteSpace(formatId);
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(options);
@@ -77,13 +86,17 @@ public static class MountNamespaceResolver {
     } else if (BlockProvider(descriptor, password, volumeParameters) is { } blockProvider
                && TryOpenBlockContainer(descriptor, blockProvider, source, options, password) is { } nested) {
       session = nested;
-    } else {
+    } else if (descriptor is IArchiveFormatOperations) {
       if (source.CanSeek) source.Position = 0;
-      session = FilesystemDriverDerivation.Open(
-        descriptor,
-        source,
-        options with { LeaveOpen = true },
-        password);
+      session = options.ReadOnly
+        ? FilesystemDriverDerivation.Open(
+          descriptor, source, options with { LeaveOpen = true }, password)
+        : MutableArchiveMountSession.Open(descriptor, source, password);
+    } else {
+      if (!options.ReadOnly)
+        throw new NotSupportedException(
+          $"Format '{descriptor.Id}' has no writable filesystem or archive projection.");
+      session = RawContentFilesystemSession.Open(descriptor, source, sourceName);
     }
 
     return options.LeaveOpen ? session : new OwnedFilesystemSession(session, source);
