@@ -2,6 +2,7 @@ The DOS executable unpackers in this folder are C# conversions of Deark's decode
 
   LzExeUnpacker.cs   modules/lzexe.c   (LZEXE 0.90 / 0.91 / 0.91e)
   PkLiteUnpacker.cs  modules/pklite.c  (PKLITE EXE and COM)
+  ExePackUnpacker.cs modules/exepack.c (Microsoft EXEPACK)
   DosExe.cs          the 28-byte header writer of the same modules and the entry-point
                      fingerprint of src/fmtutil-exe.c
   ExePackRelocations src/fmtutil-cmpr.c, fmtutil_decompress_exepack_reloc_tbl
