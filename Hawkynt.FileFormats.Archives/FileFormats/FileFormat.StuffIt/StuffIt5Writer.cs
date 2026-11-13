@@ -39,6 +39,13 @@ namespace FileFormat.StuffIt;
 /// Both rules, and the folder layout, were measured on archives StuffIt wrote.
 /// </para>
 /// </remarks>
+///
+/// With a password the archive is encrypted the way StuffIt 5 encrypts it: archive flag 0x80 and,
+/// right after the 100-byte header, a length byte (5) and the first 5 bytes of MD5(archive key),
+/// where the archive key is the first 5 bytes of MD5(password). Every entry is flagged 0x20 (folders
+/// 0x60). Each non-empty fork gets a random 5-byte key, stored after its method/key-length bytes
+/// (data fork: before the name; resource fork: after its record), and its compressed bytes are
+/// RC4-encrypted under archive key ‖ fork key. CRCs stay those of the plain fork data.
 public sealed class StuffIt5Writer : IDisposable {
   private const string SignatureText = "StuffIt (c)1997-2001 Aladdin Systems, Inc., http://www.aladdinsys.com/StuffIt/\r\n";
   private const int ArchiveHeaderSize = 100;
@@ -53,7 +60,10 @@ public sealed class StuffIt5Writer : IDisposable {
   private readonly bool _leaveOpen;
   private readonly StuffItTree<Pending> _tree = new();
   private readonly StuffItCompression _compression;
+  private readonly byte[]? _archiveKey;
   private bool _disposed;
+
+  private int KeyLength => this._archiveKey == null ? 0 : StuffIt5Crypto.KeyLength;
 
   private sealed record Pending(string Type, string Creator, byte[] Data, byte[] Resource,
     byte[] PackedData, byte DataMethod, byte[] PackedResource, byte ResourceMethod);
@@ -72,8 +82,12 @@ public sealed class StuffIt5Writer : IDisposable {
   public StuffIt5Writer(Stream stream, bool leaveOpen = false) : this(stream, StuffItCompression.Smallest, leaveOpen) { }
 
   /// <summary>Starts a StuffIt 5 archive whose forks are compressed as <paramref name="compression"/> asks.</summary>
-  public StuffIt5Writer(Stream stream, StuffItCompression compression, bool leaveOpen = false) {
+  public StuffIt5Writer(Stream stream, StuffItCompression compression, bool leaveOpen = false) : this(stream, compression, null, leaveOpen) { }
+
+  /// <summary>Starts a StuffIt 5 archive whose forks are compressed as <paramref name="compression"/> asks and, with a <paramref name="password"/>, encrypted.</summary>
+  public StuffIt5Writer(Stream stream, StuffItCompression compression, string? password, bool leaveOpen = false) {
     this._compression = compression;
+    if (!string.IsNullOrEmpty(password)) this._archiveKey = StuffIt5Crypto.KeyOf(password);
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
   }
@@ -123,14 +137,15 @@ public sealed class StuffIt5Writer : IDisposable {
   }).ToList();
 
   /// <summary>Assigns offsets depth-first from <paramref name="position"/>; returns the position after the last entry.</summary>
-  private static long Assign(List<Placed> entries, long position) {
+  private long Assign(List<Placed> entries, long position) {
     foreach (var e in entries) {
       e.Offset = position;
       position += EntryFixedSize + e.Name.Length + SecondBlockSize;
       if (e.Node.File is { } f) {
-        position += (f.Resource.Length > 0 ? ResourceRecordSize : 0) + f.PackedResource.Length + f.PackedData.Length;
+        position += (f.Data.Length > 0 ? this.KeyLength : 0)
+          + (f.Resource.Length > 0 ? ResourceRecordSize + this.KeyLength : 0) + f.PackedResource.Length + f.PackedData.Length;
       } else {
-        position = Assign(e.Children, position);
+        position = this.Assign(e.Children, position);
         e.EndRecord = position;
         position += EndRecordSize;
         e.FilesSize = e.Children.Sum(c => c.Node.File is { } cf ? (long)cf.Data.Length + cf.Resource.Length : c.FilesSize);
@@ -142,19 +157,25 @@ public sealed class StuffIt5Writer : IDisposable {
 
   private void Write() {
     var root = Place(this._tree.Root.Children);
-    var end = Assign(root, ArchiveHeaderSize);
+    var first = ArchiveHeaderSize + (this._archiveKey == null ? 0 : 1 + StuffIt5Crypto.KeyLength);
+    var end = this.Assign(root, first);
     if (end > uint.MaxValue) throw new NotSupportedException("A StuffIt 5 archive is limited to 4 GiB.");
 
     var header = new byte[ArchiveHeaderSize];
     Encoding.ASCII.GetBytes(SignatureText).CopyTo(header, 0);
     header[80] = 0x1A;
     header[82] = 5;
+    if (this._archiveKey != null) header[83] = StuffIt5Crypto.ArchiveFlagEncrypted;
     BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(84), (uint)end);
-    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(88), ArchiveHeaderSize);
+    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(88), (uint)first);
     BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(92), (ushort)root.Count);
-    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(94), ArchiveHeaderSize);
+    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(94), (uint)first);
     BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(98), StuffItWriter.ComputeCrc16(header));
     this._stream.Write(header);
+    if (this._archiveKey != null) {
+      this._stream.WriteByte(StuffIt5Crypto.KeyLength);
+      this._stream.Write(StuffIt5Crypto.CheckValue(this._archiveKey));
+    }
 
     this.WriteLevel(root, parent: 0, firstPrevious: 0, lastNext: 0);
     this._stream.Flush();
@@ -175,8 +196,9 @@ public sealed class StuffIt5Writer : IDisposable {
     }
   }
 
-  private static byte[] EntryHeader(byte[] name, byte flags, uint date, long parent, long previous, long next) {
-    var h = new byte[EntryFixedSize + name.Length];
+  private static byte[] EntryHeader(byte[] name, byte flags, uint date, long parent, long previous, long next, byte[]? key = null) {
+    var keyLength = key?.Length ?? 0;
+    var h = new byte[EntryFixedSize + keyLength + name.Length];
     BinaryPrimitives.WriteUInt32BigEndian(h, EntryMarker);
     h[4] = 3; // entry version
     BinaryPrimitives.WriteUInt16BigEndian(h.AsSpan(6), (ushort)h.Length);
@@ -187,7 +209,11 @@ public sealed class StuffIt5Writer : IDisposable {
     BinaryPrimitives.WriteUInt32BigEndian(h.AsSpan(22), (uint)next);
     BinaryPrimitives.WriteUInt32BigEndian(h.AsSpan(26), (uint)parent);
     BinaryPrimitives.WriteUInt16BigEndian(h.AsSpan(30), (ushort)name.Length);
-    name.CopyTo(h, EntryFixedSize);
+    if (key != null) {
+      h[47] = (byte)keyLength;
+      key.CopyTo(h, EntryFixedSize);
+    }
+    name.CopyTo(h, EntryFixedSize + keyLength);
     return h;
   }
 
@@ -196,7 +222,10 @@ public sealed class StuffIt5Writer : IDisposable {
   private void WriteFile(Placed e, Pending f, long parent, long previous, long next) {
     var date = StuffItWriter.ToMacTimestamp(e.Node.Modified);
     var hasResource = f.Resource.Length > 0;
-    var h = EntryHeader(e.Name, 0, date, parent, previous, next);
+    var encrypted = this._archiveKey != null;
+    var dataKey = encrypted && f.Data.Length > 0 ? NewKey() : null;
+    var resourceKey = encrypted && hasResource ? NewKey() : null;
+    var h = EntryHeader(e.Name, encrypted ? StuffIt5Crypto.EntryFlagEncrypted : (byte)0, date, parent, previous, next, dataKey);
     BinaryPrimitives.WriteUInt32BigEndian(h.AsSpan(34), (uint)f.Data.Length);
     BinaryPrimitives.WriteUInt32BigEndian(h.AsSpan(38), (uint)f.PackedData.Length);
     BinaryPrimitives.WriteUInt16BigEndian(h.AsSpan(42), StuffItWriter.ComputeCrc16(f.Data));
@@ -204,7 +233,7 @@ public sealed class StuffIt5Writer : IDisposable {
     // 47: key length, 0 when not encrypted
     SealHeader(h);
 
-    var second = new byte[SecondBlockSize + (hasResource ? ResourceRecordSize : 0)];
+    var second = new byte[SecondBlockSize + (hasResource ? ResourceRecordSize + (resourceKey?.Length ?? 0) : 0)];
     if (hasResource) second[1] = 0x01;
     StuffItWriter.WriteAscii4(second.AsSpan(4), f.Type);
     StuffItWriter.WriteAscii4(second.AsSpan(8), f.Creator);
@@ -215,17 +244,31 @@ public sealed class StuffIt5Writer : IDisposable {
       BinaryPrimitives.WriteUInt32BigEndian(r[4..], (uint)f.PackedResource.Length);
       BinaryPrimitives.WriteUInt16BigEndian(r[8..], StuffItWriter.ComputeCrc16(f.Resource));
       r[12] = f.ResourceMethod;
+      if (resourceKey != null) {
+        r[13] = (byte)resourceKey.Length;
+        resourceKey.CopyTo(r[ResourceRecordSize..]);
+      }
     }
     BinaryPrimitives.WriteUInt16BigEndian(second.AsSpan(2), StuffItWriter.ComputeCrc16(second));
 
     this._stream.Write(h);
     this._stream.Write(second);
-    this._stream.Write(f.PackedResource);
-    this._stream.Write(f.PackedData);
+    this._stream.Write(this.Encrypt(f.PackedResource, resourceKey));
+    this._stream.Write(this.Encrypt(f.PackedData, dataKey));
+  }
+
+  private static byte[] NewKey() => System.Security.Cryptography.RandomNumberGenerator.GetBytes(StuffIt5Crypto.KeyLength);
+
+  private byte[] Encrypt(byte[] packed, byte[]? forkKey) {
+    if (forkKey == null || this._archiveKey == null) return packed;
+    var copy = (byte[])packed.Clone();
+    StuffIt5Crypto.Decrypt(copy, this._archiveKey, forkKey);
+    return copy;
   }
 
   private void WriteFolder(Placed e, long parent, long previous, long next) {
-    var h = EntryHeader(e.Name, FlagFolder, StuffItWriter.ToMacTimestamp(e.Node.Modified), parent, previous, next);
+    var flags = (byte)(FlagFolder | (this._archiveKey != null ? StuffIt5Crypto.EntryFlagEncrypted : 0));
+    var h = EntryHeader(e.Name, flags, StuffItWriter.ToMacTimestamp(e.Node.Modified), parent, previous, next);
     var contentStart = e.Offset + EntryFixedSize + e.Name.Length + SecondBlockSize;
     BinaryPrimitives.WriteUInt32BigEndian(h.AsSpan(34), (uint)(e.Children.Count > 0 ? e.Children[0].Offset : e.EndRecord));
     BinaryPrimitives.WriteUInt32BigEndian(h.AsSpan(38), (uint)e.FilesSize);
