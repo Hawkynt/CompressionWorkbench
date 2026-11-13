@@ -138,6 +138,51 @@ public sealed class FormatFamilyMountTests {
   }
 
   [Test]
+  public void CompoundTarGzipUsesWormRebuildForMountedWrites() {
+    var descriptor = FormatRegistry.GetById("TarGz")!;
+    Assert.That(descriptor, Is.InstanceOf<IArchiveCreatable>());
+    Assert.That(descriptor, Is.Not.InstanceOf<IArchiveModifiable>());
+
+    using var image = new MemoryStream();
+    ((IArchiveCreatable)descriptor).Create(image,
+      [ArchiveInputInfo.InMemory("folder/old.txt", "old"u8.ToArray())],
+      new FormatCreateOptions());
+    image.Position = 0;
+
+    var probe = MountNamespaceResolver.Probe("TarGz", image);
+    Assert.Multiple(() => {
+      Assert.That(probe.Profile.CanMountWritable, Is.True, string.Join("; ", probe.Profile.Limitations));
+      Assert.That(probe.Layers.Last(), Is.EqualTo("namespace:qualified-worm-rebuild"));
+      Assert.That(probe.Profile.Capabilities.HasFlag(FilesystemDriverCapabilities.CreateDirectory), Is.True);
+    });
+
+    image.Position = 0;
+    using (var session = MountNamespaceResolver.Open(
+      "TarGz", image, new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true))) {
+      var folder = session.Lookup(session.RootNodeId, "folder")!.Value;
+      var created = session.CreateFile(folder, "new.txt");
+      using (var handle = session.OpenFile(created, FileAccess.ReadWrite))
+        handle.Write(0, "new"u8);
+      session.DeleteFile(folder, "old.txt");
+      session.Flush();
+    }
+
+    image.Position = 0;
+    using var reopened = MountNamespaceResolver.Open(
+      "TarGz", image, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    var directory = reopened.Lookup(reopened.RootNodeId, "folder")!.Value;
+    Assert.Multiple(() => {
+      Assert.That(reopened.Lookup(directory, "old.txt"), Is.Null);
+      Assert.That(reopened.Lookup(directory, "new.txt"), Is.Not.Null);
+    });
+    var child = reopened.Lookup(directory, "new.txt")!.Value;
+    using var reader = reopened.OpenFile(child, FileAccess.Read);
+    var bytes = new byte[checked((int)reader.Length)];
+    Assert.That(reader.Read(0, bytes), Is.EqualTo(bytes.Length));
+    Assert.That(bytes, Is.EqualTo("new"u8.ToArray()));
+  }
+
+  [Test]
   public void WormOnlyWimRequiresWritableBackingForMountedMutations() {
     var writer = (IArchiveCreatable)FormatRegistry.GetById("Wim")!;
     using var generated = new MemoryStream();
