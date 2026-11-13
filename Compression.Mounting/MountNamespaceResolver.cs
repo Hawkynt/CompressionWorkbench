@@ -28,6 +28,10 @@ public static class MountNamespaceResolver {
       IReadOnlyDictionary<string, string>? volumeParameters = null) {
     ArgumentException.ThrowIfNullOrWhiteSpace(formatId);
     ArgumentNullException.ThrowIfNull(source);
+    if (IsOpaqueRaw(formatId))
+      return new(
+        RawContentFilesystemSession.ProfileFor(formatId, source),
+        [$"format:{formatId}", "namespace:opaque-read-only"]);
     var descriptor = FormatRegistry.GetById(formatId)
       ?? throw new KeyNotFoundException($"Unknown format id '{formatId}'.");
 
@@ -44,10 +48,21 @@ public static class MountNamespaceResolver {
         return nested;
 
       if (source.CanSeek) source.Position = 0;
-      var archiveProfile = FilesystemDriverDerivation.Probe(descriptor, source, password);
+      if (descriptor is IArchiveFormatOperations) {
+        var archiveProfile = MutableArchiveMountSession.Probe(descriptor, source, password);
+        return new(
+          archiveProfile,
+          [$"archive:{descriptor.Id}",
+            !archiveProfile.CanMountWritable
+              ? "namespace:derived-read-only"
+              : archiveProfile.ProfileName == "qualified WORM copy rebuild"
+                ? "namespace:qualified-worm-rebuild"
+                : "namespace:qualified-write-back"]);
+      }
+
       return new(
-        archiveProfile,
-        [$"archive:{descriptor.Id}", "namespace:derived-read-only"]);
+        RawContentFilesystemSession.ProfileFor(descriptor, source),
+        [$"format:{descriptor.Id}", "namespace:opaque-read-only"]);
     } finally {
       if (source.CanSeek)
         source.Position = savedPosition;
@@ -59,10 +74,17 @@ public static class MountNamespaceResolver {
       Stream source,
       FilesystemOpenOptions options,
       string? password = null,
-      IReadOnlyDictionary<string, string>? volumeParameters = null) {
+      IReadOnlyDictionary<string, string>? volumeParameters = null,
+      string? sourceName = null) {
     ArgumentException.ThrowIfNullOrWhiteSpace(formatId);
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(options);
+    if (IsOpaqueRaw(formatId)) {
+      if (!options.ReadOnly)
+        throw new NotSupportedException("Raw/unknown format mounts are read-only.");
+      var raw = RawContentFilesystemSession.Open(formatId, source, sourceName);
+      return options.LeaveOpen ? raw : new OwnedFilesystemSession(raw, source);
+    }
     var descriptor = FormatRegistry.GetById(formatId)
       ?? throw new KeyNotFoundException($"Unknown format id '{formatId}'.");
 
@@ -77,13 +99,18 @@ public static class MountNamespaceResolver {
     } else if (BlockProvider(descriptor, password, volumeParameters) is { } blockProvider
                && TryOpenBlockContainer(descriptor, blockProvider, source, options, password) is { } nested) {
       session = nested;
-    } else {
+    } else if (descriptor is IArchiveFormatOperations) {
       if (source.CanSeek) source.Position = 0;
-      session = FilesystemDriverDerivation.Open(
-        descriptor,
-        source,
-        options with { LeaveOpen = true },
-        password);
+      session = options.ReadOnly
+        ? FilesystemDriverDerivation.Open(
+          descriptor, source, options with { LeaveOpen = true }, password,
+          preserveFileIdentity: source is FileStream)
+        : MutableArchiveMountSession.Open(descriptor, source, password);
+    } else {
+      if (!options.ReadOnly)
+        throw new NotSupportedException(
+          $"Format '{descriptor.Id}' has no writable filesystem or archive projection.");
+      session = RawContentFilesystemSession.Open(descriptor, source, sourceName);
     }
 
     return options.LeaveOpen ? session : new OwnedFilesystemSession(session, source);
@@ -131,8 +158,12 @@ public static class MountNamespaceResolver {
         if (!profile.CanMount) return null;
         return new(
           profile with {
+            CanMountWritable = profile.CanMountWritable && device.CanWrite,
             Limitations = profile.Limitations
               .Append($"Backing bytes are translated by the {outer.DisplayName} container driver; no host disk/loop mount is involved.")
+              .Concat(!device.CanWrite
+                ? ["The outer block-device provider does not permit writable access."]
+                : Array.Empty<string>())
               .Distinct(StringComparer.Ordinal)
               .ToArray(),
           },
@@ -146,13 +177,16 @@ public static class MountNamespaceResolver {
 
         using var partitionDevice = new PartitionBlockDevice(device, firstBlock, blockCount, leaveOpen: true);
         using var partitionStream = new BlockDeviceStream(partitionDevice, leaveOpen: true);
-        if (TryDetectFilesystem(partitionStream) is not { } inner)
-          return null;
+        var inner = TryDetectFilesystem(partitionStream);
         partitionStream.Position = 0;
-        var profile = FormatRegistry.ProbeFilesystem(inner.Id, partitionStream, password);
-        if (!profile.CanMount)
-          return null;
-        childProfiles.Add((partition, inner, profile));
+        var profile = inner is null
+          ? RawContentFilesystemSession.ProfileFor(outer, partitionStream)
+          : FormatRegistry.ProbeFilesystem(inner.Id, partitionStream, password);
+        if (!profile.CanMount) {
+          inner = null;
+          profile = RawContentFilesystemSession.ProfileFor(outer, partitionStream);
+        }
+        childProfiles.Add((partition, inner ?? outer, profile));
       }
 
       var limitations = childProfiles
@@ -171,7 +205,11 @@ public static class MountNamespaceResolver {
         CanMountWritable: false,
         limitations);
       var layers = new List<string> { $"container:{outer.Id}", "block-device", $"partition-table:{partitionTable.Scheme}" };
-      layers.AddRange(childProfiles.Select(child => $"partition{child.Partition.Index + 1}:filesystem:{child.Descriptor.Id}"));
+      layers.AddRange(childProfiles.Select(child =>
+        $"partition{child.Partition.Index + 1}:" +
+        (child.Profile.ProfileName == "opaque source read-only view"
+          ? "raw"
+          : $"filesystem:{child.Descriptor.Id}")));
       return new(profileForComposite, layers);
     } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or IOException or ArgumentException) {
       return null;
@@ -226,17 +264,24 @@ public static class MountNamespaceResolver {
         var partitionDevice = new PartitionBlockDevice(device, firstBlock, blockCount, leaveOpen: true);
         var partitionStream = new BlockDeviceStream(partitionDevice, leaveOpen: true);
         try {
-          if (TryDetectFilesystem(partitionStream) is not { } inner) {
-            partitionStream.Dispose();
-            partitionDevice.Dispose();
-            return null;
-          }
+          var inner = TryDetectFilesystem(partitionStream);
           partitionStream.Position = 0;
-          var child = FormatRegistry.OpenFilesystem(
-            inner.Id,
-            partitionStream,
-            options with { ReadOnly = true, LeaveOpen = true },
-            password);
+          IFilesystemSession child;
+          if (inner is null) {
+            child = RawContentFilesystemSession.Open(
+              outer, partitionStream, $"Partition{partition.Index + 1}.raw");
+          } else {
+            var profile = FormatRegistry.ProbeFilesystem(inner.Id, partitionStream, password);
+            partitionStream.Position = 0;
+            child = profile.CanMount
+              ? FormatRegistry.OpenFilesystem(
+                inner.Id,
+                partitionStream,
+                options with { ReadOnly = true, LeaveOpen = true },
+                password)
+              : RawContentFilesystemSession.Open(
+                outer, partitionStream, $"Partition{partition.Index + 1}.raw");
+          }
           var ownedChild = new OwnedFilesystemSession(child, partitionStream, partitionDevice);
           mounts.Add(new(MakePartitionName(partition), ownedChild));
         } catch {
@@ -309,6 +354,10 @@ public static class MountNamespaceResolver {
     if (type.Length == 0) type = "raw";
     return $"Partition{partition.Index + 1}_{type}";
   }
+
+  private static bool IsOpaqueRaw(string formatId)
+    => formatId.Equals("Raw", StringComparison.OrdinalIgnoreCase) ||
+       formatId.Equals("Unknown", StringComparison.OrdinalIgnoreCase);
 
   private static bool IsFilesystem(string formatId)
     => FormatRegistry.FilesystemFormatIds.Contains(formatId, StringComparer.OrdinalIgnoreCase);

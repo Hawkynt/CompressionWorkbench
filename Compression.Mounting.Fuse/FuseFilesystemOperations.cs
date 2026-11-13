@@ -75,8 +75,9 @@ internal sealed class FuseFilesystemOperations : IDisposable {
       if (nodeId is null)
         return FuseErrno.NoEntry;
 
+      var node = this._filesystem.Stat(nodeId.Value);
       var inode = this._inodes.RegisterLookup(nodeId.Value, parentInode);
-      result = new(inode, this._filesystem.Stat(nodeId.Value));
+      result = new(inode, node);
       return FuseErrno.Success;
     } catch (Exception ex) {
       return MapException(ex);
@@ -97,47 +98,85 @@ internal sealed class FuseFilesystemOperations : IDisposable {
     }
   }
 
-  public int SetAttributes(ulong inode, int toSet, long size, ulong? handleId, out FuseNodeSnapshot result) {
+  public int SetAttributes(ulong inode, int toSet, long size, ulong? handleId, out FuseNodeSnapshot result)
+    => this.SetAttributes(inode, toSet, new LinuxStat { Size = size }, handleId, out result);
+
+  public int SetAttributes(ulong inode, int toSet, LinuxStat attributes, ulong? handleId, out FuseNodeSnapshot result) {
     result = default;
+    if (Volatile.Read(ref this._disposed) != 0)
+      return FuseErrno.Io;
     if (this._readOnly)
       return FuseErrno.ReadOnlyFileSystem;
     if (!this._inodes.TryGetNode(inode, out var nodeId))
       return FuseErrno.NoEntry;
 
+    // These bits are defined in libfuse's low-level fuse_lowlevel.h.
     const int sizeFlag = 1 << 3;
+    const int accessTimeFlag = 1 << 4;
+    const int modificationTimeFlag = 1 << 5;
+    const int accessTimeNowFlag = 1 << 7;
+    const int modificationTimeNowFlag = 1 << 8;
     const int forceFlag = 1 << 9;
     const int killSuidFlag = 1 << 11;
     const int killSgidFlag = 1 << 12;
     const int fileHandleFlag = 1 << 13;
     const int killPrivFlag = 1 << 14;
     const int openFlag = 1 << 15;
-    const int ignorableFlags = forceFlag | killSuidFlag | killSgidFlag | fileHandleFlag | killPrivFlag | openFlag;
-    if ((toSet & ~(sizeFlag | ignorableFlags)) != 0)
-      return FuseErrno.NotSupported;
-    if ((toSet & sizeFlag) != 0) {
-      if (size < 0)
-        return FuseErrno.InvalidArgument;
-      if (!Has(FilesystemDriverCapabilities.Truncate))
-        return FuseErrno.NotSupported;
+    const int timesSetFlag = 1 << 16;
+    const int touchFlag = 1 << 17;
+    const int metadataFlags = accessTimeFlag | modificationTimeFlag | accessTimeNowFlag | modificationTimeNowFlag;
+    const int ignorableFlags = forceFlag | killSuidFlag | killSgidFlag | fileHandleFlag |
+      killPrivFlag | openFlag | timesSetFlag | touchFlag;
 
-      try {
-        if (handleId is { } id && this._files.TryGetValue(id, out var opened))
-          opened.File.SetLength(size);
-        else {
-          using var file = this._filesystem.OpenFile(nodeId, FileAccess.ReadWrite);
-          file.SetLength(size);
-        }
-      } catch (Exception ex) {
-        return MapException(ex);
-      }
-    }
+    // Do not pretend to support POSIX chmod/chown/ctime: the mount-neutral
+    // contract has neither portable owner IDs nor a POSIX mode representation.
+    if ((toSet & ~(sizeFlag | metadataFlags | ignorableFlags)) != 0)
+      return FuseErrno.NotSupported;
+    if ((toSet & sizeFlag) != 0 && (attributes.Size < 0 || !Has(FilesystemDriverCapabilities.Truncate)))
+      return attributes.Size < 0 ? FuseErrno.InvalidArgument : FuseErrno.NotSupported;
+    if ((toSet & metadataFlags) != 0 && !Has(FilesystemDriverCapabilities.SetMetadata))
+      return FuseErrno.NotSupported;
 
     try {
+      DateTimeOffset? accessed = null;
+      DateTimeOffset? modified = null;
+      if ((toSet & metadataFlags) != 0) {
+        var now = DateTimeOffset.UtcNow;
+        if ((toSet & accessTimeNowFlag) != 0)
+          accessed = now;
+        else if ((toSet & accessTimeFlag) != 0)
+          accessed = FromTimespec(attributes.AccessTime);
+        if ((toSet & modificationTimeNowFlag) != 0)
+          modified = now;
+        else if ((toSet & modificationTimeFlag) != 0)
+          modified = FromTimespec(attributes.ModificationTime);
+      }
+
+      if ((toSet & sizeFlag) != 0) {
+        if (handleId is { } id) {
+          if (!this._files.TryGetValue(id, out var opened) || opened.Access == FileAccess.Read)
+            return FuseErrno.BadFileDescriptor;
+          opened.File.SetLength(attributes.Size);
+        } else {
+          using var file = this._filesystem.OpenFile(nodeId, FileAccess.ReadWrite);
+          file.SetLength(attributes.Size);
+        }
+      }
+
+      if (accessed is not null || modified is not null)
+        this._filesystem.SetMetadata(nodeId, new(Modified: modified, Accessed: accessed));
+
       result = new(inode, this._filesystem.Stat(nodeId));
       return FuseErrno.Success;
     } catch (Exception ex) {
       return MapException(ex);
     }
+  }
+
+  private static DateTimeOffset FromTimespec(LinuxTimespec value) {
+    if (value.Nanoseconds is < 0 or >= 1_000_000_000)
+      throw new ArgumentOutOfRangeException(nameof(value), "Nanoseconds must be in [0, 1000000000).");
+    return DateTimeOffset.FromUnixTimeSeconds(value.Seconds).AddTicks(value.Nanoseconds / 100);
   }
 
   public int Access(ulong inode, int mask) {
@@ -155,8 +194,19 @@ internal sealed class FuseFilesystemOperations : IDisposable {
       if (!this._inodes.TryGetNode(inode, out var nodeId))
         return FuseErrno.NoEntry;
       var node = this._filesystem.Stat(nodeId);
-      if ((mask & write) != 0 && this._readOnly)
-        return FuseErrno.ReadOnlyFileSystem;
+      if ((mask & write) != 0) {
+        if (this._readOnly)
+          return FuseErrno.ReadOnlyFileSystem;
+        if (node.Kind == FilesystemNodeKind.RegularFile && !Has(FilesystemDriverCapabilities.WriteData))
+          return FuseErrno.AccessDenied;
+        if (node.Kind == FilesystemNodeKind.Directory &&
+            !Has(FilesystemDriverCapabilities.CreateFile) &&
+            !Has(FilesystemDriverCapabilities.CreateDirectory) &&
+            !Has(FilesystemDriverCapabilities.DeleteFile) &&
+            !Has(FilesystemDriverCapabilities.RemoveDirectory) &&
+            !Has(FilesystemDriverCapabilities.Rename))
+          return FuseErrno.AccessDenied;
+      }
       if ((mask & execute) != 0 && node.Kind is not FilesystemNodeKind.Directory and not FilesystemNodeKind.SymbolicLink)
         return FuseErrno.AccessDenied;
       return FuseErrno.Success;
@@ -197,6 +247,8 @@ internal sealed class FuseFilesystemOperations : IDisposable {
     var truncates = (flags & OpenTruncate) != 0;
     if (this._readOnly && (writes || truncates))
       return FuseErrno.ReadOnlyFileSystem;
+    if (truncates && !writes)
+      return FuseErrno.InvalidArgument;
     if (writes && !Has(FilesystemDriverCapabilities.WriteData))
       return FuseErrno.NotSupported;
     if (truncates && !Has(FilesystemDriverCapabilities.Truncate))
@@ -260,7 +312,7 @@ internal sealed class FuseFilesystemOperations : IDisposable {
     bytesWritten = 0;
     if (this._readOnly)
       return FuseErrno.ReadOnlyFileSystem;
-    if (offset < 0)
+    if (offset < 0 || offset > long.MaxValue - source.Length)
       return FuseErrno.InvalidArgument;
     if (!this._files.TryGetValue(handleId, out var opened))
       return FuseErrno.BadFileDescriptor;
@@ -269,7 +321,10 @@ internal sealed class FuseFilesystemOperations : IDisposable {
     if (!Has(FilesystemDriverCapabilities.WriteData))
       return FuseErrno.NotSupported;
     try {
-      opened.File.Write(opened.Append ? opened.File.Length : offset, source);
+      var writeOffset = opened.Append ? opened.File.Length : offset;
+      if (writeOffset < 0 || writeOffset > long.MaxValue - source.Length)
+        return FuseErrno.InvalidArgument;
+      opened.File.Write(writeOffset, source);
       bytesWritten = source.Length;
       return FuseErrno.Success;
     } catch (Exception ex) {
@@ -338,8 +393,9 @@ internal sealed class FuseFilesystemOperations : IDisposable {
       if (this._filesystem.Lookup(parentNodeId, name) is not null)
         return FuseErrno.Exists;
       var nodeId = this._filesystem.CreateFile(parentNodeId, name);
+      var node = this._filesystem.Stat(nodeId);
       var inode = this._inodes.RegisterLookup(nodeId, parentInode);
-      result = new(inode, this._filesystem.Stat(nodeId));
+      result = new(inode, node);
       return FuseErrno.Success;
     } catch (Exception ex) {
       return MapException(ex);
@@ -358,8 +414,9 @@ internal sealed class FuseFilesystemOperations : IDisposable {
       if (this._filesystem.Lookup(parentNodeId, name) is not null)
         return FuseErrno.Exists;
       var nodeId = this._filesystem.CreateDirectory(parentNodeId, name);
+      var node = this._filesystem.Stat(nodeId);
       var inode = this._inodes.RegisterLookup(nodeId, parentInode);
-      result = new(inode, this._filesystem.Stat(nodeId));
+      result = new(inode, node);
       return FuseErrno.Success;
     } catch (Exception ex) {
       return MapException(ex);
@@ -447,8 +504,9 @@ internal sealed class FuseFilesystemOperations : IDisposable {
       if (this._filesystem.Lookup(parentNodeId, name) is not null)
         return FuseErrno.Exists;
       var nodeId = this._filesystem.CreateSymbolicLink(parentNodeId, name, target);
+      var node = this._filesystem.Stat(nodeId);
       var inode = this._inodes.RegisterLookup(nodeId, parentInode);
-      result = new(inode, this._filesystem.Stat(nodeId));
+      result = new(inode, node);
       return FuseErrno.Success;
     } catch (Exception ex) {
       return MapException(ex);
@@ -467,8 +525,9 @@ internal sealed class FuseFilesystemOperations : IDisposable {
       if (this._filesystem.Lookup(parentNodeId, newName) is not null)
         return FuseErrno.Exists;
       this._filesystem.CreateHardLink(nodeId, parentNodeId, newName);
+      var node = this._filesystem.Stat(nodeId);
       var linkedInode = this._inodes.RegisterLookup(nodeId, newParentInode);
-      result = new(linkedInode, this._filesystem.Stat(nodeId));
+      result = new(linkedInode, node);
       return FuseErrno.Success;
     } catch (Exception ex) {
       return MapException(ex);

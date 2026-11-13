@@ -42,16 +42,16 @@ public sealed class MountNamespaceResolverTests {
   }
 
   [Test]
-  public void Zip_ProjectsAsReadOnlyFilesystemNamespace() {
+  public void Zip_ProjectsAsWritableCapableFilesystemNamespaceWithReadOnlySessionOption() {
     var data = "mounted from zip"u8.ToArray();
     using var archive = Create("Zip", [ArchiveInputInfo.InMemory("nested/hello.txt", data)]);
 
     var probe = MountNamespaceResolver.Probe("Zip", archive);
     Assert.Multiple(() => {
       Assert.That(probe.Profile.CanMount, Is.True);
-      Assert.That(probe.Profile.CanMountWritable, Is.False);
+      Assert.That(probe.Profile.CanMountWritable, Is.True);
       Assert.That(probe.Layers, Does.Contain("archive:Zip"));
-      Assert.That(probe.Layers, Does.Contain("namespace:derived-read-only"));
+      Assert.That(probe.Layers, Does.Contain("namespace:qualified-write-back"));
     });
 
     archive.Position = 0;

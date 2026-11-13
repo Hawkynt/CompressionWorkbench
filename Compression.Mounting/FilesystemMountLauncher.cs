@@ -40,9 +40,12 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
     ArgumentException.ThrowIfNullOrWhiteSpace(target);
     cancellationToken.ThrowIfCancellationRequested();
 
-    var descriptor = FormatRegistry.GetById(formatId)
-      ?? throw new ArgumentException($"Format '{formatId}' is not registered.", nameof(formatId));
-    _ = descriptor;
+    // "Raw"/"Unknown" are explicit opt-ins for formats that have no registered
+    // parser, never a silent fallback for a recognized but malformed container.
+    if (!formatId.Equals("Raw", StringComparison.OrdinalIgnoreCase) &&
+        !formatId.Equals("Unknown", StringComparison.OrdinalIgnoreCase) &&
+        FormatRegistry.GetById(formatId) is null)
+      throw new ArgumentException($"Format '{formatId}' is not registered.", nameof(formatId));
 
     var backend = this._backends.GetBackend(requestedPlan.BackendId);
     FileStream? source = null;
@@ -51,6 +54,10 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
 
     try {
       source = OpenBackingSource(imagePath, requestedPlan.AccessMode);
+      if (source.CanWrite)
+        JournaledArchiveWriteback.RecoverIfRequired(source);
+      else if (File.Exists(JournaledArchiveWriteback.JournalPath(source.Name)))
+        throw new IOException("The source has a pending undo journal; mount it read/write to recover before allowing reads.");
 
       var probe = MountNamespaceResolver.Probe(formatId, source, password, volumeParameters);
       var resolvedPlan = this._backends.ResolveFilesystem(
@@ -69,7 +76,8 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
           LeaveOpen: false
         ),
         password,
-        volumeParameters
+        volumeParameters,
+        sourceName: Path.GetFileName(imagePath)
       );
 
       // The opened namespace can be more specific than the probe (for example a

@@ -4512,8 +4512,8 @@ Common entry point for filesystem frontends. Native filesystem providers are alw
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Assess` | `static FilesystemDriverReadinessReport Assess(IFormatDescriptor descriptor, Stream image, FilesystemDriverTarget target, string password = null)` |  |
-| `Open` | `static IFilesystemSession Open(IFormatDescriptor descriptor, Stream image, FilesystemOpenOptions options, string password = null)` |  |
-| `Probe` | `static FilesystemDriverProfile Probe(IFormatDescriptor descriptor, Stream image, string password = null)` |  |
+| `Open` | `static IFilesystemSession Open(IFormatDescriptor descriptor, Stream image, FilesystemOpenOptions options, string password = null, bool preserveFileIdentity = false)` |  |
+| `Probe` | `static FilesystemDriverProfile Probe(IFormatDescriptor descriptor, Stream image, string password = null, bool preserveFileIdentity = false)` |  |
 
 #### `FilesystemDriverProfile`
 
@@ -5091,6 +5091,14 @@ Opt-in capability: the descriptor can extract a single named entry straight to a
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Writes the bytes of `entryName` (as named by `List`) into `output`. |
+
+#### `IArchiveInPlaceMountWriter`
+
+Explicit opt-in for native archive editors whose Add/Remove mutation path can operate directly on a seekable source stream under an external persistent undo journal. This is distinct from CanModify: a format that uses a full create-only rebuild must not claim direct in-place editing.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanEditInPlace` | `bool CanEditInPlace(Stream source)` | Returns true only for source profiles that the descriptor can edit directly. The mounting layer must additionally verify a writable named FileStream, create and persist an undo journal and validate the result. |
 
 #### `IArchiveLayoutMap`
 
@@ -5886,7 +5894,7 @@ Implements `IDisposable`, `IFilesystemSession`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `MutableRebuildFilesystemSession` | `MutableRebuildFilesystemSession(FilesystemDriverProfile profile, Stream image, IEnumerable<RebuildFilesystemEntry> entries, RebuildImage rebuild, ValidateImage validate = null, bool leaveOpen = true)` |  |
+| `MutableRebuildFilesystemSession` | `MutableRebuildFilesystemSession(FilesystemDriverProfile profile, Stream image, IEnumerable<RebuildFilesystemEntry> entries, RebuildImage rebuild, ValidateImage validate = null, bool leaveOpen = true, long maxTotalContentBytes = 9223372036854775807)` |  |
 | `Profile` | `FilesystemDriverProfile Profile { get; }` |  |
 | `RootNodeId` | `FilesystemNodeId RootNodeId { get; }` |  |
 | `BeginTransaction` | `IFilesystemTransaction BeginTransaction()` |  |

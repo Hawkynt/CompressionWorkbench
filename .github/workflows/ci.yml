@@ -136,6 +136,18 @@ jobs:
       - name: Build
         run: dotnet build CompressionWorkbench.slnx --configuration Release --no-restore
 
+      # Real Linux FUSE kernel traversal and write-back, not a synthetic
+      # IFilesystemSession-only smoke test. Runners without /dev/fuse skip.
+      - name: Native FUSE archive mount integration (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y fuse3 libfuse3-3
+          sudo modprobe fuse || true
+          if [ ! -c /dev/fuse ]; then sudo mknod -m 666 /dev/fuse c 10 229 || true; fi
+          if [ -c /dev/fuse ]; then sudo chmod 666 /dev/fuse; fi
+          dotnet test Compression.Tests --configuration Release --no-build --filter 'FullyQualifiedName~Compression.Tests.Mounting.NativeFuseArchiveMountIntegrationTests' --logger 'trx;LogFileName=fuse-native-archive-tests.trx'
+
       # Verify the four NuGet meta-packages still pack on every PR / push.
       # This catches regressions in the bundling target (filter excludes for
       # Compression.Core / Registry, ProjectReference path resolution, etc.)

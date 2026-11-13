@@ -71,11 +71,22 @@ internal sealed class FuseMountSession(
       this._nativeSession.Dispose();
     } finally {
       try {
-        this._operations.Dispose();
+        try {
+          // The kernel loop has stopped; publish any remaining staged writes
+          // before disposing open handles and the backing filesystem session.
+          var error = this._operations.FlushFilesystem();
+          if (error != FuseErrno.Success)
+            throw new IOException($"FUSE filesystem flush during unmount failed with errno {error}.");
+        } finally {
+          this._operations.Dispose();
+        }
       } finally {
-        if (this._ownsFilesystem)
-          this._filesystem.Dispose();
-        this._disposed = true;
+        try {
+          if (this._ownsFilesystem)
+            this._filesystem.Dispose();
+        } finally {
+          this._disposed = true;
+        }
       }
     }
   }

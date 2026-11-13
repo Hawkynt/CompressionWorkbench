@@ -34,12 +34,19 @@ public sealed class WritableD64MountOperationsTests {
         operations.CreateFile(FuseFilesystemOperations.RootInode, "NEWFILE", flags: 0x2, out var created, out var handleId),
         Is.Zero
       );
+      Assert.That(operations.WriteFile(handleId, long.MaxValue, "oversize"u8, out _), Is.EqualTo(FuseErrno.InvalidArgument));
+      Assert.That(operations.OpenFile(created.Inode, 0x200, out var invalidTruncateHandle), Is.EqualTo(FuseErrno.InvalidArgument));
+      Assert.That(invalidTruncateHandle, Is.Zero);
       Assert.That(operations.WriteFile(handleId, 0, "0123456789"u8, out var written), Is.Zero);
       Assert.That(written, Is.EqualTo(10));
       Assert.That(operations.SetAttributes(created.Inode, 1 << 3, 12, handleId, out var resized), Is.Zero);
       Assert.That(resized.Node.Size, Is.EqualTo(12));
       Assert.That(operations.ReleaseFile(handleId), Is.Zero);
 
+      Assert.That(
+        operations.Rename(FuseFilesystemOperations.RootInode, "NEWFILE", FuseFilesystemOperations.RootInode, "ORIGINAL", flags: 1),
+        Is.EqualTo(FuseErrno.Exists)
+      );
       Assert.That(
         operations.Rename(FuseFilesystemOperations.RootInode, "NEWFILE", FuseFilesystemOperations.RootInode, "RENAMED", flags: 0),
         Is.Zero

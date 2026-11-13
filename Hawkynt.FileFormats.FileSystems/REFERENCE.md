@@ -695,8 +695,8 @@ Common entry point for filesystem frontends. Native filesystem providers are alw
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Assess` | `static FilesystemDriverReadinessReport Assess(IFormatDescriptor descriptor, Stream image, FilesystemDriverTarget target, string password = null)` |  |
-| `Open` | `static IFilesystemSession Open(IFormatDescriptor descriptor, Stream image, FilesystemOpenOptions options, string password = null)` |  |
-| `Probe` | `static FilesystemDriverProfile Probe(IFormatDescriptor descriptor, Stream image, string password = null)` |  |
+| `Open` | `static IFilesystemSession Open(IFormatDescriptor descriptor, Stream image, FilesystemOpenOptions options, string password = null, bool preserveFileIdentity = false)` |  |
+| `Probe` | `static FilesystemDriverProfile Probe(IFormatDescriptor descriptor, Stream image, string password = null, bool preserveFileIdentity = false)` |  |
 
 #### `FilesystemDriverProfile`
 
@@ -1274,6 +1274,14 @@ Opt-in capability: the descriptor can extract a single named entry straight to a
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Writes the bytes of `entryName` (as named by `List`) into `output`. |
+
+#### `IArchiveInPlaceMountWriter`
+
+Explicit opt-in for native archive editors whose Add/Remove mutation path can operate directly on a seekable source stream under an external persistent undo journal. This is distinct from CanModify: a format that uses a full create-only rebuild must not claim direct in-place editing.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanEditInPlace` | `bool CanEditInPlace(Stream source)` | Returns true only for source profiles that the descriptor can edit directly. The mounting layer must additionally verify a writable named FileStream, create and persist an undo journal and validate the result. |
 
 #### `IArchiveLayoutMap`
 
@@ -2069,7 +2077,7 @@ Implements `IDisposable`, `IFilesystemSession`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `MutableRebuildFilesystemSession` | `MutableRebuildFilesystemSession(FilesystemDriverProfile profile, Stream image, IEnumerable<RebuildFilesystemEntry> entries, RebuildImage rebuild, ValidateImage validate = null, bool leaveOpen = true)` |  |
+| `MutableRebuildFilesystemSession` | `MutableRebuildFilesystemSession(FilesystemDriverProfile profile, Stream image, IEnumerable<RebuildFilesystemEntry> entries, RebuildImage rebuild, ValidateImage validate = null, bool leaveOpen = true, long maxTotalContentBytes = 9223372036854775807)` |  |
 | `Profile` | `FilesystemDriverProfile Profile { get; }` |  |
 | `RootNodeId` | `FilesystemNodeId RootNodeId { get; }` |  |
 | `BeginTransaction` | `IFilesystemTransaction BeginTransaction()` |  |
@@ -6791,7 +6799,7 @@ Represents a vmdk entry.
 
 VMware VMDK virtual disk (sparse extents with grain directories/tables). References: VMware, "Virtual Disk Format 5.0" technical note — the vendor VMDK specification`https://github.com/libyal/libvmdk` — libvmdk — open implementation with format documentation`https://en.wikipedia.org/wiki/VMDK` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IPartitionEditable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IPartitionEditable`, `IRandomAccessBlockDeviceProvider`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -6816,6 +6824,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenBlockDevice` | `IRandomAccessBlockDevice OpenBlockDevice(Stream image, bool writable, bool leaveOpen = true)` | Exposes guest sectors through the shared block-device contract. All supported layouts are readable; only a validated, plain monolithic-sparse image can be written through the existing grain allocator. |
 | `OpenGuestDiskStream` | `Stream OpenGuestDiskStream(Stream image)` | Performs the open guest disk stream operation. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
 | `Shrink` | `void Shrink(Stream input, Stream output)` |  |
