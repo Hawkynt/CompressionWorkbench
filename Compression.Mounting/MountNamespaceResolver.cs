@@ -155,8 +155,12 @@ public static class MountNamespaceResolver {
         if (!profile.CanMount) return null;
         return new(
           profile with {
+            CanMountWritable = profile.CanMountWritable && device.CanWrite,
             Limitations = profile.Limitations
               .Append($"Backing bytes are translated by the {outer.DisplayName} container driver; no host disk/loop mount is involved.")
+              .Concat(!device.CanWrite
+                ? ["The outer block-device provider does not permit writable access."]
+                : Array.Empty<string>())
               .Distinct(StringComparer.Ordinal)
               .ToArray(),
           },
