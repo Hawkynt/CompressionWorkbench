@@ -5,12 +5,14 @@
 >   driver** ("stacker version 3 CVF", or "stacker version 4 CVF" for `Version` 4) and read back byte-exact — for every published codec, and
 >   again after an add and a remove (`CvfCreateDmsdosTests`, `GenuineStackerDmsdosTests`,
 >   `GenuineStackerCodecOracleTests`). Our reader reads the same volumes byte-exact.
-> - **Cluster codecs:** SD-3, SD-4 and DS are specified in
+> - **Cluster codecs:** SD-3 (Stacker 3 and 4) and SD-4 (Stacker 4 only) are specified in
 >   [`docs/CVF-CODECS-ON-DISK.md`](../../../docs/CVF-CODECS-ON-DISK.md), together with the AMAP
 >   flags and the fragmented-cluster layout. The reader decodes the full SD-4 format, pinned to
 >   clusters the dmsdos compressors wrote (`CvfReferenceVectorTests`); the writer's SD-4 output uses
 >   back-references and run-coded tables. Fragmented clusters are read; suballocated clusters are
 >   refused, not guessed at.
+> - **No DoubleSpace codec.** DS clusters are not part of the Stacker format: they are neither written
+>   nor read (see the spec, "Which codecs real Stacker writes").
 > - **One layout only.** The writer produces nothing but the STACVOL described here; edits
 >   (add, remove, defragment, wipe, shrink) rebuild the volume and keep its label.
 

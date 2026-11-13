@@ -204,6 +204,13 @@ public sealed class GenuineStackerReader : IDisposable {
     return payload;
   }
 
+  // Stacker writes SD-3 and SD-4 clusters only; a DoubleSpace "DS" payload is not part of the real
+  // format, so it is refused rather than decoded.
+  private static void RefuseForeignCodec(byte[] payload, int cluster, string name) {
+    if (payload.Length >= 2 && (payload[0] | payload[1] << 8) == 0x5344)
+      throw new NotSupportedException($"Stacker (genuine): cluster {cluster} of '{name}' holds a DoubleSpace DS payload, which real Stacker volumes do not use.");
+  }
+
   private int NextCluster(int cluster) {
     var fatOff = this._fatStart * Ss;
     if (this._fat16)
@@ -242,6 +249,7 @@ public sealed class GenuineStackerReader : IDisposable {
             if (srcOff + inLen <= this._data.Length) {
               var payload = new byte[inLen];
               Array.Copy(this._data, srcOff, payload, 0, inLen);
+              RefuseForeignCodec(payload, cluster, entry.Name);
               var full = Compression.Core.FileSystems.Cvf.CvfLzCodec.DecompressStacker(payload, inLen, clusterBytes);
               Array.Copy(full, 0, output, written, want);
             }
@@ -249,10 +257,7 @@ public sealed class GenuineStackerReader : IDisposable {
           }
           case ClusterKind.Fragmented: {
             var payload = this.FragmentedPayload(cluster, phys, sectors);
-            // Only SD-3/SD-4 payloads were seen read from a fragmented cluster; dmsdos did not read a
-            // DS one there, so it is refused rather than decoded on our word alone.
-            if (payload.Length >= 2 && (payload[0] | payload[1] << 8) == 0x5344)
-              throw new NotSupportedException($"Stacker (genuine): fragmented cluster {cluster} of '{entry.Name}' holds a DS payload; reading one from a fragmented cluster has not been verified.");
+            RefuseForeignCodec(payload, cluster, entry.Name);
             var full = Compression.Core.FileSystems.Cvf.CvfLzCodec.DecompressStacker(payload, payload.Length, clusterBytes);
             Array.Copy(full, 0, output, written, want);
             break;

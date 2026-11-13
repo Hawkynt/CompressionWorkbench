@@ -11,7 +11,7 @@ namespace FileSystem.Stacker;
 /// Stacker STACVOL compressed volume (Stac Electronics, MS-DOS) — the predecessor of Microsoft's
 /// DoubleSpace. A STACVOL wraps an inner FAT12 volume behind the "STACKER" banner, an obfuscated
 /// superblock, an emulated boot block and an interleaved AMAP; clusters are stored or compressed per
-/// cluster (SD-3, SD-4 or DS). Volumes are written only in the layout the independent dmsdos driver
+/// cluster (SD-3, or SD-4 on Stacker 4). Volumes are written only in the layout the independent dmsdos driver
 /// mounts; edits rebuild the volume, keeping its label.
 /// <para>
 /// References:
@@ -32,7 +32,6 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   private static readonly IReadOnlyDictionary<string, CvfLzMethod> Codecs = new Dictionary<string, CvfLzMethod> {
     ["sd3"] = CvfLzMethod.Sd3,
     ["sd4"] = CvfLzMethod.Sd4,
-    ["ds"] = CvfLzMethod.Ds,
     ["auto"] = CvfLzMethod.Auto,
   };
 
@@ -60,9 +59,8 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <inheritdoc />
   public IReadOnlyList<FormatMethodInfo> Methods { get; } = CvfCodecChoice.Methods(
     ("sd3", "Stacker 3 SD-3 (LZS)"),
-    ("sd4", "Stacker 4 SD-4 (Huffman-coded LZ77)"),
-    ("ds", "DoubleSpace DS LZ77"),
-    ("auto", "Smallest of SD-3, SD-4 and DS per cluster"));
+    ("sd4", "Stacker 4 SD-4 (Huffman-coded LZ77; Version 4 only)"),
+    ("auto", "Per cluster: SD-3 on Stacker 3, the smaller of SD-3 and SD-4 on Stacker 4"));
   /// <inheritdoc />
   public string? TarCompressionFormatId => null;
   /// <inheritdoc />
@@ -70,7 +68,7 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <inheritdoc />
   public string Description =>
     "Stacker STACVOL (Stac Electronics, MS-DOS): obfuscated superblock, interleaved AMAP, inner FAT12; "
-    + "stored, SD-3, SD-4 or DS clusters (fragmented clusters read). Created volumes are mounted by the dmsdos driver.";
+    + "stored, SD-3 or SD-4 (Stacker 4) clusters (fragmented clusters read). Created volumes are mounted by the dmsdos driver.";
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
@@ -84,10 +82,10 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       Description: "Optional ISO-8601 date/time (e.g. 1994-02-01) stamped on every file's FAT directory entry. "
         + "Blank leaves the date/time unset."),
     new(Key: "Method", DisplayName: "Compression", Kind: FormatOptionKind.Enum, Default: "Auto",
-      AllowedValues: ["Stored", "DS", "SD3", "SD4", "Auto"],
-      Description: "Per-cluster compression. Stored = none. SD3 = Stacker 3 LZS codec (no header, check byte). "
-        + "SD4 = Stacker 4 Huffman codec (header 0x0081). DS = the 'DS' LZ stream. "
-        + "Auto = per cluster the smallest of DS/SD3/SD4, else stored."),
+      AllowedValues: ["Stored", "SD3", "SD4", "Auto"],
+      Description: "Per-cluster compression. Stored = none. SD3 = Stacker's LZS codec (no header, check byte; "
+        + "Stacker 3 and 4). SD4 = Stacker 4's Huffman codec (header 0x0081; Version 4 only). "
+        + "Auto = per cluster the smallest codec the version has, else stored."),
     new(Key: "Level", DisplayName: "Compression level", Kind: FormatOptionKind.Integer, Default: "2",
       Description: "Codec search effort (1 = fast, up to 4; higher = better ratio, slower)."),
     new(Key: "ForceCompress", DisplayName: "Force compression", Kind: FormatOptionKind.Boolean, Default: "false",
@@ -123,6 +121,8 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     var version = options.GetOptionInt("Version", 3);
     if (version is not (3 or 4))
       throw new ArgumentException($"Stacker version {version} is not supported; choose 3 or 4.", nameof(options));
+    if (method == CvfLzMethod.Sd4 && version != 4)
+      throw new ArgumentException("SD-4 clusters exist only on Stacker 4 volumes; set Version to 4.", nameof(options));
     var writer = new GenuineStackerWriter {
       Version = version,
       VolumeLabel = options.GetOption("VolumeLabel", ""),

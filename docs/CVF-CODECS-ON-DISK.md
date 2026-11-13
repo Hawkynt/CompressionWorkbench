@@ -34,6 +34,14 @@ An SD-3 stream can never start with either word: its first token must be a liter
 nothing to copy from yet), so its first bit is 0 and its first byte is below `0x80`, ruling out
 `81 00`; and for `44 53` the second token would be a long-offset match reaching before the start.
 
+**Which codecs real Stacker writes.** The dmsdos documentation lists the Stacker methods as SD-3
+(Stacker 3, no header; usable on Stacker 3 and 4) and `0x81-0` = SD-4 (Stacker 4 only). It describes
+writing DS-0-0 to a Stacker volume only as dmsdos's own write option, "not the native Stacker format",
+and no Stac documentation or Stacker-written sample was found that uses DS. So DS is not part of the
+Stacker format: `GenuineStackerWriter` writes stored, SD-3 and (Stacker 4 only) SD-4 clusters, and
+`GenuineStackerReader` refuses a DS payload in any Stacker cluster, whole or fragmented. dmsdos itself
+picks the decoder from the first word regardless of volume type, which is why it reads such a cluster.
+
 ### Stacker AMAP flags
 
 Bits 7 and 5 of the AMAP entry's third byte (bit 6 marks a deleted cluster and does not change
@@ -109,8 +117,8 @@ JM distance code: `0` + 6 bits (*d*), `1 0` + 8 bits (64 + *v*), `1 1` + 12 bits
 
 **Sync.** Distance 4415 (`0x113F`, the all-ones 12-bit long form) is a sync marker with no length:
 it may appear where the decoded position is a multiple of 512, and one must follow the last byte
-of the cluster (DS: `1 1 1` + 12 ones; JM: `1 0` + `1 1` + 12 ones). Stacker's use of the DS
-decoder does not require the final sync.
+of the cluster (DS: `1 1 1` + 12 ones; JM: `1 0` + `1 1` + 12 ones). dmsdos's DS decoder on a
+Stacker volume does not require the final sync (but see above: DS is not a Stacker codec).
 
 Copies may overlap (distance shorter than length) and are performed byte by byte.
 
@@ -220,8 +228,8 @@ full 15-bit limit for both codes.
   `CvfReferenceVectorTests` decodes every one to its input. The README there says how they were
   made.
 * `GenuineStackerDmsdosTests`, `DriveSpace3GenuineDmsdosTests` and the DoubleSpace driver gate in
-  `ExternalFsInteropTests` have dmsdos mount volumes our writers produced — Stacker with SD-3, SD-4,
-  DS and Auto clusters among them — and read every file back byte-exact.
+  `ExternalFsInteropTests` have dmsdos mount volumes our writers produced — Stacker 3 with SD-3 and
+  Stacker 4 with SD-3/SD-4 clusters among them — and read every file back byte-exact.
 
 ## ⚠️ Not covered
 

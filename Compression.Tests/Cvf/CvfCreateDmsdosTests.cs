@@ -30,7 +30,7 @@ public sealed class CvfCreateDmsdosTests {
       (() => new DoubleSpaceFormatDescriptor(), "drivespace CVF (version 2)", ["stored", "ds", "jm", "auto++"]),
       (() => new DriveSpaceFormatDescriptor(), "drivespace CVF (version 2)", ["stored", "jm+", "auto"]),
       (() => new DriveSpace3FormatDescriptor(), "drivespace 3 CVF", ["stored", "jm", "sq", "ds", "auto++"]),
-      (() => new StackerFormatDescriptor(), "stacker version 3 CVF", ["stored", "sd3", "sd4++", "ds", "auto"]),
+      (() => new StackerFormatDescriptor(), "stacker version 3 CVF", ["stored", "sd3", "sd3++", "auto"]),
     ];
     foreach (var (make, detects, methods) in formats) {
       var id = ((IFormatDescriptor)make()).Id;

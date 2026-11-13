@@ -65,6 +65,8 @@ public sealed class StackerVersionTests {
   [Test, Category("DriverProof")]
   public void GivenEachVersion_WhenReadByDmsdos_ThenItIsDetectedAsThatVersionAndReadByteExact(
       [Values("3", "4")] string version, [Values("Stored", "SD3", "SD4", "Auto")] string method) {
+    if (version == "3" && method == "SD4")
+      Assert.Ignore("SD-4 exists only on Stacker 4 (refusal pinned in StackerRealCodecsTests).");
     DmsdosOracle.Require();
     var path = Path.Combine(Path.GetTempPath(), $"cwb-stac-v{version}-{Guid.NewGuid():N}.cvf");
     try {

@@ -26,7 +26,9 @@ public sealed class GenuineStackerCodecOracleTests {
   }
 
   private static byte[] Build(CvfLzMethod method, bool force, params (string Name, byte[] Data)[] files) {
-    var writer = new GenuineStackerWriter { CompressionMethod = method, CompressionLevel = 3, ForceCompress = force };
+    // SD-4 clusters exist only on Stacker 4 volumes.
+    var version = method is CvfLzMethod.Sd4 or CvfLzMethod.Auto ? 4 : 3;
+    var writer = new GenuineStackerWriter { CompressionMethod = method, CompressionLevel = 3, ForceCompress = force, Version = version };
     foreach (var (n, d) in files) writer.AddFile(n, d);
     return writer.Build();
   }
