@@ -159,13 +159,16 @@ public static class MountNamespaceResolver {
 
         using var partitionDevice = new PartitionBlockDevice(device, firstBlock, blockCount, leaveOpen: true);
         using var partitionStream = new BlockDeviceStream(partitionDevice, leaveOpen: true);
-        if (TryDetectFilesystem(partitionStream) is not { } inner)
-          return null;
+        var inner = TryDetectFilesystem(partitionStream);
         partitionStream.Position = 0;
-        var profile = FormatRegistry.ProbeFilesystem(inner.Id, partitionStream, password);
-        if (!profile.CanMount)
-          return null;
-        childProfiles.Add((partition, inner, profile));
+        var profile = inner is null
+          ? RawContentFilesystemSession.ProfileFor(outer, partitionStream)
+          : FormatRegistry.ProbeFilesystem(inner.Id, partitionStream, password);
+        if (!profile.CanMount) {
+          inner = null;
+          profile = RawContentFilesystemSession.ProfileFor(outer, partitionStream);
+        }
+        childProfiles.Add((partition, inner ?? outer, profile));
       }
 
       var limitations = childProfiles
@@ -184,7 +187,11 @@ public static class MountNamespaceResolver {
         CanMountWritable: false,
         limitations);
       var layers = new List<string> { $"container:{outer.Id}", "block-device", $"partition-table:{partitionTable.Scheme}" };
-      layers.AddRange(childProfiles.Select(child => $"partition{child.Partition.Index + 1}:filesystem:{child.Descriptor.Id}"));
+      layers.AddRange(childProfiles.Select(child =>
+        $"partition{child.Partition.Index + 1}:" +
+        (child.Profile.ProfileName == "opaque source read-only view"
+          ? "raw"
+          : $"filesystem:{child.Descriptor.Id}")));
       return new(profileForComposite, layers);
     } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or IOException or ArgumentException) {
       return null;
@@ -239,17 +246,24 @@ public static class MountNamespaceResolver {
         var partitionDevice = new PartitionBlockDevice(device, firstBlock, blockCount, leaveOpen: true);
         var partitionStream = new BlockDeviceStream(partitionDevice, leaveOpen: true);
         try {
-          if (TryDetectFilesystem(partitionStream) is not { } inner) {
-            partitionStream.Dispose();
-            partitionDevice.Dispose();
-            return null;
-          }
+          var inner = TryDetectFilesystem(partitionStream);
           partitionStream.Position = 0;
-          var child = FormatRegistry.OpenFilesystem(
-            inner.Id,
-            partitionStream,
-            options with { ReadOnly = true, LeaveOpen = true },
-            password);
+          IFilesystemSession child;
+          if (inner is null) {
+            child = RawContentFilesystemSession.Open(
+              outer, partitionStream, $"Partition{partition.Index + 1}.raw");
+          } else {
+            var profile = FormatRegistry.ProbeFilesystem(inner.Id, partitionStream, password);
+            partitionStream.Position = 0;
+            child = profile.CanMount
+              ? FormatRegistry.OpenFilesystem(
+                inner.Id,
+                partitionStream,
+                options with { ReadOnly = true, LeaveOpen = true },
+                password)
+              : RawContentFilesystemSession.Open(
+                outer, partitionStream, $"Partition{partition.Index + 1}.raw");
+          }
           var ownedChild = new OwnedFilesystemSession(child, partitionStream, partitionDevice);
           mounts.Add(new(MakePartitionName(partition), ownedChild));
         } catch {
