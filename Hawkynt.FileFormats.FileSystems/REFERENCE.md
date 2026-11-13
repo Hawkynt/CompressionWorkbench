@@ -10045,7 +10045,7 @@ Represents a double space entry.
 
 #### `DoubleSpaceFormatDescriptor`
 
-Microsoft DoubleSpace compressed volume file (MS-DOS 6.0 / 6.2): the real `MSDBL6.0` container — MDBPB, MDFAT, BitFAT and an inner FAT12 volume whose clusters are stored or compressed per cluster (DS-0-x, JM-0-x). Volumes are written only in the layout the independent dmsdos driver mounts ("drivespace CVF version 2"); edits rebuild the volume. References: `docs/CVF-CODECS-ON-DISK.md` — the cluster codecs, measured against dmsdosMicrosoft MS-DOS 6 documentation (DoubleSpace chapter) — original vendor description of the compressed volume file`https://en.wikipedia.org/wiki/DriveSpace` — overview of DoubleSpace and its successors
+Microsoft DoubleSpace compressed volume file (MS-DOS 6.0 / 6.2): the real `MSDBL6.0` container — MDBPB, MDFAT, BitFAT and an inner FAT12 volume whose clusters are stored or compressed per cluster. Volumes are created with DoubleSpace's own DS-0-x clusters, in the layout the independent dmsdos driver mounts ("drivespace CVF version 2"); DS and JM clusters are read (a DoubleSpace volume later used by DriveSpace may hold both); edits rebuild the volume, keeping its codec. References: `docs/CVF-CODECS-ON-DISK.md` — the cluster codecs, measured against dmsdosMicrosoft MS-DOS 6 documentation (DoubleSpace chapter) — original vendor description of the compressed volume file`https://en.wikipedia.org/wiki/DriveSpace` — overview of DoubleSpace and its successors
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
@@ -10090,7 +10090,7 @@ Implements `IDisposable`.
 
 #### `DriveSpaceFormatDescriptor`
 
-Microsoft DriveSpace compressed volume file (MS-DOS 6.22): the same real `MSDBL6.0` version-2 container as `DoubleSpaceFormatDescriptor`, created with DriveSpace's JM-0-x codec by default. On disk the two cannot be told apart, so detection hands such a volume to the DoubleSpace descriptor; this one exists to create (and edit) DriveSpace volumes by name. References: `docs/CVF-CODECS-ON-DISK.md` — the cluster codecs, measured against dmsdosMicrosoft MS-DOS 6.22 documentation (DriveSpace chapter) — original vendor description`https://en.wikipedia.org/wiki/DriveSpace` — overview
+Microsoft DriveSpace compressed volume file (MS-DOS 6.22): the same real `MSDBL6.0` version-2 container as `DoubleSpaceFormatDescriptor`, created with DriveSpace's own JM-0-0 codec. On disk the two cannot be told apart, so detection hands such a volume to the DoubleSpace descriptor; this one exists to create (and edit) DriveSpace volumes by name. References: `docs/CVF-CODECS-ON-DISK.md` — the cluster codecs, measured against dmsdosMicrosoft MS-DOS 6.22 documentation (DriveSpace chapter) — original vendor description`https://en.wikipedia.org/wiki/DriveSpace` — overview
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
@@ -10141,7 +10141,7 @@ Builds a genuine MS-DOS DoubleSpace/DriveSpace Compressed Volume File (CVF) in t
 | --- | --- | --- |
 | `GenuineCvfWriter` | `GenuineCvfWriter()` |  |
 | `CompressionLevel` | `int CompressionLevel { get; init; }` | Codec effort (search depth). Higher = better ratio, slower. |
-| `CompressionMethod` | `CvfLzMethod CompressionMethod { get; init; }` | Per-cluster compression codec. Stored (default) emits uncompressed clusters; DS = DoubleSpace DS-0-x, JM = DriveSpace JM-0-x. |
+| `CompressionMethod` | `CvfLzMethod CompressionMethod { get; init; }` | Per-cluster compression codec: Stored (default), DS (DoubleSpace DS-0-0) or JM (DriveSpace JM-0-0). Anything else is refused by `Build`. |
 | `ForceCompress` | `bool ForceCompress { get; init; }` | Keep a compressed cluster even if it does not shrink (auto-best off). |
 | `Timestamp` | `DateTime Timestamp { get; init; }` | Creation/modification timestamp stamped on every file entry. Default (before 1980) leaves the FAT date/time fields zero. |
 | `VolumeLabel` | `string VolumeLabel { get; init; }` | Optional inner-volume label (≤11 chars). Empty = no label entry. |
@@ -10280,7 +10280,7 @@ One file entry inside a DriveSpace 3 CVF. Names with characters or lengths outsi
 
 #### `DriveSpace3FormatDescriptor`
 
-Microsoft DriveSpace 3 compressed volume file (Windows 95 Plus! Pack / OSR2): the real `MSDBL6.0` container with 32 KiB clusters, version 3 and a 5-byte MDFAT, whose clusters are stored or compressed per cluster (JM-0-x Normal/High, SQ-0-0 Ultra, DS-0-x). Volumes are written only in the layout the independent dmsdos driver mounts ("drivespace 3 CVF"); edits rebuild the volume. Shares the `.cvf` extension and the `MSDBL6.0` name with DoubleSpace/DriveSpace; its signature additionally requires 64 sectors per cluster, which wins detection for these volumes. References: `docs/CVF-CODECS-ON-DISK.md` — the cluster codecs, measured against dmsdosMicrosoft Plus! for Windows 95 documentation (DriveSpace 3) — original vendor description`https://en.wikipedia.org/wiki/DriveSpace` — overview of the CVF family
+Microsoft DriveSpace 3 compressed volume file (Windows 95 Plus! Pack / OSR2): the real `MSDBL6.0` container with 32 KiB clusters, version 3 and a 5-byte MDFAT, whose clusters are stored or compressed per cluster (JM-0-x Normal/High, SQ-0-0 Ultra; DS-0-x is read but not written). Volumes are written only in the layout the independent dmsdos driver mounts ("drivespace 3 CVF"); edits rebuild the volume. Shares the `.cvf` extension and the `MSDBL6.0` name with DoubleSpace/DriveSpace; its signature additionally requires 64 sectors per cluster, which wins detection for these volumes. References: `docs/CVF-CODECS-ON-DISK.md` — the cluster codecs, measured against dmsdosMicrosoft Plus! for Windows 95 documentation (DriveSpace 3) — original vendor description`https://en.wikipedia.org/wiki/DriveSpace` — overview of the CVF family
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
@@ -10331,7 +10331,7 @@ Builds a genuine Microsoft DriveSpace 3 Compressed Volume File (CVF) — the on-
 | --- | --- | --- |
 | `GenuineDvr3Writer` | `GenuineDvr3Writer()` |  |
 | `CompressionLevel` | `int CompressionLevel { get; init; }` | Codec effort (search depth). Higher = better ratio, slower. |
-| `CompressionMethod` | `CvfLzMethod CompressionMethod { get; init; }` | Per-cluster compression codec. `Stored` (default) emits uncompressed clusters; DS/JM emit genuine DriveSpace 3 compressed clusters. |
+| `CompressionMethod` | `CvfLzMethod CompressionMethod { get; init; }` | Per-cluster compression codec: `Stored` (default), JM (JM-0-0, DriveSpace 3 Normal), SQ (SQ-0-0, Ultra) or Auto (per cluster the smaller of JM and SQ) — the codecs the real DriveSpace 3 driver writes. Anything else is refused by `Build`. |
 | `ForceCompress` | `bool ForceCompress { get; init; }` | When true, keep a compressed cluster even if it does not shrink (as long as it still fits the cluster's sector budget); otherwise the smaller of compressed/stored is chosen per cluster (auto-best). |
 | `Timestamp` | `DateTime Timestamp { get; init; }` | Creation/modification timestamp stamped on every file entry. Default (before 1980) leaves the FAT date/time fields zero. |
 | `VolumeLabel` | `string VolumeLabel { get; init; }` | Optional inner-volume label (≤11 chars). Empty = no label entry. |

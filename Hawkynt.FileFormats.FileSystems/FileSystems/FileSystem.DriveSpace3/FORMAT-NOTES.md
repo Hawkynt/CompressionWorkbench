@@ -3,9 +3,10 @@
 > **Verification status.**
 > - **Every volume `DriveSpace3FormatDescriptor.Create` writes is mounted by the independent `dmsdos`
 >   driver** ("drivespace 3 CVF") and read back byte-exact — for every published codec (stored, JM,
->   SQ, DS, Auto), and again after an add and a remove (`CvfCreateDmsdosTests`,
+>   SQ, Auto), and again after an add and a remove (`CvfCreateDmsdosTests`,
 >   `DriveSpace3GenuineDmsdosTests`).
-> - **Cluster codecs:** JM-0-0 (*Normal*), JM-0-1 (*High*), SQ-0-0 (*Ultra*) and DS-0-x are specified
+> - **Cluster codecs:** the real driver writes JM-0-0 (*Normal*), JM-0-1 (*High*) and SQ-0-0 (*Ultra*);
+>   only those are created (JM and SQ). DS-0-x clusters are read but never written. All are specified
 >   in [`docs/CVF-CODECS-ON-DISK.md`](../../../docs/CVF-CODECS-ON-DISK.md) and decoded by
 >   `CvfLzCodec`, pinned to 32 KiB clusters the dmsdos compressors wrote (`CvfReferenceVectorTests`).
 > - **One layout only.** The writer produces nothing but the container below; edits (add, remove,

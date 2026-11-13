@@ -55,7 +55,7 @@ public class CvfOptimizerTests {
       var result = CvfOptimizer.Optimize(src, desc);
 
       Assert.Multiple(() => {
-        Assert.That(result.MethodUsed, Is.EqualTo("auto++"),
+        Assert.That(result.MethodUsed, Is.EqualTo("ds++"),
           "Optimizer should pick the most-'+' non-stored method published by the descriptor.");
         Assert.That(result.OriginalSize, Is.EqualTo(origBytes.LongLength));
         Assert.That(result.OptimizedSize, Is.GreaterThan(0));
@@ -83,14 +83,14 @@ public class CvfOptimizerTests {
   }
 
   [Test, Category("Optimize")]
-  public void Optimize_DriveSpace_PicksAutoPlusPlus() {
+  public void Optimize_DriveSpace_PicksJmPlusPlus() {
     var desc = new DriveSpaceFormatDescriptor();
     var payload = CompressiblePayload();
     var src = CreateSourceCvf(desc, payload, "jm");
 
     try {
       var result = CvfOptimizer.Optimize(src, desc);
-      Assert.That(result.MethodUsed, Is.EqualTo("auto++"));
+      Assert.That(result.MethodUsed, Is.EqualTo("jm++"));
     } finally {
       if (File.Exists(src)) File.Delete(src);
     }

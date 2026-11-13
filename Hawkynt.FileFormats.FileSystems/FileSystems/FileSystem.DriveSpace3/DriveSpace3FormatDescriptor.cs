@@ -10,7 +10,8 @@ namespace FileSystem.DriveSpace3;
 /// <summary>
 /// Microsoft DriveSpace 3 compressed volume file (Windows 95 Plus! Pack / OSR2): the real
 /// <c>MSDBL6.0</c> container with 32 KiB clusters, version 3 and a 5-byte MDFAT, whose clusters are
-/// stored or compressed per cluster (JM-0-x <i>Normal/High</i>, SQ-0-0 <i>Ultra</i>, DS-0-x). Volumes
+/// stored or compressed per cluster (JM-0-x <i>Normal/High</i>, SQ-0-0 <i>Ultra</i>; DS-0-x is read but
+/// not written). Volumes
 /// are written only in the layout the independent dmsdos driver mounts ("drivespace 3 CVF"); edits
 /// rebuild the volume.
 /// <para>
@@ -34,7 +35,6 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   private static readonly IReadOnlyDictionary<string, CvfLzMethod> Codecs = new Dictionary<string, CvfLzMethod> {
     ["jm"] = CvfLzMethod.Jm,
     ["sq"] = CvfLzMethod.Sq,
-    ["ds"] = CvfLzMethod.Ds,
     ["auto"] = CvfLzMethod.Auto,
   };
 
@@ -66,15 +66,14 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   public IReadOnlyList<FormatMethodInfo> Methods { get; } = CvfCodecChoice.Methods(
     ("jm", "DriveSpace 3 JM-0-x LZ77 (Normal/High)"),
     ("sq", "DriveSpace 3 SQ-0-0 (Ultra; DEFLATE)"),
-    ("ds", "DoubleSpace DS-0-x LZ77"),
-    ("auto", "Smallest of DS, JM and SQ per cluster"));
+    ("auto", "Smaller of JM and SQ per cluster"));
   /// <inheritdoc />
   public string? TarCompressionFormatId => null;
   /// <inheritdoc />
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <inheritdoc />
   public string Description =>
-    "Microsoft DriveSpace 3 compressed volume file, Windows 95 (MSDBL6.0 container, 32 KiB clusters; stored, JM, SQ or DS clusters). "
+    "Microsoft DriveSpace 3 compressed volume file, Windows 95 (MSDBL6.0 container, 32 KiB clusters; stored, JM or SQ clusters written, DS also read). "
     + "Created volumes are mounted by the dmsdos driver.";
 
   /// <inheritdoc />
@@ -85,10 +84,10 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
       Description: "Optional ISO-8601 date/time (e.g. 1996-08-24) stamped on every file's FAT directory entry. "
         + "Blank leaves the date/time unset."),
     new(Key: "Method", DisplayName: "Compression", Kind: FormatOptionKind.Enum, Default: "Auto",
-      AllowedValues: ["Stored", "JM", "SQ", "DS", "Auto"],
-      Description: "Per-cluster compression. Stored = none. JM = 'JM-0-x' LZ (Normal/High). "
-        + "SQ = 'SQ-0-0' (Ultra; DEFLATE). DS = DoubleSpace 'DS-0-x' LZ. Auto = per cluster the smallest, "
-        + "else stored. dmsdos reads all of them."),
+      AllowedValues: ["Stored", "JM", "SQ", "Auto"],
+      Description: "Per-cluster compression — the codecs the real DriveSpace 3 driver writes. Stored = none. "
+        + "JM = 'JM-0-0' LZ (Normal). SQ = 'SQ-0-0' (Ultra; DEFLATE). Auto = per cluster the smaller of JM "
+        + "and SQ, else stored. dmsdos reads all of them."),
     new(Key: "Level", DisplayName: "Compression level", Kind: FormatOptionKind.Integer, Default: "2",
       Description: "Codec search effort (1 = fast, up to 4; higher = better ratio, slower)."),
     new(Key: "ForceCompress", DisplayName: "Force compression", Kind: FormatOptionKind.Boolean, Default: "false",

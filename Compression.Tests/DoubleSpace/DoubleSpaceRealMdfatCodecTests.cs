@@ -6,7 +6,7 @@ namespace Compression.Tests.DoubleSpace;
 
 /// <summary>
 /// The general <see cref="DoubleSpaceReader"/> (the one the DriveSpace descriptor uses) on a real
-/// MSDBL6.0 volume must decode compressed clusters by their method header — DS-0-x, JM-0-x, SQ-0-0 —
+/// MSDBL6.0 volume must decode compressed clusters by their method header — DS-0-x and JM-0-x —
 /// exactly as <see cref="GenuineCvfReader"/> does, instead of handing back the compressed sectors.
 /// </summary>
 [TestFixture]
@@ -19,7 +19,7 @@ public sealed class DoubleSpaceRealMdfatCodecTests {
   ];
 
   [Test, Category("Codec")]
-  public void CompressedClusters_DecodeByteExact([Values(CvfLzMethod.Ds, CvfLzMethod.Jm, CvfLzMethod.Sq, CvfLzMethod.Auto)] CvfLzMethod method) {
+  public void CompressedClusters_DecodeByteExact([Values(CvfLzMethod.Ds, CvfLzMethod.Jm)] CvfLzMethod method) {
     var writer = new GenuineCvfWriter { CompressionMethod = method };
     foreach (var (name, data) in Files()) writer.AddFile(name, data);
     var image = writer.Build();

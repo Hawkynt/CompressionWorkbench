@@ -13,7 +13,7 @@ public class DriveSpaceSchemaTests {
     var method = schema.Single(o => o.Key == "Method");
 
     Assert.Multiple(() => {
-      Assert.That(method.AllowedValues, Is.EquivalentTo(new[] { "Stored", "DS", "JM", "Auto" }));
+      Assert.That(method.AllowedValues, Is.EquivalentTo(new[] { "Stored", "JM" }));
       Assert.That(method.Default, Is.EqualTo("JM"));
       Assert.That(schema.Any(o => o.Key == "Compatibility"), Is.False, "one layout only: no layout choice");
     });
@@ -59,13 +59,13 @@ public class DriveSpaceSchemaTests {
   }
 
   [Test, Category("HappyPath")]
-  public void GivenATieredMethodName_WhenCreated_ThenItRoundTrips([Values("jm", "jm+", "jm++", "ds++", "auto+", "stored")] string method) {
+  public void GivenATieredMethodName_WhenCreated_ThenItRoundTrips([Values("jm", "jm+", "jm++", "stored")] string method) {
     var payload = CompressiblePayload();
 
     Assert.That(Extract(CreateCvf(new FormatCreateOptions { MethodName = method }, payload)), Is.EqualTo(payload));
   }
 
   [Test, Category("Sad")]
-  public void GivenAMethodTheVolumeCannotRecord_WhenCreated_ThenItIsRefused([Values("ds-lz77", "sq", "sd4")] string method)
+  public void GivenAMethodTheVolumeCannotRecord_WhenCreated_ThenItIsRefused([Values("ds-lz77", "ds", "auto", "sq", "sd4")] string method)
     => Assert.That(() => CreateCvf(new FormatCreateOptions { MethodName = method }, [1, 2, 3]), Throws.InstanceOf<ArgumentException>());
 }

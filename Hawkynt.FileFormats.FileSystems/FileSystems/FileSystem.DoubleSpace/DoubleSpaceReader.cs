@@ -224,6 +224,8 @@ public sealed class DoubleSpaceReader : IDisposable {
     var outLen = Math.Min(clusterBytes, (int)(((entry >> 26) & 0xF) + 1) * this._bytesPerSector);
     if (physOffset + inLen > this._data.Length)
       throw new InvalidDataException($"DoubleSpace: compressed cluster {cluster} lies past the end of the image.");
+    if (this._data[physOffset] == (byte)'S' && this._data[physOffset + 1] == (byte)'Q')
+      throw new NotSupportedException($"DoubleSpace: cluster {cluster} holds an SQ-0-0 payload, which only DriveSpace 3 volumes carry.");
     var buffer = new byte[clusterBytes];
     CvfLzCodec.Decompress(this._data.AsSpan(physOffset, inLen).ToArray(), inLen, outLen).CopyTo(buffer, 0);
     return buffer;

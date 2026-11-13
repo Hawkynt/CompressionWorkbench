@@ -14,6 +14,7 @@ alone, with dmsdos run only as a black box; the container layouts (MDFAT, AMAP, 
 | dmsdos (Frank Gockel, Pavel Pisa, Jaroslav Fojtik; GPL), <https://github.com/sandsmark/dmsdos>, master as of 2026-10 | 2 — licence-incompatible | Read as a description of behaviour to write this document; its library is the **black-box oracle** that produced the reference vectors and that reads our output back. No code was taken. |
 | RFC 1974, *PPP Stac LZS Compression Protocol* (and RFC 2395) | 3 — standard | The LZS token grammar SD-3 uses. |
 | dmsdos `doc/dmsdos.doc` | 4 — project documentation | Method names: JM-0-0 *Normal*, JM-0-1 *High*, SQ-0-0 *Ultra* for DriveSpace 3; SD-3 / SD-4 for Stacker 3 / 4. |
+| Microsoft KB Q138310 (Plus! `Drvspace.txt`), <https://jeffpar.github.io/kbarchive/kb/138/Q138310/> | 3 — vendor documentation | DriveSpace 3's HiPack and UltraPack formats, chosen per file by Compression Agent |
 
 The constants in the tables below (offset classes, length extensions, run tokens) are copied
 exactly; they are arbitrary-but-agreed values.
@@ -41,6 +42,33 @@ and no Stac documentation or Stacker-written sample was found that uses DS. So D
 Stacker format: `GenuineStackerWriter` writes stored, SD-3 and (Stacker 4 only) SD-4 clusters, and
 `GenuineStackerReader` refuses a DS payload in any Stacker cluster, whole or fragmented. dmsdos itself
 picks the decoder from the first word regardless of volume type, which is why it reads such a cluster.
+
+### Which codecs each Microsoft product writes
+
+The dmsdos documentation's method table records which driver writes which header (separately from
+dmsdos's own write options):
+
+| Header | Written by | Volume |
+|---|---|---|
+| `DS-0-2` | MS-DOS 6.0 / 6.2 DoubleSpace | version 2 (16 sectors per cluster) |
+| `DS-0-0` | Windows 95 on DoubleSpace volumes | version 2 |
+| `JM-0-0` | MS-DOS 6.22 DriveSpace, and Windows 95 DriveSpace 3 (*Normal*) | version 2 / version 3 |
+| `JM-0-1` | Windows 95 DriveSpace 3 *High* | version 3 (64 sectors per cluster) |
+| `SQ-0-0` | Windows 95 DriveSpace 3 *Ultra* | version 3 |
+
+Microsoft's Plus! readme (KB Q138310) names the DriveSpace 3 formats HiPack and UltraPack, chosen per
+file by Compression Agent. So:
+
+* **Created** — DoubleSpace: stored or DS clusters (`DS-0-0`). DriveSpace: stored or JM clusters
+  (`JM-0-0`). DriveSpace 3: stored, JM (`JM-0-0`) or SQ clusters, Auto choosing the smaller of the two
+  per cluster. Every other codec is refused with the reason.
+* **Read** — a version-2 volume: DS and JM, since the container does not record which product wrote
+  it; an SQ cluster is refused, as only DriveSpace 3 writes SQ. A version-3 volume: JM, SQ and DS (DS is
+  kept readable because DoubleSpace and DriveSpace volumes can be upgraded to DriveSpace 3; whether an
+  upgrade leaves DS clusters behind is not established, as no such volume was available). Edits rebuild
+  with the codec the volume already uses.
+* **Not written:** `DS-0-2` and `JM-0-1` — both decode identically to the `-0-0` versions; our encoders
+  stamp version 0.
 
 ### Stacker AMAP flags
 

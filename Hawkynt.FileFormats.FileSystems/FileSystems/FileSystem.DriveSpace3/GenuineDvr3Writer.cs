@@ -51,8 +51,10 @@ public sealed class GenuineDvr3Writer {
   /// Default (before 1980) leaves the FAT date/time fields zero.</summary>
   public DateTime Timestamp { get; init; }
 
-  /// <summary>Per-cluster compression codec. <see cref="Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored"/>
-  /// (default) emits uncompressed clusters; DS/JM emit genuine DriveSpace 3 compressed clusters.</summary>
+  /// <summary>Per-cluster compression codec: <see cref="Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored"/>
+  /// (default), JM (JM-0-0, DriveSpace 3 <i>Normal</i>), SQ (SQ-0-0, <i>Ultra</i>) or Auto (per cluster the
+  /// smaller of JM and SQ) — the codecs the real DriveSpace 3 driver writes. Anything else is refused by
+  /// <see cref="Build"/>.</summary>
   public Compression.Core.FileSystems.Cvf.CvfLzMethod CompressionMethod { get; init; }
     = Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored;
 
@@ -115,14 +117,16 @@ public sealed class GenuineDvr3Writer {
     this._rootLog = Resv + NumFats * this._fatSize;
     this._firstData = this._rootLog + RootSecs;
 
-    // 2. Compress each cluster (auto-best), assigning packed physical sectors.
+    // 2. Compress each cluster, assigning packed physical sectors. Only DriveSpace 3's own codecs
+    // are written: JM and SQ (DS belongs to DoubleSpace volumes).
+    if (this.CompressionMethod is not (CvfLzMethod.Stored or CvfLzMethod.Jm or CvfLzMethod.Sq or CvfLzMethod.Auto))
+      throw new NotSupportedException($"DriveSpace 3 writes stored, JM or SQ clusters; {this.CompressionMethod} is not a DriveSpace 3 codec.");
     var physDataStart = this._innerBase + this._firstData;
     var physCursor = physDataStart;
     var layout = new List<ClusterPlan>();
     foreach (var (cl, full) in clusterFull) {
-      // Auto covers every codec a DriveSpace 3 volume reads: DS/JM (the codec's Auto) and SQ.
       var comp = this.CompressionMethod == CvfLzMethod.Auto
-        ? Smaller(CvfLzCodec.Encode(full, CvfLzMethod.Auto, this.CompressionLevel)!, CvfLzCodec.Encode(full, CvfLzMethod.Sq, this.CompressionLevel)!)
+        ? Smaller(CvfLzCodec.Encode(full, CvfLzMethod.Jm, this.CompressionLevel)!, CvfLzCodec.Encode(full, CvfLzMethod.Sq, this.CompressionLevel)!)
         : CvfLzCodec.Encode(full, this.CompressionMethod, this.CompressionLevel);
       var ksize = comp is null ? Spc : (comp.Length + Ss - 1) / Ss;
       if (comp is not null && ksize <= Spc && (ksize < Spc || this.ForceCompress)) {

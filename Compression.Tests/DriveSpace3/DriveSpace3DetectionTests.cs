@@ -22,7 +22,7 @@ public class DriveSpace3DetectionTests {
     Assert.That(d.Extensions, Is.Empty); // shared with DoubleSpace, routed by signature
     Assert.That(d.MagicSignatures, Has.Count.EqualTo(1));
     Assert.That(d.MagicSignatures[0].Offset, Is.EqualTo(3));
-    Assert.That(d.Methods.Select(m => m.Name), Is.SupersetOf(new[] { "stored", "jm", "sq", "ds", "auto", "auto++" }));
+    Assert.That(d.Methods.Select(m => m.Name), Is.SupersetOf(new[] { "stored", "jm", "sq", "auto", "auto++" }).And.Not.Contains("ds"));
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
     Assert.That(((IFormatOptionsSchema)d).OptionsSchema.Any(o => o.Key == "Compatibility"), Is.False,
       "one layout only: no layout choice");
