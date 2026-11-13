@@ -159,6 +159,7 @@ format,Dff,DSDIFF (.dff),Audio,,.dff;.dsdiff,Y,Y,Y,
 format,Dfpwm,DFPWM1a (ComputerCraft),Audio,,.dfpwm,Y,Y,Y,
 format,Dicom,DICOM,Archive,,.dcm;.dicom,Y,Y,,
 format,DicomDir,DICOMDIR (multi-study index),Archive,,.dcmdir,Y,Y,,
+format,Diet,DIET (DOS exe),Archive,,,Y,Y,,
 format,DiskCopy42,Apple Disk Copy 4.2,Archive,,.dc42;.image,Y,Y,Y,Y
 format,DiskDoubler,DiskDoubler,Archive,,.dd;.sea,Y,Y,Y,
 format,Djvu,DjVu,Image,,.djvu;.djv,Y,Y,,
@@ -198,6 +199,7 @@ format,Esd,ESD,Archive,,.esd,Y,Y,Y,
 format,EspsSd,ESPS sampled data (.sd),Audio,,.sd,Y,Y,,
 format,Ewf,EnCase EWF (E01),Archive,,.e01;.ewf;.l01,Y,Y,Y,Y
 format,Ewf2,EnCase EWF2 (Ex01),Archive,,.ex01,Y,Y,Y,
+format,ExePack,EXEPACK (DOS exe),Archive,,,Y,Y,,
 format,ExFat,exFAT,Archive,Y,.img;.exfat,Y,Y,Y,Y
 format,Ext,ext2/3/4,Archive,Y,.ext2;.ext3;.ext4;.img,Y,Y,Y,Y
 format,Ext1,ext1,Archive,Y,.ext1,Y,Y,Y,Y
@@ -408,7 +410,7 @@ format,Nrbf,.NET BinaryFormatter / NRBF object graph,Archive,,.nrbf,Y,Y,Y,
 format,Nrg,NRG,Archive,,.nrg,Y,Y,Y,Y
 format,Nsa,NSA,Archive,,.nsa,Y,Y,Y,Y
 format,Nsf,NES Sound Format,Audio,,.nsf;.nsfe,Y,Y,,
-format,Nsis,NSIS,Archive,,,Y,Y,,
+format,Nsis,NSIS,Archive,,,Y,Y,Y,
 format,NsPack,NsPack (Win32 PE),Archive,,,Y,Y,,
 format,Nss,NSS (Novell Storage Services),Archive,Y,.nss,Y,Y,Y,
 format,Ntfs,NTFS,Archive,Y,.ntfs;.img,Y,Y,Y,Y

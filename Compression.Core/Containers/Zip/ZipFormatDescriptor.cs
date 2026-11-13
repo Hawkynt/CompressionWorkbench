@@ -15,7 +15,7 @@ namespace FileFormat.Zip;
 ///   <item><description>Info-ZIP zip/unzip — long-standing open reference implementations</description></item>
 /// </list>
 /// </summary>
-public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveRenamable, IArchiveCreatable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema, ICompressionOptimizable, IArchiveRepackable {
+public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveRenamable, IArchiveCreatable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema, ICompressionOptimizable, IArchiveRepackable, IArchiveInPlaceMountWriter {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -121,6 +121,15 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsPassword |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories |
     FormatCapabilities.SupportsOptimize;
+
+  /// <summary>
+  /// ZIP's native central-directory editor supports positional additions and
+  /// removals. The mount layer decides whether the exact archive qualifies
+  /// (unencrypted, no unsupported entry types) and wraps edits in its undo
+  /// journal before allowing direct mutations of a live source.
+  /// </summary>
+  public bool CanEditInPlace(Stream source)
+    => source.CanRead && source.CanWrite && source.CanSeek;
 
   /// <summary>
   /// Adds (or replaces by name) files inside an existing ZIP archive. Uses

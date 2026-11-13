@@ -94,7 +94,7 @@ YZPack	executable packers	packed executable	YZPack	MISSING
 ComPAck	executable packers	packed executable	ComPAck	MISSING	
 aPack	executable packers	packed executable	aPack	MISSING	
 AvPack	executable packers	packed executable	AvPack	MISSING	
-Diet	executable packers	packed executable	Diet	MISSING	
+Diet	executable packers	packed executable	Diet	PARTIAL	EXE and COM files restored; compressed data files remain unsupported.
 LZEXE	executable packers	packed executable	LZEXE	PARTIAL	
 PKLITE (DOS)	executable packers	packed executable	PKLITE (DOS)	PARTIAL	
 ProPack (DOS)	executable packers	packed executable	ProPack (DOS)	MISSING	

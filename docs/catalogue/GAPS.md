@@ -14,21 +14,21 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Measure | Value |
 | --- | ---: |
-| Catalogue rows | 1023 |
+| Catalogue rows | 1024 |
 | … formats listed by at least one source | 586 |
-| … registry ids no source lists (OURS-ONLY) | 437 |
-| Source-listed rows mapped to something here | 410 / 586 (70.0 %) |
+| … registry ids no source lists (OURS-ONLY) | 438 |
+| Source-listed rows mapped to something here | 411 / 586 (70.1 %) |
 | … of rows listed by ≥ 2 sources | 150 / 159 (94.3 %) |
 | … of rows listed by ≥ 3 sources | 76 / 77 (98.7 %) |
 | … of rows listed by ≥ 4 sources | 43 / 43 (100.0 %) |
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 176 | a source lists it; no descriptor or building block covers it |
-| `READ-ONLY-BUT-SOURCES-WRITE` | 36 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 48 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 326 | covered with no known gap against what the sources list |
-| `OURS-ONLY` | 437 | in our registry, listed by none of the eight sources |
+| `MISSING` | 175 | a source lists it; no descriptor or building block covers it |
+| `READ-ONLY-BUT-SOURCES-WRITE` | 35 | we only read it; a source or the format's own tool writes it |
+| `PARTIAL` | 49 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 327 | covered with no known gap against what the sources list |
+| `OURS-ONLY` | 438 | in our registry, listed by none of the eight sources |
 
 ### Per source
 
@@ -37,14 +37,14 @@ read-only rows.
 
 | Source | Rows it lists | Mapped | % | OK |
 | --- | ---: | ---: | ---: | ---: |
-| 7-Zip (formats + codecs) | 96 | 94 | 97.9 | 88 |
-| libarchive (formats + filters) | 28 | 28 | 100.0 | 26 |
-| XADMaster / The Unarchiver | 127 | 108 | 85.0 | 93 |
-| binwalk v3 | 79 | 56 | 70.9 | 50 |
-| Universal Extractor 2 | 124 | 104 | 83.9 | 71 |
-| PRONOM | 87 | 83 | 95.4 | 73 |
-| Wikipedia | 268 | 197 | 73.5 | 153 |
-| Wikipedia (de): list of compression programs | 124 | 77 | 62.1 | 46 |
+| 7-Zip (formats + codecs) | 96 | 94 | 97.9 | 89 |
+| libarchive (formats + filters) | 28 | 28 | 100.0 | 27 |
+| XADMaster / The Unarchiver | 127 | 108 | 85.0 | 94 |
+| binwalk v3 | 79 | 56 | 70.9 | 51 |
+| Universal Extractor 2 | 124 | 104 | 83.9 | 72 |
+| PRONOM | 87 | 83 | 95.4 | 74 |
+| Wikipedia | 268 | 197 | 73.5 | 154 |
+| Wikipedia (de): list of compression programs | 124 | 78 | 62.9 | 47 |
 
 These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-13. The source inventories retain their original 2026-10-19 snapshot; the German list is revision 268525499 (2026-07-05). The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.
 
@@ -67,14 +67,14 @@ Front-ends were resolved to the formats they list, and those formats were checke
 
 | Status | Formats | Programs (table) | Packers | Identifiers |
 | --- | ---: | ---: | ---: | ---: |
-| FULL | 48 | 19 | 1 | |
-| PARTIAL | 31 | 13 | 15 | |
-| MISSING | 51 | 9 | 30 | |
-| REFUSED | 2 | 1 | | |
+| FULL | 49 | 19 | 1 |  |
+| PARTIAL | 31 | 13 | 16 |  |
+| MISSING | 50 | 9 | 29 |  |
+| REFUSED | 2 | 1 |  |  |
 | NOT-A-FORMAT | 2 | 16 | 1 | 7 |
 | **Total** | **134** | **58** | **47** | **7** |
 
-Six of the 51 missing formats could not be identified (IZArc's ENC and MBF; QuickZip's Czip,
+Six of the 50 missing formats could not be identified (IZArc's ENC and MBF; QuickZip's Czip,
 LZA, RS and SGX), so they have no catalogue row. Of the 47 packers, seven have an
 `ExecutablePackerHandler` but no descriptor (BeRoEXEPacker, RLPack, WinUpack, PECompact,
 eXPressor, exe32pack, NeoLite). The catalogue counts them as `MISSING` because it maps
@@ -87,38 +87,38 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 
 | # | Format | Status | Weight | What would make it real |
 | ---: | --- | --- | :---: | --- |
-| 1 | ISO 9660 | PARTIAL | 3 | Reading and writing are complete, Rock Ridge SL, RE/CL/PL and zisofs ZF included (proven with the kernel's isofs, xorriso, `isoinfo -R` and mkzftree). In-place editing still refuses images with interleaved files or relocated (RE/CL) directories; rewriting their directory chains is what remains. Rung 3 (ECMA-119, RRIP). |
-| 2 | ZIP | PARTIAL | 3 | WinZip JPEG (96) has an LGPL decoder in XADMaster but needs a WinZip-written sample. Certificate, 3DES and RC2 strong encryption need SecureZIP samples. |
-| 3 | NSIS | PARTIAL (read-only) | 3 | Creation needs a real exehead stub. NSIS is mostly zlib/libpng-licensed; makensis is the oracle. |
-| 4 | UPX | PARTIAL (read-only) | 3 | Writing refused: provable output needs UPX's GPL loader stubs. |
-| 5 | PECompact | MISSING | 3 | The handler locates the payload. Decode its block series (the aPLib and LZMA cores exist) against the 130 PackingData samples, then wrap it in a descriptor. |
-| 6 | ACE | PARTIAL | 2 | The writer lacks the ACE 2.0 SOUND/PIC modes. Oracle: unace, acefile (BSD-2). |
-| 7 | StuffIt | PARTIAL | 2 | Methods 8 and 14 and segmented sets; classic DES and StuffIt 5 RC4 reads and writes are proven. Rung 1: XADMaster (LGPL); oracle: unar. |
-| 8 | StuffIt X | PARTIAL | 2 | Darkhorse, Blend, Deflate, method 7, preprocessors, encryption; no writer. Rung 1: XADMaster (LGPL); oracle: unar. |
-| 9 | ALZip | PARTIAL | 2 | Split archives and method 3 need samples; ALZip is the oracle. |
-| 10 | PEA | PARTIAL | 2 | Encryption and volumes. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
-| 11 | PAK (NoGate) | MISSING | 2 | Rung 1: XADMaster's Crushed method (BB_ArcDistill already covers Distilled). Needs a real sample; PAK 2.51 under DOSBox is the oracle. |
-| 12 | 7-Zip-zstd coders in 7z | PARTIAL | 2 | Write Zstandard, Brotli and LZ4 (the encoders exist); decode LZ5 and Lizard (BB_Lizard exists). Oracle: 7-Zip-zstd. |
-| 13 | ASPack | PARTIAL (read-only) | 2 | The read side is real; creating packed executables is not a goal. |
-| 14 | DIET | MISSING | 2 | Rung 1: deark (MIT) decodes it; DIET under DOSBox is the oracle. |
-| 15 | EXECryptor | MISSING | 2 | Runtime protector: detection is the ceiling; needs samples. |
-| 16 | FSG | PARTIAL (read-only) | 2 | Remaining variants against the corpus originals. |
-| 17 | LZEXE | PARTIAL (read-only) | 2 | The read side is real. |
-| 18 | MEW | PARTIAL (read-only) | 2 | Non-standard LZMA framing variants remain. |
-| 19 | MPRESS | PARTIAL (read-only) | 2 | MPRESS 1.x codec undecoded; corpus samples exist. |
-| 20 | NsPack | PARTIAL (read-only) | 2 | Payload located only; decode the nsp1 loader table (130 corpus samples). |
-| 21 | Obsidium | MISSING | 2 | Runtime protector: detection is the ceiling; needs samples. |
-| 22 | PESpin | MISSING | 2 | Runtime protector: detection is the ceiling; needs samples. |
-| 23 | PEtite | PARTIAL (read-only) | 2 | Rebuild imports, relocations and OEP. |
-| 24 | PKLITE (DOS) | PARTIAL (read-only) | 2 | The read side is real. |
-| 25 | RLPack | MISSING | 2 | The handler already unpacks it; wrap it in a descriptor. |
-| 26 | Themida | PARTIAL (read-only) | 2 | Virtualising protector: detection is the honest ceiling. |
-| 27 | WinUpack | MISSING | 2 | The handler already unpacks it; wrap it in a descriptor. |
-| 28 | VMProtect | PARTIAL (read-only) | 2 | Virtualising protector: detection is the honest ceiling. |
-| 29 | FreeArc | PARTIAL | 1 | mm and external compressors; FreeArc (GPL) is an oracle only. |
-| 30 | Compact Pro | PARTIAL | 1 | Multi-volume and encrypted archives; samples needed. |
+| 1 | ZIP | PARTIAL | 3 | WinZip JPEG (96) has an LGPL decoder in XADMaster but needs a WinZip-written sample. Certificate, 3DES and RC2 strong encryption need SecureZIP samples. |
+| 2 | NSIS | PARTIAL | 3 | Creation uses externally supplied NSIS 3 Unicode stubs; zlib, bzip2 and LZMA, solid or not, are verified with the original stubs and 7-Zip. Uninstallers and custom scripts are not written. |
+| 3 | UPX | PARTIAL (read-only) | 3 | Writing refused: provable output needs UPX's GPL loader stubs. |
+| 4 | PECompact | MISSING | 3 | The handler locates the payload. Decode its block series (the aPLib and LZMA cores exist) against the 130 PackingData samples, then wrap it in a descriptor. |
+| 5 | ACE | PARTIAL | 2 | The writer lacks the ACE 2.0 SOUND/PIC modes. Oracle: unace, acefile (BSD-2). |
+| 6 | StuffIt | PARTIAL | 2 | Method 8 and segmented sets; method 14 is read and verified with unar; classic DES and StuffIt 5 RC4 reads and writes are proven. Rung 1: XADMaster (LGPL); oracle: unar. |
+| 7 | StuffIt X | PARTIAL | 2 | Darkhorse, Blend, Deflate, method 7, preprocessors, encryption; no writer. Rung 1: XADMaster (LGPL); oracle: unar. |
+| 8 | ALZip | PARTIAL | 2 | Split archives and method 3 need samples; ALZip is the oracle. |
+| 9 | PEA | PARTIAL | 2 | Encryption and volumes. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
+| 10 | PAK (NoGate) | MISSING | 2 | Rung 1: XADMaster's Crushed method (BB_ArcDistill already covers Distilled). Needs a real sample; PAK 2.51 under DOSBox is the oracle. |
+| 11 | 7-Zip-zstd coders in 7z | PARTIAL | 2 | Write Zstandard, Brotli and LZ4 (the encoders exist); decode LZ5 and Lizard (BB_Lizard exists). Oracle: 7-Zip-zstd. |
+| 12 | ASPack | PARTIAL (read-only) | 2 | The read side is real; creating packed executables is not a goal. |
+| 13 | DIET | PARTIAL | 2 | EXE and COM files are restored against DIET 1.45f and UNP 4.11; compressed data files remain unsupported. |
+| 14 | EXECryptor | MISSING | 2 | Runtime protector: detection is the ceiling; needs samples. |
+| 15 | FSG | PARTIAL (read-only) | 2 | Remaining variants against the corpus originals. |
+| 16 | LZEXE | PARTIAL (read-only) | 2 | The read side is real. |
+| 17 | MEW | PARTIAL (read-only) | 2 | Non-standard LZMA framing variants remain. |
+| 18 | MPRESS | PARTIAL (read-only) | 2 | MPRESS 1.x codec undecoded; corpus samples exist. |
+| 19 | NsPack | PARTIAL (read-only) | 2 | Payload located only; decode the nsp1 loader table (130 corpus samples). |
+| 20 | Obsidium | MISSING | 2 | Runtime protector: detection is the ceiling; needs samples. |
+| 21 | PESpin | MISSING | 2 | Runtime protector: detection is the ceiling; needs samples. |
+| 22 | PEtite | PARTIAL (read-only) | 2 | Rebuild imports, relocations and OEP. |
+| 23 | PKLITE (DOS) | PARTIAL (read-only) | 2 | The read side is real. |
+| 24 | RLPack | MISSING | 2 | The handler already unpacks it; wrap it in a descriptor. |
+| 25 | Themida | PARTIAL (read-only) | 2 | Virtualising protector: detection is the honest ceiling. |
+| 26 | WinUpack | MISSING | 2 | The handler already unpacks it; wrap it in a descriptor. |
+| 27 | VMProtect | PARTIAL (read-only) | 2 | Virtualising protector: detection is the honest ceiling. |
+| 28 | FreeArc | PARTIAL | 1 | mm and external compressors; FreeArc (GPL) is an oracle only. |
+| 29 | Compact Pro | PARTIAL | 1 | Multi-volume and encrypted archives; samples needed. |
+| 30 | KGB Archiver | PARTIAL | 1 | KGB Archiver 2 (PAQ7-based) and encrypted .kge are not read; KGB is GPL, so rung 2 with the kgb2 binary as oracle. |
 
-The other 48 are rare (weight 1). In rank order: KGB 2 and .kge, UHARC 0.3 and 0.4 PPM, BlakHole, GCA
+The other 47 are rare (weight 1). In rank order: UHARC 0.3 and 0.4 PPM, BlakHole, GCA
 (refused), WinHKI, ICE (refused), PAQ, WinRK, SQX, UC2, YZ1, then single-source rows. Among the
 single-source rows, btoa is the cheapest new format, and Courgette has a BSD-3 source to
 convert. QUAD needs its licence checked. IMP, JAR (.j), PAE, Aladdin Private File, Central Point
@@ -235,7 +235,6 @@ running real-world samples. The file named at the end of each row is where the l
 | Format | Ours | Sources | What is missing |
 | --- | --- | :---: | --- |
 | 7z | `SevenZip` | 7 | Deflate64, ARM64, RISC-V, Zstd/Brotli/LZ4 coders and external header references unsupported (SevenZipReader.cs) |
-| ISO 9660 (Joliet / Rock Ridge / El Torito) | `Iso` | 7 | nothing on read (Rock Ridge PX modes, TF times, SL, RE/CL and ZF and interleaved files are read); in-place editing refuses images with interleaved files or relocated directories (IsoTreeEditor.cs) |
 | ZIP | `Zip` | 7 | methods xz (95), JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs) |
 | LHA / LZH | `Lzh` | 6 | every method and header level of lhasa's test suite reads except LHARK's lk7; lh2, lh3, lhx, pm1 and pm2 are read-only; self-extracting executables are not opened (LhaReader.cs) |
 | StuffIt (classic + 5) | `StuffIt` | 4 | store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs) |

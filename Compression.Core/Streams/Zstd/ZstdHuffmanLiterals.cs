@@ -142,9 +142,11 @@ internal static class ZstdHuffmanLiterals {
     if (total == 0)
       throw new InvalidDataException("Huffman weights sum to zero.");
 
-    // Max_Number_of_Bits = position of the bit above the current total.
+    // Max_Number_of_Bits = position of the bit above the current total's highest bit: the next
+    // power of two strictly greater, since the implicit last weight is never zero. A total that is
+    // itself a power of two (weights 1, 1, 2 → 4) completes to twice that (last weight 3 → 8).
     var bits = 1;
-    while ((1L << bits) < total)
+    while ((1L << bits) <= total)
       ++bits;
     maxBits = bits;
     if (maxBits > MaxTableLog)

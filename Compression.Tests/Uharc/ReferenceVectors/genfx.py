@@ -107,6 +107,43 @@ elf[0x12] = 3
 put("exe/linux.bin", bytes(elf) + code(3000, 0x34))
 put("exe/tiny.com", b"MZ" + bytes(0x3E) + b"\xE8\x10\x00\x00\x00" * 40)
 
+# fax: a drawn 1728 x 2376 one-bit page, the size UHARC stores as a transposed fax page
+rng = random.Random(7)
+FW, FH = 1728, 2376
+page = bytearray(FW * FH // 8)
+def rect(x0, y0, x1, y1):
+    for yy in range(max(y0, 0), min(y1, FH)):
+        for xx in range(max(x0, 0), min(x1, FW)):
+            page[yy * (FW // 8) + xx // 8] |= 0x80 >> (xx % 8)
+rect(100, 100, 1628, 106); rect(100, 2270, 1628, 2276); rect(100, 100, 106, 2276); rect(1622, 100, 1628, 2276)
+y = 200
+while y < 2200:
+    x = 160
+    while x < 1500:
+        w = rng.randint(8, 40)
+        for k in range(rng.randint(2, 5)):
+            sx = x + rng.randint(0, w - 3)
+            rect(sx, y, sx + 3, y + rng.randint(10, 28))
+        rect(x, y + rng.randint(0, 24), x + w, y + rng.randint(25, 28))
+        x += w + rng.randint(10, 30)
+    y += rng.randint(40, 60)
+put("fax/page.fax", bytes(page))
+
+# sizes: text files of the exact sizes PPM's file-size rules key on (481861 then 426754;
+# 513216 then 246814)
+rng = random.Random(21)
+SIZE_WORDS = ("model order context symbol escape record table window range coder stream archive "
+              "header block reset point size file text binary byte value count total").split()
+def sized_text(n):
+    out, size = [], 0
+    while size < n:
+        line = " ".join(SIZE_WORDS[(size // 97 + k * 7) % len(SIZE_WORDS)] for k in range(8)) + (".\r\n" if rng.random() < 0.97 else "!\r\n")
+        out.append(line)
+        size += len(line)
+    return "".join(out).encode()[:n]
+for name, size in [("a1.txt", 481861), ("a2.txt", 426754), ("b1.txt", 513216), ("b2.txt", 246814)]:
+    put("sizes/" + name, sized_text(size))
+
 for dirpath, dirs, files in os.walk(root):
     for f in files + dirs:
         os.utime(os.path.join(dirpath, f), (STAMP, STAMP))
