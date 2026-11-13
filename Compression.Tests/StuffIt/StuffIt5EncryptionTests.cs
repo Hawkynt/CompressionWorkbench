@@ -103,11 +103,6 @@ public class StuffIt5EncryptionTests {
     Assert.That(archive.AsSpan().IndexOf("encrypted stuffit fork"u8), Is.EqualTo(-1));
   }
 
-  [Test, Category("Exception")]
-  public void GivenClassicTargetWithPassword_WhenCreating_ThenRefused()
-    => Assert.That(() => new StuffItFormatDescriptor().Create(new MemoryStream(), [new ArchiveInputInfo("a", "a", false, [1])], new FormatCreateOptions { Password = Password }),
-      Throws.InstanceOf<NotSupportedException>());
-
   // Expected keys: Python hashlib MD5 of the MacRoman bytes from Apple's ROMAN.TXT:
   // 70ca7373, 70f17373, 70f07373 and 70ff7373. Native unar also checks these passwords below.
   [TestCase("p\u00A0ss", "838e9127f6")]

@@ -12,8 +12,9 @@ namespace FileFormat.StuffIt;
 /// </summary>
 /// <remarks>
 /// Forks are decoded with methods 0 (store), 1 (RLE90), 2 (compress LZW), 3 (Huffman), 5 (LZAH),
-/// 13 (LZ+Huffman) and 15 (Arsenic). StuffIt 5 forks encrypted with the password scheme (RC4) are
-/// decrypted when the password is given. Method 8 (MW), 14 (installer) and classic encrypted forks
+/// 13 (LZ+Huffman) and 15 (Arsenic). Encrypted forks are decrypted when the password is given:
+/// StuffIt 5's RC4 scheme, and classic StuffIt's scheme, whose key check lives in the archive's
+/// resource fork (an archive wrapped in MacBinary carries it). Method 8 (MW) and 14 (installer)
 /// are listed but refused on extraction. Layouts follow XADMaster's XADStuffItParser and
 /// XADStuffIt5Parser (LGPL-2.1-or-later).
 /// </remarks>
@@ -38,6 +39,7 @@ public sealed class StuffItReader : IDisposable {
   private readonly bool _leaveOpen;
   private readonly List<StuffItEntry> _entries = [];
   private readonly long _base;
+  private readonly byte[]? _mKey; // classic: the MKey resource of the archive's resource fork
   private readonly string? _password;
   private byte[]? _passwordHash; // StuffIt 5: the archive's 5-byte password check value
   private bool _disposed;
@@ -62,8 +64,23 @@ public sealed class StuffItReader : IDisposable {
     this._leaveOpen = leaveOpen;
     this._password = password;
     this._base = stream.CanSeek ? stream.Position : 0;
-    Span<byte> head = stackalloc byte[100];
+    Span<byte> head = stackalloc byte[128];
     var got = stream.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
+    if (got == 128 && IsMacBinaryWrapper(head, stream)) {
+      // A MacBinary file whose data fork is the archive: the resource fork may hold the MKey.
+      var dataLength = BinaryPrimitives.ReadUInt32BigEndian(head[83..]);
+      var resourceLength = BinaryPrimitives.ReadUInt32BigEndian(head[87..]);
+      var resourceAt = this._base + 128 + ((dataLength + 127L) & ~127L);
+      if (resourceLength > 0 && resourceLength < 16 * 1024 * 1024 && resourceAt + resourceLength <= stream.Length) {
+        stream.Position = resourceAt;
+        var fork = new byte[resourceLength];
+        stream.ReadExactly(fork);
+        this._mKey = MacResourceFork.Find(fork, StuffItClassicCrypto.MKeyType, 0);
+      }
+      this._base += 128;
+      stream.Position = this._base;
+      got = stream.ReadAtLeast(head[..100], 100, throwOnEndOfStream: false);
+    }
     stream.Position = this._base;
     if (got >= 14 && BinaryPrimitives.ReadUInt32BigEndian(head[10..]) == 0x724C6175 && IsClassicSignature(head)) {
       this.IsStuffIt5 = false;
@@ -81,6 +98,16 @@ public sealed class StuffItReader : IDisposable {
 
   /// <summary>Gets the entries (folders first in archive order, then their contents).</summary>
   public IReadOnlyList<StuffItEntry> Entries => this._entries;
+
+  /// <summary>A MacBinary header (zero version byte, name length 1-63, zero bytes 74 and 82) over a StuffIt data fork.</summary>
+  private static bool IsMacBinaryWrapper(ReadOnlySpan<byte> h, Stream stream) {
+    if (h[0] != 0 || h[1] is 0 or > 63 || h[74] != 0 || h[82] != 0) return false;
+    var dataLength = BinaryPrimitives.ReadUInt32BigEndian(h[83..]);
+    if (dataLength < 22 || stream.Position + dataLength > stream.Length + 128) return false;
+    Span<byte> inner = stackalloc byte[16];
+    if (stream.ReadAtLeast(inner, inner.Length, throwOnEndOfStream: false) < inner.Length) return false;
+    return BinaryPrimitives.ReadUInt32BigEndian(inner[10..]) == 0x724C6175 && IsClassicSignature(inner) || inner.StartsWith(Sit5Banner);
+  }
 
   private static bool IsClassicSignature(ReadOnlySpan<byte> h)
     => BinaryPrimitives.ReadUInt32BigEndian(h) == 0x53495421 // "SIT!"
@@ -109,8 +136,6 @@ public sealed class StuffItReader : IDisposable {
 
   private byte[] ReadFork(StuffItEntry entry, long offset, long compressedSize, long size, int method, ushort crc, string fork, byte[]? forkKey) {
     if (size == 0 && compressedSize == 0) return [];
-    if (entry.IsEncrypted && !this.IsStuffIt5)
-      throw new NotSupportedException($"'{entry.FileName}' ({fork}) is encrypted; classic StuffIt decryption is not supported.");
     if (size > int.MaxValue || compressedSize > int.MaxValue)
       throw new NotSupportedException($"'{entry.FileName}' ({fork}) exceeds the 2 GiB in-memory limit.");
     if (offset < 0 || offset + compressedSize > this._stream.Length)
@@ -119,7 +144,10 @@ public sealed class StuffItReader : IDisposable {
     this._stream.Position = offset;
     var compressed = new byte[compressedSize];
     this._stream.ReadExactly(compressed);
-    if (entry.IsEncrypted) StuffIt5Crypto.Decrypt(compressed, this.ArchiveKey(entry), forkKey ?? throw new InvalidDataException($"'{entry.FileName}' ({fork}) is encrypted but carries no key."));
+    if (entry.IsEncrypted && this.IsStuffIt5)
+      StuffIt5Crypto.Decrypt(compressed, this.ArchiveKey(entry), forkKey ?? throw new InvalidDataException($"'{entry.FileName}' ({fork}) is encrypted but carries no key."));
+    else if (entry.IsEncrypted)
+      compressed = this.DecryptClassic(entry, compressed, fork == "data fork" ? entry.DataPadding : entry.ResourcePadding, fork);
     var length = (int)size;
     var data = method switch {
       0 => compressed.Length == length ? compressed : throw new InvalidDataException($"'{entry.FileName}' ({fork}): stored size mismatch."),
@@ -136,6 +164,24 @@ public sealed class StuffItReader : IDisposable {
     if (method != 15 && Crc16.Compute(data) != crc)
       throw new InvalidDataException($"CRC-16 mismatch for '{entry.FileName}' ({fork}).");
     return data;
+  }
+
+  /// <summary>Classic: strips the trailing entry key, decrypts the blocks and drops the padding.</summary>
+  private byte[] DecryptClassic(StuffItEntry entry, byte[] stored, int padding, string fork) {
+    if (this._mKey is null)
+      throw new NotSupportedException($"'{entry.FileName}' ({fork}) is encrypted, and the key check (the MKey resource) lives in the archive's resource fork, which this copy lacks; open the MacBinary file.");
+    if (this._password is null)
+      throw new ArchivePasswordException($"'{entry.FileName}' is encrypted; a password is required.", passwordWasSupplied: false);
+    var length = stored.Length - StuffItClassicCrypto.EntryKeyLength;
+    if (length < 0 || length % StuffItClassicCrypto.BlockSize != 0 || padding >= StuffItClassicCrypto.BlockSize || padding > length)
+      throw new InvalidDataException($"'{entry.FileName}' ({fork}): the encrypted fork is not a whole number of blocks.");
+    var archiveKey = StuffItClassicCrypto.ArchiveKey(StuffIt5Crypto.PasswordBytes(this._password));
+    var iv = StuffItClassicCrypto.ArchiveIv(archiveKey, this._mKey)
+      ?? throw new ArchivePasswordException("Wrong password for this StuffIt archive.", passwordWasSupplied: true);
+    var forkKey = StuffItClassicCrypto.ForkKey(archiveKey, iv, stored.AsSpan(length, StuffItClassicCrypto.EntryKeyLength));
+    var cipher = stored.AsSpan(0, length);
+    StuffItClassicCrypto.DecryptFork(cipher, forkKey);
+    return cipher[..(length - padding)].ToArray();
   }
 
   /// <summary>The 5-byte archive key, once the password has been checked against the archive.</summary>
@@ -221,6 +267,8 @@ public sealed class StuffItReader : IDisposable {
         ResourceMethod = resMethod & 0x7F,
         DataMethod = dataMethod & 0x7F,
         IsEncrypted = ((resMethod | dataMethod) & FlagEncrypted) != 0,
+        ResourcePadding = h[104],
+        DataPadding = h[105],
         ResourceForkSize = resLength,
         DataForkSize = dataLength,
         CompressedResourceSize = resCompressed,

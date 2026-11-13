@@ -53,6 +53,12 @@ public sealed class StuffItEntry {
   internal ushort DataForkCrc16 { get; set; }
   internal ushort ResourceForkCrc16 { get; set; }
 
+  /// <summary>Classic: padding bytes added to the data fork before encryption.</summary>
+  internal int DataPadding { get; set; }
+
+  /// <summary>Classic: padding bytes added to the resource fork before encryption.</summary>
+  internal int ResourcePadding { get; set; }
+
   /// <summary>StuffIt 5: the data fork's 5-byte key, when encrypted.</summary>
   internal byte[]? DataForkKey { get; set; }
 

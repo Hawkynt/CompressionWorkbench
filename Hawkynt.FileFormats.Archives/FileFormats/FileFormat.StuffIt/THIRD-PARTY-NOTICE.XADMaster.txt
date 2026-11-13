@@ -1,12 +1,13 @@
 StuffIt decoding in this folder (StuffItReader's classic and StuffIt 5 directory parsing,
 StuffIt13Decoder, StuffIt13Tables, StuffItLzahDecoder, StuffItArsenicDecoder, StuffItHuffman,
-StuffItRle90, and StuffIt 5's password scheme in StuffIt5Crypto) is converted from XADMaster, the
-archive library of The Unarchiver.
+StuffItRle90, StuffIt 5's password scheme in StuffIt5Crypto, and classic StuffIt's password scheme
+in StuffItClassicCrypto) is converted from XADMaster, the archive library of The Unarchiver.
 
 Upstream:  https://github.com/MacPaw/XADMaster
 Revision:  7cb9ee0abbb163f261e4cb74501e15067032319c
 Files:     XADStuffItParser.m, XADStuffIt5Parser.m, XADStuffIt13Handle.m, XADStuffItHuffmanHandle.m,
-           XADStuffItArsenicHandle.m, XADLZHDynamicHandle.m, XADRLE90Handle.m, XADPrefixCode.m, BWT.c
+           XADStuffItArsenicHandle.m, XADLZHDynamicHandle.m, XADRLE90Handle.m, XADPrefixCode.m, BWT.c,
+           XADStuffItDESHandle.m
 Licence:   GNU Lesser General Public License, version 2.1 or (at your option) any later version.
            This repository is distributed under LGPL-3.0-or-later, which the "any later version"
            grant permits.
@@ -21,5 +22,6 @@ This library is distributed in the hope that it will be useful, but WITHOUT ANY 
 even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
 Lesser General Public License for more details.
 
-The code-length tables of method 13 and the Arsenic randomisation table are copied verbatim; all
-other code was rewritten in C# for this codebase.
+The code-length tables of method 13, the Arsenic randomisation table and the combined S-box/P-box
+table of StuffIt's key-management cipher are copied verbatim; all other code was rewritten in C#
+for this codebase.
