@@ -82,7 +82,15 @@ internal static class RawContentFilesystemSession {
         var saved = source.Position;
         try {
           source.Position = offset;
-          return source.Read(destination[..checked((int)Math.Min(destination.Length, length - offset))]);
+          var requested = checked((int)Math.Min(destination.Length, length - offset));
+          var read = 0;
+          while (read < requested) {
+            var count = source.Read(destination.Slice(read, requested - read));
+            if (count == 0)
+              break;
+            read += count;
+          }
+          return read;
         } finally {
           source.Position = saved;
         }
