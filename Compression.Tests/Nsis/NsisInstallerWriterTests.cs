@@ -200,10 +200,19 @@ public class NsisInstallerWriterTests {
 
   // ── NSIS's own stubs: 7-Zip and the installer itself ────────────────────────────────────
 
+  /// <summary>CI sets CWB_REQUIRE_NSIS_STUBS=1 where it installs NSIS: a missing stub or 7-Zip then fails instead of skipping.</summary>
+  private static bool Required => Environment.GetEnvironmentVariable("CWB_REQUIRE_NSIS_STUBS") == "1";
+
+  private static void Unavailable(string why) {
+    if (Required)
+      Assert.Fail(why + " CWB_REQUIRE_NSIS_STUBS=1 says it is installed.");
+    Assert.Ignore(why);
+  }
+
   private static byte[] RealStub(NsisCompression compression, bool solid) {
     var stub = NsisInstallerWriter.LoadStub(compression, solid, Environment.GetEnvironmentVariable("CWB_NSIS_DIR"));
     if (stub == null)
-      Assert.Ignore("NSIS 3 stubs not found (install NSIS 3, or set NSISDIR / CWB_NSIS_DIR).");
+      Unavailable($"NSIS 3 stub Stubs/{NsisInstallerWriter.StubFileName(compression, solid)} not found (install NSIS 3, or set NSISDIR / CWB_NSIS_DIR).");
     return stub!;
   }
 
@@ -223,7 +232,7 @@ public class NsisInstallerWriterTests {
     AssertSameFiles(ReadBack(File.ReadAllBytes(installer)), "our reader");
     var sz = ToolDiscovery.GetToolPath("7z") ?? ToolDiscovery.GetToolPath("7za");
     if (sz == null)
-      Assert.Ignore("7-Zip not found.");
+      Unavailable("7-Zip not found.");
     var outDir = Path.Combine(this._tmp, "7z");
     var psi = new ProcessStartInfo(sz!) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
     foreach (var a in new[] { "x", installer, "-o" + outDir, "-y" })
