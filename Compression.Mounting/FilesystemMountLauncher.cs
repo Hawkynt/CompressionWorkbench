@@ -40,9 +40,9 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
     ArgumentException.ThrowIfNullOrWhiteSpace(target);
     cancellationToken.ThrowIfCancellationRequested();
 
-    var descriptor = FormatRegistry.GetById(formatId)
-      ?? throw new ArgumentException($"Format '{formatId}' is not registered.", nameof(formatId));
-    _ = descriptor;
+    if (!string.Equals(formatId, MountNamespaceResolver.RawDiskFormatId, StringComparison.OrdinalIgnoreCase) &&
+        FormatRegistry.GetById(formatId) is null)
+      throw new ArgumentException($"Format '{formatId}' is not registered.", nameof(formatId));
 
     var backend = this._backends.GetBackend(requestedPlan.BackendId);
     FileStream? source = null;
@@ -69,7 +69,8 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
           LeaveOpen: false
         ),
         password,
-        volumeParameters
+        volumeParameters,
+        Path.GetFileName(imagePath)
       );
 
       // The opened namespace can be more specific than the probe (for example a
