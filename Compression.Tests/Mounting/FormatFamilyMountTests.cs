@@ -73,6 +73,93 @@ public sealed class FormatFamilyMountTests {
   }
 
   [Test]
+  public void WormOnlyWimMountStagesFullCopyAndPersistsRepeatedWrites() {
+    var descriptor = FormatRegistry.GetById("Wim")!;
+    Assert.Multiple(() => {
+      Assert.That(descriptor, Is.InstanceOf<IArchiveCreatable>());
+      Assert.That(descriptor, Is.Not.InstanceOf<IArchiveModifiable>());
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+    });
+
+    using var image = new MemoryStream();
+    ((IArchiveCreatable)descriptor).Create(
+      image,
+      [
+        ArchiveInputInfo.InMemory("keep.bin", "unmodified"u8.ToArray()),
+        ArchiveInputInfo.InMemory("remove.bin", "to be removed"u8.ToArray()),
+      ],
+      new FormatCreateOptions());
+    var sourceBytes = image.ToArray();
+
+    image.Position = 0;
+    var probe = MountNamespaceResolver.Probe("Wim", image);
+    Assert.Multiple(() => {
+      Assert.That(probe.Profile.CanMountWritable, Is.True, string.Join("; ", probe.Profile.Limitations));
+      Assert.That(probe.Profile.MutationModel, Is.EqualTo(FilesystemMutationModel.WholeImageRebuild));
+      Assert.That(probe.Layers.Last(), Is.EqualTo("namespace:qualified-worm-rebuild"));
+      Assert.That(probe.Profile.Capabilities.HasFlag(FilesystemDriverCapabilities.CreateDirectory), Is.False);
+    });
+
+    image.Position = 0;
+    using (var session = MountNamespaceResolver.Open(
+      "Wim", image, new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true))) {
+      Assert.Throws<NotSupportedException>(() => session.CreateDirectory(session.RootNodeId, "empty"));
+
+      var created = session.CreateFile(session.RootNodeId, "new.bin");
+      using (var handle = session.OpenFile(created, FileAccess.ReadWrite)) {
+        handle.Write(0, "abcdefgh"u8);
+        handle.SetLength(6);
+      }
+      Assert.That(image.ToArray(), Is.EqualTo(sourceBytes),
+        "All file changes must remain staged until the write-back flush.");
+      session.Flush();
+
+      var afterFirstFlush = image.ToArray();
+      Assert.That(afterFirstFlush, Is.Not.EqualTo(sourceBytes));
+
+      session.Rename(session.RootNodeId, "new.bin", session.RootNodeId, "renamed.bin", replace: false);
+      session.DeleteFile(session.RootNodeId, "remove.bin");
+      using (var handle = session.OpenFile(created, FileAccess.ReadWrite))
+        handle.Write(2, "XY"u8);
+      Assert.That(image.ToArray(), Is.EqualTo(afterFirstFlush));
+      session.Flush();
+    }
+
+    image.Position = 0;
+    using var reread = MountNamespaceResolver.Open(
+      "Wim", image, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    Assert.Multiple(() => {
+      Assert.That(reread.Lookup(reread.RootNodeId, "new.bin"), Is.Null);
+      Assert.That(reread.Lookup(reread.RootNodeId, "remove.bin"), Is.Null);
+      Assert.That(ReadAll(reread, "renamed.bin"), Is.EqualTo("abXYef"u8.ToArray()));
+      Assert.That(ReadAll(reread, "keep.bin"), Is.EqualTo("unmodified"u8.ToArray()));
+    });
+  }
+
+  [Test]
+  public void WormOnlyWimRequiresWritableBackingForMountedMutations() {
+    var writer = (IArchiveCreatable)FormatRegistry.GetById("Wim")!;
+    using var generated = new MemoryStream();
+    writer.Create(generated, [ArchiveInputInfo.InMemory("read.txt", "data"u8.ToArray())],
+      new FormatCreateOptions());
+    using var readOnlySource = new MemoryStream(generated.ToArray(), writable: false);
+
+    var profile = MountNamespaceResolver.Probe("Wim", readOnlySource);
+    Assert.That(profile.Profile.CanMount, Is.True);
+    Assert.That(profile.Profile.CanMountWritable, Is.True,
+      "Capability describes the format; the mount planner separately requires a writable source.");
+    Assert.Throws<NotSupportedException>(() =>
+      MountNamespaceResolver.Open("Wim", readOnlySource,
+        new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true)));
+
+    readOnlySource.Position = 0;
+    using var readOnly = MountNamespaceResolver.Open("Wim", readOnlySource,
+      new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    Assert.That(ReadAll(readOnly, "read.txt"), Is.EqualTo("data"u8.ToArray()));
+  }
+
+  [Test]
   public void ArchiveProbeRefusesWritesWhenCredentialsWouldMakeRebuildUnsafe() {
     using var image = new MemoryStream();
     var descriptor = (IArchiveCreatable)FormatRegistry.GetById("Zip")!;
