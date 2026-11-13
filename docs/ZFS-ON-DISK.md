@@ -292,6 +292,26 @@ directory's is its entry count + 2), parent, links (2 + subdirectories for a dir
 the bytes of all their blocks; a dnode block's fill is the number of objects in it, an objset
 pointer's the number of objects.
 
+### Compressed blocks
+
+A file's data blocks may be stored compressed; the writer's `Compression` option and, when
+editing, the filesystem's `compression` property decide how. The property is a `u64` in the DSL
+directory's props ZAP (the compression id; 0 inherits from the parent directory, unset means
+off). On a version-28 pool the choices are lzjb (also what `on` means there), gzip-1…9 and zle;
+lz4 and zstd need feature flags. A block is compressed as a ZFS write compresses it:
+
+- a logical block of only zeros is written as a hole, not as a block;
+- the compressed stream must be at most `lsize − lsize / 8` bytes (it saves an eighth),
+  and once rounded up to whole `2^ashift` sectors it must still be smaller than `lsize`;
+  otherwise the block is stored uncompressed (compression 2);
+- the physical block is the stream zero-padded to that rounded size; the block pointer gives
+  `lsize` and `psize` separately and the compression id, and the checksum covers the physical
+  bytes. gzip-N streams are zlib (RFC 1950) at level N.
+
+Charges follow the block: allocated bytes from `psize` rounded to the sector, compressed bytes
+`psize`, uncompressed bytes `lsize` for file data (see "Editing a pool", "Accounting"); the
+written filesystem's dataset and directories record those three sums.
+
 ## Editing a pool
 
 `FileSystem.Zfs.ZfsPoolEditor` adds and removes files in an existing single-device pool of

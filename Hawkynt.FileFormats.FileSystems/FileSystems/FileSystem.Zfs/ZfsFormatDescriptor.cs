@@ -118,12 +118,14 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <summary>
   /// Writes a new single-device pool (version 28) whose one filesystem holds <paramref name="inputs"/>.
-  /// The option <c>PoolName</c> names the pool (default <c>cwb</c>).
+  /// The option <c>PoolName</c> names the pool (default <c>cwb</c>); <c>Compression</c> sets how file
+  /// data is compressed and the filesystem's <c>compression</c> property: <c>off</c> (default),
+  /// <c>on</c>/<c>lzjb</c>, <c>gzip</c>, <c>gzip-1</c>…<c>gzip-9</c> or <c>zle</c>.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
-    var writer = new ZfsWriter();
+    var writer = new ZfsWriter { Compression = options.GetOption("Compression", "off") };
     foreach (var input in inputs) {
       var modified = input.Metadata?.LastWriteTimeUtc?.UtcDateTime;
       if (input.IsDirectory)

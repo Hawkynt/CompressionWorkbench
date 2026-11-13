@@ -247,6 +247,8 @@ internal static class ZfsPoolEditor {
   private sealed class NewBlock {
     public long Offset;
     public int Size;
+    public int LogicalSize;
+    public byte Compression = ZfsConstants.CompressOff;
     public long Allocated;
     public byte Type;
     public int Level;
@@ -352,6 +354,7 @@ internal static class ZfsPoolEditor {
     public ZfsSystemAttributes? Sa;
     public int NewLayout = -1;
     public bool Accounting;
+    public byte Compression = ZfsConstants.CompressOff;
     public readonly Dictionary<ulong, Znode> Znodes = [];
   }
 
@@ -445,13 +448,18 @@ internal static class ZfsPoolEditor {
       this._touched.Add(m);
     }
 
-    private NewBlock AllocBlock(Os os, Dnode? d, int size, byte type, int level) {
+    private NewBlock AllocBlock(Os os, Dnode? d, int size, byte type, int level, int logicalSize = 0, byte compression = ZfsConstants.CompressOff) {
       var allocated = Align(size, 1L << this._s.Ashift);
-      var block = new NewBlock { Offset = this.Allocate(allocated), Size = size, Allocated = allocated, Type = type, Level = level };
+      var logical = logicalSize == 0 ? size : logicalSize;
+      var block = new NewBlock {
+        Offset = this.Allocate(allocated), Size = size, LogicalSize = logical, Compression = compression,
+        Allocated = allocated, Type = type, Level = level,
+      };
       this._blocks.Add(block);
+      var metadata = level > 0 || type != OtPlainFile;
       os.Used += allocated;
       os.Compressed += size;
-      os.Uncompressed += size;
+      os.Uncompressed += metadata ? size : logical;
       if (d != null) d.Used += allocated;
       return block;
     }
@@ -580,17 +588,28 @@ internal static class ZfsPoolEditor {
       return new TreeNode { Block = block };
     }
 
-    /// <summary>Allocates level-0 blocks holding <paramref name="contents"/> as blocks 0… of <paramref name="d"/>.</summary>
-    private void WriteContents(Os os, Dnode d, IReadOnlyList<byte[]?> contents, int blockSize) {
+    /// <summary>
+    /// Allocates level-0 blocks holding <paramref name="contents"/> as blocks 0… of <paramref name="d"/>,
+    /// compressed with <paramref name="compression"/> where that pays (a block of zeros stays a hole).
+    /// </summary>
+    private void WriteContents(Os os, Dnode d, IReadOnlyList<byte[]?> contents, int blockSize, byte compression = ZfsConstants.CompressOff) {
       d.DataBlockSize = blockSize;
       var changes = new Dictionary<ulong, NewBlock?>();
       for (var i = 0; i < contents.Count; ++i) {
         if (contents[i] is not { } content) continue;
-        var block = this.AllocBlock(os, d, blockSize, d.Type, 0);
-        block.Data = content;
+        var logical = new byte[blockSize];
+        content.AsSpan(0, Math.Min(content.Length, blockSize)).CopyTo(logical);
+        var (algorithm, physical) = ZfsCompression.Compress(compression, logical, this._s.Ashift);
+        if (physical == null) {
+          changes[(ulong)i] = null;                                 // zeros: a hole, still within the object
+          continue;
+        }
+        var block = this.AllocBlock(os, d, physical.Length, d.Type, 0, blockSize, algorithm);
+        block.Data = physical;
         changes[(ulong)i] = block;
       }
       this.SetBlocks(os, d, changes);
+      if (contents.Count > 0 && (ulong)contents.Count - 1 > d.MaxBlkId) d.MaxBlkId = (ulong)contents.Count - 1;
     }
 
     // ── object sets ────────────────────────────────────────────────────────
@@ -724,10 +743,11 @@ internal static class ZfsPoolEditor {
       b.Data = data;
       var p = new byte[Bp];
       var sectors = (ulong)(b.Size >> ZfsConstants.SectorShift);
+      var logical = (ulong)(b.LogicalSize >> ZfsConstants.SectorShift);
       W64(p, 0x00, (ulong)(b.Allocated >> ZfsConstants.SectorShift));         // DVA 0: asize, vdev 0
       W64(p, 0x08, (ulong)b.Offset >> ZfsConstants.SectorShift);              // offset, not ganged
-      W64(p, 0x30, (sectors - 1) | (sectors - 1) << 16
-        | (ulong)ZfsConstants.CompressOff << 32 | (ulong)ZfsConstants.ChecksumFletcher4 << 40
+      W64(p, 0x30, (logical - 1) | (sectors - 1) << 16
+        | (ulong)b.Compression << 32 | (ulong)ZfsConstants.ChecksumFletcher4 << 40
         | (ulong)b.Type << 48 | (ulong)b.Level << 56 | 1UL << 63);
       W64(p, 0x48, this.Txg);
       W64(p, 0x50, this.Txg);
@@ -855,6 +875,7 @@ internal static class ZfsPoolEditor {
           }
       }
       fs.Accounting = os.Block.Length >= 2048 && os.Block[UserUsedAt] != 0 && os.Block[GroupUsedAt] != 0;
+      fs.Compression = this.EffectiveCompression(dirObject);
       this._filesystems.Add(fs);
       return fs;
     }
@@ -1059,7 +1080,7 @@ internal static class ZfsPoolEditor {
         var blocks = new List<byte[]?>();
         for (var at = 0; at < data.Length; at += blockSize)
           blocks.Add(data.AsSpan(at, Math.Min(blockSize, data.Length - at)).ToArray());
-        this.WriteContents(fs.Os, d, blocks, blockSize);
+        this.WriteContents(fs.Os, d, blocks, blockSize, fs.Compression);
       }
       this.Entries(fs, parent)[name] = obj | (isDirectory ? 4UL : 8UL) << ZfsConstants.DirentTypeShift;
       parent.EntriesChanged = true;
@@ -1251,6 +1272,29 @@ internal static class ZfsPoolEditor {
       }
 
       this.CommitObjset(mos);
+    }
+
+    /// <summary>
+    /// The <c>compression</c> property a filesystem's new data is written with: its own or the
+    /// nearest ancestor's (0 = inherit), <c>on</c> meaning lzjb on version 28; off when unset or
+    /// when it names an algorithm this pool version cannot hold.
+    /// </summary>
+    private byte EffectiveCompression(ulong dir) {
+      var mos = this._mos.Old;
+      for (var guard = 0; dir != 0 && guard < 64; ++guard) {
+        var d = mos.RequireDnode(dir, "DSL directory");
+        var props = U64(d.Bonus, 80);
+        var value = props == 0 ? null : mos.Zap(props, "DSL properties").FirstOrDefault(p => p.Name == "compression");
+        if (value != null && value.Value != ZfsConstants.CompressInherit)
+          return value.Value switch {
+            ZfsConstants.CompressOn or ZfsConstants.CompressLzjb => ZfsConstants.CompressLzjb,
+            >= ZfsConstants.CompressGzip1 and <= ZfsConstants.CompressGzip9 => (byte)value.Value,
+            ZfsConstants.CompressZle => ZfsConstants.CompressZle,
+            _ => ZfsConstants.CompressOff,
+          };
+        dir = U64(d.Bonus, 16);
+      }
+      return ZfsConstants.CompressOff;
     }
 
     private ulong MosDirectory() {

@@ -9,8 +9,9 @@ namespace FileSystem.Zfs;
 /// Writes a single-device ZFS pool image (pool version 28, ZPL version 3) holding one
 /// filesystem with the given files and directories, laid out as <c>docs/ZFS-ON-DISK.md</c>
 /// ("Writing a pool") describes: the objects <c>zpool create</c> leaves in the MOS, one metaslab
-/// space map per metaslab that holds blocks, and every block uncompressed with a Fletcher-4
-/// checksum, allocated front to back after the 4 MiB label and boot area.
+/// space map per metaslab that holds blocks, and every block with a Fletcher-4 checksum,
+/// allocated front to back after the 4 MiB label and boot area. File data is stored as
+/// <see cref="Compression"/> says ("Compressed blocks"); metadata is stored uncompressed.
 /// </summary>
 /// <remarks>
 /// The pool is written exported (label state 1), so <c>zpool import</c> takes it without
@@ -57,6 +58,18 @@ internal sealed class ZfsWriter {
   }
 
   private readonly Node _root = new() { Name = "", IsDirectory = true };
+  private byte _compression = ZfsConstants.CompressOff;
+
+  /// <summary>
+  /// The compression of file data and the filesystem's <c>compression</c> property: <c>off</c>
+  /// (default), <c>on</c> or <c>lzjb</c>, <c>gzip</c> (level 6) or <c>gzip-1</c>…<c>gzip-9</c>, <c>zle</c>.
+  /// </summary>
+  /// <exception cref="ArgumentException">An unknown name.</exception>
+  /// <exception cref="NotSupportedException">An algorithm that needs a feature flag (lz4, zstd).</exception>
+  public string Compression {
+    get => ZfsCompression.Name(this._compression);
+    set => this._compression = ZfsCompression.ParseForVersion28(value);
+  }
 
   /// <summary>Adds a file; missing parent directories are created.</summary>
   public void AddFile(string path, byte[] data, DateTime? modified = null) {
@@ -98,7 +111,9 @@ internal sealed class ZfsWriter {
   /// <summary>One allocated block: where it sits (after the 4 MiB start) and what it holds once filled.</summary>
   private sealed class Block {
     public long Offset;
-    public int Size;                 // logical = physical (uncompressed), a multiple of 512
+    public int Size;                 // physical = allocated size, a multiple of 512
+    public int LogicalSize;          // the size before compression
+    public byte Compression = ZfsConstants.CompressOff;
     public byte Type;
     public int Level;
     public ulong Fill;
@@ -130,22 +145,35 @@ internal sealed class ZfsWriter {
     // a block never straddles a metaslab: metaslabs are at least 16 MiB and start on multiples of it
     if (this._next >> MetaslabShift != (this._next + size - 1) >> MetaslabShift)
       this._next = (this._next >> MetaslabShift) + 1 << MetaslabShift;
-    var block = new Block { Offset = this._next, Size = size, Type = type, Level = level, Data = new byte[size] };
+    var block = new Block { Offset = this._next, Size = size, LogicalSize = size, Type = type, Level = level, Data = new byte[size] };
     this._next += size;
     this._blocks.Add(block);
     return block;
   }
 
-  /// <summary>Allocates an object's data blocks (contents set now) and its indirect blocks (filled by <see cref="SealObject"/>).</summary>
-  private DmuObject NewObject(byte type, byte bonusType, byte[] bonus, int blockSize, IReadOnlyList<byte[]?> blocks) {
+  /// <summary>
+  /// Allocates an object's data blocks (contents set now, compressed with the writer's
+  /// algorithm when <paramref name="compress"/> is set) and its indirect blocks (filled by
+  /// <see cref="SealObject"/>).
+  /// </summary>
+  private DmuObject NewObject(byte type, byte bonusType, byte[] bonus, int blockSize, IReadOnlyList<byte[]?> blocks, bool compress = false) {
     var obj = new DmuObject { Type = type, BonusType = bonusType, Bonus = bonus, DataBlockSize = blockSize };
     foreach (var content in blocks) {
       if (content == null) {
         obj.Level0.Add(null);
         continue;
       }
-      var b = this.Allocate(blockSize, type, 0);
-      content.CopyTo(b.Data, 0);
+      var logical = new byte[blockSize];
+      content.CopyTo(logical, 0);
+      var (algorithm, physical) = compress ? ZfsCompression.Compress(this._compression, logical, Ashift) : (ZfsConstants.CompressOff, logical);
+      if (physical == null) {                                       // all zeros: a hole, as ZFS writes it
+        obj.Level0.Add(null);
+        continue;
+      }
+      var b = this.Allocate(physical.Length, type, 0);
+      physical.CopyTo(b.Data, 0);
+      b.LogicalSize = blockSize;
+      b.Compression = algorithm;
       b.Fill = 1;
       obj.Level0.Add(b);
     }
@@ -204,11 +232,12 @@ internal sealed class ZfsWriter {
     if (b == null)
       return;
     var sectors = (ulong)(b.Size / Sector);
+    var logical = (ulong)(b.LogicalSize / Sector);
     BinaryPrimitives.WriteUInt64LittleEndian(dst, sectors);                                 // DVA 0: asize, vdev 0
     BinaryPrimitives.WriteUInt64LittleEndian(dst[8..], (ulong)b.Offset >> Ashift);          // offset, not ganged
-    var prop = (sectors - 1)                                                                 // logical size
+    var prop = (logical - 1)                                                                 // logical size
       | (sectors - 1) << 16                                                                  // physical size
-      | (ulong)ZfsConstants.CompressOff << 32
+      | (ulong)b.Compression << 32
       | (ulong)ZfsConstants.ChecksumFletcher4 << 40
       | (ulong)b.Type << 48
       | (ulong)b.Level << 56
@@ -280,9 +309,26 @@ internal sealed class ZfsWriter {
     root.Seal();
   }
 
-  /// <summary>Total allocated bytes of every block of the object set (objects, dnode blocks, objset block).</summary>
-  private static long ObjectSetBytes(ObjectSet os) =>
-    os.Objects.Values.Sum(o => o.UsedBytes) + os.Meta.UsedBytes + os.Root.Size;
+  /// <summary>What a set of blocks is charged: allocated, physical and (data: logical) bytes (<c>docs/ZFS-ON-DISK.md</c>, "Editing a pool").</summary>
+  private readonly record struct Space(ulong Used, ulong Compressed, ulong Uncompressed) {
+    public static Space operator +(Space a, Space b) => new(a.Used + b.Used, a.Compressed + b.Compressed, a.Uncompressed + b.Uncompressed);
+  }
+
+  private static Space Charge(IEnumerable<Block> blocks) {
+    var total = default(Space);
+    foreach (var b in blocks) {
+      var metadata = b.Level > 0 || b.Type != OtPlainFile;
+      total += new Space((ulong)b.Size, (ulong)b.Size, (ulong)(metadata ? b.Size : b.LogicalSize));
+    }
+    return total;
+  }
+
+  private static IEnumerable<Block> BlocksOf(DmuObject o) =>
+    o.Level0.Concat(o.Levels.SelectMany(l => l)).Where(b => b != null).Select(b => b!);
+
+  /// <summary>The charge of every block of the object set (objects, dnode blocks, objset block).</summary>
+  private static Space ObjectSetSpace(ObjectSet os) =>
+    Charge(os.Objects.Values.SelectMany(BlocksOf).Concat(BlocksOf(os.Meta)).Append(os.Root));
 
   // ── ZAPs ───────────────────────────────────────────────────────────────────────────────
 
@@ -530,7 +576,7 @@ internal sealed class ZfsWriter {
       for (var at = 0; at < data.Length; at += blockSize)
         blocks.Add(data.AsSpan(at, Math.Min(blockSize, data.Length - at)).ToArray());
       var fileBonus = Znode(n, parent, (ulong)data.LongLength, 1);
-      os.Objects[n.Object] = this.NewObject(OtPlainFile, OtZnode, fileBonus, blockSize, blocks);
+      os.Objects[n.Object] = this.NewObject(OtPlainFile, OtZnode, fileBonus, blockSize, blocks, compress: true);
     }
     Emit(this._root, this._root.Object);
 
@@ -569,7 +615,7 @@ internal sealed class ZfsWriter {
 
     // DSL objects first, with placeholders for the bonuses that need sizes or later numbers.
     var rootDir = Add(this.NewObject(OtDslDir, OtDslDir, new byte[256], Sector, []));
-    var rootProps = Add(this.ZapObject(OtDslProps, []));
+    var rootProps = Add(this.ZapObject(OtDslProps, this._compression == ZfsConstants.CompressOff ? [] : [("compression", (ulong)this._compression)]));
     var mosDir = Add(this.NewObject(OtDslDir, OtDslDir, new byte[256], Sector, []));
     var mosProps = Add(this.ZapObject(OtDslProps, []));
     var mosChildren = Add(this.ZapObject(OtDslDirChildMap, []));
@@ -710,37 +756,37 @@ internal sealed class ZfsWriter {
 
     // seal the filesystem first: the head dataset points at its objset block.
     SealObjectSet(fs);
-    var fsBytes = (ulong)ObjectSetBytes(fs);
+    var fsSpace = ObjectSetSpace(fs);
 
     // MOS objects sealed for their own sizes (the dnodes are written by SealObjectSet).
     foreach (var o in mos.Objects.Values)
       SealObject(o);
     SealObject(mos.Meta);
-    var mosBytes = (ulong)(mos.Objects.Values.Sum(o => o.UsedBytes) + mos.Meta.UsedBytes + mos.Root.Size);
+    var mosSpace = ObjectSetSpace(mos);
 
-    void DslDir(ulong obj, ulong head, ulong parent, ulong origin, ulong children, ulong props, ulong used, ulong headUsed, ulong childUsed, ulong clones = 0) {
+    void DslDir(ulong obj, ulong head, ulong parent, ulong origin, ulong children, ulong props, Space used, ulong headUsed, ulong childUsed, ulong clones = 0) {
       var b = mos.Objects[obj].Bonus;
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(0), now);
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(8), head);
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(16), parent);
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(24), origin);
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(32), children);
-      BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(40), used);
-      BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(48), used);
-      BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(56), used);
+      BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(40), used.Used);
+      BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(48), used.Compressed);
+      BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(56), used.Uncompressed);
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(80), props);
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(96), 1);              // DD_FLAG_USED_BREAKDOWN
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(104), headUsed);      // used_breakdown[HEAD]
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(120), childUsed);     // used_breakdown[CHILD]
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(144), clones);        // dd_clones
     }
-    DslDir(rootDir, headDataset, 0, originSnap, rootChildren, rootProps, fsBytes + mosBytes, fsBytes, mosBytes);
-    DslDir(mosDir, 0, rootDir, 0, mosChildren, mosProps, mosBytes, mosBytes, 0);
-    DslDir(freeDir, 0, rootDir, 0, freeChildren, freeProps, 0, 0, 0);
-    DslDir(originDir, originHead, rootDir, 0, originChildren, originProps, 0, 0, 0, dirClones);
+    DslDir(rootDir, headDataset, 0, originSnap, rootChildren, rootProps, fsSpace + mosSpace, fsSpace.Used, mosSpace.Used);
+    DslDir(mosDir, 0, rootDir, 0, mosChildren, mosProps, mosSpace, mosSpace.Used, 0);
+    DslDir(freeDir, 0, rootDir, 0, freeChildren, freeProps, default, 0, 0);
+    DslDir(originDir, originHead, rootDir, 0, originChildren, originProps, default, 0, 0, dirClones);
 
     void Dataset(ulong obj, ulong dir, ulong prevSnap, ulong prevSnapTxg, ulong nextSnap, ulong snapNames, ulong children,
-      ulong deadlist, ulong bytes, ulong nextClonesObj, Block? root) {
+      ulong deadlist, Space bytes, ulong nextClonesObj, Block? root) {
       var b = mos.Objects[obj].Bonus;
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(0), dir);
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(8), prevSnap);
@@ -751,10 +797,10 @@ internal sealed class ZfsWriter {
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(48), now);
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(56), 1);             // creation txg
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(64), deadlist);
-      BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(72), bytes);         // referenced
-      BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(80), bytes);         // compressed
-      BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(88), bytes);         // uncompressed
-      BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(96), bytes);         // unique
+      BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(72), bytes.Used);           // referenced
+      BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(80), bytes.Compressed);     // compressed
+      BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(88), bytes.Uncompressed);   // uncompressed
+      BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(96), bytes.Used);           // unique
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(104), Guid64() & 0x00FFFFFFFFFFFFFFUL);  // fsid guid
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(112), Guid64());
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(120), 4);            // DS_FLAG_UNIQUE_ACCURATE
@@ -764,9 +810,9 @@ internal sealed class ZfsWriter {
       }
       BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(256), nextClonesObj);
     }
-    Dataset(originHead, originDir, originSnap, 1, 0, originSnapNames, 0, originHeadDeadlist, 0, 0, null);
-    Dataset(originSnap, originDir, 0, 0, originHead, 0, 2, originSnapDeadlist, 0, nextClones, null);
-    Dataset(headDataset, rootDir, originSnap, 1, 0, headSnapNames, 0, headDeadlist, fsBytes, 0, fs.Root);
+    Dataset(originHead, originDir, originSnap, 1, 0, originSnapNames, 0, originHeadDeadlist, default, 0, null);
+    Dataset(originSnap, originDir, 0, 0, originHead, 0, 2, originSnapDeadlist, default, nextClones, null);
+    Dataset(headDataset, rootDir, originSnap, 1, 0, headSnapNames, 0, headDeadlist, fsSpace, 0, fs.Root);
 
     // 4. the MOS object set, then the labels and the uberblock
     SealObjectSet(mos);
