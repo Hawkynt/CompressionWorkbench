@@ -3,6 +3,7 @@ The DOS executable unpackers in this folder are C# conversions of Deark's decode
   LzExeUnpacker.cs   modules/lzexe.c   (LZEXE 0.90 / 0.91 / 0.91e)
   PkLiteUnpacker.cs  modules/pklite.c  (PKLITE EXE and COM)
   ExePackUnpacker.cs modules/exepack.c (Microsoft EXEPACK)
+  DietUnpacker.cs    modules/diet.c    (DIET EXE and COM)
   DosExe.cs          the 28-byte header writer of the same modules and the entry-point
                      fingerprint of src/fmtutil-exe.c
   ExePackRelocations src/fmtutil-cmpr.c, fmtutil_decompress_exepack_reloc_tbl
@@ -16,7 +17,7 @@ from:
 Local changes: errors are InvalidDataException; reads past the end of the file fail instead
 of returning zeros; the LHARK-SFX, PCX2EXE and CEBE COM variants and the raw-output mode
 are not carried over; PKLITE's version fingerprinting and min/max-allocation research
-code are not carried over.
+code, and DIET's data-file format, are not carried over.
 
 Deark is distributed under the following MIT-style license.
 

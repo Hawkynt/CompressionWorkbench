@@ -852,6 +852,7 @@ Python pickle object graph,pkl;pickle,archive,,,,,,,,0,,Pickle,Y,Y,,OURS-ONLY,,
 PKCS#12 (PFX),p12;pfx,archive,,,,,,,,0,,Pkcs12,Y,,,OURS-ONLY,,
 PKLITE (DOS exe),,archive,,,,,,,,0,https://github.com/jsummers/deark,PkLite,Y,,,OURS-ONLY,,"EXE and COM files of PKLITE 1.00-2.01 restored (Deark MIT conversion); PKLITE 1.15 and 2.01 output restored byte-identical to pklite -x and UNP 4.11; extra compression (Professional only) and pre-1.15 versions unproven for lack of samples; writing refused (would need PKWARE's stub)"
 EXEPACK (DOS exe),,archive,,,,,,,,0,https://github.com/jsummers/deark,ExePack,Y,,,OURS-ONLY,,"EXEPACK.EXE / LINK /EXEPACK programs restored (Deark MIT conversion); EXEPACK 4.06 files restored equal to UNP 4.11 apart from the minimum allocation (kept at the packed program's total memory)"
+DIET (DOS exe),,archive,,,,,,,,0,https://github.com/jsummers/deark,Diet,Y,,,OURS-ONLY,,"EXE and COM files of DIET 1.00-1.45f restored (Deark MIT conversion); DIET 1.45f output restored byte-identical to UNP 4.11; DIET data files not handled"
 PLY (Stanford polygon),ply,archive,,,,,,,,0,,Ply,Y,,,OURS-ONLY,,
 PO (gettext text catalog),po;pot,archive,,,,,,,,0,,Po,Y,,,OURS-ONLY,,
 PPTX,pptx,archive,,,,,,,,0,,Pptx,Y,Y,Y,OURS-ONLY,,

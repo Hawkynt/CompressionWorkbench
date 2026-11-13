@@ -462,6 +462,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | ASProtect | `AsProtect` |  | R |  | [aspack.com](http://www.aspack.com) |
 | bzexe | `Bzexe` |  | R |  | [sourceware.org](https://sourceware.org/bzip2/) |
 | Crinkler | `Crinkler` |  | R |  | [GitHub](https://github.com/runestubbe/Crinkler) |
+| DIET (DOS exe) | `Diet` |  | R | Restores DIET 1.00-1.45f EXE and COM files; files from DIET 1.45f come back byte-identical to UNP 4.11's restoration (Deark conversion) | [Archive Team](http://fileformats.archiveteam.org/wiki/DIET) |
 | EXEPACK (DOS exe) | `ExePack` |  | R | Restores EXEPACK.EXE and LINK /EXEPACK programs; equal to UNP 4.11's restoration apart from the minimum allocation, which keeps the packed program's total memory (Deark conversion) | [Archive Team](http://fileformats.archiveteam.org/wiki/EXEPACK) |
 | FSG | `Fsg` |  | R |  | [GitHub](https://github.com/horsicq/Detect-It-Easy) |
 | GoPacker | `GoPacker` |  | R |  | [GitHub](https://github.com/packing-box/docker-packing-box) |
@@ -501,7 +502,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | RLPack | Unpack | Own `{sourceRva, destinationRva}` block table, one bare LZMA or aPLib stream per section; x86 call/jump filter reversed. All 130 corpus samples decompress. |
 | WinUpack | Unpack | Upack's LZMA-idiom range coder plus call/jump filter, driven by the loader's parameter block; both container shapes decode. |
 | Yoda's Crypter | Unpack | Stub walker replays the per-build byte cipher and restores the original entry point; 129 of 130 corpus samples decrypt. |
-| LZEXE / PKLITE / EXEPACK (DOS) | Unpack | Stubs walked, LZ77 / run-length images decoded, relocation tables and headers rebuilt; checked against UNP 4.11 and `pklite -x` on files the real packers made (see `Compression.Tests/ExePackers/DosVectors`). |
+| LZEXE / PKLITE / EXEPACK / DIET (DOS) | Unpack | Stubs walked, LZ77 / run-length images decoded, relocation tables and headers rebuilt; checked against UNP 4.11 and `pklite -x` on files the real packers made (see `Compression.Tests/ExePackers/DosVectors`). |
 | GZEXE / BZEXE | Unpack | Shell wrappers with embedded gzip / bzip2 payload; the original executable is restored statically. |
 | Papaw | Unpack | ELF wrapper with obfuscated XZ/LZMA2 payload; appended original restored. |
 | GoPacker | Unpack | Appended Zstandard executable payload restored. |
