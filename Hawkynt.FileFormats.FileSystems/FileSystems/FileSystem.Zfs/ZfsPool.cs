@@ -38,6 +38,12 @@ internal sealed class ZfsPool : IDisposable {
   public IReadOnlyDictionary<uint, ZfsVdev> TopLevelVdevs => this._topLevel;
   public IReadOnlyCollection<string> UnverifiedChecksums => this._unverified;
   public ZfsObjectSet Mos { get; private set; } = null!;
+  /// <summary>The block pointer of the active uberblock: the MOS's object set block.</summary>
+  public ZfsBlockPointer MosRoot { get; private set; } = null!;
+  /// <summary>The newest label configuration of the pool's devices.</summary>
+  public XdrNvList Config { get; private set; } = null!;
+  /// <summary>The highest transaction group among all valid uberblocks, readable or not.</summary>
+  public ulong NewestUberblockTxg { get; private set; }
 
   /// <summary>What reading has met so far: which block shapes, compressions and checksums.</summary>
   internal ZfsReadStatistics Statistics { get; } = new();
@@ -72,6 +78,7 @@ internal sealed class ZfsPool : IDisposable {
     var own = labels.Where(l => (l.Config.UInt64("pool_guid") ?? 0) == poolGuid).ToList();
     var newest = own.OrderByDescending(l => l.Config.UInt64("txg") ?? 0).First().Config;
     this.Guid = poolGuid;
+    this.Config = newest;
     this.Name = newest.String("name");
     this.VdevChildren = (int)(newest.UInt64("vdev_children") ?? 1);
 
@@ -88,6 +95,7 @@ internal sealed class ZfsPool : IDisposable {
     if (uberblocks.Count == 0)
       throw new InvalidDataException("ZFS: no valid uberblock in any label.");
 
+    this.NewestUberblockTxg = uberblocks.Max(u => u.Txg);
     // Newest first; a tree that cannot be read sends the reader one transaction group back.
     Exception? failure = null;
     foreach (var ub in uberblocks.OrderByDescending(u => u.Txg).ThenByDescending(u => u.Timestamp)) {
@@ -96,6 +104,7 @@ internal sealed class ZfsPool : IDisposable {
         if (mos.Type != ZfsConstants.OstMeta)
           throw new InvalidDataException($"ZFS: root object set has type {mos.Type}, not the MOS.");
         this.Mos = mos;
+        this.MosRoot = ub.Root;
         this.Txg = ub.Txg;
         this.Version = ub.Version;
         return;

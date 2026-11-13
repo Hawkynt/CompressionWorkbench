@@ -29,7 +29,7 @@ public class DoubleSpaceHugeVolumeTests {
   public void Large_Volume_RoundTrips_ViaReader() {
     // 300 files × 24 KB = ~900 clusters (8 KB) — well over the old 69-cluster cap.
     var files = BigSet(300, 24 * 1024, 1);
-    var w = new GenuineCvfWriter { CompressionMethod = CvfLzMethod.Auto, CompressionLevel = 1 };
+    var w = new GenuineCvfWriter { CompressionMethod = CvfLzMethod.Ds, CompressionLevel = 1 };
     foreach (var (n, d) in files) w.AddFile(n, d);
     var image = w.Build();
 
@@ -44,7 +44,7 @@ public class DoubleSpaceHugeVolumeTests {
     DmsdosOracle.Require();
 
     var files = BigSet(150, 16 * 1024, 2);   // ~300 clusters
-    var w = new GenuineCvfWriter { CompressionMethod = CvfLzMethod.Auto, CompressionLevel = 1 };
+    var w = new GenuineCvfWriter { CompressionMethod = CvfLzMethod.Ds, CompressionLevel = 1 };
     foreach (var (n, d) in files) w.AddFile(n, d);
     var image = w.Build();
 

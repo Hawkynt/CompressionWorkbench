@@ -11,6 +11,7 @@ namespace Compression.Tests.Lib;
 /// directory. Write-back is atomic (temp-file + rename).
 /// </summary>
 [TestFixture]
+[NonParallelizable] // sets the process-wide InMemoryProcessing.ThresholdBytes
 public class InMemoryProcessingTests {
 
   [Test, Category("Spec")]

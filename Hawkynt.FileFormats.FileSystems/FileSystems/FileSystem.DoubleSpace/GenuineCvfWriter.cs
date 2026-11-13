@@ -12,9 +12,7 @@ namespace FileSystem.DoubleSpace;
 /// lists the inner directory, and reads every file back byte-exact
 /// (detected as "drivespace CVF version 2").
 /// <para>
-/// Unlike <see cref="DoubleSpaceWriter"/> (which emits the older
-/// <c>MSDSP*</c> / offset-36 layout our own reader round-trips), this writer
-/// reproduces the real <c>MSDBL6.0</c> container:
+/// The writer reproduces the real <c>MSDBL6.0</c> container:
 /// </para>
 /// <list type="bullet">
 ///   <item><b>Sector 0</b> — MDBPB: standard BPB (512 B/sector, 16 sec/cluster,
@@ -69,8 +67,8 @@ public sealed class GenuineCvfWriter {
   /// Default (before 1980) leaves the FAT date/time fields zero.</summary>
   public DateTime Timestamp { get; init; }
 
-  /// <summary>Per-cluster compression codec. Stored (default) emits uncompressed
-  /// clusters; DS = DoubleSpace DS-0-x, JM = DriveSpace JM-0-x.</summary>
+  /// <summary>Per-cluster compression codec: Stored (default), DS (DoubleSpace DS-0-0) or JM (DriveSpace
+  /// JM-0-0). Anything else is refused by <see cref="Build"/>.</summary>
   public Compression.Core.FileSystems.Cvf.CvfLzMethod CompressionMethod { get; init; }
     = Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored;
 
@@ -94,6 +92,11 @@ public sealed class GenuineCvfWriter {
 
   /// <summary>Builds the CVF image bytes.</summary>
   public byte[] Build() {
+    // A version-2 volume carries DoubleSpace's DS or DriveSpace's JM clusters; SQ (and the codec-level
+    // Auto, which may pick either) are not written into it.
+    if (this.CompressionMethod is not (Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored
+        or Compression.Core.FileSystems.Cvf.CvfLzMethod.Ds or Compression.Core.FileSystems.Cvf.CvfLzMethod.Jm))
+      throw new NotSupportedException($"A DoubleSpace/DriveSpace volume holds stored, DS or JM clusters; {this.CompressionMethod} is not written into it.");
     // 1. Plan files → clusters; capture each file's first cluster + size, and
     //    each cluster's full (zero-padded) logical bytes.
     var files = new List<(string Name, int First, int Count, long Size)>();

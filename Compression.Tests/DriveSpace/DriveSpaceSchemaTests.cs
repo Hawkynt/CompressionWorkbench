@@ -8,63 +8,64 @@ namespace Compression.Tests.DriveSpace;
 public class DriveSpaceSchemaTests {
 
   [Test, Category("Spec")]
-  public void Descriptor_ExposesMethodSchema() {
-    var d = new DriveSpaceFormatDescriptor();
-    Assert.That(d, Is.InstanceOf<IFormatOptionsSchema>());
-    var schema = ((IFormatOptionsSchema)d).OptionsSchema;
-    var method = schema.FirstOrDefault(o => o.Key == "Method");
-    Assert.That(method, Is.Not.Null);
-    Assert.That(method!.AllowedValues, Is.EquivalentTo(new[] { "stored", "ds-lz77", "ds-lz77+", "ds-lz77++" }));
+  public void Descriptor_ExposesTheGenuineCodecChoice_WithJmByDefault() {
+    var schema = ((IFormatOptionsSchema)new DriveSpaceFormatDescriptor()).OptionsSchema;
+    var method = schema.Single(o => o.Key == "Method");
+
+    Assert.Multiple(() => {
+      Assert.That(method.AllowedValues, Is.EquivalentTo(new[] { "Stored", "JM" }));
+      Assert.That(method.Default, Is.EqualTo("JM"));
+      Assert.That(schema.Any(o => o.Key == "Compatibility"), Is.False, "one layout only: no layout choice");
+    });
   }
 
-  /// <summary>Long, very compressible payload spanning several 4 KiB CVF clusters.</summary>
   private static byte[] CompressiblePayload() {
-    var phrase = "DriveSpace LZ77 packs sectors in 4 KiB chunks; repeated phrases compress hard. ";
+    var phrase = "DriveSpace JM packs sectors in 8 KiB clusters; repeated phrases compress hard. ";
     var sb = new StringBuilder(phrase.Length * 400);
     for (var i = 0; i < 400; ++i) sb.Append(phrase);
     return Encoding.ASCII.GetBytes(sb.ToString());
   }
 
-  private static byte[] CreateCvf(string method, byte[] data) {
-    var d = new DriveSpaceFormatDescriptor();
+  private static byte[] CreateCvf(FormatCreateOptions options, byte[] data) {
     using var ms = new MemoryStream();
-    ((IArchiveCreatable)d).Create(
-      ms, [ArchiveInputInfo.InMemory("DATA.BIN", data)],
-      new FormatCreateOptions {
-        FormatSpecific = new Dictionary<string, string> { ["Method"] = method },
-      });
+    ((IArchiveCreatable)new DriveSpaceFormatDescriptor()).Create(ms, [ArchiveInputInfo.InMemory("DATA.BIN", data)], options);
     return ms.ToArray();
   }
 
-  [Test, Category("HappyPath")]
-  public void Create_Method_DrivesCodecAndRoundTrips() {
-    var payload = CompressiblePayload();
-    var stored = CreateCvf("stored", payload);
-    var lz = CreateCvf("ds-lz77", payload);
-
-    // The CVF writer pre-allocates a fixed-size DATA window, so total image
-    // length does not track compression; what changes is the on-disk encoding
-    // of the DATA region (stored runs vs compressed runs). The schema knob
-    // genuinely reaches the codec, so the two images must differ byte-for-byte.
-    Assert.That(lz, Is.Not.EqualTo(stored), "Method knob did not change the on-disk encoding");
-
-    // ds-lz77 uses fewer physical sectors for compressible data: with a fixed
-    // window the trailing sectors stay zero, so the LZ image has a longer
-    // all-zero tail than the stored image.
-    Assert.That(TrailingZeros(lz), Is.GreaterThan(TrailingZeros(stored)),
-      "ds-lz77 did not pack the compressible payload into fewer sectors than stored");
-
-    // Both encodings recover the exact bytes.
-    foreach (var cvf in new[] { stored, lz }) {
-      using var r = new DoubleSpaceReader(new MemoryStream(cvf));
-      Assert.That(r.Entries, Has.Count.EqualTo(1));
-      Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(payload));
+  private static byte[] Extract(byte[] cvf) {
+    var dir = Path.Combine(Path.GetTempPath(), $"cwb-drvsp-{Guid.NewGuid():N}");
+    try {
+      new DriveSpaceFormatDescriptor().Extract(new MemoryStream(cvf), dir, null, null);
+      return File.ReadAllBytes(Path.Combine(dir, "DATA.BIN"));
+    } finally {
+      if (Directory.Exists(dir)) Directory.Delete(dir, true);
     }
   }
 
-  private static int TrailingZeros(byte[] data) {
-    var n = 0;
-    for (var i = data.Length - 1; i >= 0 && data[i] == 0; i--) n++;
-    return n;
+  [Test, Category("HappyPath")]
+  public void GivenTheMethodOption_WhenCreated_ThenItDrivesTheCodecAndRoundTrips() {
+    var payload = CompressiblePayload();
+    var stored = CreateCvf(new FormatCreateOptions { FormatSpecific = new Dictionary<string, string> { ["Method"] = "Stored" } }, payload);
+    var jm = CreateCvf(new FormatCreateOptions(), payload);
+
+    Assert.Multiple(() => {
+      // The volume has a fixed minimum size, so the codec shows in the cluster payloads, not the length.
+      Assert.That(jm.AsSpan().IndexOf("JM\0\0"u8), Is.GreaterThan(0), "JM clusters carry their method header");
+      Assert.That(stored.AsSpan().IndexOf("JM\0\0"u8), Is.LessThan(0), "stored clusters carry none");
+      Assert.That(Extract(stored), Is.EqualTo(payload));
+      Assert.That(Extract(jm), Is.EqualTo(payload));
+      Assert.That(Encoding.ASCII.GetString(jm, 3, 8), Is.EqualTo("MSDBL6.0"), "the real container");
+    });
   }
+
+  [Test, Category("HappyPath")]
+  public void GivenATieredMethodName_WhenCreated_ThenItRoundTrips([Values("jm", "jm+", "jm++", "stored")] string method) {
+    var payload = CompressiblePayload();
+
+    Assert.That(Extract(CreateCvf(new FormatCreateOptions { MethodName = method }, payload)), Is.EqualTo(payload));
+  }
+
+  [Test, Category("Sad")]
+  public void GivenAMethodTheVolumeCannotRecord_WhenCreated_ThenItIsRefused([Values("ds-lz77", "ds", "auto", "sq", "sd4")] string method)
+    => Assert.That(() => CreateCvf(new FormatCreateOptions { MethodName = method }, [1, 2, 3]), Throws.InstanceOf<ArgumentException>());
 }

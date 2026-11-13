@@ -17,17 +17,15 @@ For FAT validation (no proprietary binaries needed) we ship FreeDOS — see
 
 ## Two-gate split: DBLSPACE vs DRVSPACE
 
-DBLSPACE and DRVSPACE are **on-disk-different products**:
+DBLSPACE and DRVSPACE are separate products with separate drivers:
 
-| Product   | DOS version | Driver        | CVF magic | Env var (and legacy fallback)                            |
-| --------- | ----------- | ------------- | --------- | -------------------------------------------------------- |
-| DoubleSpace | 6.0 / 6.2 | `DBLSPACE.BIN` | `DBLS`    | `CWB_MSDOS_DBLSPACE_BOOT_IMG` / `CWB_MSDOS_BOOT_IMG`     |
-| DriveSpace  | 6.22+ / Win95 OSR2 | `DRVSPACE.BIN` | `DVRS`    | `CWB_MSDOS_DRVSPACE_BOOT_IMG` / `CWB_MSDOS622_BOOT_IMG`  |
+| Product   | DOS version | Driver        | Cluster codec | Env var (and legacy fallback)                            |
+| --------- | ----------- | ------------- | ------------- | -------------------------------------------------------- |
+| DoubleSpace | 6.0 / 6.2 | `DBLSPACE.BIN` | DS-0-0       | `CWB_MSDOS_DBLSPACE_BOOT_IMG` / `CWB_MSDOS_BOOT_IMG`     |
+| DriveSpace  | 6.22+ / Win95 OSR2 | `DRVSPACE.BIN` | JM-0-0 | `CWB_MSDOS_DRVSPACE_BOOT_IMG` / `CWB_MSDOS622_BOOT_IMG`  |
 
-Each test builds its CVF via `DoubleSpaceWriter` with the matching
-`Variant` (`CvfVariant.DoubleSpace60` for DBLS, `CvfVariant.DriveSpace62`
-or `CvfVariant.DriveSpace30` for DVRS) and runs the matching `/CHKDSK`
-command inside DOSBox-X.
+Each test builds its CVF via `GenuineCvfWriter` (the `MSDBL6.0` container) with the matching cluster
+codec and runs the matching `/CHKDSK` command inside DOSBox-X.
 
 Each gate has its own legacy fallback, honoured when the variant-specific
 var is not set: `CWB_MSDOS_BOOT_IMG` for DBLSPACE, `CWB_MSDOS622_BOOT_IMG`
@@ -113,10 +111,6 @@ gates.
 
 ## Why this is split
 
-The two products have different drivers, different magic bytes and
-different CVF version codes. One combined test would pass or fail without
-saying which variant validated against which driver, which is the only
-thing these gates exist to establish. `DoubleSpaceWriter` already carries
-four `CvfVariant` values — `DoubleSpace60`, `DriveSpace62`,
-`DriveSpace30` and `DriveSpace3` — so a split harness keeps the test
-surface in line with the writer surface rather than behind it.
+The two products have different drivers and default codecs. One combined
+test would pass or fail without saying which driver validated which volume,
+which is the only thing these gates exist to establish.

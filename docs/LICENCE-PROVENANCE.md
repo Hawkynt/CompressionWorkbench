@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 73 | |
+| A | 76 | |
 | B | 32 | FFmpeg alone covers 38 codec folders |
 | C | 0 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 14 | |

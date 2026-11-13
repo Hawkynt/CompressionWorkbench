@@ -6,9 +6,9 @@ namespace Compression.Tests.Stacker;
 
 /// <summary>
 /// Pins the capability surface for <see cref="StackerFormatDescriptor"/>. Stacker
-/// STACVOL is a functional read/create/edit tier: banner + Stacker Control Block
-/// parsing, inner FAT12 directory walking, and STORED/Stac-LZS cluster I/O. These
-/// tests guard the advertised capabilities and the genuine-empty-volume surface.
+/// STACVOL is a functional read/create/edit tier over the layout the dmsdos driver
+/// mounts. These tests guard the advertised capabilities and the refusal of an
+/// image that only carries the banner.
 /// </summary>
 [TestFixture]
 public class StackerStubBehaviorTests {
@@ -33,17 +33,16 @@ public class StackerStubBehaviorTests {
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True,
       "Stacker emits valid STACVOL volumes — must advertise CanCreate.");
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
-      "Flavor-preserving existing-image Add/Replace/Remove is R/W even when implemented by rebuild.");
+      "Existing-image Add/Replace/Remove is R/W even when implemented by rebuild.");
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
   }
 
   [Test, Category("Sad")]
-  public void BannerOnly_NoScb_IsInvalid() {
+  public void BannerOnly_NoSuperblock_IsRejected() {
     var image = BuildEmptyBannerVolume();
-    using var r = new StackerReader(new MemoryStream(image));
-    // Banner present but no Stacker Control Block at sector 2 => not a full volume.
-    Assert.That(r.ValidHeader, Is.False);
-    Assert.That(r.Entries, Is.Empty);
+    // Banner present but no superblock behind it => not a volume.
+    Assert.That(() => new StackerFormatDescriptor().List(new MemoryStream(image), null),
+      Throws.InstanceOf<InvalidDataException>());
   }
 }

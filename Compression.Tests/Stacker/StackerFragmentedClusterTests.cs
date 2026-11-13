@@ -136,6 +136,14 @@ public sealed class StackerFragmentedClusterTests {
   }
 
   [Test, Category("Codec")]
+  public void GivenADsPayloadInAFragmentedCluster_WhenRead_ThenItIsRefusedAsNotAStackerCodec() {
+    var data = CvfSamples.Get("text-8k");
+    var payload = CvfLzCodec.Encode(data, CvfLzMethod.Ds, 2)!;
+
+    Assert.That(() => Read(Volume(data, payload, 2, [2])), Throws.InstanceOf<NotSupportedException>());
+  }
+
+  [Test, Category("Codec")]
   public void GivenAFragmentedRunWithoutItsSignature_WhenRead_ThenItIsRejected() {
     var data = CvfSamples.Get("text-8k");
 

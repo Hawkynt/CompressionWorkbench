@@ -12,13 +12,13 @@ namespace Compression.Tests.Reiser4;
 internal static class Reiser4KernelOracle {
 
   private static readonly string ScriptDirectory = Path.Combine(AppContext.BaseDirectory, "Reiser4", "KernelOracle");
-  private static bool? _available;
+  // Lazy: fixtures run in parallel and Prepare() may download the kernel; it must run once.
+  private static readonly Lazy<bool> _available = new(Prepare);
 
   internal static void Require() {
     if (!FsInteropToolbox.WslAvailable && OperatingSystem.IsWindows())
       Assert.Ignore("WSL is not available on this machine.");
-    _available ??= Prepare();
-    if (_available != true)
+    if (!_available.Value)
       Assert.Ignore("The Reiser4 kernel oracle is not prepared (set CWB_REISER4_KERNEL_DOWNLOAD=1 to fetch it; needs qemu-system-x86_64).");
   }
 

@@ -42,14 +42,16 @@ public class GenuineStackerRoundTripTests {
 
   [Test, Category("RoundTrip")]
   public void CompressedClusters_RoundTrip_PerMethod(
-      [Values(CvfLzMethod.Ds, CvfLzMethod.Sd3, CvfLzMethod.Sd4, CvfLzMethod.Auto)] CvfLzMethod method) {
+      [Values(CvfLzMethod.Sd3, CvfLzMethod.Sd4, CvfLzMethod.Auto)] CvfLzMethod method, [Values(3, 4)] int version) {
+    if (method == CvfLzMethod.Sd4 && version == 3)
+      Assert.Ignore("SD-4 exists only on Stacker 4 (refusal pinned in StackerRealCodecsTests).");
     var inputs = new (string Name, byte[] Data)[] {
       ("TEXT.TXT", CvfSamples.Get("text-32k")[..20000]),   // three clusters, last one partial
       ("DIR.DAT", CvfSamples.Get("dir-8k")),
       ("TINY.TXT", "hi"u8.ToArray()),
     };
 
-    var w = new GenuineStackerWriter { CompressionMethod = method };
+    var w = new GenuineStackerWriter { CompressionMethod = method, Version = version };
     foreach (var (n, d) in inputs) w.AddFile(n, d);
     using var r = new GenuineStackerReader(new MemoryStream(w.Build()));
 

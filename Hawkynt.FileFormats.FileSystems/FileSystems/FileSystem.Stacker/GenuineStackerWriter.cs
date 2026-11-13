@@ -11,9 +11,7 @@ namespace FileSystem.Stacker;
 /// which detects this writer's output as "stacker version 3 CVF", mounts it,
 /// lists the inner directory and reads every file back byte-exact.
 /// <para>
-/// Unlike <see cref="StackerWriter"/> (the older self-round-trip layout with the
-/// invented <c>STKMAP01</c> trailer — which the real driver <i>rejects</i>), the
-/// genuine STACVOL is shaped as:
+/// The STACVOL is shaped as:
 /// </para>
 /// <list type="bullet">
 ///   <item><b>Sector 0 — SCB:</b> the <c>"STACKER"</c> magic, a minimal FAT BPB
@@ -54,7 +52,11 @@ public sealed class GenuineStackerWriter {
   private int _realFirstData;
   private const int AmapStart = FatStart + 3;                    // 5 (informational)
 
-  /// <summary>Stacker major version recorded in the decoded superblock (&lt; 410 ⇒ v3).</summary>
+  /// <summary>
+  /// Stacker major version: 3 stamps 300 into the decoded superblock, 4 stamps 410 (dmsdos detects
+  /// the volume as "stacker version 3 CVF" / "stacker version 4 CVF" accordingly). Any other value is
+  /// refused by <see cref="Build"/>.
+  /// </summary>
   public int Version { get; init; } = 3;
 
   /// <summary>Optional inner-volume label (≤11 chars). Empty = no label entry.</summary>
@@ -64,10 +66,10 @@ public sealed class GenuineStackerWriter {
   /// Default (before 1980) leaves the FAT date/time fields zero.</summary>
   public DateTime Timestamp { get; init; }
 
-  /// <summary>Per-cluster compression: Stored (default), Sd3 (Stacker 3), Sd4
-  /// (Stacker 4), Ds, or Auto (smallest of Ds/Sd3/Sd4 per cluster). The Stacker
-  /// driver tells them apart by the payload's first word — 0x0081 SD-4, 0x5344
-  /// ("DS") the DoubleSpace codec, anything else SD-3. JM/SQ map to Ds.</summary>
+  /// <summary>Per-cluster compression: Stored (default), Sd3 (Stacker 3 and 4), Sd4 (Stacker 4
+  /// only), or Auto (per cluster SD-3 on Stacker 3, the smaller of SD-3 and SD-4 on Stacker 4).
+  /// The Stacker driver tells them apart by the payload's first word — 0x0081 SD-4, anything else
+  /// SD-3. Any other codec, and SD-4 on a Stacker 3 volume, is refused by <see cref="Build"/>.</summary>
   public Compression.Core.FileSystems.Cvf.CvfLzMethod CompressionMethod { get; init; }
     = Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored;
 
@@ -132,22 +134,23 @@ public sealed class GenuineStackerWriter {
     this._firstRoot = FatStart + 3 * FatCnt * this._fatSize;
     this._realFirstData = this._firstRoot + RootSecs;
 
-    // 2. Compress each cluster (auto-best) and pack into physical sectors. The
-    // Stacker reader dispatches on the payload's first word: SD-4 (0x0081), DS
-    // (0x5344), otherwise SD-3. Auto keeps the smallest of the three per cluster,
-    // JM/SQ fall back to DS.
+    // 2. Compress each cluster and pack into physical sectors. Only Stacker's own codecs are
+    // written: SD-3 (Stacker 3 and 4) and SD-4 (Stacker 4 only). Auto keeps the smaller of the
+    // codecs the version allows, per cluster.
+    if (this.CompressionMethod is not (CvfLzMethod.Stored or CvfLzMethod.Sd3 or CvfLzMethod.Sd4 or CvfLzMethod.Auto))
+      throw new NotSupportedException($"Stacker writes stored, SD-3 or SD-4 clusters; {this.CompressionMethod} is not a Stacker codec.");
+    if (this.CompressionMethod == CvfLzMethod.Sd4 && this.Version != 4)
+      throw new NotSupportedException("SD-4 clusters exist only on Stacker 4 volumes; set Version = 4.");
     var physCursor = this._realFirstData;
     var layout = new List<ClusterPlan>();
     foreach (var (cl, full) in clusterFull) {
       var comp = this.CompressionMethod switch {
         CvfLzMethod.Stored => null,
-        CvfLzMethod.Sd4 or CvfLzMethod.Sd3 => CvfLzCodec.Encode(full, this.CompressionMethod, this.CompressionLevel),
-        CvfLzMethod.Auto => Smaller(
-          Smaller(
-            CvfLzCodec.Encode(full, CvfLzMethod.Ds, this.CompressionLevel),
-            CvfLzCodec.Encode(full, CvfLzMethod.Sd3, this.CompressionLevel)),
+        CvfLzMethod.Auto when this.Version == 4 => Smaller(
+          CvfLzCodec.Encode(full, CvfLzMethod.Sd3, this.CompressionLevel),
           CvfLzCodec.Encode(full, CvfLzMethod.Sd4, this.CompressionLevel)),
-        _ => CvfLzCodec.Encode(full, CvfLzMethod.Ds, this.CompressionLevel),
+        CvfLzMethod.Auto => CvfLzCodec.Encode(full, CvfLzMethod.Sd3, this.CompressionLevel),
+        _ => CvfLzCodec.Encode(full, this.CompressionMethod, this.CompressionLevel),
       };
       var ksize = comp is null ? Spc : (comp.Length + Ss - 1) / Ss;
       // A run as long as the cluster always reads as stored (the AMAP has no flag for a whole-cluster
@@ -204,7 +207,7 @@ public sealed class GenuineStackerWriter {
 
     // 3. Cluster payloads + STAC AMAP 3-byte entries. Stored cluster: size_lo =
     // spc-1 (flags |= stored). Compressed: size_lo = ksize-1 < spc-1 (flags = used,
-    // not stored), payload starts with the DS "DS" header the reader dispatches.
+    // not stored), payload starts with the codec's first word the reader dispatches on.
     foreach (var plan in layout) {
       Array.Copy(plan.Payload, 0, img, plan.PhysSector * Ss, plan.Payload.Length);
       var pos = plan.Cluster * 3;
@@ -246,7 +249,11 @@ public sealed class GenuineStackerWriter {
       plain[idx] = (byte)v; plain[idx + 1] = (byte)(v >> 8);
       plain[idx + 2] = (byte)(v >> 16); plain[idx + 3] = (byte)(v >> 24);
     }
-    P16(0x60, this.Version < 410 ? 300 : 410);
+    P16(0x60, this.Version switch {
+      3 => 300,
+      4 => 410,
+      _ => throw new ArgumentOutOfRangeException(nameof(this.Version), this.Version, "Stacker version must be 3 or 4."),
+    });
     P16(0x62, Ss);
     P32(0x6C, totalSects);
     P16(0x70, BootBlock);

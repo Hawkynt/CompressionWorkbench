@@ -12,6 +12,7 @@ namespace Compression.Tests.Operations;
 /// and we exercise it by lowering the threshold.
 /// </summary>
 [TestFixture]
+[NonParallelizable] // sets the process-wide InMemoryProcessing.ThresholdBytes and counts every cwb_x2m_/cwb_fsconv_ temp directory
 public class ConvertArchiveInMemoryTests {
 
   // ── Helpers ────────────────────────────────────────────────────────

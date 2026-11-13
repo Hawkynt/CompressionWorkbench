@@ -115,7 +115,7 @@ None left. Round 3 (2026-11-06) settled the last two:
 
 | Block | Outcome |
 |---|---|
-| `BB_MsLzh` | removed #779: an invented DEFLATE-shaped codec. Real DriveSpace 3 compresses clusters with JM and SQ (`CvfLzCodec`, read back by dmsdos); dmsdos accepts no volume that could carry "MS LZH", so it could not be proven. Our own `MS_DSP3` layout now uses DS LZ77 runs |
+| `BB_MsLzh` | removed #779: an invented DEFLATE-shaped codec. Real DriveSpace 3 compresses clusters with JM and SQ (`CvfLzCodec`, read back by dmsdos); dmsdos accepts no volume that could carry "MS LZH", so it could not be proven. The private `MS_DSP3` layout that carried it has been removed too |
 | `BB_Sqx` | fixed #782: was a private codec. Now the SQX 2.0 LZ77 + Huffman stream converted from Squeez-c (MIT); see `Sqx` below |
 
 ### Named after a codec, explicitly not its format

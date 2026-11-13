@@ -57,8 +57,7 @@ public class StackerGenuineMaintenanceTests {
     var shrunk = output.ToArray();
     Assert.That(shrunk.Length, Is.GreaterThan(0).And.LessThanOrEqualTo(img.Length),
       "shrink must never grow the image");
-    // Must stay a *genuine* STACVOL (not silently converted to the
-    // CompressionWorkbench-only Extended layout).
+    // Must stay a STACVOL the real driver mounts.
     using var gr = new GenuineStackerReader(new MemoryStream(shrunk));
     Assert.That(gr.Entries.Count(e => !e.IsDirectory), Is.EqualTo(Seed.Length),
       "shrunk image still parses as a genuine STACVOL with the full file set");
@@ -67,7 +66,7 @@ public class StackerGenuineMaintenanceTests {
   }
 
   [Test]
-  public void Shrink_OnExtendedLayout_IsNonLossy() {
+  public void Shrink_OnADescriptorCreatedVolume_IsNonLossy() {
     var d = new StackerFormatDescriptor();
     using var created = new MemoryStream();
     d.Create(created,

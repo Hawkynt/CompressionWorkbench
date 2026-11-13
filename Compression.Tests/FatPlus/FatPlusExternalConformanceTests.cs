@@ -70,7 +70,7 @@ public class FatPlusExternalConformanceTests {
   });
 
   private static bool WslAvailable => _wslAvailable.Value;
-  private static readonly Dictionary<string, bool> _wslToolCache = new(StringComparer.Ordinal);
+  private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _wslToolCache = new(StringComparer.Ordinal); // fixtures run in parallel
 
   private static bool WslHasTool(string tool) {
     if (!WslAvailable) return false;

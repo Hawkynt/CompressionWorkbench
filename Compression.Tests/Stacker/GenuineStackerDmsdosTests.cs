@@ -24,16 +24,16 @@ public class GenuineStackerDmsdosTests {
   }
 
   [Test, Category("DriverProof")]
-  [TestCase(CvfLzMethod.Stored)]
-  [TestCase(CvfLzMethod.Ds)]
-  [TestCase(CvfLzMethod.Sd4)]
-  [TestCase(CvfLzMethod.Sd3)]
-  [TestCase(CvfLzMethod.Auto)]
-  public void GenuineStacker_IsMountedAndReadByteExact_ByRealDmsdosDriver(CvfLzMethod method) {
+  [TestCase(CvfLzMethod.Stored, 3)]
+  [TestCase(CvfLzMethod.Sd3, 3)]
+  [TestCase(CvfLzMethod.Auto, 3)]
+  [TestCase(CvfLzMethod.Sd4, 4)]
+  [TestCase(CvfLzMethod.Auto, 4)]
+  public void GenuineStacker_IsMountedAndReadByteExact_ByRealDmsdosDriver(CvfLzMethod method, int version) {
     DmsdosOracle.Require();
 
     var files = SampleFiles();
-    var writer = new GenuineStackerWriter { CompressionMethod = method, CompressionLevel = 2 };
+    var writer = new GenuineStackerWriter { CompressionMethod = method, CompressionLevel = 2, Version = version };
     foreach (var (n, d) in files) writer.AddFile(n, d);
     var image = writer.Build();
 
@@ -44,7 +44,7 @@ public class GenuineStackerDmsdosTests {
       // 1. Detection.
       var detOut = Encoding.ASCII.GetBytes(DmsdosOracle.Detect(cvfPath));
       var detected = Encoding.ASCII.GetString(detOut);
-      Assert.That(detected, Does.Contain("stacker version 3 CVF"),
+      Assert.That(detected, Does.Contain($"stacker version {version} CVF"),
         $"dmsdos did not detect a genuine Stacker 3 CVF; got: {detected.Trim()}");
 
       // 2. Write proof: the real driver reads every file back byte-exact.

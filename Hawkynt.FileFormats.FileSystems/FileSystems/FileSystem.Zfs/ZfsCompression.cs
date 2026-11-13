@@ -24,6 +24,51 @@ internal static class ZfsCompression {
     _ => $"compression {id}",
   };
 
+  /// <summary>
+  /// The compression id a <c>compression</c> property name stands for on a pool of version 28:
+  /// <c>off</c>, <c>on</c> (lzjb there), <c>lzjb</c>, <c>gzip</c> (level 6), <c>gzip-1</c>…<c>gzip-9</c>, <c>zle</c>.
+  /// </summary>
+  /// <exception cref="ArgumentException">An unknown name.</exception>
+  /// <exception cref="NotSupportedException">lz4 or zstd, which need feature flags.</exception>
+  public static byte ParseForVersion28(string? name) {
+    var n = (name ?? "off").Trim().ToLowerInvariant();
+    return n switch {
+      "off" or "" => ZfsConstants.CompressOff,
+      "on" or "lzjb" => ZfsConstants.CompressLzjb,
+      "gzip" => ZfsConstants.CompressGzip1 + 5,
+      "zle" => ZfsConstants.CompressZle,
+      "lz4" or "zstd" or "zstd-fast" => throw new NotSupportedException($"ZFS: compression={n} needs a feature-flag pool; version 28 pools take off, lzjb, gzip-1..9 and zle."),
+      _ when n.StartsWith("gzip-", StringComparison.Ordinal) && int.TryParse(n.AsSpan(5), out var level) && level is >= 1 and <= 9
+        => (byte)(ZfsConstants.CompressGzip1 + level - 1),
+      _ => throw new ArgumentException($"ZFS: '{name}' is not a compression ZFS knows.", nameof(name)),
+    };
+  }
+
+  /// <summary>
+  /// Compresses one logical block the way a ZFS write does (<c>docs/ZFS-ON-DISK.md</c>,
+  /// "Compressed blocks"): a block of zeros becomes a hole (null), a result that does not save an
+  /// eighth or does not shrink once rounded up to the sector stays uncompressed, and the result
+  /// is zero-padded to whole <c>2^ashift</c> sectors.
+  /// </summary>
+  public static (byte Algorithm, byte[]? Physical) Compress(byte algorithm, byte[] logical, int ashift) {
+    if (algorithm == ZfsConstants.CompressOff) return (ZfsConstants.CompressOff, logical);
+    if (!logical.AsSpan().ContainsAnyExcept((byte)0)) return (algorithm, null);
+    byte[] packed = algorithm switch {
+      ZfsConstants.CompressLzjb => LzjbCompressor.Compress(logical),
+      ZfsConstants.CompressZle => ZleEncoding.Encode(logical),
+      >= ZfsConstants.CompressGzip1 and <= ZfsConstants.CompressGzip9 =>
+        ZlibStream.Compress(logical, (Compression.Core.Deflate.DeflateCompressionLevel)(algorithm - ZfsConstants.CompressGzip1 + 1)),
+      _ => throw new NotSupportedException($"ZFS: blocks are not written with compression {Name(algorithm)}."),
+    };
+    if (packed.Length > logical.Length - (logical.Length >> 3)) return (ZfsConstants.CompressOff, logical);
+    var sector = 1 << ashift;
+    var rounded = (packed.Length + sector - 1) / sector * sector;
+    if (rounded >= logical.Length) return (ZfsConstants.CompressOff, logical);
+    var physical = new byte[rounded];
+    packed.CopyTo(physical, 0);
+    return (algorithm, physical);
+  }
+
   public static byte[] Decompress(byte id, byte[] physical, int logicalSize) {
     switch (id) {
       case ZfsConstants.CompressOff:

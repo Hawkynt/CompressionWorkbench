@@ -15,6 +15,10 @@ internal sealed class ZfsDnode {
   public ZfsBlockPointer[] BlockPointers { get; private init; } = [];
   public byte[] Bonus { get; private init; } = [];
   public ZfsBlockPointer? Spill { get; private init; }
+  /// <summary><c>dn_flags</c>: bit 0 used-is-bytes, bit 1 user-accounted, bit 2 spill pointer.</summary>
+  public byte Flags { get; private init; }
+  /// <summary>Space the object's blocks take, in bytes (sector counts on older dnodes are scaled to bytes).</summary>
+  public ulong UsedBytes { get; private init; }
 
   /// <summary>Parses the dnode at the start of <paramref name="slots"/>; returns null for a free slot.</summary>
   public static ZfsDnode? Read(ReadOnlySpan<byte> slots) {
@@ -54,6 +58,10 @@ internal sealed class ZfsDnode {
       BlockPointers = blockPointers,
       Bonus = dnode.Slice(bonusAt, bonusLength).ToArray(),
       Spill = hasSpill ? ZfsBlockPointer.Read(dnode[(size - ZfsConstants.BlockPointerSize)..]) : null,
+      Flags = flags,
+      UsedBytes = (flags & 1) != 0
+        ? BinaryPrimitives.ReadUInt64LittleEndian(dnode[0x18..])
+        : BinaryPrimitives.ReadUInt64LittleEndian(dnode[0x18..]) << ZfsConstants.SectorShift,
     };
   }
 }

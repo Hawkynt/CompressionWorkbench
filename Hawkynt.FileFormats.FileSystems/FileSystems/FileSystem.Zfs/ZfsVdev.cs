@@ -164,6 +164,55 @@ internal sealed class ZfsRaidzVdev(ZfsVdev[] children, int parity, int ashift) :
     }
     return columns;
   }
+
+  /// <summary>
+  /// The space a block of <paramref name="physicalSize"/> bytes takes on the RAID-Z vdev: its data
+  /// sectors, a parity sector per data row, rounded up to a multiple of <c>parity + 1</c> sectors.
+  /// </summary>
+  internal static long AllocatedSize(long physicalSize, int childCount, int parity, int ashift) {
+    var sectors = ((physicalSize - 1) >> ashift) + 1;
+    sectors += parity * ((sectors + childCount - parity - 1) / (childCount - parity));
+    var unit = parity + 1;
+    return (sectors + unit - 1) / unit * unit << ashift;
+  }
+
+  /// <summary>
+  /// What one allocated byte is charged to datasets on this vdev, in 1/512 units:
+  /// <c>2^17 / (allocated sectors of a 128 KiB block)</c> (512 = no parity overhead).
+  /// </summary>
+  internal static long DeflateRatio(int childCount, int parity, int ashift) =>
+    (1L << 17) / (AllocatedSize(1L << 17, childCount, parity, ashift) >> ZfsConstants.SectorShift);
+
+  /// <summary>
+  /// The bytes of every column of a block about to be written: data columns are consecutive
+  /// slices of <paramref name="physical"/> (zero-padded to whole sectors); parity columns are P (XOR),
+  /// Q (<c>Σ 2^k·D</c>) and R (<c>Σ 4^k·D</c>) over GF(2^8) with polynomial 0x11D, accumulated in data-column
+  /// order with short columns counted as zeros.
+  /// </summary>
+  internal static byte[][] Encode(byte[] physical, Column[] columns, int parity) {
+    var pieces = new byte[columns.Length][];
+    var at = 0;
+    for (var c = parity; c < columns.Length; ++c) {
+      pieces[c] = new byte[columns[c].Size];
+      var n = Math.Max(0, Math.Min(columns[c].Size, physical.Length - at));
+      physical.AsSpan(at, n).CopyTo(pieces[c]);
+      at += columns[c].Size;
+    }
+    var length = columns[0].Size;
+    for (var p = 0; p < parity; ++p) pieces[p] = new byte[length];
+    for (var c = parity; c < columns.Length; ++c) {
+      var data = pieces[c];
+      for (var i = 0; i < length; ++i) {
+        var d = i < data.Length ? data[i] : (byte)0;
+        pieces[0][i] ^= d;
+        if (parity > 1) pieces[1][i] = (byte)(Times2(pieces[1][i]) ^ d);
+        if (parity > 2) pieces[2][i] = (byte)(Times2(Times2(pieces[2][i])) ^ d);
+      }
+    }
+    return pieces;
+  }
+
+  private static byte Times2(byte x) => (byte)((x << 1) ^ ((x & 0x80) != 0 ? 0x1D : 0));
 }
 
 /// <summary>A block's only copies sit on devices that were not supplied.</summary>
