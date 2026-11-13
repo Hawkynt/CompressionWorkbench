@@ -148,6 +148,41 @@ public sealed class FormatFamilyMountTests {
   }
 
   [Test]
+  public void VmdkNativeSparseBlockMountPersistsChangesThroughInnerFatDriver() {
+    var fat = new FileSystem.Fat.FatWriter();
+    fat.AddFile("KEEP.TXT", "persisted originally"u8.ToArray());
+    var vmdk = new FileFormat.Vmdk.VmdkWriter();
+    vmdk.SetDiskData(fat.Build());
+
+    using var image = new MemoryStream(vmdk.Build());
+    var probe = MountNamespaceResolver.Probe("Vmdk", image);
+    Assert.Multiple(() => {
+      Assert.That(probe.Profile.CanMount, Is.True, string.Join("; ", probe.Profile.Limitations));
+      Assert.That(probe.Profile.CanMountWritable, Is.True,
+        "The native FAT driver and writable monolithic-sparse VMDK mapping must both qualify.");
+      Assert.That(probe.Layers, Does.Contain("container:Vmdk"));
+      Assert.That(probe.Layers, Does.Contain("filesystem:Fat"));
+    });
+
+    image.Position = 0;
+    using (var session = MountNamespaceResolver.Open(
+      "Vmdk", image, new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true))) {
+      var added = session.CreateFile(session.RootNodeId, "ADDED.TXT");
+      using (var file = session.OpenFile(added, FileAccess.ReadWrite)) {
+        file.Write(0, "written through vmdk"u8);
+        file.Flush();
+      }
+      session.Flush();
+    }
+
+    image.Position = 0;
+    using var reopened = MountNamespaceResolver.Open(
+      "Vmdk", image, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    Assert.That(ReadAll(reopened, "KEEP.TXT"), Is.EqualTo("persisted originally"u8.ToArray()));
+    Assert.That(ReadAll(reopened, "ADDED.TXT"), Is.EqualTo("written through vmdk"u8.ToArray()));
+  }
+
+  [Test]
   public void UnknownD90ImageRemainsAccessibleOnlyAsAnExplicitRawReadOnlyFile() {
     var payload = Enumerable.Range(0, 256).Select(static value => (byte)value).ToArray();
     using var source = new MemoryStream(payload, writable: false);
