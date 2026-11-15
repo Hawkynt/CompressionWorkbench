@@ -1,0 +1,15 @@
+<Project>
+
+  <!--
+    Attribution is a licence term: every THIRD-PARTY-NOTICE*.txt a packable project carries
+    beside converted code goes into its NuGet package, under notices/ at the same relative path (NuGet appends the folder).
+    Listing each notice in the project file let most of them fall out of the packages unnoticed;
+    a notice that already names its own PackagePath keeps it.
+  -->
+  <Target Name="PackThirdPartyNotices" BeforeTargets="_GetPackageFiles" Condition="'$(IsPackable)' == 'true'">
+    <ItemGroup>
+      <None Update="**\THIRD-PARTY-NOTICE*.txt" Condition="'%(None.Pack)' != 'true'" Pack="true" PackagePath="notices/" />
+    </ItemGroup>
+  </Target>
+
+</Project>
