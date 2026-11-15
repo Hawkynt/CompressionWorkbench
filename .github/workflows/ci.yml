@@ -68,6 +68,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0                          # version.pl needs full history
+
+      # The oracle steps download their tools and reference files from third-party hosts, and a
+      # single dropped connection used to fail the whole job (aluigi.altervista.org resets them
+      # now and then). Every later curl in this job reads ~/.curlrc and retries transient errors.
+      - name: Retry downloads
+        shell: bash
+        run: printf 'retry = 5\nretry-all-errors\nretry-delay = 10\nconnect-timeout = 30\n' > ~/.curlrc
+
       - uses: ./.github/actions/nativeforms-source
 
       # FileFormat.PngCrushAdapters has sibling-conditional ProjectReferences
@@ -658,8 +666,14 @@ jobs:
           CWB_REQUIRE_FLOPTOOL: "1"
         run: |
           sudo apt-get install -y mame-tools
-          curl -sfL -o "$RUNNER_TEMP/UnionDemo.zip" http://pasti.fxatari.com/downloads/UnionDemo.zip
-          echo "c6dd827ad17f1b6076eafcc246e09913511c0a532f1beec4ace6ce59352af388  $RUNNER_TEMP/UnionDemo.zip" | sha256sum -c -
+          # The plain-HTTP host has served wrong bytes with a 200 to the runners; fetch again until
+          # the pinned checksum matches rather than failing on one bad transfer.
+          for attempt in 1 2 3 4; do
+            curl -sfL -o "$RUNNER_TEMP/UnionDemo.zip" http://pasti.fxatari.com/downloads/UnionDemo.zip &&
+              echo "c6dd827ad17f1b6076eafcc246e09913511c0a532f1beec4ace6ce59352af388  $RUNNER_TEMP/UnionDemo.zip" | sha256sum -c - && break
+            [ "$attempt" = 4 ] && exit 1
+            sleep 15
+          done
           unzip -o -q "$RUNNER_TEMP/UnionDemo.zip" -d "$RUNNER_TEMP"
           CWB_UNIONDEMO="$RUNNER_TEMP/UnionDemo.stx" dotnet test Compression.Tests --configuration Release --no-build \
             --filter "FullyQualifiedName~Compression.Tests.Pasti.PastiExternalConformanceTests" \
