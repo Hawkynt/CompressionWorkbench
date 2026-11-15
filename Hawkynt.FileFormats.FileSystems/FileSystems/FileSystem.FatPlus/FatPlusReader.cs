@@ -135,6 +135,7 @@ public sealed class FatPlusReader : IDisposable {
       this._rootCluster = BinaryPrimitives.ReadInt32LittleEndian(boot[44..]);
 
     if (this.FatType == 32) {
+      this._visitedDirectories.Add(this._rootCluster);
       var rootData = this.ReadClusterChain(this._rootCluster, sizeLimit: long.MaxValue);
       this.ReadDirectoryEntries(rootData, rootData.Length / 32, "");
     } else {
@@ -146,6 +147,10 @@ public sealed class FatPlusReader : IDisposable {
       this.ReadDirectoryEntries(buf, this._rootEntryCount, "");
     }
   }
+
+  // Start clusters of the subdirectories already read. A damaged tree can point a subdirectory back
+  // at an ancestor or at itself; descending into it again would recurse until the stack overflows.
+  private readonly HashSet<int> _visitedDirectories = [];
 
   private void ReadDirectoryEntries(byte[] dirData, int maxEntries, string path) {
     var lfnParts = new SortedDictionary<int, string>();
@@ -222,7 +227,7 @@ public sealed class FatPlusReader : IDisposable {
         LastModified = lastMod,
       });
 
-      if (isDir && startCluster >= 2) {
+      if (isDir && startCluster >= 2 && this._visitedDirectories.Add(startCluster)) {
         var childData = this.ReadClusterChain(startCluster, sizeLimit: long.MaxValue);
         this.ReadDirectoryEntries(childData, childData.Length / 32, fullPath);
       }
