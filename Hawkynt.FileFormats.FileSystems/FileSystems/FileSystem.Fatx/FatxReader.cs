@@ -136,7 +136,12 @@ public sealed class FatxReader : IDisposable {
 
   internal bool IsEoc(uint c) => this.FatType == 16 ? c >= 0xFFF8 : c >= 0xFFFFFFF8;
 
+  // Start clusters of the directories already walked. A damaged tree can point a subdirectory back
+  // at an ancestor or at itself; walking it again would recurse until the stack overflows.
+  private readonly HashSet<uint> _visitedDirectories = [];
+
   private void WalkDirectory(uint startCluster, string path) {
+    if (!this._visitedDirectories.Add(startCluster)) return;
     var cluster = startCluster;
     var seenClusters = new HashSet<uint>();
     while (cluster >= 1 && !this.IsEoc(cluster) && seenClusters.Add(cluster)) {

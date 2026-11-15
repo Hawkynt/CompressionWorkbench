@@ -1,4 +1,7 @@
 <Project>
+  <!-- A nearer Directory.Build.targets hides the repository one; chain to it so its rules still apply. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.targets', '$(MSBuildThisFileDirectory)../'))" />
+
   <!--
     The media containers this package projects as pseudo-archives — the A/V envelopes (MP4 / MOV,
     Matroska, AVI, ASF, RealMedia, Bink, Smacker) and the CRI / PSF game-audio bundles — belong to

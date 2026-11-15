@@ -1,4 +1,7 @@
 <Project>
+  <!-- A nearer Directory.Build.targets hides the repository one; chain to it so its rules still apply. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.targets', '$(MSBuildThisFileDirectory)../'))" />
+
   <ItemGroup>
     <ProjectReference Include="..\Compression.Mounting\Compression.Mounting.csproj" />
     <ProjectReference Include="..\Compression.Mounting.Dokan\Compression.Mounting.Dokan.csproj" />
