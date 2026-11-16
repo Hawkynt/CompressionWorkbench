@@ -33,7 +33,7 @@ internal sealed class ZfsWriter {
   private const int MaxDataBlock = 128 * 1024;
   private const int MicroZapEntry = 64;
   private const int MicroZapNameMax = 49;
-  private const int FatZapBlock = 16 * 1024;
+  internal const int FatZapBlock = 16 * 1024;
   private const int ConfigBlock = 16 * 1024;
   private const long MinimumDevice = 64L * 1024 * 1024;
   private const int MetaslabShift = 24;
@@ -483,6 +483,57 @@ internal sealed class ZfsWriter {
     }).ToList()));
   }
 
+  /// <summary>
+  /// A ZAP whose entries may hold integer arrays of any width (as read back): a micro ZAP when
+  /// every entry is one 8-byte integer under a short name and <paramref name="fat"/> is not asked
+  /// for, else a fat ZAP.
+  /// </summary>
+  internal static (int BlockSize, List<byte[]?> Blocks) BuildZap(IReadOnlyList<ZfsZapEntry> entries, bool fat, ulong flags = 0) {
+    if ((flags & ZfsZap.FlagUint64Key) != 0)
+      return (FatZapBlock, BuildKeyedZap(entries, flags));
+    var simple = entries.All(e => e.IntegerLength == 8 && e.Values.Length == 1);
+    if (simple && !fat)
+      return BuildZap(entries.Select(e => (e.Name, e.Value)).ToList());
+    return (FatZapBlock, BuildFatZap(entries.Select(e => (e.Name, e.IntegerLength, ValueBytes(e))).ToList()));
+  }
+
+  /// <summary>An entry's integers as a leaf array stores them: each most significant byte first.</summary>
+  private static byte[] ValueBytes(ZfsZapEntry e) {
+    var bytes = new byte[e.Values.Length * e.IntegerLength];
+    for (var v = 0; v < e.Values.Length; ++v)
+      for (var k = 0; k < e.IntegerLength; ++k)
+        bytes[v * e.IntegerLength + k] = (byte)(e.Values[v] >> (8 * (e.IntegerLength - 1 - k)));
+    return bytes;
+  }
+
+  /// <summary>
+  /// A fat ZAP keyed by arrays of 64-bit integers (<see cref="ZfsZapEntry.Key"/>), as the dedup tables
+  /// are: the hash is the first key word when the keys are pre-hashed, else CRC-64 over the key
+  /// words' bytes from the salt; <paramref name="flags"/> go into the header.
+  /// </summary>
+  internal static List<byte[]?> BuildKeyedZap(IReadOnlyList<ZfsZapEntry> entries, ulong flags) {
+    var salt = NewSalt();
+    var bits = (flags & ZfsZap.FlagHash64) != 0 ? 48 : ZapHashBits;
+    var mask = ~((1UL << (64 - bits)) - 1);
+    return BuildFatZap(entries.Select(e => {
+      var key = e.Key ?? throw new InvalidOperationException("ZFS: an integer-keyed ZAP entry without a key.");
+      var name = new byte[key.Length * 8];
+      for (var k = 0; k < key.Length; ++k) BinaryPrimitives.WriteUInt64BigEndian(name.AsSpan(k * 8), key[k]);
+      ulong hash;
+      if ((flags & ZfsZap.FlagPreHashedKey) != 0)
+        hash = key[0];
+      else {
+        hash = salt;
+        foreach (var word in key)
+          for (var b = 0; b < 8; ++b)
+            hash = (hash >> 8) ^ Crc64Table[(hash ^ (word >> (8 * b))) & 0xFF];
+      }
+      return new ZapRecord(name, key.Length, e.IntegerLength, ValueBytes(e), hash & mask);
+    }).ToList(), salt, flags);
+  }
+
+  private readonly record struct ZapRecord(byte[] Name, int NameInts, int IntLength, byte[] Value, ulong Hash);
+
   private static ulong NewSalt() => (BinaryPrimitives.ReadUInt64LittleEndian(RandomNumberGenerator.GetBytes(8)) | 1) & 0x0000_0000_FFFF_FFFFUL;
 
   private static ulong ZapHash(ulong salt, ReadOnlySpan<byte> name) {
@@ -498,19 +549,24 @@ internal sealed class ZfsWriter {
   /// array of integers of <c>IntLength</c> bytes, given (and stored) most significant byte first.
   /// </summary>
   internal static List<byte[]?> BuildFatZap(IReadOnlyList<(string Name, int IntLength, byte[] Value)> entries) {
+    var salt = NewSalt();
+    return BuildFatZap(entries.Select(e => {
+      var name = Encoding.UTF8.GetBytes(e.Name);
+      // the name, NUL included, as 1-byte integers
+      return new ZapRecord([.. name, 0], name.Length + 1, e.IntLength, e.Value, ZapHash(salt, name));
+    }).ToList(), salt, 0);
+  }
+
+  private static List<byte[]?> BuildFatZap(List<ZapRecord> records, ulong salt, ulong flags) {
     const int leafHashShift = 14 - 5;                                // 2^(bs-5) hash buckets
     const int chunkBytes = 24;
     const int leafHeader = 48;
     const int chunkArea = FatZapBlock - leafHeader - (2 << leafHashShift);
     const int chunksPerLeaf = chunkArea / chunkBytes;
     const int tableShift = 10;                                       // (16 KiB / 2) / 8 pointers
-    var salt = NewSalt();
 
-    var hashed = entries.Select(e => {
-      var name = Encoding.UTF8.GetBytes(e.Name);
-      return (Name: name, e.IntLength, e.Value, Hash: ZapHash(salt, name));
-    }).OrderBy(e => e.Hash).ToList();
-    int ChunksFor(byte[] name, byte[] value) => 1 + (name.Length + 1 + 20) / 21 + (value.Length + 20) / 21;
+    var hashed = records.OrderBy(e => e.Hash).ToList();
+    int ChunksFor(byte[] name, byte[] value) => 1 + (name.Length + 20) / 21 + (value.Length + 20) / 21;
 
     // Smallest prefix length whose leaves all fit.
     var prefix = 0;
@@ -534,8 +590,9 @@ internal sealed class ZfsWriter {
     BinaryPrimitives.WriteUInt64LittleEndian(header.AsSpan(48), 0);
     BinaryPrimitives.WriteUInt64LittleEndian(header.AsSpan(56), (ulong)(leaves + 1));      // zap_freeblk
     BinaryPrimitives.WriteUInt64LittleEndian(header.AsSpan(64), (ulong)leaves);            // zap_num_leafs
-    BinaryPrimitives.WriteUInt64LittleEndian(header.AsSpan(72), (ulong)entries.Count);     // zap_num_entries
+    BinaryPrimitives.WriteUInt64LittleEndian(header.AsSpan(72), (ulong)hashed.Count);      // zap_num_entries
     BinaryPrimitives.WriteUInt64LittleEndian(header.AsSpan(80), salt);                     // zap_salt
+    BinaryPrimitives.WriteUInt64LittleEndian(header.AsSpan(96), flags);                    // zap_flags
     var table = header.AsSpan(FatZapBlock / 2);
     for (var i = 0; i < 1 << tableShift; ++i)
       BinaryPrimitives.WriteUInt64LittleEndian(table[(i * 8)..], (ulong)((i >> (tableShift - prefix)) + 1));
@@ -553,14 +610,11 @@ internal sealed class ZfsWriter {
       var chunks = leaf.AsSpan(leafHeader + (2 << leafHashShift));
       var nextChunk = 0;
       var cdByHash = new Dictionary<ulong, uint>();
-      foreach (var (name, intLength, value, hash) in members) {
+      foreach (var (nameBytes, nameInts, intLength, value, hash) in members) {
         var cd = cdByHash.TryGetValue(hash, out var used) ? used + 1 : 0;
         cdByHash[hash] = cd;
         var entry = nextChunk++;
-        // the name, NUL included, as 1-byte integers in array chunks
         var nameChunk = nextChunk;
-        var nameBytes = new byte[name.Length + 1];
-        name.CopyTo(nameBytes, 0);
         nextChunk = WriteArray(chunks, nextChunk, nameBytes, chunkBytes);
         var valueChunk = nextChunk;
         nextChunk = WriteArray(chunks, nextChunk, value, chunkBytes);
@@ -571,7 +625,7 @@ internal sealed class ZfsWriter {
         BinaryPrimitives.WriteUInt16LittleEndian(e[2..], BinaryPrimitives.ReadUInt16LittleEndian(buckets[(bucket * 2)..]));   // le_next
         BinaryPrimitives.WriteUInt16LittleEndian(buckets[(bucket * 2)..], (ushort)entry);
         BinaryPrimitives.WriteUInt16LittleEndian(e[4..], (ushort)nameChunk);
-        BinaryPrimitives.WriteUInt16LittleEndian(e[6..], (ushort)nameBytes.Length);
+        BinaryPrimitives.WriteUInt16LittleEndian(e[6..], (ushort)nameInts);                       // le_name_numints
         BinaryPrimitives.WriteUInt16LittleEndian(e[8..], (ushort)valueChunk);
         BinaryPrimitives.WriteUInt16LittleEndian(e[10..], (ushort)(value.Length / intLength));     // le_value_numints
         BinaryPrimitives.WriteUInt32LittleEndian(e[12..], cd);

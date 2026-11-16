@@ -415,9 +415,13 @@ allocated or freed in it — those of the maps themselves and of the MOS include
 number of map blocks is settled before their contents are.
 
 **Freeing.** A freed block returns every DVA's `asize` (the DVA's 24-bit field, in 512-byte
-units) to its metaslab. Gang blocks, deduplicated blocks (property bit 62) and blocks born at
-or before the dataset's previous snapshot txg (which a snapshot still references; they would
-go to the deadlist) are left to OpenZFS.
+units) to its metaslab. A gang DVA's `asize` counts the whole gang tree, but the metaslab gave
+each copy of the 512-byte header its own (vdev-rounded) allocation: freeing returns those, then
+frees every non-hole child named by the header (read from the first copy; the children carry
+their own copies), recursively. The dataset is still charged the top-level pointer's DVA sizes.
+A block born at or before the dataset's previous snapshot txg is not freed but goes to the
+deadlist ("Snapshots and deadlists"); a deduplicated block (property bit 62) gives up one
+reference in its dedup table ("Dedup tables").
 
 **Accounting.** A block's charge is `used` = the sum of its DVAs' `asize` (a plain vdev has
 `deflate` 1), `compressed` = its physical size and `uncompressed` = its physical size for
@@ -494,6 +498,62 @@ feature not known to the editor is. What the active ones ask of an edit:
 - hole_birth, large_blocks, large_dnode, the checksum features, head_errlog, zilsaxattr,
   vdev_zaps_v2, bookmarks and encryption need nothing more; encrypted datasets themselves are not
   edited.
+
+### Snapshots and deadlists
+
+A head dataset (`dsl_dataset_phys_t`) names its previous snapshot at 8 and that snapshot's txg
+at 16; its deadlist object is at 64. A snapshot's own bonus holds its previous snapshot's txg
+at 16, its next snapshot at 24 and its unique bytes at 96. A block the head no longer
+references but whose logical birth is at most the previous snapshot's txg is still the
+snapshot's, so it is kept:
+
+- **Deadlist.** The deadlist object (type 50, bonus type 51) is a ZAP from a minimum txg (key in lower-case
+  hex) to a bpobj; its bonus (`dsl_deadlist_phys_t`) holds used, compressed and uncompressed
+  bytes at 0, 8 and 16. A kept block goes to the entry with the largest minimum txg below its
+  birth. An entry still pointing at the pool's shared `empty_bpobj` (MOS object directory) gets
+  a bpobj of its own; the empty_bpobj feature's count drops by one for each, and at zero the
+  directory entry and the object go.
+- **bpobj.** A bpobj (type 5, bonus type 6) is an array of block pointers in its data blocks
+  (128 KiB); the 48-byte bonus counts them at 0 and sums used, compressed and uncompressed at 8,
+  16 and 24 (sub-object list fields after them stay). A pointer is stored with its fill count
+  (word 11) zeroed, its checksum cleared unless deduplicated, and an embedded pointer keeps only
+  its properties and birth.
+- **Accounting.** The kept block leaves the head's referenced, compressed and uncompressed bytes
+  but not its unique bytes; the deadlist header adds the same charges. When the previous
+  snapshot's next snapshot is the head, its unique bytes grow by every kept block born after
+  that snapshot's own previous snapshot txg — nothing else references those any more. In the DSL
+  directory the charge moves from the HEAD breakdown to SNAP; the directory's used total stays.
+
+When OpenZFS later destroys the snapshot it frees exactly the deadlist's blocks.
+
+### Dedup tables
+
+A block written with dedup has property bit 62 set; its space belongs to the pool's dedup
+table, not to the dataset. The MOS object directory names, per checksum, up to three tables
+`DDT-<checksum>-zap-<class>` (classes `ditto`, `duplicate`, `unique`; checksum names as
+OpenZFS's checksum table spells them, e.g. `sha256`) and one ZAP `DDT-statistics` holding under
+each table's name its histogram: 64 buckets of `ddt_stat` (blocks, lsize, psize, dsize, then the
+same four counted per reference), bucket `b` for entries whose referenced-block count has its
+highest bit at `b`.
+
+- **Tables.** Each table is a fat ZAP whose header `zap_flags` (at 96) has HASH64 (1),
+  UINT64_KEY (2) and — for checksums strong enough — PRE_HASHED_KEY (4): keys are arrays of five
+  `u64`s (stored big-endian in the leaf), the hash is the first key word (else CRC-64 over the
+  words' bytes from the salt), cut to 48 bits. The key is the block's four checksum words and
+  its property word's bits 0–38 (sizes and compression) with bit 39 for encryption.
+- **Values.** One byte array: a version byte (function in bits 0–6, bit 7 set for
+  little-endian), then the four `ddt_phys` of 64 bytes (three DVAs, reference count, physical
+  birth) — `ditto`, `single`, `double`, `triple` — zero-length encoded (function 14) or plain
+  (function 2) when that is not shorter.
+- **Freeing a reference.** The copy whose first DVA and physical birth match the block loses one
+  reference. Then, as a sync does: a copy at zero references has its DVAs freed and is cleared,
+  a ditto copy is freed whenever its entry is touched, and the entry moves to `duplicate` if more
+  than one reference remains, to `unique` with one, and out of the tables with none. A class's
+  histogram loses the entry's old stat and the new class gains its new one (`dsize` = deflated
+  `asize` of every DVA of a copy). A table that empties stays while its checksum's other classes
+  hold entries; when all are empty, every table of that checksum and its statistics entry go.
+- **Accounting.** The dataset is charged per reference, so it loses the block's full charge
+  whatever the table keeps.
 
 ### Intent log
 
