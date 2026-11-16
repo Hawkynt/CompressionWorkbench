@@ -710,10 +710,10 @@ jobs:
           CWB_REQUIRE_FLOPTOOL: "1"
         run: |
           sudo apt-get install -y mame-tools
-          # The plain-HTTP host has served wrong bytes with a 200 to the runners; fetch again until
-          # the pinned checksum matches rather than failing on one bad transfer.
+          # Fetch directly over HTTPS; the HTTP entry point has served wrong bytes with a 200
+          # even across retries. Keep the checksum gate for every transfer.
           for attempt in 1 2 3 4; do
-            curl -sfL -o "$RUNNER_TEMP/UnionDemo.zip" http://pasti.fxatari.com/downloads/UnionDemo.zip &&
+            curl -sfL -o "$RUNNER_TEMP/UnionDemo.zip" https://pasti.fxatari.com/downloads/UnionDemo.zip &&
               echo "c6dd827ad17f1b6076eafcc246e09913511c0a532f1beec4ace6ce59352af388  $RUNNER_TEMP/UnionDemo.zip" | sha256sum -c - && break
             [ "$attempt" = 4 ] && exit 1
             sleep 15
