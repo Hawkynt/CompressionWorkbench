@@ -11,6 +11,7 @@ internal sealed class UharcPpmTextTransform {
   private const byte Literal = 0xC8;
   private const byte EscapeClass = 0x64;
   private const byte CapitalClass = 0x63;
+  private const byte RecordEscape = 0xFE;
 
   private int _pending;
   private int _escapeKind;
@@ -19,8 +20,9 @@ internal sealed class UharcPpmTextTransform {
   /// <param name="symbol">The model symbol.</param>
   /// <param name="written">Bytes written so far.</param>
   /// <param name="transformEnd">Output position from which bytes pass unchanged.</param>
+  /// <param name="recordStart">Output position from which 0xFE escapes the record prefix <c>00 00 03 03</c>.</param>
   /// <param name="output">The output buffer.</param>
-  public int Emit(byte symbol, int written, long transformEnd, byte[] output) {
+  public int Emit(byte symbol, int written, long transformEnd, long recordStart, byte[] output) {
     var value = (byte)~symbol;
 
     void Put(byte b) {
@@ -31,7 +33,27 @@ internal sealed class UharcPpmTextTransform {
 
     if (this._pending == 1) {
       this._pending = 0;
+      if (written >= recordStart) {
+        // In the record file, FE FE is a literal FE and FE x the five bytes 00 00 03 03 x.
+        if (value == RecordEscape) {
+          Put(RecordEscape);
+          return written;
+        }
+
+        Put(0);
+        Put(0);
+        Put(3);
+        Put(3);
+        Put(value);
+        return written;
+      }
+
       Put(UharcPpmTables.TransformEscape[(this._escapeKind - 0xA6) * 11 + value & 0x7FFFFFFF]);
+      return written;
+    }
+
+    if (written >= recordStart && value == RecordEscape) {
+      this._pending = 1;
       return written;
     }
 

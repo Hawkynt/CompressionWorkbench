@@ -1,10 +1,18 @@
-The NSIS reader in this directory was written from these sources:
+The NSIS reader and installer writer in this directory were written from these sources:
 
 1. NSIS (Nullsoft Scriptable Install System), https://github.com/kichik/nsis, master as of
    2026-10-19: Source/exehead/fileform.h, fileform.c, util.c (installer layout, opcodes,
    string escape codes) and Source/bzip2/decompress.c (the header-less bzip2 framing: block
    marker 0x31, end marker 0x17, no CRCs). The structures and constants were taken over; the
    code here is a new C# implementation.
+
+   The writer (NsisInstallerWriter.cs, NsisStubPatcher.cs) also follows NSIS 3.10's
+   nsis-3.10-src.tar.bz2: Source/build.cpp (header block order and defaults, the .ndata size,
+   the manifest and PE header values set on the stub), Source/fileform.cpp (language-table
+   layout), Source/exehead/fileform.c (the CRC-32 from byte 512), and takes the English
+   interface texts of Contrib/Language files/English.nlf. It ships no part of NSIS's exehead:
+   the stub, which is native code and whose LZMA module is under the Common Public License 1.0,
+   is supplied by the user from their own NSIS installation.
 
    Copyright (C) 1999-2026 Nullsoft and Contributors. zlib/libpng license:
 

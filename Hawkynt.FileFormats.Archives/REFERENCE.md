@@ -3826,7 +3826,7 @@ The memory and I/O abstraction the `Cpu` core talks to. Every memory fetch, read
 
 ### Namespace `Compression.Registry`
 
-[`AlgorithmFamily`](#algorithmfamily) · [`ApeTagReader`](#apetagreader) · [`ApeTagReader.ApeTag`](#apetagreaderapetag) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveEntryMetadata`](#archiveentrymetadata) · [`ArchiveFormatOperationsExtensions`](#archiveformatoperationsextensions) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveMutationOptions`](#archivemutationoptions) · [`ArchivePasswordException`](#archivepasswordexception) · [`ArchiveRename`](#archiverename) · [`ArchiveRenames`](#archiverenames) · [`ArchiveSemanticManifest`](#archivesemanticmanifest) · [`ArchiveSemanticManifest.Entry`](#archivesemanticmanifestentry) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`ContentPreservation`](#contentpreservation) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragFeature`](#defragfeature) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`DefragSupport`](#defragsupport) · [`EncryptedVolumeCredentials`](#encryptedvolumecredentials) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemAllocationMapCompleter`](#filesystemallocationmapcompleter) · [`FilesystemBlockMoverAttribute`](#filesystemblockmoverattribute) · [`FilesystemCompressionParameter`](#filesystemcompressionparameter) · [`FilesystemCompressionProfile`](#filesystemcompressionprofile) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemOptimization`](#filesystemoptimization) · [`FilesystemOptimizationAdapters`](#filesystemoptimizationadapters) · [`FilesystemOptimizationAdapters.HardLinkDeduplicator`](#filesystemoptimizationadaptershardlinkdeduplicator) · [`FilesystemOptimizationAdapters.SymbolicLinkDeduplicator`](#filesystemoptimizationadapterssymboliclinkdeduplicator) · [`FilesystemOptimizationExtensions`](#filesystemoptimizationextensions) · [`FilesystemOptimizationFeatures`](#filesystemoptimizationfeatures) · [`FilesystemOptimizationOptions`](#filesystemoptimizationoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FilesystemSourceRole`](#filesystemsourcerole) · [`FilesystemStreamSet`](#filesystemstreamset) · [`FilesystemStreamSource`](#filesystemstreamsource) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatDetectionSignature`](#formatdetectionsignature) · [`FormatHeaderMatch`](#formatheadermatch) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKeys`](#formatoptionkeys) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`HardLinkDeduplicationSemantics`](#hardlinkdeduplicationsemantics) · [`IArchiveCanonicalizable`](#iarchivecanonicalizable) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveRenamable`](#iarchiverenamable) · [`IArchiveRepackable`](#iarchiverepackable) · [`IArchiveSemanticMetadataProvider`](#iarchivesemanticmetadataprovider) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`ICompressionOptimizable`](#icompressionoptimizable) · [`IContainerRemuxable`](#icontainerremuxable) · [`IEncryptedBlockDeviceProvider`](#iencryptedblockdeviceprovider) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDirectoryOrderer`](#ifilesystemdirectoryorderer) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtendedAttributeReader`](#ifilesystemextendedattributereader) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemPlaceable`](#ifilesystemplaceable) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatDetectionSource`](#iformatdetectionsource) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IMultiStreamFilesystemDriverProvider`](#imultistreamfilesystemdriverprovider) · [`IMultiStreamFilesystemDriverReadinessProvider`](#imultistreamfilesystemdriverreadinessprovider) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`ISectorCipher`](#isectorcipher) · [`IStreamFormatOperations`](#istreamformatoperations) · [`ISymbolicLinkDeduplicationLayout`](#isymboliclinkdeduplicationlayout) · [`ISyntheticEntryNames`](#isyntheticentrynames) · [`IWipeEmpty`](#iwipeempty) · [`InPlacePatchJournal`](#inplacepatchjournal) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MaintenanceCapabilities`](#maintenancecapabilities) · [`MaintenanceCapability`](#maintenancecapability) · [`MaintenanceProfile`](#maintenanceprofile) · [`MaintenanceResult`](#maintenanceresult) · [`MaintenanceVerbs`](#maintenanceverbs) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`MutableRebuildFilesystemSession`](#mutablerebuildfilesystemsession) · [`MutableRebuildFilesystemSession.RebuildImage`](#mutablerebuildfilesystemsessionrebuildimage) · [`MutableRebuildFilesystemSession.ValidateImage`](#mutablerebuildfilesystemsessionvalidateimage) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementOptions`](#placementoptions) · [`PlacementZone`](#placementzone) · [`RawDiskShrinkRebuilder`](#rawdiskshrinkrebuilder) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildFilesystemEntry`](#rebuildfilesystementry) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SectorCipherBlockDevice`](#sectorcipherblockdevice) · [`SfxTrailer`](#sfxtrailer) · [`SfxTrailer.Location`](#sfxtrailerlocation) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SubStream`](#substream) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult) · [`WholeImageRebuildCommitter`](#wholeimagerebuildcommitter)
+[`AlgorithmFamily`](#algorithmfamily) · [`ApeTagReader`](#apetagreader) · [`ApeTagReader.ApeTag`](#apetagreaderapetag) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveEntryMetadata`](#archiveentrymetadata) · [`ArchiveFormatOperationsExtensions`](#archiveformatoperationsextensions) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveMutationOptions`](#archivemutationoptions) · [`ArchivePasswordException`](#archivepasswordexception) · [`ArchiveRename`](#archiverename) · [`ArchiveRenames`](#archiverenames) · [`ArchiveSemanticManifest`](#archivesemanticmanifest) · [`ArchiveSemanticManifest.Entry`](#archivesemanticmanifestentry) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`ContentPreservation`](#contentpreservation) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragFeature`](#defragfeature) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`DefragSupport`](#defragsupport) · [`EncryptedVolumeCredentials`](#encryptedvolumecredentials) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemAllocationMapCompleter`](#filesystemallocationmapcompleter) · [`FilesystemBlockMoverAttribute`](#filesystemblockmoverattribute) · [`FilesystemCompressionParameter`](#filesystemcompressionparameter) · [`FilesystemCompressionProfile`](#filesystemcompressionprofile) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemOptimization`](#filesystemoptimization) · [`FilesystemOptimizationAdapters`](#filesystemoptimizationadapters) · [`FilesystemOptimizationAdapters.HardLinkDeduplicator`](#filesystemoptimizationadaptershardlinkdeduplicator) · [`FilesystemOptimizationAdapters.SymbolicLinkDeduplicator`](#filesystemoptimizationadapterssymboliclinkdeduplicator) · [`FilesystemOptimizationExtensions`](#filesystemoptimizationextensions) · [`FilesystemOptimizationFeatures`](#filesystemoptimizationfeatures) · [`FilesystemOptimizationOptions`](#filesystemoptimizationoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FilesystemSourceRole`](#filesystemsourcerole) · [`FilesystemStreamSet`](#filesystemstreamset) · [`FilesystemStreamSource`](#filesystemstreamsource) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatDetectionSignature`](#formatdetectionsignature) · [`FormatHeaderMatch`](#formatheadermatch) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKeys`](#formatoptionkeys) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`HardLinkDeduplicationSemantics`](#hardlinkdeduplicationsemantics) · [`IArchiveCanonicalizable`](#iarchivecanonicalizable) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveInPlaceMountWriter`](#iarchiveinplacemountwriter) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveRenamable`](#iarchiverenamable) · [`IArchiveRepackable`](#iarchiverepackable) · [`IArchiveSemanticMetadataProvider`](#iarchivesemanticmetadataprovider) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`ICompressionOptimizable`](#icompressionoptimizable) · [`IContainerRemuxable`](#icontainerremuxable) · [`IEncryptedBlockDeviceProvider`](#iencryptedblockdeviceprovider) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDirectoryOrderer`](#ifilesystemdirectoryorderer) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtendedAttributeReader`](#ifilesystemextendedattributereader) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemPlaceable`](#ifilesystemplaceable) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatDetectionSource`](#iformatdetectionsource) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IMultiStreamFilesystemDriverProvider`](#imultistreamfilesystemdriverprovider) · [`IMultiStreamFilesystemDriverReadinessProvider`](#imultistreamfilesystemdriverreadinessprovider) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`ISectorCipher`](#isectorcipher) · [`IStreamFormatOperations`](#istreamformatoperations) · [`ISymbolicLinkDeduplicationLayout`](#isymboliclinkdeduplicationlayout) · [`ISyntheticEntryNames`](#isyntheticentrynames) · [`IWipeEmpty`](#iwipeempty) · [`InPlacePatchJournal`](#inplacepatchjournal) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MaintenanceCapabilities`](#maintenancecapabilities) · [`MaintenanceCapability`](#maintenancecapability) · [`MaintenanceProfile`](#maintenanceprofile) · [`MaintenanceResult`](#maintenanceresult) · [`MaintenanceVerbs`](#maintenanceverbs) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`MutableRebuildFilesystemSession`](#mutablerebuildfilesystemsession) · [`MutableRebuildFilesystemSession.RebuildImage`](#mutablerebuildfilesystemsessionrebuildimage) · [`MutableRebuildFilesystemSession.ValidateImage`](#mutablerebuildfilesystemsessionvalidateimage) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementOptions`](#placementoptions) · [`PlacementZone`](#placementzone) · [`RawDiskShrinkRebuilder`](#rawdiskshrinkrebuilder) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildFilesystemEntry`](#rebuildfilesystementry) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SectorCipherBlockDevice`](#sectorcipherblockdevice) · [`SfxTrailer`](#sfxtrailer) · [`SfxTrailer.Location`](#sfxtrailerlocation) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SubStream`](#substream) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult) · [`WholeImageRebuildCommitter`](#wholeimagerebuildcommitter)
 
 #### `AlgorithmFamily`
 
@@ -4512,8 +4512,8 @@ Common entry point for filesystem frontends. Native filesystem providers are alw
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Assess` | `static FilesystemDriverReadinessReport Assess(IFormatDescriptor descriptor, Stream image, FilesystemDriverTarget target, string password = null)` |  |
-| `Open` | `static IFilesystemSession Open(IFormatDescriptor descriptor, Stream image, FilesystemOpenOptions options, string password = null)` |  |
-| `Probe` | `static FilesystemDriverProfile Probe(IFormatDescriptor descriptor, Stream image, string password = null)` |  |
+| `Open` | `static IFilesystemSession Open(IFormatDescriptor descriptor, Stream image, FilesystemOpenOptions options, string password = null, bool preserveFileIdentity = false)` |  |
+| `Probe` | `static FilesystemDriverProfile Probe(IFormatDescriptor descriptor, Stream image, string password = null, bool preserveFileIdentity = false)` |  |
 
 #### `FilesystemDriverProfile`
 
@@ -5091,6 +5091,14 @@ Opt-in capability: the descriptor can extract a single named entry straight to a
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Writes the bytes of `entryName` (as named by `List`) into `output`. |
+
+#### `IArchiveInPlaceMountWriter`
+
+Explicit opt-in for native archive editors whose Add/Remove mutation path can operate directly on a seekable source stream under an external persistent undo journal. This is distinct from CanModify: a format that uses a full create-only rebuild must not claim direct in-place editing.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanEditInPlace` | `bool CanEditInPlace(Stream source)` | Returns true only for source profiles that the descriptor can edit directly. The mounting layer must additionally verify a writable named FileStream, create and persist an undo journal and validate the result. |
 
 #### `IArchiveLayoutMap`
 
@@ -5886,7 +5894,7 @@ Implements `IDisposable`, `IFilesystemSession`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `MutableRebuildFilesystemSession` | `MutableRebuildFilesystemSession(FilesystemDriverProfile profile, Stream image, IEnumerable<RebuildFilesystemEntry> entries, RebuildImage rebuild, ValidateImage validate = null, bool leaveOpen = true)` |  |
+| `MutableRebuildFilesystemSession` | `MutableRebuildFilesystemSession(FilesystemDriverProfile profile, Stream image, IEnumerable<RebuildFilesystemEntry> entries, RebuildImage rebuild, ValidateImage validate = null, bool leaveOpen = true, long maxTotalContentBytes = 9223372036854775807)` |  |
 | `Profile` | `FilesystemDriverProfile Profile { get; }` |  |
 | `RootNodeId` | `FilesystemNodeId RootNodeId { get; }` |  |
 | `BeginTransaction` | `IFilesystemTransaction BeginTransaction()` |  |
@@ -15904,7 +15912,7 @@ Implements `IEquatable<ParsedEsps>`.
 
 ### Namespace `FileFormat.ExePackers`
 
-[`AlienyzeExecutablePackerHandler`](#alienyzeexecutablepackerhandler) · [`AmberExecutablePackerHandler`](#amberexecutablepackerhandler) · [`AplibSectionPackerHandler`](#aplibsectionpackerhandler) · [`AplibSectionPackerHandler.Decoded`](#aplibsectionpackerhandlerdecoded) · [`AsPackExecutablePackerHandler`](#aspackexecutablepackerhandler) · [`AsPackFormatDescriptor`](#aspackformatdescriptor) · [`AsProtectFormatDescriptor`](#asprotectformatdescriptor) · [`BeRoExecutablePackerHandler`](#beroexecutablepackerhandler) · [`BzexeExecutablePackerHandler`](#bzexeexecutablepackerhandler) · [`BzexeFormatDescriptor`](#bzexeformatdescriptor) · [`CrinklerFormatDescriptor`](#crinklerformatdescriptor) · [`DescriptorExecutablePackerHandler`](#descriptorexecutablepackerhandler) · [`EnigmaVirtualBoxExecutablePackerHandler`](#enigmavirtualboxexecutablepackerhandler) · [`EronanaExecutablePackerHandler`](#eronanaexecutablepackerhandler) · [`Exe32packExecutablePackerHandler`](#exe32packexecutablepackerhandler) · [`ExpressorExecutablePackerHandler`](#expressorexecutablepackerhandler) · [`EzuriExecutablePackerHandler`](#ezuriexecutablepackerhandler) · [`FsgExecutablePackerHandler`](#fsgexecutablepackerhandler) · [`FsgFallbackExecutablePackerHandler`](#fsgfallbackexecutablepackerhandler) · [`FsgFormatDescriptor`](#fsgformatdescriptor) · [`GenericAplibPackedPeHandler`](#genericaplibpackedpehandler) · [`GenericNrvPackedPeHandler`](#genericnrvpackedpehandler) · [`GoPackerExecutablePackerHandler`](#gopackerexecutablepackerhandler) · [`GoPackerFormatDescriptor`](#gopackerformatdescriptor) · [`GzexeExecutablePackerHandler`](#gzexeexecutablepackerhandler) · [`GzexeFormatDescriptor`](#gzexeformatdescriptor) · [`HuanExecutablePackerHandler`](#huanexecutablepackerhandler) · [`HuanFormatDescriptor`](#huanformatdescriptor) · [`HxorExecutablePackerHandler`](#hxorexecutablepackerhandler) · [`JdpackExecutablePackerHandler`](#jdpackexecutablepackerhandler) · [`KkrunchyFormatDescriptor`](#kkrunchyformatdescriptor) · [`LzExeFormatDescriptor`](#lzexeformatdescriptor) · [`M0dernP4ckerExecutablePackerHandler`](#m0dernp4ckerexecutablepackerhandler) · [`MPressExecutablePackerHandler`](#mpressexecutablepackerhandler) · [`MPressFormatDescriptor`](#mpressformatdescriptor) · [`MewExecutablePackerHandler`](#mewexecutablepackerhandler) · [`MewFormatDescriptor`](#mewformatdescriptor) · [`MidgetPackExecutablePackerHandler`](#midgetpackexecutablepackerhandler) · [`MinorExecutablePackerHandlerBase`](#minorexecutablepackerhandlerbase) · [`MoleboxExecutablePackerHandler`](#moleboxexecutablepackerhandler) · [`MoleboxIdea`](#moleboxidea) · [`NeoliteExecutablePackerHandler`](#neoliteexecutablepackerhandler) · [`NsPackExecutablePackerHandler`](#nspackexecutablepackerhandler) · [`NsPackFormatDescriptor`](#nspackformatdescriptor) · [`OrigamiExecutablePackerHandler`](#origamiexecutablepackerhandler) · [`OrigamiFormatDescriptor`](#origamiformatdescriptor) · [`PackmanExecutablePackerHandler`](#packmanexecutablepackerhandler) · [`PakkeroExecutablePackerHandler`](#pakkeroexecutablepackerhandler) · [`PapawExecutablePackerHandler`](#papawexecutablepackerhandler) · [`PapawFormatDescriptor`](#papawformatdescriptor) · [`PeCompactExecutablePackerHandler`](#pecompactexecutablepackerhandler) · [`PePackerExecutablePackerHandler`](#pepackerexecutablepackerhandler) · [`PeToyExecutablePackerHandler`](#petoyexecutablepackerhandler) · [`PetiteExecutablePackerHandler`](#petiteexecutablepackerhandler) · [`PetiteFormatDescriptor`](#petiteformatdescriptor) · [`PetiteInflate`](#petiteinflate) · [`PetiteUnpacker`](#petiteunpacker) · [`PetiteUnpacker.PetiteBlock`](#petiteunpackerpetiteblock) · [`PetiteUnpacker.PetiteImage`](#petiteunpackerpetiteimage) · [`PkLiteFormatDescriptor`](#pkliteformatdescriptor) · [`ProtectorExecutablePackerHandlerBase`](#protectorexecutablepackerhandlerbase) · [`PyPePackerExecutablePackerHandler`](#pypepackerexecutablepackerhandler) · [`RlPackExecutablePackerHandler`](#rlpackexecutablepackerhandler) · [`ShrinklerFormatDescriptor`](#shrinklerformatdescriptor) · [`SilentPackerExecutablePackerHandler`](#silentpackerexecutablepackerhandler) · [`SilentPackerFormatDescriptor`](#silentpackerformatdescriptor) · [`SimpleDpackExecutablePackerHandler`](#simpledpackexecutablepackerhandler) · [`SquishyExecutablePackerHandler`](#squishyexecutablepackerhandler) · [`TelockExecutablePackerHandler`](#telockexecutablepackerhandler) · [`ThemidaExecutablePackerHandler`](#themidaexecutablepackerhandler) · [`ThemidaFormatDescriptor`](#themidaformatdescriptor) · [`VmProtectFormatDescriptor`](#vmprotectformatdescriptor) · [`WardExecutablePackerHandler`](#wardexecutablepackerhandler) · [`WinUpackExecutablePackerHandler`](#winupackexecutablepackerhandler) · [`WinUpackFallbackExecutablePackerHandler`](#winupackfallbackexecutablepackerhandler) · [`XorPackerExecutablePackerHandler`](#xorpackerexecutablepackerhandler) · [`YodaByteOp`](#yodabyteop) · [`YodaByteOpKind`](#yodabyteopkind) · [`YodaCrypterExecutablePackerHandler`](#yodacrypterexecutablepackerhandler) · [`YodaCrypterFormatDescriptor`](#yodacrypterformatdescriptor) · [`YodaCrypterStub`](#yodacrypterstub) · [`YodaCrypterStubInfo`](#yodacrypterstubinfo) · [`YodaProtectorExecutablePackerHandler`](#yodaprotectorexecutablepackerhandler)
+[`AlienyzeExecutablePackerHandler`](#alienyzeexecutablepackerhandler) · [`AmberExecutablePackerHandler`](#amberexecutablepackerhandler) · [`AplibSectionPackerHandler`](#aplibsectionpackerhandler) · [`AplibSectionPackerHandler.Decoded`](#aplibsectionpackerhandlerdecoded) · [`AsPackExecutablePackerHandler`](#aspackexecutablepackerhandler) · [`AsPackFormatDescriptor`](#aspackformatdescriptor) · [`AsProtectFormatDescriptor`](#asprotectformatdescriptor) · [`BeRoExecutablePackerHandler`](#beroexecutablepackerhandler) · [`BzexeExecutablePackerHandler`](#bzexeexecutablepackerhandler) · [`BzexeFormatDescriptor`](#bzexeformatdescriptor) · [`CrinklerFormatDescriptor`](#crinklerformatdescriptor) · [`DescriptorExecutablePackerHandler`](#descriptorexecutablepackerhandler) · [`DietFormatDescriptor`](#dietformatdescriptor) · [`DietUnpacker`](#dietunpacker) · [`DosExePackerHandler`](#dosexepackerhandler) · [`DosPackedExeDescriptor`](#dospackedexedescriptor) · [`DosUnpacked`](#dosunpacked) · [`EnigmaVirtualBoxExecutablePackerHandler`](#enigmavirtualboxexecutablepackerhandler) · [`EronanaExecutablePackerHandler`](#eronanaexecutablepackerhandler) · [`Exe32packExecutablePackerHandler`](#exe32packexecutablepackerhandler) · [`ExePackFormatDescriptor`](#exepackformatdescriptor) · [`ExePackUnpacker`](#exepackunpacker) · [`ExpressorExecutablePackerHandler`](#expressorexecutablepackerhandler) · [`EzuriExecutablePackerHandler`](#ezuriexecutablepackerhandler) · [`FsgExecutablePackerHandler`](#fsgexecutablepackerhandler) · [`FsgFallbackExecutablePackerHandler`](#fsgfallbackexecutablepackerhandler) · [`FsgFormatDescriptor`](#fsgformatdescriptor) · [`GenericAplibPackedPeHandler`](#genericaplibpackedpehandler) · [`GenericNrvPackedPeHandler`](#genericnrvpackedpehandler) · [`GoPackerExecutablePackerHandler`](#gopackerexecutablepackerhandler) · [`GoPackerFormatDescriptor`](#gopackerformatdescriptor) · [`GzexeExecutablePackerHandler`](#gzexeexecutablepackerhandler) · [`GzexeFormatDescriptor`](#gzexeformatdescriptor) · [`HuanExecutablePackerHandler`](#huanexecutablepackerhandler) · [`HuanFormatDescriptor`](#huanformatdescriptor) · [`HxorExecutablePackerHandler`](#hxorexecutablepackerhandler) · [`IDosExeUnpacker`](#idosexeunpacker) · [`JdpackExecutablePackerHandler`](#jdpackexecutablepackerhandler) · [`KkrunchyFormatDescriptor`](#kkrunchyformatdescriptor) · [`LzExeFormatDescriptor`](#lzexeformatdescriptor) · [`LzExeUnpacker`](#lzexeunpacker) · [`M0dernP4ckerExecutablePackerHandler`](#m0dernp4ckerexecutablepackerhandler) · [`MPressExecutablePackerHandler`](#mpressexecutablepackerhandler) · [`MPressFormatDescriptor`](#mpressformatdescriptor) · [`MewExecutablePackerHandler`](#mewexecutablepackerhandler) · [`MewFormatDescriptor`](#mewformatdescriptor) · [`MidgetPackExecutablePackerHandler`](#midgetpackexecutablepackerhandler) · [`MinorExecutablePackerHandlerBase`](#minorexecutablepackerhandlerbase) · [`MoleboxExecutablePackerHandler`](#moleboxexecutablepackerhandler) · [`MoleboxIdea`](#moleboxidea) · [`NeoliteExecutablePackerHandler`](#neoliteexecutablepackerhandler) · [`NsPackExecutablePackerHandler`](#nspackexecutablepackerhandler) · [`NsPackFormatDescriptor`](#nspackformatdescriptor) · [`OrigamiExecutablePackerHandler`](#origamiexecutablepackerhandler) · [`OrigamiFormatDescriptor`](#origamiformatdescriptor) · [`PackmanExecutablePackerHandler`](#packmanexecutablepackerhandler) · [`PakkeroExecutablePackerHandler`](#pakkeroexecutablepackerhandler) · [`PapawExecutablePackerHandler`](#papawexecutablepackerhandler) · [`PapawFormatDescriptor`](#papawformatdescriptor) · [`PeCompactExecutablePackerHandler`](#pecompactexecutablepackerhandler) · [`PePackerExecutablePackerHandler`](#pepackerexecutablepackerhandler) · [`PeToyExecutablePackerHandler`](#petoyexecutablepackerhandler) · [`PetiteExecutablePackerHandler`](#petiteexecutablepackerhandler) · [`PetiteFormatDescriptor`](#petiteformatdescriptor) · [`PetiteInflate`](#petiteinflate) · [`PetiteUnpacker`](#petiteunpacker) · [`PetiteUnpacker.PetiteBlock`](#petiteunpackerpetiteblock) · [`PetiteUnpacker.PetiteImage`](#petiteunpackerpetiteimage) · [`PkLiteFormatDescriptor`](#pkliteformatdescriptor) · [`PkLiteUnpacker`](#pkliteunpacker) · [`ProtectorExecutablePackerHandlerBase`](#protectorexecutablepackerhandlerbase) · [`PyPePackerExecutablePackerHandler`](#pypepackerexecutablepackerhandler) · [`RlPackExecutablePackerHandler`](#rlpackexecutablepackerhandler) · [`ShrinklerFormatDescriptor`](#shrinklerformatdescriptor) · [`SilentPackerExecutablePackerHandler`](#silentpackerexecutablepackerhandler) · [`SilentPackerFormatDescriptor`](#silentpackerformatdescriptor) · [`SimpleDpackExecutablePackerHandler`](#simpledpackexecutablepackerhandler) · [`SquishyExecutablePackerHandler`](#squishyexecutablepackerhandler) · [`TelockExecutablePackerHandler`](#telockexecutablepackerhandler) · [`ThemidaExecutablePackerHandler`](#themidaexecutablepackerhandler) · [`ThemidaFormatDescriptor`](#themidaformatdescriptor) · [`VmProtectFormatDescriptor`](#vmprotectformatdescriptor) · [`WardExecutablePackerHandler`](#wardexecutablepackerhandler) · [`WinUpackExecutablePackerHandler`](#winupackexecutablepackerhandler) · [`WinUpackFallbackExecutablePackerHandler`](#winupackfallbackexecutablepackerhandler) · [`XorPackerExecutablePackerHandler`](#xorpackerexecutablepackerhandler) · [`YodaByteOp`](#yodabyteop) · [`YodaByteOpKind`](#yodabyteopkind) · [`YodaCrypterExecutablePackerHandler`](#yodacrypterexecutablepackerhandler) · [`YodaCrypterFormatDescriptor`](#yodacrypterformatdescriptor) · [`YodaCrypterStub`](#yodacrypterstub) · [`YodaCrypterStubInfo`](#yodacrypterstubinfo) · [`YodaProtectorExecutablePackerHandler`](#yodaprotectorexecutablepackerhandler)
 
 #### `AlienyzeExecutablePackerHandler`
 
@@ -16127,6 +16135,92 @@ Implements `IExecutablePackerHandler`.
 | `Parse` | `PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection)` | Parses the value from the supplied data. |
 | `Unpack` | `UnpackResult Unpack(PackedExecutable packed, UnpackOptions options)` | Performs the unpack operation. |
 
+#### `DietFormatDescriptor`
+
+Pseudo-archive descriptor for DOS executables and COM files packed by DIET (Teddy Matsumoto, 1991-1992): lists the restored program as `unpacked.exe` or `unpacked.com`. Restoring is done by `DietUnpacker`; on files from DIET 1.45f the result equals UNP 4.11's byte for byte. References: `http://fileformats.archiveteam.org/wiki/DIET` — format overview`https://github.com/jsummers/deark` — modules/diet.c, the converted decoder
+
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DietFormatDescriptor` | `DietFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+
+#### `DietUnpacker`
+
+Restores DOS programs packed by Teddy Matsumoto's DIET (EXE and COM; versions 1.00, 1.00d, 1.02b, 1.10a, 1.20, 1.44, 1.45f). Converted from Deark's `modules/diet.c` (MIT; see THIRD-PARTY-NOTICE.Deark.txt). From 1.02 on, a "dlz" header gives the flags, the compressed length (20 bits), a CRC-16 of the compressed bytes and the original length (22 bits). The stream is LZ77 over an 8 KiB window with LSB-first flag bits from 16-bit words (refilled before and after every bit); distances are a byte plus 1 to 5 prefix-coded high bits, lengths a unary-then-binary code. For EXE files the decompressed data holds the image first and the original header behind it (its relocation table delta-coded); a COM file DIET turned into an EXE comes back as the COM.
+
+Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DietUnpacker` | `DietUnpacker()` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Instance` | `static DietUnpacker Instance { get; }` |  |
+| `Detect` | `string Detect(ReadOnlySpan<byte> file)` |  |
+| `Unpack` | `DosUnpacked Unpack(ReadOnlySpan<byte> file)` |  |
+
+#### `DosExePackerHandler`
+
+`IExecutablePackerHandler` over an `IDosExeUnpacker`: detects the packer's stub in a DOS MZ file and rebuilds the original program as `unpacked.exe`.
+
+Implements `IExecutablePackerHandler`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DosExePackerHandler` | `DosExePackerHandler(IDosExeUnpacker unpacker)` | `IExecutablePackerHandler` over an `IDosExeUnpacker`: detects the packer's stub in a DOS MZ file and rebuilds the original program as `unpacked.exe`. |
+| `Capabilities` | `ExecutableUnpackCapabilities Capabilities { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Detect` | `DetectionResult Detect(ReadOnlySpan<byte> image)` |  |
+| `Parse` | `PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection)` |  |
+| `Unpack` | `UnpackResult Unpack(PackedExecutable packed, UnpackOptions options)` |  |
+
+#### `DosPackedExeDescriptor`
+
+Shared pseudo-archive surface of the DOS executable packers: a packed program lists as `unpacked.exe` (the restored original) plus `metadata.ini`. A file that carries the packer's marks but cannot be restored lists as `metadata.ini` with `parse_status = partial` and the untouched `packed_payload.bin`; a file without them is refused with `InvalidDataException`.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DosPackedExeDescriptor` | `protected DosPackedExeDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `abstract string Description { get; }` |  |
+| `DisplayName` | `abstract string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `abstract string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MetadataSection` | `protected abstract string MetadataSection { get; }` | Section name in `metadata.ini`. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Unpacker` | `protected abstract IDosExeUnpacker Unpacker { get; }` | The unpacker behind this descriptor. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `FindMarker` | `protected virtual string FindMarker(ReadOnlySpan<byte> file)` | A looser recognition for files whose stub is not one the unpacker knows (e.g. the packer's copyright text); returns a description of the mark or null. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `DosUnpacked`
+
+A DOS executable restored from its packed form.
+
+Implements `IEquatable<DosUnpacked>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DosUnpacked` | `DosUnpacked(string Variant, byte[] Executable, string FileName = "unpacked.exe")` | A DOS executable restored from its packed form. |
+| `Executable` | `byte[] Executable { get; init; }` | The restored MZ (or COM) file. |
+| `FileName` | `string FileName { get; init; }` | Suggested entry name, `unpacked.exe` or `unpacked.com`. |
+| `Variant` | `string Variant { get; init; }` | The packer version or layout the stub was recognised as. |
+
 #### `EnigmaVirtualBoxExecutablePackerHandler`
 
 Real unpack handler for Enigma Virtual Box corpus outputs. EVB is primarily a file bundler, but the public Packing Box PE corpus variants include `.enigma1`/`.enigma2` sections whose payload is recovered by the shared managed aPLib PE pipeline. Full bundled file-tree extraction remains a separate higher-level target.
@@ -16171,6 +16265,36 @@ Inherits `MinorExecutablePackerHandlerBase`. Implements `IExecutablePackerHandle
 | `LiteralSignature` | `protected override ReadOnlySpan<byte> LiteralSignature { get; }` | Gets the literal signature. |
 | `Detect` | `override DetectionResult Detect(ReadOnlySpan<byte> image)` | Performs the detect operation. |
 | `IsPackerSection` | `protected override bool IsPackerSection(string name)` | Performs the is packer section operation. |
+
+#### `ExePackFormatDescriptor`
+
+Pseudo-archive descriptor for DOS executables packed by Microsoft EXEPACK (EXEPACK.EXE or LINK /EXEPACK): lists the restored program as `unpacked.exe`. Restoring is done by `ExePackUnpacker`; on files from EXEPACK 4.06 the result equals UNP 4.11's apart from the minimum allocation, which keeps the packed program's total memory. References: `http://fileformats.archiveteam.org/wiki/EXEPACK` — format overview`https://github.com/jsummers/deark` — modules/exepack.c, the converted decoder
+
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ExePackFormatDescriptor` | `ExePackFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+
+#### `ExePackUnpacker`
+
+Restores DOS programs packed by Microsoft EXEPACK (the stand-alone EXEPACK.EXE 3.x/4.x and LINK /EXEPACK). Converted from Deark's `modules/exepack.c` (MIT; see THIRD-PARTY-NOTICE.Deark.txt). The stub's header sits at CS:0 (IP, CS, a placeholder, the stub size, SP, SS, the unpacked length in paragraphs, and from 18-byte headers on a skip length); the stub code ends with the "Packed file is corrupt" handler, after which comes the relocation table (sixteen count-prefixed groups, one per 0x1000-paragraph step). The image is decoded backwards from its end: 0xB0/0xB1 fill a run of one byte, 0xB2/0xB3 copy stored bytes, each with a 16-bit count, and the odd opcodes end the stream; 0xFF padding may precede the first opcode.
+
+Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ExePackUnpacker` | `ExePackUnpacker()` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Instance` | `static ExePackUnpacker Instance { get; }` |  |
+| `Detect` | `string Detect(ReadOnlySpan<byte> file)` |  |
+| `Unpack` | `DosUnpacked Unpack(ReadOnlySpan<byte> file)` |  |
 
 #### `ExpressorExecutablePackerHandler`
 
@@ -16426,6 +16550,17 @@ Implements `IExecutablePackerHandler`.
 | `Parse` | `PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection)` | Parses the value from the supplied data. |
 | `Unpack` | `UnpackResult Unpack(PackedExecutable packed, UnpackOptions options)` | Performs the unpack operation. |
 
+#### `IDosExeUnpacker`
+
+An unpacker for one DOS executable packer family.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DisplayName` | `string DisplayName { get; }` | Human-readable packer name. |
+| `Id` | `string Id { get; }` | Short id, also the `Id`. |
+| `Detect` | `string Detect(ReadOnlySpan<byte> file)` | The packer variant the stub was recognised as, or null when it is not this packer. |
+| `Unpack` | `DosUnpacked Unpack(ReadOnlySpan<byte> file)` | Restores the original program; throws `InvalidDataException` when it cannot. |
+
 #### `JdpackExecutablePackerHandler`
 
 JDPack 1.x (`.jdpack` section) — a Win32 PE packer that leaves the victim's section table in place and replaces individual section byte ranges with compressed blobs, unpacking each of them back over its own virtual address at start-up.
@@ -16468,27 +16603,34 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 #### `LzExeFormatDescriptor`
 
-Pseudo-archive descriptor for LZEXE-packed DOS executables. Fabrice Bellard's LZEXE (1989) was one of the first widely-distributed DOS exe compressors; the unpacker stub embeds an `"LZ91"` or `"LZ09"` signature near the start of the code section that uniquely identifies it. References: `https://en.wikipedia.org/wiki/LZEXE` — format and tool historyUNLZEXE (Mitugu Kurizono) source — the de-facto documentation of the LZ91/LZ09 stub layout
+Pseudo-archive descriptor for LZEXE-packed DOS executables (Fabrice Bellard, 1989): lists the restored program as `unpacked.exe`. Versions 0.90, 0.91 and 1.00a are restored by `LzExeUnpacker`; the image and relocations equal what UNP 4.11 restores. References: `https://en.wikipedia.org/wiki/LZEXE` — format and tool history`https://github.com/jsummers/deark` — modules/lzexe.c, the converted decoder
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzExeFormatDescriptor` | `LzExeFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+| `FindMarker` | `protected override string FindMarker(ReadOnlySpan<byte> file)` | The "LZ91"/"LZ09" mark LZEXE leaves at offset 0x1C. |
+
+#### `LzExeUnpacker`
+
+Restores DOS programs packed by Fabrice Bellard's LZEXE 0.90, 0.91 and 1.00a. Three stub layouts are told apart and named as Deark names them: "0.90", "0.91" (written by 1.00a) and "0.91e" (written by 0.91). Converted from Deark's `modules/lzexe.c` and the shared EXE helpers it calls (MIT; see THIRD-PARTY-NOTICE.Deark.txt). The stub is recognised by the CRC-32 of the 64 bytes at its entry point. It keeps a private header at CS:0 (the original IP, CS, SP, SS, the compressed length in paragraphs and two sizes), the compressed relocation table right after its code, and the compressed image directly below the stub. The image is an LZ77 stream over an 8 KiB window with a 16-bit LSB-first flag word; relocations come back paragraph-normalised (segment = address / 16, offset = address mod 16) because LZEXE keeps only their linear address.
+
+Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LzExeUnpacker` | `LzExeUnpacker()` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Instance` | `static LzExeUnpacker Instance { get; }` |  |
+| `Detect` | `string Detect(ReadOnlySpan<byte> file)` |  |
+| `Unpack` | `DosUnpacked Unpack(ReadOnlySpan<byte> file)` |  |
 
 #### `M0dernP4ckerExecutablePackerHandler`
 
@@ -16946,27 +17088,34 @@ Implements `IEquatable<PetiteImage>`.
 
 #### `PkLiteFormatDescriptor`
 
-Pseudo-archive descriptor for PKLITE-packed DOS executables. PKLITE was a commercial DOS exe-compressor by PKWARE (1990); the unpacker stub it prepends carries the distinctive `"PKLITE Copr."` copyright string and a version field at MZ-header offset `0x1C`. References: `https://en.wikipedia.org/wiki/PKLITE` — format and tool historyPKWARE PKLITE documentation (shipped with the product) — describes the compressed-EXE layout and version word at MZ offset 0x1C
+Pseudo-archive descriptor for PKLITE-packed DOS executables and COM files (PKWARE, 1990-1996): lists the restored program as `unpacked.exe` or `unpacked.com`. Restoring is done by `PkLiteUnpacker`; on files from PKLITE 1.15 and 2.01 the result equals both `pklite -x` and UNP 4.11 byte for byte. References: `https://en.wikipedia.org/wiki/PKLITE` — format and tool history`https://github.com/jsummers/deark` — modules/pklite.c, the converted decoder
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PkLiteFormatDescriptor` | `PkLiteFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+| `FindMarker` | `protected override string FindMarker(ReadOnlySpan<byte> file)` | The copyright text the stub carries near the start of the file. |
+
+#### `PkLiteUnpacker`
+
+Restores DOS programs packed by PKWARE's PKLITE (EXE and COM, versions 1.00 to 2.01 including "extra" and "large" compression, the 1.20 variants, and the 1990 betas). Converted from Deark's `modules/pklite.c` (MIT; see THIRD-PARTY-NOTICE.Deark.txt). PKLITE keeps its parameters in the machine code of its stub, so the stub is walked component by component (intro, optional descrambler, copier, decompressor) by matching known byte patterns. The image is an LZ77 stream over an 8 KiB window: flag bits LSB-first from 16-bit words, match lengths and offset high bits from fixed prefix codes, literals optionally XORed with the bit count left in the flag word ("extra" compression). The relocation table and an 8-byte footer (SS, SP, CS, IP) follow the image; files without extra compression also keep a copy of the original header, so their restored form is the original byte for byte.
+
+Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PkLiteUnpacker` | `PkLiteUnpacker()` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Instance` | `static PkLiteUnpacker Instance { get; }` |  |
+| `Detect` | `string Detect(ReadOnlySpan<byte> file)` |  |
+| `Unpack` | `DosUnpacked Unpack(ReadOnlySpan<byte> file)` |  |
 
 #### `ProtectorExecutablePackerHandlerBase`
 
@@ -25059,7 +25208,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 ### Namespace `FileFormat.Nsis`
 
-[`NsisCompression`](#nsiscompression) · [`NsisEntry`](#nsisentry) · [`NsisFormatDescriptor`](#nsisformatdescriptor) · [`NsisReader`](#nsisreader)
+[`NsisCompression`](#nsiscompression) · [`NsisEntry`](#nsisentry) · [`NsisFormatDescriptor`](#nsisformatdescriptor) · [`NsisInstallerFile`](#nsisinstallerfile) · [`NsisInstallerOptions`](#nsisinstalleroptions) · [`NsisInstallerWriter`](#nsisinstallerwriter) · [`NsisReader`](#nsisreader)
 
 #### `NsisCompression`
 
@@ -25094,7 +25243,7 @@ Implements `IEquatable<NsisEntry>`.
 
 NSIS (Nullsoft Scriptable Install System) installer: the files its install script extracts. References: `https://github.com/kichik/nsis` — NSIS sources; `Source/exehead/fileform.h` defines the layout (zlib/libpng licence)`https://nsis.sourceforge.io/Docs/` — NSIS documentation`https://www.7-zip.org` — 7-Zip's NSIS handler, the reference reader this one is checked against
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -25111,10 +25260,46 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes an installer that extracts every input below the installation directory. The method is "zlib", "bzip2" or "lzma" (the default), with ":solid" for one solid stream. The exehead stub comes from `FormatSpecific["stub"]` (a stub file), `FormatSpecific["nsisdir"]` or an installed NSIS 3 (`LoadStub`); `FormatSpecific["name"]` sets the product name. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Decodes one entry into memory; an unknown name yields no bytes. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens one entry as a bounded read-only stream. |
+
+#### `NsisInstallerFile`
+
+A file an NSIS installer writes.
+
+Implements `IEquatable<NsisInstallerFile>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NsisInstallerFile` | `NsisInstallerFile(string Path, byte[] Data, DateTime? LastWriteTimeUtc = null)` | A file an NSIS installer writes. |
+| `Data` | `byte[] Data { get; init; }` | Its contents. |
+| `LastWriteTimeUtc` | `DateTime? LastWriteTimeUtc { get; init; }` | The modification time the installer gives it; the time of writing when null. |
+| `Path` | `string Path { get; init; }` | Its path below the installation directory, "/"- or "\"-separated. |
+
+#### `NsisInstallerOptions`
+
+How `NsisInstallerWriter` builds an installer.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NsisInstallerOptions` | `NsisInstallerOptions()` |  |
+| `Compression` | `NsisCompression Compression { get; init; }` | The compressor: zlib, bzip2 or LZMA. The stub must be the one NSIS ships for it. |
+| `InstallDirectory` | `string InstallDirectory { get; init; }` | The default installation directory (InstallDir): an absolute path, or one starting with `$PROGRAMFILES` or `$TEMP`. `/D=` on the command line overrides it. Defaults to `$PROGRAMFILES\` and the name. |
+| `Name` | `string Name { get; init; }` | The product name the installer shows ($(^Name)). |
+| `Solid` | `bool Solid { get; init; }` | One compressed stream for the header and every file, instead of one per file. |
+
+#### `NsisInstallerWriter`
+
+Writes NSIS 3 installers: an exehead stub from NSIS's `Stubs` folder, prepared as makensis prepares it, then the firstheader, the script header and the files, and the CRC-32. The script is what makensis compiles from `Section`, `SetOutPath $INSTDIR\...` and `File` lines with the default pages, so the installer runs interactively or with `/S /D=dir`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LoadStub` | `static byte[] LoadStub(NsisCompression compression, bool solid, string nsisDirectory = null)` | Reads the matching stub from an NSIS installation: `nsisDirectory`, else the NSISDIR environment variable, else the usual install locations. Null when none is found. |
+| `StubFileName` | `static string StubFileName(NsisCompression compression, bool solid)` | The name of the stub NSIS ships for a compressor ("lzma_solid-x86-unicode", ...). |
+| `Write` | `static void Write(Stream output, ReadOnlySpan<byte> stub, IReadOnlyList<NsisInstallerFile> files, NsisInstallerOptions options = null)` | Writes an installer for `files` using `stub`. |
 
 #### `NsisReader`
 

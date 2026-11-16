@@ -48,8 +48,10 @@ public static class ExecutablePackerHandlers {
     new DescriptorExecutablePackerHandler(new AsProtectFormatDescriptor()),
     new DescriptorExecutablePackerHandler(new CrinklerFormatDescriptor()),
     new DescriptorExecutablePackerHandler(new KkrunchyFormatDescriptor()),
-    new DescriptorExecutablePackerHandler(new LzExeFormatDescriptor()),
-    new DescriptorExecutablePackerHandler(new PkLiteFormatDescriptor()),
+    new DosExePackerHandler(LzExeUnpacker.Instance),
+    new DosExePackerHandler(PkLiteUnpacker.Instance),
+    new DosExePackerHandler(ExePackUnpacker.Instance),
+    new DosExePackerHandler(DietUnpacker.Instance),
     new DescriptorExecutablePackerHandler(new ShrinklerFormatDescriptor()),
     new DescriptorExecutablePackerHandler(new VmProtectFormatDescriptor()),
 

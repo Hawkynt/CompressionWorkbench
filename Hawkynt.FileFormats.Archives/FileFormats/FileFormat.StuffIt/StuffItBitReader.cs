@@ -57,6 +57,9 @@ internal sealed class StuffItBitReader(byte[] data, int offset = 0, int length =
     return b;
   }
 
+  /// <summary>Skips to the next byte boundary.</summary>
+  public void AlignToByte() => this._bitPos = (this._bitPos + 7) & ~7L;
+
   /// <summary>Whether every input byte has been consumed.</summary>
   public bool AtEnd => (this._bitPos >> 3) >= this._end;
 }

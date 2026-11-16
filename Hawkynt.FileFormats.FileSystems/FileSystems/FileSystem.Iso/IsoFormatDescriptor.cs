@@ -393,13 +393,13 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <remarks>
   /// <see cref="IsoTreeEditor"/> keeps the primary tree (with Rock Ridge names, modes and
   /// times when the image has Rock Ridge) and the Joliet tree describing the same files, and
-  /// rewrites the path tables. An image the editor would damage — data stored past the
-  /// volume space, Rock Ridge relocated folders, interleaved files — is refused and left as
-  /// it was.
+  /// rewrites the path tables. Interleaved files keep their units and gaps where they are;
+  /// Rock Ridge relocated folders are edited where they are shown, and a folder added below
+  /// the eighth level is relocated into rr_moved. An image the editor would damage — data
+  /// stored past the volume space — is refused and left as it was.
   /// </remarks>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(inputs);
-    RefuseInterleaved(archive, "adding files to");
     foreach (var input in inputs.Where(i => !string.IsNullOrEmpty(i.ArchiveName))) {
       var name = EntryPath(input.ArchiveName);
       if (name.Length == 0) continue;
@@ -481,8 +481,9 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// The in-place editors treat every file section as one contiguous run; an interleaved section
-  /// would have its gaps (other files' data) moved or wiped, so such an image is left untouched.
+  /// The defragmenter and the wiper treat every file section as one contiguous run; an
+  /// interleaved section would have its gaps (other files' data) moved or wiped, so such an
+  /// image is left untouched by them.
   /// </summary>
   private static void RefuseInterleaved(Stream image, string operation) {
     var position = image.Position;
@@ -523,7 +524,6 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// zeroed. A name that is not there is reported rather than passed over.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    RefuseInterleaved(archive, "removing files from");
     foreach (var raw in entryNames ?? []) {
       var name = raw.Replace('\\', '/').Trim('/');
       if (!IsoTreeEditor.Remove(archive, name))

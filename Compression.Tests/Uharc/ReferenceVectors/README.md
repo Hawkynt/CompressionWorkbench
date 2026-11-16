@@ -30,6 +30,8 @@ Command, run inside the input set's directory:
 | `mm-pair-m2.uha` | mm | `-m2`, files `u8s.wav s8n.raw` | ALZ multimedia selectors 6 and 7 |
 | `mm-mz.uha` | mm | `-mz`, files `pic.bmp u8.wav s16.wav` | LZP's BMP/WAV delta filter |
 | `exe-m2.uha` / `exe-mz.uha` | exe | `-m2` / `-mz` | E8/E9 + MZ relocation filter, ELF, and the 1 KiB threshold |
+| `fax-m2.uha` / `fax-mx.uha` | fax | `-m2` / `-mx` | the fax-page transpose (filters bit 7) behind ALZ and PPM |
+| `sizes-mx-a.uha` / `sizes-mx-b.uha` | sizes | `-mx`, files `a1.txt a2.txt` / `b1.txt b2.txt` | PPM's file-size rules: quartering, and clearing, at the matching reset points |
 
 The `v02-*` archives were written by **UHARC 0.2** (`UHARC.EXE`, DOS, 21 Dec 1997, from
 <https://archive.org/details/UHARC>, MD5 `6e2f0e8d0e6b83c0c05c9b406ce056fb`) in DOSBox, from the
@@ -68,6 +70,7 @@ The `v04-*` archives were written by **UHARC 0.4 BETA** (`UHARC04.EXE`, Win32, 2
 | `v04-basic-mw.uha` / `v04-runs-mw.uha` | basic / runs | `-mw` | 0.4 LZW (likewise unlisted) |
 | `v04-reset-mw1.uha` / `v04-exe-mw.uha` | reset / exe | `-mw -md1` / `-mw` | LZW with 1024 codes; the executable filter behind LZW |
 | `v04-basic-mx.uha` | basic | `-mx` | 0.4 PPM, listed but not decoded |
+| `v04-fax-mz.uha` | fax | `-mz` | the fax-page transpose behind 0.4 LZP |
 
 `UHARC04.EXE t` reports "All files OK" for every `v04-*` archive.
 

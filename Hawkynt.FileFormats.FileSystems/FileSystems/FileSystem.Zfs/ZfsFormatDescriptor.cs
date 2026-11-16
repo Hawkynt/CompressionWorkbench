@@ -134,7 +134,7 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Writes a new pool (version 28) over <paramref name="devices"/>: one device, or with two or
   /// more an n-way mirror of equally sized devices, each holding every block, or with the option
   /// <c>Layout</c> = <c>raidz1</c>, <c>raidz2</c> or <c>raidz3</c> a RAID-Z (at least parity + 2
-  /// devices). Other options as for <see cref="Create"/>.
+  /// devices), or with <c>stripe</c> one top-level vdev per device. Other options as for <see cref="Create"/>.
   /// </summary>
   public void CreatePool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(devices);
@@ -148,12 +148,14 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       else
         writer.AddFile(input.ArchiveName, input.ReadContent(), modified);
     }
-    writer.Parity = options.GetOption("Layout", "mirror").Trim().ToLowerInvariant() switch {
-      "mirror" or "" => 0,
+    var layout = options.GetOption("Layout", "mirror").Trim().ToLowerInvariant();
+    writer.Stripe = layout == "stripe";
+    writer.Parity = layout switch {
+      "mirror" or "stripe" or "" => 0,
       "raidz" or "raidz1" => 1,
       "raidz2" => 2,
       "raidz3" => 3,
-      var other => throw new ArgumentException($"ZFS: layout '{other}' is not mirror, raidz1, raidz2 or raidz3."),
+      var other => throw new ArgumentException($"ZFS: layout '{other}' is not mirror, stripe, raidz1, raidz2 or raidz3."),
     };
     writer.Version = options.GetOption("Version", "28").Trim() switch {
       "28" or "" => 28UL,

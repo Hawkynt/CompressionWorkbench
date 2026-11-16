@@ -81,9 +81,146 @@ public sealed class IsoInterleaveTests {
   public void GivenAnImageWithAnInterleavedFile_WhenDefragmented_ThenItIsRefusedAndUntouched()
     => AssertRefusedAndUntouched(image => new IsoFormatDescriptor().Defragment(image));
 
+  // ── In-place editing ───────────────────────────────────────────────────
+
+  private static readonly IsoFormatDescriptor Iso = new();
+
+  private static byte[] Pattern(int size, int seed) {
+    var d = new byte[size];
+    new Random(seed).NextBytes(d);
+    return d;
+  }
+
+  /// <summary>DATA.BIN's primary record: first sector, unit and gap sizes, and the sectors from its first unit to its last.</summary>
+  private static (int Lba, int Unit, int Gap, int Span) Layout(byte[] image) {
+    var rootLba = BitConverter.ToInt32(image, 16 * 2048 + 158);
+    for (var pos = rootLba * 2048; image[pos] != 0; pos += image[pos]) {
+      if (!System.Text.Encoding.ASCII.GetString(image, pos + 33, image[pos + 32]).StartsWith("DATA.BIN", StringComparison.Ordinal)) continue;
+      var lba = BitConverter.ToInt32(image, pos + 2);
+      var sectors = (BitConverter.ToInt32(image, pos + 10) + 2047) / 2048;
+      int unit = image[pos + 26], gap = image[pos + 27];
+      var units = (sectors + unit - 1) / unit;
+      return (lba, unit, gap, sectors + (units - 1) * gap);
+    }
+    throw new AssertionException("DATA.BIN record not found");
+  }
+
+  /// <summary>The gap sectors between DATA.BIN's file units.</summary>
+  private static IEnumerable<int> GapSectors((int Lba, int Unit, int Gap, int Span) layout) {
+    for (var at = layout.Lba + layout.Unit; at < layout.Lba + layout.Span; at += layout.Unit + layout.Gap)
+      for (var g = 0; g < layout.Gap; ++g) yield return at + g;
+  }
+
+  private static byte[] Sector(byte[] image, int lba) => image.AsSpan(lba * 2048, 2048).ToArray();
+
+  private static string Sha(byte[] data) => Convert.ToHexStringLower(SHA256.HashData(data));
+
+  [TestCase("interleave-1-1")]
+  [TestCase("interleave-2-3")]
+  public void GivenAnImageWithAnInterleavedFile_WhenFilesAreAdded_ThenItsUnitsAndGapsStayAndTheNewFilesAreContiguous(string name) {
+    var row = Manifest.Value.Single(r => r.Image == name);
+    using var image = Image(name);
+    var before = image.ToArray();
+    var layout = Layout(before);
+    var oldEnd = (int)(before.Length / 2048);
+    var added = Pattern(9000, 7);
+
+    Iso.Add(image, [ArchiveInputInfo.InMemory("NEW.BIN", added), ArchiveInputInfo.InMemory("SUB/INNER.TXT", "inner\n"u8.ToArray())]);
+
+    var after = image.ToArray();
+    var at = after.AsSpan(oldEnd * 2048).IndexOf(added.AsSpan(0, 64));
+    Assert.Multiple(() => {
+      Assert.That(after.AsSpan(layout.Lba * 2048, layout.Span * 2048).ToArray(),
+        Is.EqualTo(before.AsSpan(layout.Lba * 2048, layout.Span * 2048).ToArray()), "units and gaps stay byte for byte");
+      Assert.That(Layout(after), Is.EqualTo(layout), "DATA.BIN's record keeps its interleave");
+      Assert.That(Sha(Iso.ExtractEntryToMemory(image, "DATA.BIN", null)), Is.EqualTo(row.WindowsSha));
+      Assert.That(Iso.ExtractEntryToMemory(image, "NEW.BIN", null), Is.EqualTo(added));
+      Assert.That(Iso.ExtractEntryToMemory(image, "SUB/INNER.TXT", null), Is.EqualTo("inner\n"u8.ToArray()));
+      Assert.That(at, Is.GreaterThanOrEqualTo(0), "new data after the old volume space");
+      Assert.That(after.AsSpan(oldEnd * 2048 + at, added.Length).ToArray(), Is.EqualTo(added), "in one contiguous run");
+    });
+    image.Position = 0;
+    using var reader = new IsoReader(image, leaveOpen: true, useJoliet: false);
+    Assert.That(reader.Entries.Single(e => e.Name == "NEW.BIN").IsInterleaved, Is.False);
+  }
+
+  [TestCase("interleave-1-1")]
+  [TestCase("interleave-2-3")]
+  public void GivenAnImageWithAnInterleavedFile_WhenItIsRemoved_ThenItsUnitsAreZeroedAndItsGapsKept(string name) {
+    using var image = Image(name);
+    var before = image.ToArray();
+    var layout = Layout(before);
+    var gaps = GapSectors(layout).ToList();
+    Assert.That(gaps, Is.Not.Empty);
+
+    Iso.Remove(image, ["DATA.BIN"]);
+
+    var after = image.ToArray();
+    var units = Enumerable.Range(layout.Lba, layout.Span).Except(gaps).ToList();
+    Assert.Multiple(() => {
+      Assert.That(Iso.List(image, null).Where(e => !e.IsDirectory), Is.Empty);
+      Assert.That(units.All(lba => !Sector(after, lba).AsSpan().ContainsAnyExcept((byte)0)), Is.True, "every file unit is zeroed");
+      Assert.That(gaps.All(lba => Sector(after, lba).SequenceEqual(Sector(before, lba))), Is.True, "the interleave gaps are not the file's");
+      Assert.That(gaps.All(lba => Sector(after, lba).All(b => b == 0xA5)), Is.True);
+    });
+  }
+
   [Test]
-  public void GivenAnImageWithAnInterleavedFile_WhenAFileIsRemoved_ThenItIsRefusedAndUntouched()
-    => AssertRefusedAndUntouched(image => new IsoFormatDescriptor().Remove(image, ["DATA.BIN"]));
+  public void GivenAFileWhoseDataLiesInAnInterleaveGap_WhenTheInterleavedFileIsRemoved_ThenThatFileStaysReadable() {
+    // A second file recorded inside DATA.BIN's first gap: the gap is another file's, as in a
+    // disc that interleaves two streams.
+    using var image = Image("interleave-2-3");
+    var layout = Layout(image.ToArray());
+    Iso.Add(image, [ArchiveInputInfo.InMemory("OTHER.BIN", new byte[2048])]);
+    var bytes = image.ToArray();
+    var rootLba = BitConverter.ToInt32(bytes, 16 * 2048 + 158);
+    for (var pos = rootLba * 2048; bytes[pos] != 0; pos += bytes[pos]) {
+      if (!System.Text.Encoding.ASCII.GetString(bytes, pos + 33, bytes[pos + 32]).StartsWith("OTHER.BIN", StringComparison.Ordinal)) continue;
+      var gapLba = layout.Lba + layout.Unit;
+      BitConverter.GetBytes(gapLba).CopyTo(bytes, pos + 2);
+      BitConverter.GetBytes(System.Buffers.Binary.BinaryPrimitives.ReverseEndianness(gapLba)).CopyTo(bytes, pos + 6);
+    }
+    using var patched = new MemoryStream();
+    patched.Write(bytes);
+
+    Iso.Remove(patched, ["DATA.BIN"]);
+
+    Assert.That(Iso.ExtractEntryToMemory(patched, "OTHER.BIN", null), Is.EqualTo(Enumerable.Repeat((byte)0xA5, 2048).ToArray()));
+  }
+
+  [TestCase("interleave-1-1")]
+  [TestCase("interleave-2-3")]
+  public void GivenAnImageWithAnInterleavedFile_WhenItIsReplaced_ThenTheNewContentIsContiguousAndTheGapsKept(string name) {
+    using var image = Image(name);
+    var before = image.ToArray();
+    var gaps = GapSectors(Layout(before)).ToList();
+    var replacement = Pattern(12000, 9);
+
+    Iso.Add(image, [ArchiveInputInfo.InMemory("DATA.BIN", replacement)]);
+
+    var after = image.ToArray();
+    image.Position = 0;
+    using var reader = new IsoReader(image, leaveOpen: true, useJoliet: false);
+    var entry = reader.Entries.Single(e => e.Name == "DATA.BIN");
+    Assert.Multiple(() => {
+      Assert.That(entry.IsInterleaved, Is.False);
+      Assert.That(reader.Extract(entry), Is.EqualTo(replacement));
+      Assert.That(after.AsSpan().IndexOf(replacement), Is.GreaterThanOrEqualTo(before.Length), "written contiguously after the old volume space");
+      Assert.That(gaps.All(lba => Sector(after, lba).SequenceEqual(Sector(before, lba))), Is.True);
+    });
+  }
+
+  [Test]
+  public void GivenAnImageWithAnInterleavedFileAndJoliet_WhenAFileIsRemoved_ThenBothTreesLoseIt() {
+    using var image = Image("interleave-1-1");
+    Iso.Add(image, [ArchiveInputInfo.InMemory("Second File.txt", "second"u8.ToArray())]);
+    Iso.Remove(image, ["DATA.BIN"]);
+    foreach (var joliet in new[] { true, false }) {
+      image.Position = 0;
+      using var reader = new IsoReader(image, leaveOpen: true, useJoliet: joliet);
+      Assert.That(reader.Entries.Where(e => !e.IsDirectory).Select(e => e.Name).Single(), Does.StartWith("SECOND").IgnoreCase.Or.EqualTo("Second File.txt"));
+    }
+  }
 
   [Test]
   public void GivenAGapWithoutAFileUnit_WhenExtracted_ThenItIsRefused() {

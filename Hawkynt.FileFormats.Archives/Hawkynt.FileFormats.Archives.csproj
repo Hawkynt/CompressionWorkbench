@@ -43,6 +43,10 @@
           Pack="true" PackagePath="notices/Install4j/" />
     <None Update="FileFormats\FileFormat.GenteeInstaller\THIRD-PARTY-NOTICE.*.txt"
           Pack="true" PackagePath="notices/GenteeInstaller/" />
+    <None Update="FileFormats\FileFormat.ExePackers\THIRD-PARTY-NOTICE.Deark.txt"
+          Pack="true" PackagePath="notices/ExePackers/" />
+    <None Update="FileFormats\FileFormat.Nsis\THIRD-PARTY-NOTICE.NSIS.txt"
+          Pack="true" PackagePath="notices/Nsis/" />
   </ItemGroup>
 
   <ItemGroup>

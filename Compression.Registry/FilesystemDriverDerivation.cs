@@ -84,7 +84,8 @@ public static class FilesystemDriverDerivation {
   public static FilesystemDriverProfile Probe(
       IFormatDescriptor descriptor,
       Stream image,
-      string? password = null) {
+      string? password = null,
+      bool preserveFileIdentity = false) {
     ArgumentNullException.ThrowIfNull(descriptor);
     ArgumentNullException.ThrowIfNull(image);
 
@@ -102,7 +103,7 @@ public static class FilesystemDriverDerivation {
         ["Descriptor exposes neither IFilesystemDriverProvider nor IArchiveFormatOperations."]);
 
     try {
-      using var snapshot = DerivedFilesystemSnapshot.Capture(image);
+      using var snapshot = DerivedFilesystemSnapshot.Capture(image, preserveFileIdentity);
       using var probe = snapshot.OpenRead();
       _ = archive.List(probe, password);
       return DerivedReadOnlyProfile(descriptor.Id);
@@ -122,7 +123,8 @@ public static class FilesystemDriverDerivation {
       IFormatDescriptor descriptor,
       Stream image,
       FilesystemOpenOptions options,
-      string? password = null) {
+      string? password = null,
+      bool preserveFileIdentity = false) {
     ArgumentNullException.ThrowIfNull(descriptor);
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(options);
@@ -139,7 +141,7 @@ public static class FilesystemDriverDerivation {
       throw new NotSupportedException(
         $"{descriptor.Id} exposes no filesystem-driver provider and no list/open-entry projection.");
 
-    return new DerivedReadOnlyFilesystemSession(descriptor, archive, image, password);
+    return new DerivedReadOnlyFilesystemSession(descriptor, archive, image, password, preserveFileIdentity);
   }
 
   public static FilesystemDriverReadinessReport Assess(
@@ -284,10 +286,11 @@ internal sealed class DerivedReadOnlyFilesystemSession : IFilesystemSession {
       IFormatDescriptor descriptor,
       IArchiveFormatOperations operations,
       Stream image,
-      string? password) {
+      string? password,
+      bool preserveFileIdentity = false) {
     _operations = operations;
     _password = password;
-    _snapshot = DerivedFilesystemSnapshot.Capture(image);
+    _snapshot = DerivedFilesystemSnapshot.Capture(image, preserveFileIdentity);
     Profile = new FilesystemDriverProfile(
       descriptor.Id,
       "derived read-only archive view",
@@ -547,14 +550,22 @@ internal sealed class DerivedFilesystemSnapshot : IDisposable {
   private const long MemoryThreshold = 16L * 1024 * 1024;
   private readonly byte[]? _memory;
   private readonly string? _temporaryPath;
+  private readonly string? _sourcePath;
   private bool _disposed;
 
   private DerivedFilesystemSnapshot(byte[] memory) => _memory = memory;
   private DerivedFilesystemSnapshot(string temporaryPath) => _temporaryPath = temporaryPath;
+  private DerivedFilesystemSnapshot(string sourcePath, bool preserveIdentity) => _sourcePath = sourcePath;
 
-  public static DerivedFilesystemSnapshot Capture(Stream source) {
+  public static DerivedFilesystemSnapshot Capture(Stream source, bool preserveFileIdentity = false) {
     ArgumentNullException.ThrowIfNull(source);
     if (!source.CanRead) throw new ArgumentException("Filesystem derivation requires a readable image.", nameof(source));
+    // Some read-only formats reference sibling resources by their original
+    // filename (for example CloneCD .ccd -> .img/.sub). Retain path identity
+    // only when requested by the mount launcher. Writable sessions retain their
+    // separate immutable snapshots instead.
+    if (preserveFileIdentity && source is FileStream namedFile)
+      return new DerivedFilesystemSnapshot(namedFile.Name, preserveIdentity: true);
 
     var originalPosition = source.CanSeek ? source.Position : 0;
     try {
@@ -583,7 +594,7 @@ internal sealed class DerivedFilesystemSnapshot : IDisposable {
   public Stream OpenRead() {
     ObjectDisposedException.ThrowIf(_disposed, this);
     if (_memory != null) return new MemoryStream(_memory, writable: false);
-    return new FileStream(_temporaryPath!, FileMode.Open, FileAccess.Read,
+    return new FileStream(_sourcePath ?? _temporaryPath!, FileMode.Open, FileAccess.Read,
       FileShare.Read | FileShare.Delete, 64 * 1024, FileOptions.RandomAccess);
   }
 

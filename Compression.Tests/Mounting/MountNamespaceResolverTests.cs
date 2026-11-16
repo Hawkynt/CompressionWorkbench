@@ -42,16 +42,17 @@ public sealed class MountNamespaceResolverTests {
   }
 
   [Test]
-  public void Zip_ProjectsAsReadOnlyFilesystemNamespace() {
+  public void Zip_ProjectsAsWritableCapableFilesystemNamespaceWithReadOnlySessionOption() {
     var data = "mounted from zip"u8.ToArray();
     using var archive = Create("Zip", [ArchiveInputInfo.InMemory("nested/hello.txt", data)]);
 
     var probe = MountNamespaceResolver.Probe("Zip", archive);
     Assert.Multiple(() => {
       Assert.That(probe.Profile.CanMount, Is.True);
-      Assert.That(probe.Profile.CanMountWritable, Is.False);
+      Assert.That(probe.Profile.CanMountWritable, Is.True);
       Assert.That(probe.Layers, Does.Contain("archive:Zip"));
-      Assert.That(probe.Layers, Does.Contain("namespace:derived-read-only"));
+      Assert.That(probe.Layers, Does.Contain("namespace:qualified-write-back"));
+      Assert.That(probe.Layers, Does.Contain("namespace:staged-worm-rebuild"));
     });
 
     archive.Position = 0;
@@ -66,6 +67,110 @@ public sealed class MountNamespaceResolverTests {
     Assert.That(file, Is.Not.Null);
     Assert.That(ReadAll(session, file!.Value), Is.EqualTo(data));
     Assert.Throws<NotSupportedException>(() => session.CreateFile(session.RootNodeId, "nope.txt"));
+  }
+
+  [TestCase("SevenZip")]
+  [TestCase("Rar")]
+  public void SupportedCompressedArchive_ExposesContentsAndQualifiesStagedWrites(string formatId) {
+    var payload = "mountable compressed archive"u8.ToArray();
+    using var archive = Create(formatId, [ArchiveInputInfo.InMemory("document.txt", payload)]);
+
+    var probe = MountNamespaceResolver.Probe(formatId, archive);
+    Assert.Multiple(() => {
+      Assert.That(probe.Profile.CanMount, Is.True);
+      Assert.That(probe.Profile.CanMountWritable, Is.True);
+      Assert.That(probe.Layers, Does.Contain($"archive:{formatId}"));
+    });
+
+    archive.Position = 0;
+    using var namespaceSession = MountNamespaceResolver.Open(
+      formatId,
+      archive,
+      new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+
+    var file = namespaceSession.Lookup(namespaceSession.RootNodeId, "document.txt");
+    Assert.That(file, Is.Not.Null);
+    Assert.That(ReadAll(namespaceSession, file!.Value), Is.EqualTo(payload));
+    using var writable = MountNamespaceResolver.Open(
+      formatId,
+      archive,
+      new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true));
+    var nextFile = writable.CreateFile(writable.RootNodeId, "added.txt");
+    using (var handle = writable.OpenFile(nextFile, FileAccess.Write))
+      handle.Write(0, "new file"u8);
+    writable.Flush();
+
+    archive.Position = 0;
+    using var readBack = MountNamespaceResolver.Open(
+      formatId,
+      archive,
+      new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    var added = readBack.Lookup(readBack.RootNodeId, "added.txt");
+    Assert.That(added, Is.Not.Null);
+    Assert.That(ReadAll(readBack, added!.Value), Is.EqualTo("new file"u8.ToArray()));
+  }
+
+  [Test]
+  public void WormOnlyPeaArchive_RebuildsWithMountedWrites() {
+    var descriptor = FormatRegistry.GetById("Pea");
+    Assert.That(descriptor, Is.InstanceOf<IArchiveCreatable>());
+    Assert.That(descriptor, Is.Not.InstanceOf<IArchiveModifiable>());
+
+    using var archive = Create("Pea", [ArchiveInputInfo.InMemory("existing.txt", "before"u8.ToArray())]);
+    var probe = MountNamespaceResolver.Probe("Pea", archive);
+    Assert.Multiple(() => {
+      Assert.That(probe.Profile.CanMountWritable, Is.True);
+      Assert.That(probe.Profile.MutationModel, Is.EqualTo(FilesystemMutationModel.WholeImageRebuild));
+      Assert.That(probe.Layers, Does.Contain("namespace:staged-worm-rebuild"));
+    });
+
+    using (var mounted = MountNamespaceResolver.Open(
+      "Pea", archive, new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true))) {
+      var node = mounted.CreateFile(mounted.RootNodeId, "created.txt");
+      using (var file = mounted.OpenFile(node, FileAccess.Write)) {
+        file.Write(0, "after"u8);
+        file.Flush();
+      }
+      mounted.DeleteFile(mounted.RootNodeId, "existing.txt");
+      mounted.Flush();
+    }
+
+    archive.Position = 0;
+    using var verified = MountNamespaceResolver.Open(
+      "Pea", archive, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    Assert.That(verified.Lookup(verified.RootNodeId, "existing.txt"), Is.Null);
+    var created = verified.Lookup(verified.RootNodeId, "created.txt");
+    Assert.That(created, Is.Not.Null);
+    Assert.That(ReadAll(verified, created!.Value), Is.EqualTo("after"u8.ToArray()));
+  }
+
+  [Test]
+  public void StagedZipMount_ChangesRemainUnpublishedUntilFlushAndPreserveNodeHandles() {
+    var original = "first"u8.ToArray();
+    using var archive = Create("Zip", [ArchiveInputInfo.InMemory("a.txt", original)]);
+    var before = archive.ToArray();
+    using var mounted = MountNamespaceResolver.Open(
+      "Zip", archive, new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true));
+    var node = mounted.Lookup(mounted.RootNodeId, "a.txt");
+    Assert.That(node, Is.Not.Null);
+
+    using var handle = mounted.OpenFile(node!.Value, FileAccess.ReadWrite);
+    handle.SetLength(0);
+    handle.Write(0, "second"u8);
+    mounted.Rename(mounted.RootNodeId, "a.txt", mounted.RootNodeId, "b.txt", replace: false);
+    Assert.That(mounted.Lookup(mounted.RootNodeId, "b.txt"), Is.EqualTo(node));
+    Assert.That(archive.ToArray(), Is.EqualTo(before));
+    Assert.That(ReadAll(mounted, node.Value), Is.EqualTo("second"u8.ToArray()));
+
+    mounted.Flush();
+    Assert.That(archive.ToArray(), Is.Not.EqualTo(before));
+    archive.Position = 0;
+    using var verified = MountNamespaceResolver.Open(
+      "Zip", archive, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    Assert.That(verified.Lookup(verified.RootNodeId, "a.txt"), Is.Null);
+    var renamed = verified.Lookup(verified.RootNodeId, "b.txt");
+    Assert.That(renamed, Is.Not.Null);
+    Assert.That(ReadAll(verified, renamed!.Value), Is.EqualTo("second"u8.ToArray()));
   }
 
   [Test]
@@ -91,6 +196,87 @@ public sealed class MountNamespaceResolverTests {
     var file = session.Lookup(session.RootNodeId, "HELLO.TXT");
     Assert.That(file, Is.Not.Null);
     Assert.That(ReadAll(session, file!.Value), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RegisteredSingleFileFormat_ProjectsOriginalBytesWithoutInventingAWriter() {
+    var descriptor = FormatRegistry.All.First(d =>
+      !FormatRegistry.FilesystemFormatIds.Contains(d.Id, StringComparer.OrdinalIgnoreCase) &&
+      d is not IArchiveFormatOperations &&
+      d is not IRandomAccessBlockDeviceProvider &&
+      d is not IEncryptedBlockDeviceProvider);
+    var data = Enumerable.Range(0, 8192).Select(static i => (byte)(i * 73)).ToArray();
+    using var source = new MemoryStream(data, writable: true);
+
+    var probe = MountNamespaceResolver.Probe(descriptor.Id, source);
+    Assert.Multiple(() => {
+      Assert.That(probe.Profile.CanMount, Is.True);
+      Assert.That(probe.Profile.CanMountWritable, Is.False);
+      Assert.That(probe.Layers, Does.Contain("namespace:opaque-read-only"));
+      Assert.That(source.Position, Is.Zero);
+    });
+
+    using var session = MountNamespaceResolver.Open(
+      descriptor.Id,
+      source,
+      new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true),
+      sourceName: "movie.clip");
+    var entry = session.Lookup(session.RootNodeId, "movie.clip");
+    Assert.That(entry, Is.Not.Null);
+
+    using var first = session.OpenFile(entry!.Value, FileAccess.Read);
+    using var second = session.OpenFile(entry.Value, FileAccess.Read);
+    var slice = new byte[257];
+    Assert.That(first.Read(173, slice), Is.EqualTo(slice.Length));
+    Assert.That(slice, Is.EqualTo(data.AsSpan(173, slice.Length).ToArray()));
+    Assert.That(second.Read(data.Length - 5, slice), Is.EqualTo(5));
+    Assert.Throws<NotSupportedException>(() => session.OpenFile(entry.Value, FileAccess.Write));
+    Assert.That(source.ToArray(), Is.EqualTo(data));
+
+    Assert.Throws<NotSupportedException>(() =>
+      MountNamespaceResolver.Open(
+        descriptor.Id,
+        source,
+        new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true),
+        sourceName: "movie.clip"));
+  }
+
+  [Test]
+  public void RawImg_ResolvesFatWithoutHostDiskMounting() {
+    var payload = "raw disk mounted through FAT"u8.ToArray();
+    using var image = Create("Fat", [ArchiveInputInfo.InMemory("HELLO.TXT", payload)]);
+
+    var probe = MountNamespaceResolver.Probe(MountNamespaceResolver.RawDiskFormatId, image);
+    Assert.Multiple(() => {
+      Assert.That(probe.Profile.CanMount, Is.True);
+      Assert.That(probe.Layers, Does.Contain("container:RawDisk"));
+      Assert.That(probe.Layers, Does.Contain("filesystem:Fat"));
+    });
+
+    using var session = MountNamespaceResolver.Open(
+      MountNamespaceResolver.RawDiskFormatId,
+      image,
+      new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    var file = session.Lookup(session.RootNodeId, "HELLO.TXT");
+    Assert.That(file, Is.Not.Null);
+    Assert.That(ReadAll(session, file!.Value), Is.EqualTo(payload));
+  }
+
+  [Test]
+  public void RawImg_RejectsUnalignedOrUnrecognizedDiskBytes() {
+    using var unaligned = new MemoryStream(new byte[513]);
+    var probe = MountNamespaceResolver.Probe(MountNamespaceResolver.RawDiskFormatId, unaligned);
+    Assert.That(probe.Profile.CanMount, Is.False);
+    Assert.Throws<NotSupportedException>(() =>
+      MountNamespaceResolver.Open(
+        MountNamespaceResolver.RawDiskFormatId,
+        unaligned,
+        new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true)));
+
+    using var unrecognized = new MemoryStream(new byte[512 * 8]);
+    Assert.That(
+      MountNamespaceResolver.Probe(MountNamespaceResolver.RawDiskFormatId, unrecognized).Profile.CanMount,
+      Is.False);
   }
 
   [Test]

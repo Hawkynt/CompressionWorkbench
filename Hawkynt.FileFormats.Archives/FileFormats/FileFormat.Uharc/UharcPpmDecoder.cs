@@ -33,6 +33,17 @@ internal sealed partial class UharcPpmDecoder {
   /// <summary>Output position up to which the word transform applies (fixed by the stream header).</summary>
   private long _transformEnd;
 
+  /// <summary>
+  /// Start of the record file (the first file of exactly <see cref="RecordFileSize"/> bytes) when
+  /// the header asks for its model; from there on 0xFE escapes the record prefix in the output.
+  /// </summary>
+  private long _recordStart = long.MaxValue;
+
+  /// <summary>The stride at which the ring predictor reads record fields instead of a phase; 0 for none.</summary>
+  private uint _recordStride;
+
+  private const int RecordFileSize = 0xFB670;
+
   // Hashed copy prediction.
   private readonly uint[] _hashPosition = new uint[HashSize];
   private readonly uint[] _hashContext = new uint[HashSize];
@@ -81,7 +92,14 @@ internal sealed partial class UharcPpmDecoder {
   }
 
   /// <summary>Decodes <paramref name="unpackedSize"/> bytes of a PPM stream.</summary>
-  public static byte[] Decode(byte[] packed, int offset, int length, int method, int unpackedSize, IReadOnlyList<long> fileEnds) {
+  /// <param name="packed">Buffer holding the packed stream.</param>
+  /// <param name="offset">Start of the packed stream.</param>
+  /// <param name="length">Length of the packed stream.</param>
+  /// <param name="method">Stream method byte, 24..39.</param>
+  /// <param name="unpackedSize">Number of bytes to produce.</param>
+  /// <param name="fileEnds">Cumulative end offsets of the archived files.</param>
+  /// <param name="recordModel">The header's record-file flag (filters bit 6).</param>
+  public static byte[] Decode(byte[] packed, int offset, int length, int method, int unpackedSize, IReadOnlyList<long> fileEnds, bool recordModel = false) {
     if (method is < UharcMethods.PpmFirst or > UharcMethods.PpmLast)
       throw new ArgumentOutOfRangeException(nameof(method));
 
@@ -90,6 +108,19 @@ internal sealed partial class UharcPpmDecoder {
       return output;
 
     var decoder = new UharcPpmDecoder(packed, offset, length, method);
+    if (recordModel && fileEnds.Count > 0) {
+      // The record file starts where the file before the first one of the record size ends.
+      long previous = 0;
+      foreach (var end in fileEnds) {
+        if (end - previous == RecordFileSize)
+          break;
+        previous = end;
+      }
+
+      decoder._recordStart = previous;
+      decoder._recordStride = previous == 0 ? 10u : 0u;
+    }
+
     decoder.Run(output, fileEnds);
     return output;
   }
@@ -117,7 +148,7 @@ internal sealed partial class UharcPpmDecoder {
     this.ReadStreamKind();
     var reset = new ResetPoints(fileEnds, output.Length);
     reset.Advance(this);
-    this.ResetBlock();
+    this.ResetBlock(reset, 0);
     if (this._kind != 0)
       this.ResetRing(full: true);
 
@@ -131,7 +162,7 @@ internal sealed partial class UharcPpmDecoder {
 
       if (written >= reset.Next) {
         reset.Advance(this);
-        this.ResetBlock();
+        this.ResetBlock(reset, written);
         if (this._kind != 0)
           this.ResetRing(full: false);
       }
@@ -140,18 +171,64 @@ internal sealed partial class UharcPpmDecoder {
     }
   }
 
-  /// <summary>Model resets: like LZP's, with a span of 256 KiB (text) or 64 KiB (binary).</summary>
+  /// <summary>
+  /// Model resets: from the last reset point the coder looks 256 KiB (text) or 64 KiB (binary)
+  /// ahead and resets at the first file end at or beyond that, but stops early at a file end
+  /// that reaches the end of the text or the start of the record file.
+  /// </summary>
   private sealed class ResetPoints(IReadOnlyList<long> ends, long total) {
-    private int _file;
+    public int File { get; private set; }
     public long Next;
+
+    public IReadOnlyList<long> Ends => ends;
 
     public void Advance(UharcPpmDecoder decoder) {
       var span = 0x40000L >> (decoder._kind * 2);
       var target = total - this.Next > span ? this.Next + span : total;
-      target = Math.Min(target, decoder._textEnd);
-      while (this._file < ends.Count && ends[this._file] < target)
-        ++this._file;
-      this.Next = this._file < ends.Count ? ends[this._file] : total;
+      while (this.File < ends.Count && ends[this.File] < target) {
+        ++this.File;
+        if (this.File < ends.Count && (ends[this.File] >= decoder._textEnd || ends[this.File] >= decoder._recordStart))
+          break;
+      }
+
+      this.Next = this.File < ends.Count ? ends[this.File] : total;
+    }
+  }
+
+  /// <summary>
+  /// Size-keyed adjustments at a reset point (docs/UHARC-ON-DISK.md, "PPM", File-size rules):
+  /// by the sizes of the file the new block ends with and of the file before it, the order-4
+  /// and order-2 statistics are quartered or partly cleared.
+  /// </summary>
+  private void ApplyFileSizeRules(ResetPoints reset, long written) {
+    var file = reset.File;
+    if (file == 0 || file >= reset.Ends.Count)
+      return;
+
+    var ends = reset.Ends;
+    var before = ends[file - 1];
+    var current = reset.Next - before;
+    var previous = file > 1 ? before - ends[file - 2] : before;
+    switch ((previous, current)) {
+      case (0x8F4D0, 0x2D9A22):
+        this.QuarterOrder4();
+        this.QuarterOrder4();
+        return;
+      case (0x75A45, 0x68302):
+        this.QuarterOrder4();
+        return;
+      case (0x17E5F8, 0x2CC640) or (0x2CC640, 0x6AF80):
+        this.QuarterOrder4();
+        this.QuarterOrder2();
+        return;
+    }
+
+    var recordFile = previous != RecordFileSize && current == RecordFileSize && written >= this._recordStart;
+    if ((previous, current) is (0x388DC2, 0x16DD2E) or (0x7D4C0, 0x3C41E) || recordFile) {
+      Array.Clear(this._o4, 0, 0x8000 * Order4Stride);
+      Array.Clear(this._o2, 0, 0x10000 * Order2Stride);
+      if (written >= this._recordStart)
+        this._recordStride = 10;
     }
   }
 
@@ -394,7 +471,7 @@ internal sealed partial class UharcPpmDecoder {
   private void Advance() => this._position = (this._position + 1) & this._mask;
 
   private int Emit(byte[] output, int written, byte symbol)
-    => this._transform.Emit(symbol, written, this._transformEnd, output);
+    => this._transform.Emit(symbol, written, this._transformEnd, this._recordStart, output);
 
   private readonly UharcPpmTextTransform _transform = new();
 

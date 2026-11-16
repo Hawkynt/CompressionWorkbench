@@ -152,6 +152,7 @@ internal sealed class ZfsWriter {
     public int Size;                 // physical = allocated size, a multiple of 512
     public int LogicalSize;          // the size before compression
     public long Allocated;           // the space on the vdev: Size, or Size with RAID-Z parity and padding
+    public int Vdev;                 // the top-level vdev (a striped pool has several)
     public byte Compression = ZfsConstants.CompressOff;
     public bool Embedded;            // data carried in the block pointer itself, nothing allocated
     public byte Type;
@@ -177,7 +178,15 @@ internal sealed class ZfsWriter {
     public long UsedBytes;
   }
 
-  private long _next;
+  private long[] _nexts = [0];
+  private int _rotor;
+  private bool _stripe;
+
+  /// <summary>Several devices as a striped pool: each its own top-level vdev, blocks taking turns between them.</summary>
+  public bool Stripe {
+    get => this._stripe;
+    set => this._stripe = value;
+  }
   private int _devices = 1;
   private int _parity;                                   // 0: one device or a mirror; 1-3: RAID-Z
 
@@ -200,10 +209,14 @@ internal sealed class ZfsWriter {
     size = (size + Sector - 1) & ~(Sector - 1);
     // a block never straddles a metaslab: metaslabs are at least 16 MiB and start on multiples of it
     var allocated = this.AllocatedSize(size);
-    if (this._next >> MetaslabShift != (this._next + allocated - 1) >> MetaslabShift)
-      this._next = (this._next >> MetaslabShift) + 1 << MetaslabShift;
-    var block = new Block { Offset = this._next, Size = size, LogicalSize = size, Allocated = allocated, Type = type, Level = level, Data = new byte[size] };
-    this._next += allocated;
+    // a striped pool's top-level vdevs take turns
+    var vdev = this._rotor;
+    this._rotor = (this._rotor + 1) % this._nexts.Length;
+    ref var next = ref this._nexts[vdev];
+    if (next >> MetaslabShift != (next + allocated - 1) >> MetaslabShift)
+      next = (next >> MetaslabShift) + 1 << MetaslabShift;
+    var block = new Block { Offset = next, Vdev = vdev, Size = size, LogicalSize = size, Allocated = allocated, Type = type, Level = level, Data = new byte[size] };
+    next += allocated;
     this._blocks.Add(block);
     return block;
   }
@@ -302,7 +315,7 @@ internal sealed class ZfsWriter {
     }
     var sectors = (ulong)(b.Size / Sector);
     var logical = (ulong)(b.LogicalSize / Sector);
-    BinaryPrimitives.WriteUInt64LittleEndian(dst, (ulong)(b.Allocated / Sector));          // DVA 0: asize, vdev 0
+    BinaryPrimitives.WriteUInt64LittleEndian(dst, (ulong)b.Vdev << 32 | (ulong)(b.Allocated / Sector));   // DVA 0: vdev, asize
     BinaryPrimitives.WriteUInt64LittleEndian(dst[8..], (ulong)b.Offset >> Ashift);          // offset, not ganged
     var prop = (logical - 1)                                                                 // logical size
       | (sectors - 1) << 16                                                                  // physical size
@@ -707,13 +720,18 @@ internal sealed class ZfsWriter {
 
     if (this._parity > 0 && outputs.Count < this._parity + 2)
       throw new ArgumentException($"ZFS: RAID-Z{this._parity} needs at least {this._parity + 2} devices.", nameof(outputs));
+    if (this._stripe && this._parity > 0) throw new ArgumentException("ZFS: a pool is written striped or as RAID-Z, not both.");
     this._devices = outputs.Count;
+    this._nexts = new long[this._stripe ? outputs.Count : 1];
+    this._rotor = 0;
     (this._compression, this._zstdLevel) = ZfsCompression.ParseWithLevel(this._compressionName, this._version);
     var poolGuid = Guid64();
     var leafGuids = outputs.Select(_ => Guid64()).ToArray();
     var raidz = this._parity > 0;
-    var mirror = outputs.Count > 1 && !raidz;
+    var stripe = this._stripe && outputs.Count > 1;
+    var mirror = outputs.Count > 1 && !raidz && !stripe;
     var topGuid = mirror || raidz ? Guid64() : leafGuids[0];
+    var tops = stripe ? outputs.Count : 1;
     var now = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
     // 1. the filesystem's objects and its object set
@@ -775,7 +793,7 @@ internal sealed class ZfsWriter {
 
     // device geometry: data, then MOS, then a margin; at least 64 MiB.
     // RAID-Z spreads the vdev's space over its devices: each holds 1/n of it
-    var estimate = (this._next + 4L * 1024 * 1024 * (this._parity + 1)) / (raidz ? outputs.Count : 1);
+    var estimate = (this._nexts.Max() + 4L * 1024 * 1024 * (this._parity + 1)) / (raidz ? outputs.Count : 1);
     var device = Math.Max(MinimumDevice, (estimate * 5 / 4 + 32L * 1024 * 1024 + 4L * 1024 * 1024 + 512 * 1024 + 0x3FFFF) & ~0x3FFFFL);
     var asize = (device - 4L * 1024 * 1024 - 512 * 1024) * (raidz ? outputs.Count : 1);
     var metaslabShift = MetaslabShift;
@@ -785,12 +803,15 @@ internal sealed class ZfsWriter {
     var metaslabSize = 1L << metaslabShift;
 
     // config and metaslab array objects: sizes fixed now, contents filled once numbers are known.
-    var metaslabArray = Add(this.NewObject(OtObjectArray, 0, [], (metaslabCount * 8 + Sector - 1) & ~(Sector - 1), [new byte[metaslabCount * 8]]));
-    // the top-level vdev: the device itself, or a mirror of the devices; it carries the metaslabs
-    NvList TopVdev(ulong arrayObject) {
+    var metaslabArrays = Enumerable.Range(0, tops)
+      .Select(_ => Add(this.NewObject(OtObjectArray, 0, [], (metaslabCount * 8 + Sector - 1) & ~(Sector - 1), [new byte[metaslabCount * 8]]))).ToArray();
+    // a top-level vdev: a device, or a mirror or RAID-Z of the devices; each carries its metaslabs
+    NvList TopVdev(int id) {
+      var arrayObject = metaslabArrays[id];
       var top = new NvList();
       if (mirror) top.Add("type", "mirror").Add("id", 0UL).Add("guid", topGuid);
       else if (raidz) top.Add("type", "raidz").Add("id", 0UL).Add("guid", topGuid).Add("nparity", (ulong)this._parity);
+      else if (stripe) top.Add("type", "file").Add("id", (ulong)id).Add("guid", leafGuids[id]).Add("path", $"/dev/{poolName}-{id}");
       else top.Add("type", "file").Add("id", 0UL).Add("guid", topGuid).Add("path", $"/dev/{poolName}");
       top.Add("metaslab_array", arrayObject).Add("metaslab_shift", (ulong)metaslabShift).Add("ashift", (ulong)Ashift)
         .Add("asize", (ulong)asize).Add("is_log", 0UL).Add("create_txg", Txg);
@@ -803,10 +824,11 @@ internal sealed class ZfsWriter {
       var l = new NvList().Add("version", this._version).Add("name", poolName).Add("state", 1UL).Add("txg", Txg)
         .Add("pool_guid", poolGuid).Add("errata", 0UL).Add("hostname", "cwb");
       if (device is { } d)
-        l.Add("top_guid", topGuid).Add("guid", leafGuids[d]).Add("vdev_children", 1UL).Add("vdev_tree", TopVdev(metaslabArray));
+        l.Add("top_guid", stripe ? leafGuids[d] : topGuid).Add("guid", leafGuids[d]).Add("vdev_children", (ulong)tops)
+          .Add("vdev_tree", TopVdev(stripe ? d : 0));
       else
-        l.Add("vdev_children", 1UL).Add("vdev_tree", new NvList().Add("type", "root").Add("id", 0UL).Add("guid", poolGuid)
-          .Add("create_txg", Txg).Add("children", new[] { TopVdev(metaslabArray) }));
+        l.Add("vdev_children", (ulong)tops).Add("vdev_tree", new NvList().Add("type", "root").Add("id", 0UL).Add("guid", poolGuid)
+          .Add("create_txg", Txg).Add("children", Enumerable.Range(0, tops).Select(TopVdev).ToArray()));
       // the active features needed to read the MOS (hole_birth, embedded_data), as booleans
       var forRead = new NvList();
       if (this.Features)
@@ -856,31 +878,34 @@ internal sealed class ZfsWriter {
     // Everything still to come (space map blocks, MOS dnode blocks, MOS objset) is bounded.
     var reserve = (metaslabCount * (long)Sector + ((long)mosNext + 64 + metaslabCount) * DnodeSize + 4L * IndirectSize + 4096) * (this._parity + 1)
       + (long)metaslabCount * MaxDataBlock * (this._parity + 1);    // a skip to the next metaslab per boundary
-    var reach = this._next + reserve;
+    var reach = this._nexts.Max() + reserve;
     var mapsNeeded = (int)Math.Min(metaslabCount, (reach + metaslabSize - 1) / metaslabSize);
     if (reach > (long)metaslabCount * metaslabSize)
       throw new InvalidOperationException("ZFS: device geometry too small for the content.");
-    var spaceMaps = new ulong[mapsNeeded];
-    for (var m = 0; m < mapsNeeded; ++m)
-    {
-      // version 28: three block pointers leave a 64-byte bonus, a header without histogram;
-      // spacemap_histogram: one block pointer and the whole 320-byte space_map_phys_t
-      var map = this.NewObject(OtSpaceMap, OtSpaceMapHeader, new byte[this.Features ? 320 : 24], Sector, [new byte[Sector]]);
-      map.BlockPointers = this.Features ? 1 : 3;
-      spaceMaps[m] = Add(map);
+    var spaceMaps = new ulong[tops][];
+    for (var v = 0; v < tops; ++v) {
+      spaceMaps[v] = new ulong[mapsNeeded];
+      for (var m = 0; m < mapsNeeded; ++m) {
+        // version 28: three block pointers leave a 64-byte bonus, a header without histogram;
+        // spacemap_histogram: one block pointer and the whole 320-byte space_map_phys_t
+        var map = this.NewObject(OtSpaceMap, OtSpaceMapHeader, new byte[this.Features ? 320 : 24], Sector, [new byte[Sector]]);
+        map.BlockPointers = this.Features ? 1 : 3;
+        spaceMaps[v][m] = Add(map);
+      }
     }
     if (featuresForWrite != null)
-      BinaryPrimitives.WriteUInt64LittleEndian(featuresForWrite.Level0[0]!.Data.AsSpan(64), (ulong)mapsNeeded);
+      BinaryPrimitives.WriteUInt64LittleEndian(featuresForWrite.Level0[0]!.Data.AsSpan(64), (ulong)(mapsNeeded * tops));
 
     this.AllocateObjectSet(mos, mosNext - 1);
-    if (this._next > reach)
+    if (this._nexts.Max() > reach)
       throw new InvalidOperationException("ZFS: allocation outgrew its reserve.");
 
     // 3. contents that depend on numbers and sizes
     // space maps: allocated space per metaslab (front to back, so one run per 32768 sectors)
     // the allocated ranges: blocks are contiguous except where one skipped to the next metaslab
+    for (var v = 0; v < tops; ++v) {
     var ranges = new List<(long Start, long End)>();
-    foreach (var b in this._blocks.OrderBy(b => b.Offset))
+    foreach (var b in this._blocks.Where(b => b.Vdev == v).OrderBy(b => b.Offset))
       if (ranges.Count > 0 && ranges[^1].End == b.Offset)
         ranges[^1] = (ranges[^1].Start, b.Offset + b.Allocated);
       else
@@ -906,18 +931,19 @@ internal sealed class ZfsWriter {
       if (words.Count * 8 > Sector)
         throw new InvalidOperationException("ZFS: a space map outgrew its block.");
       var end = start + allocatedHere;
-      var map = mos.Objects[spaceMaps[m]];
+      var map = mos.Objects[spaceMaps[v][m]];
       var data = map.Level0[0]!.Data;
       for (var i = 0; i < words.Count; ++i)
         BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(i * 8), words[i]);
-      BinaryPrimitives.WriteUInt64LittleEndian(map.Bonus, spaceMaps[m]);                       // smp_object
+      BinaryPrimitives.WriteUInt64LittleEndian(map.Bonus, spaceMaps[v][m]);                    // smp_object
       BinaryPrimitives.WriteUInt64LittleEndian(map.Bonus.AsSpan(8), (ulong)(words.Count * 8)); // smp_length
       BinaryPrimitives.WriteInt64LittleEndian(map.Bonus.AsSpan(16), end - start);             // smp_alloc
       if (this.Features)
         SpaceMapHistogram(map.Bonus.AsSpan(64), start, limit, here, Ashift);
-      BinaryPrimitives.WriteUInt64LittleEndian(metaslabArrayData.AsSpan(m * 8), spaceMaps[m]);
+      BinaryPrimitives.WriteUInt64LittleEndian(metaslabArrayData.AsSpan(m * 8), spaceMaps[v][m]);
     }
-    metaslabArrayData.CopyTo(mos.Objects[metaslabArray].Level0[0]!.Data, 0);
+    metaslabArrayData.CopyTo(mos.Objects[metaslabArrays[v]].Level0[0]!.Data, 0);
+    }
 
     // seal the filesystem first: the head dataset points at its objset block.
     SealObjectSet(fs);
@@ -983,13 +1009,17 @@ internal sealed class ZfsWriter {
     SealObjectSet(mos);
 
     // every vdev of the tree counts towards the uberblock's guid sum: root (the pool), top, leaves
-    var guidSum = unchecked(poolGuid + topGuid);
-    if (mirror || raidz)
+    var guidSum = stripe ? poolGuid : unchecked(poolGuid + topGuid);
+    if (mirror || raidz || stripe)
       foreach (var g in leafGuids) guidSum = unchecked(guidSum + g);
     // RAID-Z: each block's columns (data and parity), by device
     var pieces = new List<(long At, byte[] Data)>[outputs.Count];
     for (var d = 0; d < outputs.Count; ++d) pieces[d] = [];
     foreach (var b in this._blocks) {
+      if (stripe) {
+        pieces[b.Vdev].Add((b.Offset, b.Data));
+        continue;
+      }
       if (!raidz) {
         foreach (var list in pieces) list.Add((b.Offset, b.Data));
         continue;

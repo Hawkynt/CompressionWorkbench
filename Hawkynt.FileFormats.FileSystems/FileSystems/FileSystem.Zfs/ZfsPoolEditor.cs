@@ -76,7 +76,7 @@ internal static class ZfsPoolEditor {
     foreach (var device in devices) device.Position = 0;
     using (var pool = new ZfsPool(devices, leaveOpen: true)) {
       var state = new PoolState(pool, devices);
-      children = state.Children;
+      children = state.Devices;
       var guess = new Dictionary<int, int>();
       for (var attempt = 0; ; ++attempt) {
         if (attempt == MaxAttempts)
@@ -116,33 +116,56 @@ internal static class ZfsPoolEditor {
 
   // ── pool state (read once, shared by every planning attempt) ──────────────────────────
 
-  private sealed class PoolState {
-    public readonly ZfsPool Pool;
-    public readonly ulong NewTxg;
-    public readonly int Ashift, MetaslabShift, MetaslabCount;
-    public readonly ulong MetaslabArray;
-    public readonly ulong[] SpaceMaps;
-    public readonly int[] SpaceMapBlockSize;
-    public readonly ZfsRangeSet[] Allocated;
-    public readonly byte[] Uberblock;
-    public readonly int SlotSize;
-    public readonly byte[] MosRoot;
-    public readonly long DeviceLength;
-    public readonly int[] AllocationOrder;
-    /// <summary>The leaf devices in the order of the top-level vdev's children.</summary>
-    public readonly Stream[] Children;
+  /// <summary>One top-level vdev: its devices, layout, metaslabs and space maps.</summary>
+  private sealed class TopVdev {
+    public int Id;
+    public required Stream[] Children;
     /// <summary>RAID-Z parity; 0 for a plain device or a mirror.</summary>
-    public readonly int Parity;
-    public readonly bool IsMirror;
+    public int Parity;
+    public bool IsMirror;
     /// <summary>Charge of one allocated 512-byte unit (512 unless RAID-Z).</summary>
-    public readonly long DeflateRatio = 512;
+    public long DeflateRatio = 512;
+    public int Ashift, MetaslabShift, MetaslabCount;
+    /// <summary>Index of this vdev's first metaslab among all the pool's metaslabs.</summary>
+    public int Base;
+    public ulong MetaslabArray;
+    public ulong[] SpaceMaps = [];
+    public int[] SpaceMapBlockSize = [];
+    /// <summary>log_spacemap: per metaslab the txg from which on the logs hold its changes (0 = none), and the object holding them.</summary>
+    public ulong[] Unflushed = [];
+    public ulong UnflushedObject;
+    public required XdrNvList Tree;
+
+    public int SlotSize => 1 << Math.Clamp(this.Ashift, ZfsConstants.MinUberblockShift, ZfsConstants.MaxUberblockShift);
 
     public long AllocatedSize(int size) => this.Parity > 0
       ? ZfsRaidzVdev.AllocatedSize(size, this.Children.Length, this.Parity, this.Ashift)
       : Align(size, 1L << this.Ashift);
 
     public long Charged(long allocated) => (allocated >> ZfsConstants.SectorShift) * this.DeflateRatio;
+  }
+
+  private sealed class PoolState {
+    public readonly ZfsPool Pool;
+    public readonly ulong NewTxg;
+    public readonly List<TopVdev> Tops = [];
+    /// <summary>Every device of every top-level vdev, in vdev order: the order commits address them in.</summary>
+    public readonly Stream[] Devices;
+    /// <summary>All metaslabs of the pool, numbered across the vdevs (vdev 0's first).</summary>
+    public readonly ZfsRangeSet[] Allocated;
+    public readonly int[] MetaslabVdev;
+    public readonly int MetaslabTotal;
+    public readonly byte[] Uberblock;
+    public readonly byte[] MosRoot;
     public readonly List<(string Path, ulong Dir, ulong Head)> Datasets = [];
+
+    public (TopVdev Top, int Index) Metaslab(int global) {
+      var top = this.Tops[this.MetaslabVdev[global]];
+      return (top, global - top.Base);
+    }
+
+    /// <summary>The smallest sector of the pool: what compressed blocks are rounded up to.</summary>
+    public int MinAshift => this.Tops.Min(t => t.Ashift);
 
     // ── feature flags (version 5000) ─────────────────────────────
     /// <summary>Every enabled feature by guid: its reference count and whether it sits in the write list.</summary>
@@ -150,9 +173,8 @@ internal static class ZfsPoolEditor {
     public ulong FeaturesForRead, FeaturesForWrite;
     public bool IsEnabled(string guid) => this.Features.ContainsKey(guid);
     public bool IsActive(string guid) => this.Features.TryGetValue(guid, out var f) && f.Count > 0;
-    /// <summary>log_spacemap: the ZAP of log space maps (hex txg → object), the per-metaslab unflushed txgs and their object.</summary>
-    public ulong LogSpacemapZap, UnflushedObject;
-    public ulong[] Unflushed = [];
+    /// <summary>log_spacemap: the ZAP of log space maps (hex txg → object).</summary>
+    public ulong LogSpacemapZap;
     public readonly SortedDictionary<ulong, ulong> LogSpacemaps = [];
 
     /// <summary>Features whose activity changes how blocks may be freed or space maps written; refused while active.</summary>
@@ -200,28 +222,27 @@ internal static class ZfsPoolEditor {
     }
 
     /// <summary>The per-metaslab txgs from which on the log space maps hold a metaslab's changes (0 = none).</summary>
-    private void LoadUnflushed(XdrNvList tree) {
-      this.Unflushed = new ulong[this.MetaslabCount];
-      // the labels do not carry the per-vdev ZAPs; the MOS config does
-      var topZap = tree.UInt64("com.delphix:vdev_zap_top") ?? this.MosConfigTopVdev()?.UInt64("com.delphix:vdev_zap_top") ?? 0;
+    private void LoadUnflushed(TopVdev top) {
+      top.Unflushed = new ulong[top.MetaslabCount];
+      var topZap = top.Tree.UInt64("com.delphix:vdev_zap_top") ?? 0;
       if (topZap == 0) return;
       var entry = this.Pool.Mos.Zap(topZap, "top vdev ZAP").FirstOrDefault(e => e.Name == "com.delphix:ms_unflushed_phys_txgs");
       if (entry == null) return;
-      this.UnflushedObject = entry.Value;
-      var dnode = this.Pool.Mos.RequireDnode(this.UnflushedObject, "unflushed txgs");
-      for (var m = 0; m < this.MetaslabCount; ++m) {
+      top.UnflushedObject = entry.Value;
+      var dnode = this.Pool.Mos.RequireDnode(top.UnflushedObject, "unflushed txgs");
+      for (var m = 0; m < top.MetaslabCount; ++m) {
         var at = (long)m * 8;
         var blockId = (ulong)(at / dnode.DataBlockSize);
         if (blockId > dnode.MaxBlockId) break;
-        this.Unflushed[m] = U64(this.Pool.Mos.ReadBlock(dnode, blockId), (int)(at % dnode.DataBlockSize));
+        top.Unflushed[m] = U64(this.Pool.Mos.ReadBlock(dnode, blockId), (int)(at % dnode.DataBlockSize));
       }
     }
 
-    /// <summary>The top-level vdev as the MOS <c>config</c> object (a packed nvlist) describes it.</summary>
-    private XdrNvList? MosConfigTopVdev() {
+    /// <summary>The pool's vdev tree as the MOS <c>config</c> object (a packed nvlist) describes it: the top-level vdevs.</summary>
+    private XdrNvList[] MosConfigTops() {
       var mos = this.Pool.Mos;
-      var configObject = mos.Zap(1, "MOS object directory").FirstOrDefault(e => e.Name == "config")?.Value ?? 0;
-      if (configObject == 0) return null;
+      var configObject = mos.Zap(1, "MOS object directory").FirstOrDefault(e => e.Name == "config")?.Value
+        ?? throw new InvalidDataException("ZFS: the MOS has no config.");
       var dnode = mos.RequireDnode(configObject, "MOS config");
       var size = (int)U64(dnode.Bonus, 0);
       var bytes = new byte[size];
@@ -229,28 +250,31 @@ internal static class ZfsPoolEditor {
         var block = mos.ReadBlock(dnode, (ulong)(at / dnode.DataBlockSize));
         block.AsSpan(0, Math.Min(block.Length, size - at)).CopyTo(bytes.AsSpan(at));
       }
-      return XdrNvList.Decode(bytes).List("vdev_tree")?.Lists("children").FirstOrDefault();
+      return XdrNvList.Decode(bytes).List("vdev_tree")?.Lists("children") ?? [];
     }
 
     /// <summary>Applies the log space maps to the metaslabs whose changes they still hold, oldest first.</summary>
     private void ReplayLogs() {
       foreach (var (txg, obj) in this.LogSpacemaps)
-        this.ReplayMap(obj, 0, long.MaxValue, ZfsConstants.SectorShift, (offset, run, alloc) => {
-          var m = (int)(offset >> this.MetaslabShift);
-          if (m < 0 || m >= this.MetaslabCount || (offset + run - 1) >> this.MetaslabShift != m)
+        this.ReplayMap(obj, 0, long.MaxValue, ZfsConstants.SectorShift, (vdev, offset, run, alloc) => {
+          if (vdev >= this.Tops.Count) throw new InvalidDataException("ZFS: a log space map entry names a vdev the pool does not have.");
+          var top = this.Tops[vdev];
+          var m = (int)(offset >> top.MetaslabShift);
+          if (m < 0 || m >= top.MetaslabCount || (offset + run - 1) >> top.MetaslabShift != m)
             throw new InvalidDataException("ZFS: a log space map entry lies outside the metaslabs.");
-          if (txg < this.Unflushed[m]) return;
-          if (alloc) this.Allocated[m].Add(offset, offset + run);
-          else this.Allocated[m].Remove(offset, offset + run);
+          if (txg < top.Unflushed[m]) return;
+          var set = this.Allocated[top.Base + m];
+          if (alloc) set.Add(offset, offset + run);
+          else set.Remove(offset, offset + run);
         });
     }
 
     /// <summary>
-    /// Walks a space map's entries: one-word entries, two-word entries (spacemap_v2; vdev 0 or
-    /// none), debug entries skipped; offsets and runs in units of <c>2^shift</c> from <paramref name="start"/>.
+    /// Walks a space map's entries: one-word entries, two-word entries (spacemap_v2, naming a vdev),
+    /// debug entries skipped; offsets and runs in units of <c>2^shift</c> from <paramref name="start"/>.
     /// Returns the bytes the map's header says are allocated.
     /// </summary>
-    private long ReplayMap(ulong obj, long start, long limit, int shift, Action<long, long, bool> apply) {
+    private long ReplayMap(ulong obj, long start, long limit, int shift, Action<int, long, long, bool> apply) {
       var mos = this.Pool.Mos;
       var map = mos.RequireDnode(obj, "space map");
       if (map.Bonus.Length < 24) throw new InvalidDataException("ZFS: space map header truncated.");
@@ -270,13 +294,12 @@ internal static class ZfsPoolEditor {
         var word = Word(at);
         long offset, run;
         bool alloc;
+        var vdev = 0;
         if (word >> 62 == 3) {
           if (at + 16 > length) throw new InvalidDataException("ZFS: a two-word space map entry is cut off.");
           var second = Word(at + 8);
           at += 8;
-          // vdev field (24 bits): the top-level vdev in a log space map; "none" in a metaslab's map encodes as 0 too
-          if ((word & 0xFFFFFF) != 0)
-            throw new NotSupportedException("ZFS: a space map entry names another vdev.");
+          vdev = (int)(word & 0xFFFFFF);                               // "none" in a metaslab's own map encodes as 0
           run = (long)(((word >> 24) & ((1UL << 36) - 1)) + 1) << shift;
           offset = start + ((long)(second & ((1UL << 63) - 1)) << shift);
           alloc = (second >> 63) == 0;
@@ -289,7 +312,7 @@ internal static class ZfsPoolEditor {
         }
         if (offset < start || offset + run > limit)
           throw new InvalidDataException("ZFS: a space map entry lies outside its range.");
-        apply(offset, run, alloc);
+        apply(vdev, offset, run, alloc);
       }
       return (long)U64(map.Bonus, 16);
     }
@@ -300,57 +323,56 @@ internal static class ZfsPoolEditor {
         throw new NotSupportedException($"ZFS: pool versions 28 and 5000 are edited; this pool is version {pool.Version}.");
       if (pool.NewestUberblockTxg != pool.Txg)
         throw new NotSupportedException("ZFS: the newest uberblock does not lead to a readable pool; it is not edited.");
-      if (pool.VdevChildren != 1 || pool.TopLevelVdevs.Count != 1)
-        throw new NotSupportedException("ZFS: pools of several top-level vdevs are not edited.");
       var config = pool.Config;
-      var tree = config.List("vdev_tree") ?? throw new InvalidDataException("ZFS: the label has no vdev tree.");
-      this.Children = MapChildren(tree, devices);
-      this.IsMirror = tree.String("type") == "mirror";
-      if (tree.String("type") == "raidz") {
-        this.Parity = (int)(tree.UInt64("nparity") ?? 1);
-        this.DeflateRatio = ZfsRaidzVdev.DeflateRatio(this.Children.Length, this.Parity, (int)(tree.UInt64("ashift") ?? 9));
-      }
       if (pool.Version < 5000 && (config.List("features_for_read")?.Pairs.Count ?? 0) > 0)
         throw new NotSupportedException("ZFS: a version 28 pool that names features is not edited.");
-
       this.NewTxg = pool.Txg + 1;
-      this.Ashift = (int)(tree.UInt64("ashift") ?? throw new InvalidDataException("ZFS: the vdev has no ashift."));
-      this.MetaslabShift = (int)(tree.UInt64("metaslab_shift") ?? throw new InvalidDataException("ZFS: the vdev has no metaslab_shift."));
-      this.MetaslabArray = tree.UInt64("metaslab_array") ?? throw new InvalidDataException("ZFS: the vdev has no metaslab array.");
-      var asize = (long)(tree.UInt64("asize") ?? throw new InvalidDataException("ZFS: the vdev has no asize."));
-      if (this.Ashift is < 9 or > 16 || this.MetaslabShift is < 16 or > 40)
-        throw new InvalidDataException("ZFS: the vdev geometry is implausible.");
-      this.MetaslabCount = (int)(asize >> this.MetaslabShift);
-      this.DeviceLength = this.Children.Min(c => c.Length);
-      var perDevice = ((long)this.MetaslabCount << this.MetaslabShift) / (this.Parity > 0 ? this.Children.Length : 1);
-      if (ZfsConstants.DataStart + perDevice > this.DeviceLength)
-        throw new InvalidDataException("ZFS: the metaslabs run past the devices.");
+
+      // the top-level vdevs, from the MOS config (the labels describe only their own)
+      var trees = this.MosConfigTops();
+      if (trees.Length == 0 || trees.Length != pool.VdevChildren)
+        throw new InvalidDataException("ZFS: the MOS config does not list the pool's top-level vdevs.");
+      var byGuid = DevicesByGuid(devices);
+      var used = 0;
+      foreach (var tree in trees.OrderBy(t => t.UInt64("id") ?? 0)) {
+        var top = BuildTop(tree, byGuid, this.Tops.Count);
+        used += top.Children.Length;
+        top.Base = this.Tops.Sum(t => t.MetaslabCount);
+        this.Tops.Add(top);
+      }
+      if (used != devices.Count)
+        throw new ArgumentException("ZFS: a device was given that the pool does not have.");
+      this.Devices = this.Tops.SelectMany(t => t.Children).ToArray();
 
       // the active uberblock, as bytes, and the MOS it names
-      this.SlotSize = 1 << Math.Clamp(this.Ashift, ZfsConstants.MinUberblockShift, ZfsConstants.MaxUberblockShift);
-      this.Uberblock = FindUberblock(this.Children[0], pool.Txg, this.SlotSize)
+      var first = this.Tops[0];
+      this.Uberblock = FindUberblock(first.Children[0], pool.Txg, first.SlotSize)
         ?? throw new InvalidDataException("ZFS: the active uberblock was not found again.");
       if (this.Uberblock.Length >= 0xD0 && U64(this.Uberblock, 0xC8) != 0)
         throw new NotSupportedException("ZFS: the pool has a checkpoint; it is not edited.");
       this.MosRoot = this.Uberblock.AsSpan(0x28, Bp).ToArray();
       if (pool.Version >= 5000) this.LoadFeatures();
-      this.LoadUnflushed(tree);
 
-      // the metaslab array and every space map, replayed, then the log space maps on top
+      // every metaslab array and space map, replayed, then the log space maps on top
+      this.MetaslabTotal = this.Tops.Sum(t => t.MetaslabCount);
+      this.Allocated = new ZfsRangeSet[this.MetaslabTotal];
+      this.MetaslabVdev = new int[this.MetaslabTotal];
       var mos = pool.Mos;
-      var array = mos.RequireDnode(this.MetaslabArray, "metaslab array");
-      this.SpaceMaps = new ulong[this.MetaslabCount];
-      this.SpaceMapBlockSize = new int[this.MetaslabCount];
-      this.Allocated = new ZfsRangeSet[this.MetaslabCount];
-      for (var m = 0; m < this.MetaslabCount; ++m) {
-        var at = (long)m * 8;
-        var block = mos.ReadBlock(array, (ulong)(at / array.DataBlockSize));
-        this.SpaceMaps[m] = U64(block, (int)(at % array.DataBlockSize));
-        this.Allocated[m] = new ZfsRangeSet();
-        if (this.SpaceMaps[m] != 0) this.Replay(m);
+      foreach (var top in this.Tops) {
+        this.LoadUnflushed(top);
+        var array = mos.RequireDnode(top.MetaslabArray, "metaslab array");
+        top.SpaceMaps = new ulong[top.MetaslabCount];
+        top.SpaceMapBlockSize = new int[top.MetaslabCount];
+        for (var m = 0; m < top.MetaslabCount; ++m) {
+          var at = (long)m * 8;
+          var block = mos.ReadBlock(array, (ulong)(at / array.DataBlockSize));
+          top.SpaceMaps[m] = U64(block, (int)(at % array.DataBlockSize));
+          this.Allocated[top.Base + m] = new ZfsRangeSet();
+          this.MetaslabVdev[top.Base + m] = top.Id;
+          if (top.SpaceMaps[m] != 0) this.Replay(top, m);
+        }
       }
       this.ReplayLogs();
-      this.AllocationOrder = Enumerable.Range(0, this.MetaslabCount).OrderBy(m => this.SpaceMaps[m] == 0 ? 1 : 0).ThenBy(m => m).ToArray();
 
       // the filesystems, by the path the reader lists them under
       var directory = mos.Zap(1, "MOS object directory");
@@ -359,19 +381,71 @@ internal static class ZfsPoolEditor {
       this.AddDatasets(root.Value, "", 0);
     }
 
-    private void Replay(int m) {
-      var map = this.Pool.Mos.RequireDnode(this.SpaceMaps[m], "space map");
+    private static TopVdev BuildTop(XdrNvList tree, Dictionary<ulong, Stream> byGuid, int id) {
+      if ((int)(tree.UInt64("id") ?? 0) != id)
+        throw new InvalidDataException("ZFS: the top-level vdev ids are not 0, 1, 2, ….");
+      var type = tree.String("type");
+      Stream[] children;
+      if (type is "disk" or "file") {
+        children = [Device(byGuid, tree, $"device {id}")];
+      } else if (type is "mirror" or "raidz") {
+        var leaves = tree.Lists("children");
+        if (leaves.Any(c => c.String("type") is not ("disk" or "file")))
+          throw new NotSupportedException("ZFS: a mirror or RAID-Z with nested or replacing children is not edited.");
+        children = leaves.Select((leaf, i) => Device(byGuid, leaf, $"device {i} of vdev {id} ({type})")).ToArray();
+      } else {
+        throw new NotSupportedException($"ZFS: a '{type}' top-level vdev is not edited; plain devices, mirrors and RAID-Z are.");
+      }
+      var top = new TopVdev {
+        Id = id, Children = children, Tree = tree, IsMirror = type == "mirror",
+        Ashift = (int)(tree.UInt64("ashift") ?? throw new InvalidDataException("ZFS: a vdev has no ashift.")),
+        MetaslabShift = (int)(tree.UInt64("metaslab_shift") ?? throw new InvalidDataException("ZFS: a vdev has no metaslab_shift.")),
+        MetaslabArray = tree.UInt64("metaslab_array") ?? throw new InvalidDataException("ZFS: a vdev has no metaslab array."),
+      };
+      if (type == "raidz") {
+        top.Parity = (int)(tree.UInt64("nparity") ?? 1);
+        top.DeflateRatio = ZfsRaidzVdev.DeflateRatio(children.Length, top.Parity, top.Ashift);
+      }
+      var asize = (long)(tree.UInt64("asize") ?? throw new InvalidDataException("ZFS: a vdev has no asize."));
+      if (top.Ashift is < 9 or > 16 || top.MetaslabShift is < 16 or > 40)
+        throw new InvalidDataException("ZFS: a vdev's geometry is implausible.");
+      top.MetaslabCount = (int)(asize >> top.MetaslabShift);
+      var perDevice = ((long)top.MetaslabCount << top.MetaslabShift) / (top.Parity > 0 ? children.Length : 1);
+      if (ZfsConstants.DataStart + perDevice > children.Min(c => c.Length))
+        throw new InvalidDataException("ZFS: the metaslabs run past the devices.");
+      return top;
+    }
+
+    private static Stream Device(Dictionary<ulong, Stream> byGuid, XdrNvList leaf, string what) =>
+      byGuid.TryGetValue(leaf.UInt64("guid") ?? 0, out var s) ? s
+        : throw new NotSupportedException($"ZFS: {what} is missing; a degraded or partial pool is not edited.");
+
+    /// <summary>The supplied devices by the <c>guid</c> in each device's own label.</summary>
+    private static Dictionary<ulong, Stream> DevicesByGuid(IReadOnlyList<Stream> devices) {
+      var byGuid = new Dictionary<ulong, Stream>();
+      foreach (var device in devices) {
+        var label = new byte[ZfsConstants.NvListSize];
+        device.Position = ZfsConstants.NvListOffset;
+        device.ReadExactly(label);
+        var guid = XdrNvList.Decode(label).UInt64("guid") ?? throw new InvalidDataException("ZFS: a device label has no guid.");
+        if (!byGuid.TryAdd(guid, device)) throw new ArgumentException("ZFS: the same device was given twice.");
+      }
+      return byGuid;
+    }
+
+    private void Replay(TopVdev top, int m) {
+      var map = this.Pool.Mos.RequireDnode(top.SpaceMaps[m], "space map");
       if (map.Bonus.Length is not (24 or 320))
         throw new InvalidDataException("ZFS: a space map header of unexpected size.");
-      this.SpaceMapBlockSize[m] = map.DataBlockSize;
-      var start = (long)m << this.MetaslabShift;
-      var set = this.Allocated[m];
-      var expected = this.ReplayMap(this.SpaceMaps[m], start, start + (1L << this.MetaslabShift), this.Ashift, (offset, run, alloc) => {
+      top.SpaceMapBlockSize[m] = map.DataBlockSize;
+      var start = (long)m << top.MetaslabShift;
+      var set = this.Allocated[top.Base + m];
+      var expected = this.ReplayMap(top.SpaceMaps[m], start, start + (1L << top.MetaslabShift), top.Ashift, (_, offset, run, alloc) => {
         if (alloc) set.Add(offset, offset + run);
         else set.Remove(offset, offset + run);
       });
       if (set.Total != expected)
-        throw new InvalidDataException($"ZFS: metaslab {m} replays to {set.Total} allocated bytes, its space map says {expected}.");
+        throw new InvalidDataException($"ZFS: metaslab {m} of vdev {top.Id} replays to {set.Total} allocated bytes, its space map says {expected}.");
     }
 
     private void AddDatasets(ulong dirObject, string path, int depth) {
@@ -386,39 +460,6 @@ internal static class ZfsPoolEditor {
         if (child.Name.StartsWith('$') || child.Name.Contains('%')) continue;
         this.AddDatasets(child.Value, path.Length == 0 ? child.Name : path + "/" + child.Name, depth + 1);
       }
-    }
-
-    /// <summary>
-    /// The supplied devices in the order of the top-level vdev's children, matched by the
-    /// <c>guid</c> in each device's own label: a plain device, or every child of a mirror or RAID-Z.
-    /// </summary>
-    private static Stream[] MapChildren(XdrNvList tree, IReadOnlyList<Stream> devices) {
-      var type = tree.String("type");
-      var byGuid = new Dictionary<ulong, Stream>();
-      foreach (var device in devices) {
-        var label = new byte[ZfsConstants.NvListSize];
-        device.Position = ZfsConstants.NvListOffset;
-        device.ReadExactly(label);
-        var guid = XdrNvList.Decode(label).UInt64("guid") ?? throw new InvalidDataException("ZFS: a device label has no guid.");
-        if (!byGuid.TryAdd(guid, device)) throw new ArgumentException("ZFS: the same device was given twice.");
-      }
-      if (type is "disk" or "file") {
-        if (tree.Lists("children").Length > 0 || devices.Count != 1)
-          throw new NotSupportedException("ZFS: a single-device pool is edited through its one device.");
-        return [devices[0]];
-      }
-      if (type is not ("mirror" or "raidz"))
-        throw new NotSupportedException($"ZFS: a '{type}' top-level vdev is not edited; plain devices, mirrors and RAID-Z are.");
-      var children = tree.Lists("children");
-      if (children.Any(c => c.String("type") is not ("disk" or "file")))
-        throw new NotSupportedException("ZFS: a mirror or RAID-Z with nested or replacing children is not edited.");
-      var ordered = new Stream[children.Length];
-      for (var i = 0; i < children.Length; ++i)
-        ordered[i] = byGuid.TryGetValue(children[i].UInt64("guid") ?? 0, out var s) ? s
-          : throw new NotSupportedException($"ZFS: device {i} of the {type} is missing; a degraded pool is not edited.");
-      if (devices.Count != children.Length)
-        throw new ArgumentException("ZFS: a device was given that the pool does not have.");
-      return ordered;
     }
 
     private static byte[]? FindUberblock(Stream device, ulong txg, int slotSize) {
@@ -445,6 +486,7 @@ internal static class ZfsPoolEditor {
 
   /// <summary>A block this edit writes: where, how big, and (once sealed) its bytes and pointer.</summary>
   private sealed class NewBlock {
+    public int Vdev;
     public long Offset;
     public int Size;
     public int LogicalSize;
@@ -614,8 +656,8 @@ internal static class ZfsPoolEditor {
     private readonly Os _mos;
     private readonly List<Fs> _filesystems = [];
     private readonly Dictionary<int, MapPlan> _maps = [];
-    private ulong[]? _newArray;
-    private NewBlock[]? _arrayBlocks;
+    private readonly Dictionary<int, ulong[]> _newArrays = [];
+    private readonly Dictionary<int, NewBlock[]> _arrayBlocks = [];
 
     public Plan(PoolState state, Dictionary<int, int> guess, DateTime now) {
       this._s = state;
@@ -630,40 +672,57 @@ internal static class ZfsPoolEditor {
 
     // ── space ──────────────────────────────────────────────────────────────
 
-    private long Allocate(long size) {
-      foreach (var m in this._s.AllocationOrder) {
-        var start = (long)m << this._s.MetaslabShift;
-        var gap = this._busy[m].FindGap(start, start + (1L << this._s.MetaslabShift), size, 1L << this._s.Ashift);
-        if (gap is not { } at) continue;
-        this._busy[m].Add(at, at + size);
-        this._allocated[m].Add(at, at + size);
-        this._touched.Add(m);
-        return at;
+    private int _rotor;
+
+    /// <summary>
+    /// Space for a block of <paramref name="size"/> physical bytes: the top-level vdevs take turns
+    /// (so a striped pool's blocks spread over them), within one the first metaslab with room, those
+    /// that already have a space map first.
+    /// </summary>
+    private (int Vdev, long Offset, long Allocated) Allocate(int size) {
+      var tops = this._s.Tops;
+      for (var k = 0; k < tops.Count; ++k) {
+        var top = tops[(this._rotor + k) % tops.Count];
+        var allocated = top.AllocatedSize(size);
+        foreach (var m in Enumerable.Range(0, top.MetaslabCount).OrderBy(m => top.SpaceMaps[m] == 0 ? 1 : 0).ThenBy(m => m)) {
+          var g = top.Base + m;
+          var start = (long)m << top.MetaslabShift;
+          var gap = this._busy[g].FindGap(start, start + (1L << top.MetaslabShift), allocated, 1L << top.Ashift);
+          if (gap is not { } at) continue;
+          this._busy[g].Add(at, at + allocated);
+          this._allocated[g].Add(at, at + allocated);
+          this._touched.Add(g);
+          this._rotor = (top.Id + 1) % tops.Count;
+          return (top.Id, at, allocated);
+        }
       }
       throw new IOException("ZFS: the pool has no free space left for this edit.");
     }
 
-    private void Free(long offset, long size) {
-      var m = (int)(offset >> this._s.MetaslabShift);
-      if (m < 0 || m >= this._s.MetaslabCount || (offset + size - 1) >> this._s.MetaslabShift != m)
-        throw new InvalidDataException($"ZFS: a block at {offset:X} lies outside the metaslabs.");
-      this._allocated[m].Remove(offset, offset + size);
-      this._touched.Add(m);
+    private void Free(int vdev, long offset, long size) {
+      if (vdev >= this._s.Tops.Count) throw new InvalidDataException("ZFS: a block names a vdev the pool does not have.");
+      var top = this._s.Tops[vdev];
+      var m = (int)(offset >> top.MetaslabShift);
+      if (m < 0 || m >= top.MetaslabCount || (offset + size - 1) >> top.MetaslabShift != m)
+        throw new InvalidDataException($"ZFS: a block at {vdev}:{offset:X} lies outside the metaslabs.");
+      this._allocated[top.Base + m].Remove(offset, offset + size);
+      this._touched.Add(top.Base + m);
     }
 
     private NewBlock AllocBlock(Os os, Dnode? d, int size, byte type, int level, int logicalSize = 0, byte compression = ZfsConstants.CompressOff) {
-      var allocated = this._s.AllocatedSize(size);
+      var (vdev, offset, allocated) = this.Allocate(size);
+      var charged = this._s.Tops[vdev].Charged(allocated);
       var logical = logicalSize == 0 ? size : logicalSize;
       var block = new NewBlock {
-        Offset = this.Allocate(allocated), Size = size, LogicalSize = logical, Compression = compression,
+        Vdev = vdev, Offset = offset, Size = size, LogicalSize = logical, Compression = compression,
         Allocated = allocated, Type = type, Level = level,
       };
       this._blocks.Add(block);
       var metadata = level > 0 || type != OtPlainFile;
-      os.Used += this._s.Charged(allocated);
+      os.Used += charged;
       os.Compressed += size;
       os.Uncompressed += metadata ? size : logical;
-      if (d != null) d.Used += this._s.Charged(allocated);
+      if (d != null) d.Used += charged;
       return block;
     }
 
@@ -685,10 +744,9 @@ internal static class ZfsPoolEditor {
       foreach (var dva in bp.Dvas) {
         if (dva.IsEmpty) continue;
         if (dva.Gang) throw new NotSupportedException("ZFS: freeing a gang block is not supported.");
-        if (dva.Vdev != 0) throw new InvalidDataException("ZFS: a block names a vdev the pool does not have.");
         var size = (long)dva.AllocatedSectors << ZfsConstants.SectorShift;
-        this.Free(dva.Offset, size);
-        total += this._s.Charged(size);
+        this.Free((int)dva.Vdev, dva.Offset, size);
+        total += this._s.Tops[(int)dva.Vdev].Charged(size);
       }
       os.Used -= total;
       os.Compressed -= bp.PhysicalSize;
@@ -809,7 +867,7 @@ internal static class ZfsPoolEditor {
         if (contents[i] is not { } content) continue;
         var logical = new byte[blockSize];
         content.AsSpan(0, Math.Min(content.Length, blockSize)).CopyTo(logical);
-        var (algorithm, physical, _) = ZfsCompression.CompressBlock(compression, logical, this._s.Ashift, zstdLevel);
+        var (algorithm, physical, _) = ZfsCompression.CompressBlock(compression, logical, this._s.MinAshift, zstdLevel);
         if (physical == null) {
           changes[(ulong)i] = null;                                 // zeros: a hole, still within the object
           continue;
@@ -954,7 +1012,7 @@ internal static class ZfsPoolEditor {
       var p = new byte[Bp];
       var sectors = (ulong)(b.Size >> ZfsConstants.SectorShift);
       var logical = (ulong)(b.LogicalSize >> ZfsConstants.SectorShift);
-      W64(p, 0x00, (ulong)(b.Allocated >> ZfsConstants.SectorShift));         // DVA 0: asize, vdev 0
+      W64(p, 0x00, (ulong)b.Vdev << 32 | (ulong)(b.Allocated >> ZfsConstants.SectorShift));   // DVA 0: vdev, asize
       W64(p, 0x08, (ulong)b.Offset >> ZfsConstants.SectorShift);              // offset, not ganged
       W64(p, 0x30, (logical - 1) | (sectors - 1) << 16
         | (ulong)b.Compression << 32 | (ulong)ZfsConstants.ChecksumFletcher4 << 40
@@ -1100,8 +1158,9 @@ internal static class ZfsPoolEditor {
       if (IsHole(raw)) return false;
       if (IsEmbedded(raw)) return true;
       var bp = ZfsBlockPointer.Read(raw);
-      if (bp.Dvas[0].Gang || bp.Dvas[0].Vdev != 0) return true;
-      var data = this._s.Pool.TopLevelVdevs[0].Read(bp.Dvas[0].Offset, bp.PhysicalSize);
+      if (bp.Dvas[0].Gang) return true;
+      if (!this._s.Pool.TopLevelVdevs.TryGetValue(bp.Dvas[0].Vdev, out var vdev)) return true;
+      var data = vdev.Read(bp.Dvas[0].Offset, bp.PhysicalSize);
       int eck, size;
       switch (bp.Checksum) {
         case ZfsConstants.ChecksumZilog2:
@@ -1459,39 +1518,43 @@ internal static class ZfsPoolEditor {
       this.TouchDirChain(this.MosDirectory());
 
       // space maps: every metaslab the guess names is rewritten whole
-      foreach (var (m, count) in this._guess.OrderBy(g => g.Key)) {
+      foreach (var (g, count) in this._guess.OrderBy(g => g.Key)) {
+        var (top, m) = this._s.Metaslab(g);
         Dnode d;
         ulong obj;
-        if (this._s.SpaceMaps[m] != 0) {
-          obj = this._s.SpaceMaps[m];
+        if (top.SpaceMaps[m] != 0) {
+          obj = top.SpaceMaps[m];
           d = this.Load(mos, obj);
           mos.Dirty.Add(obj);
           this.FreeTree(mos, d, spill: false);
         } else {
           d = this.NewSpaceMap(NewSpaceMapBlock);
           obj = this.NewObject(mos, d);
-          this._newArray ??= (ulong[])this._s.SpaceMaps.Clone();
-          this._newArray[m] = obj;
+          if (!this._newArrays.TryGetValue(top.Id, out var array))
+            this._newArrays[top.Id] = array = (ulong[])top.SpaceMaps.Clone();
+          array[m] = obj;
         }
         var blocks = new NewBlock[count];
         var changes = new Dictionary<ulong, NewBlock?>();
         for (var i = 0; i < count; ++i)
           changes[(ulong)i] = blocks[i] = this.AllocBlock(mos, d, d.DataBlockSize, OtSpaceMap, 0);
         this.SetBlocks(mos, d, changes);
-        this._maps[m] = new MapPlan { Object = obj, Dnode = d, Blocks = blocks };
+        this._maps[g] = new MapPlan { Object = obj, Dnode = d, Blocks = blocks };
       }
 
-      if (this._newArray != null) {
-        var d = this.Load(mos, this._s.MetaslabArray);
-        mos.Dirty.Add(this._s.MetaslabArray);
+      foreach (var (vdev, _) in this._newArrays.OrderBy(a => a.Key)) {
+        var top = this._s.Tops[vdev];
+        var d = this.Load(mos, top.MetaslabArray);
+        mos.Dirty.Add(top.MetaslabArray);
         this.FreeTree(mos, d, spill: false);
         var blockSize = d.DataBlockSize;
-        var count = (int)((this._s.MetaslabCount * 8L + blockSize - 1) / blockSize);
-        this._arrayBlocks = new NewBlock[count];
+        var count = (int)((top.MetaslabCount * 8L + blockSize - 1) / blockSize);
+        var arrayBlocks = new NewBlock[count];
         var changes = new Dictionary<ulong, NewBlock?>();
         for (var i = 0; i < count; ++i)
-          changes[(ulong)i] = this._arrayBlocks[i] = this.AllocBlock(mos, d, blockSize, OtObjectArray, 0);
+          changes[(ulong)i] = arrayBlocks[i] = this.AllocBlock(mos, d, blockSize, OtObjectArray, 0);
         this.SetBlocks(mos, d, changes);
+        this._arrayBlocks[vdev] = arrayBlocks;
       }
 
       if (this._s.LogSpacemapZap != 0) this.PlanLogSpacemap();
@@ -1528,17 +1591,20 @@ internal static class ZfsPoolEditor {
       this._logSpacemapObject = this.NewObject(mos, log);
       this.RewriteZap(mos, this._s.LogSpacemapZap, entries => entries.Add((this.Txg.ToString("x"), this._logSpacemapObject)));
 
-      if (this._s.UnflushedObject == 0)
-        throw new NotSupportedException("ZFS: log_spacemap is active but the vdev keeps no unflushed txgs.");
-      var d = this.Load(mos, this._s.UnflushedObject);
-      mos.Dirty.Add(this._s.UnflushedObject);
-      var blockSize = d.DataBlockSize;
-      var count = (int)((this._s.MetaslabCount * 8L + blockSize - 1) / blockSize);
-      var bytes = new byte[count * blockSize];
-      for (var m = 0; m < this._s.MetaslabCount; ++m)
-        W64(bytes, m * 8, this._guess.ContainsKey(m) ? this.Txg : this._s.Unflushed[m]);
-      this.FreeTree(mos, d, spill: false);
-      this.WriteContents(mos, d, Enumerable.Range(0, count).Select(i => (byte[]?)bytes.AsSpan(i * blockSize, blockSize).ToArray()).ToList(), blockSize);
+      foreach (var top in this._s.Tops) {
+        if (!Enumerable.Range(top.Base, top.MetaslabCount).Any(this._guess.ContainsKey)) continue;
+        if (top.UnflushedObject == 0)
+          throw new NotSupportedException("ZFS: log_spacemap is active but a vdev keeps no unflushed txgs.");
+        var d = this.Load(mos, top.UnflushedObject);
+        mos.Dirty.Add(top.UnflushedObject);
+        var blockSize = d.DataBlockSize;
+        var count = (int)((top.MetaslabCount * 8L + blockSize - 1) / blockSize);
+        var bytes = new byte[count * blockSize];
+        for (var m = 0; m < top.MetaslabCount; ++m)
+          W64(bytes, m * 8, this._guess.ContainsKey(top.Base + m) ? this.Txg : top.Unflushed[m]);
+        this.FreeTree(mos, d, spill: false);
+        this.WriteContents(mos, d, Enumerable.Range(0, count).Select(i => (byte[]?)bytes.AsSpan(i * blockSize, blockSize).ToArray()).ToList(), blockSize);
+      }
     }
 
     private Dnode? _logSpacemap;
@@ -1615,26 +1681,28 @@ internal static class ZfsPoolEditor {
     /// </summary>
     public bool Settle(Dictionary<int, int> guess) {
       var settled = true;
-      foreach (var m in this._touched.Concat(guess.Keys).Distinct().Order().ToList()) {
-        var blockSize = this._maps.TryGetValue(m, out var plan) ? plan.Dnode.DataBlockSize
-          : this._s.SpaceMaps[m] != 0 ? this._s.SpaceMapBlockSize[m] : NewSpaceMapBlock;
-        var words = this.Words(m).Count;
+      foreach (var g in this._touched.Concat(guess.Keys).Distinct().Order().ToList()) {
+        var (top, m) = this._s.Metaslab(g);
+        var blockSize = this._maps.TryGetValue(g, out var plan) ? plan.Dnode.DataBlockSize
+          : top.SpaceMaps[m] != 0 ? top.SpaceMapBlockSize[m] : NewSpaceMapBlock;
+        var words = this.Words(g).Count;
         var need = Math.Max(1, (int)((words * 8L + blockSize - 1) / blockSize));
-        if (guess.TryGetValue(m, out var have) && have >= need) continue;
-        guess[m] = Math.Max(need, have);
+        if (guess.TryGetValue(g, out var have) && have >= need) continue;
+        guess[g] = Math.Max(need, have);
         settled = false;
       }
       return settled;
     }
 
-    private List<ulong> Words(int m) {
-      var start = (long)m << this._s.MetaslabShift;
+    private List<ulong> Words(int g) {
+      var (top, m) = this._s.Metaslab(g);
+      var start = (long)m << top.MetaslabShift;
       var words = new List<ulong> { 2UL << 62 | 1UL << 50 | this.Txg };      // debug: ALLOC, pass 1, txg
-      var maxRun = (long)SmRunMax << this._s.Ashift;
-      foreach (var (from, to) in this._allocated[m].Ranges)
+      var maxRun = (long)SmRunMax << top.Ashift;
+      foreach (var (from, to) in this._allocated[g].Ranges)
         for (var at = from; at < to;) {
           var run = Math.Min(to - at, maxRun);
-          words.Add((ulong)((at - start) >> this._s.Ashift) << 16 | (ulong)((run >> this._s.Ashift) - 1));
+          words.Add((ulong)((at - start) >> top.Ashift) << 16 | (ulong)((run >> top.Ashift) - 1));
           at += run;
         }
       return words;
@@ -1653,8 +1721,9 @@ internal static class ZfsPoolEditor {
         this.Transfer(fs.DirObject, fs.Os.Used, fs.Os.Compressed, fs.Os.Uncompressed, fs.Os.Used, UsedRefReservation, UsedHead);
       }
 
-      foreach (var (m, plan) in this._maps) {
-        var words = this.Words(m);
+      foreach (var (g, plan) in this._maps) {
+        var (top, m) = this._s.Metaslab(g);
+        var words = this.Words(g);
         var blockSize = plan.Dnode.DataBlockSize;
         var bytes = new byte[plan.Blocks.Length * blockSize];
         if (words.Count * 8 > bytes.Length) throw new InvalidOperationException("ZFS: a space map outgrew its planned blocks.");
@@ -1664,10 +1733,10 @@ internal static class ZfsPoolEditor {
         var bonus = plan.Dnode.Bonus;
         W64(bonus, 0, plan.Object);
         W64(bonus, 8, (ulong)(words.Count * 8));
-        W64(bonus, 16, (ulong)this._allocated[m].Total);
+        W64(bonus, 16, (ulong)this._allocated[g].Total);
         if (bonus.Length >= 320) {
-          var start = (long)m << this._s.MetaslabShift;
-          ZfsWriter.SpaceMapHistogram(bonus[64..], start, start + (1L << this._s.MetaslabShift), this._allocated[m].Ranges, this._s.Ashift);
+          var start = (long)m << top.MetaslabShift;
+          ZfsWriter.SpaceMapHistogram(bonus[64..], start, start + (1L << top.MetaslabShift), this._allocated[g].Ranges, top.Ashift);
         }
       }
       if (this._logSpacemap is { } log) {
@@ -1675,12 +1744,13 @@ internal static class ZfsPoolEditor {
         bonus.Clear();
         W64(bonus, 0, this._logSpacemapObject);                    // empty: nothing is unflushed in this txg
       }
-      if (this._newArray != null) {
-        var blockSize = this._arrayBlocks![0].Size;
-        var bytes = new byte[this._arrayBlocks.Length * blockSize];
-        for (var m = 0; m < this._newArray.Length; ++m) W64(bytes, m * 8, this._newArray[m]);
-        for (var i = 0; i < this._arrayBlocks.Length; ++i)
-          this._arrayBlocks[i].Data = bytes.AsSpan(i * blockSize, blockSize).ToArray();
+      foreach (var (vdev, array) in this._newArrays) {
+        var arrayBlocks = this._arrayBlocks[vdev];
+        var blockSize = arrayBlocks[0].Size;
+        var bytes = new byte[arrayBlocks.Length * blockSize];
+        for (var m = 0; m < array.Length; ++m) W64(bytes, m * 8, array[m]);
+        for (var i = 0; i < arrayBlocks.Length; ++i)
+          arrayBlocks[i].Data = bytes.AsSpan(i * blockSize, blockSize).ToArray();
       }
 
       // the MOS's own blocks are charged to $MOS; its accounting is final once it is planned
@@ -1688,33 +1758,39 @@ internal static class ZfsPoolEditor {
       var mosRoot = this.SealObjset(mos);
 
       var commit = new Commit();
-      var devices = this._s.Children.Length;
+      // device numbers: every vdev's children in order, as PoolState.Devices lists them
+      var first = new int[this._s.Tops.Count];
+      for (var t = 1; t < first.Length; ++t) first[t] = first[t - 1] + this._s.Tops[t - 1].Children.Length;
       foreach (var block in this._blocks) {
         if (block.Pointer == null) throw new InvalidOperationException("ZFS: a block was planned but never placed in a tree.");
-        if (this._s.Parity > 0) {
+        var top = this._s.Tops[block.Vdev];
+        if (top.Parity > 0) {
           // RAID-Z: the block's data and parity columns, each on its device
-          var columns = ZfsRaidzVdev.Map(block.Offset, block.Size, devices, this._s.Parity, this._s.Ashift);
-          var encoded = ZfsRaidzVdev.Encode(block.Data!, columns, this._s.Parity);
+          var columns = ZfsRaidzVdev.Map(block.Offset, block.Size, top.Children.Length, top.Parity, top.Ashift);
+          var encoded = ZfsRaidzVdev.Encode(block.Data!, columns, top.Parity);
           for (var c = 0; c < columns.Length; ++c)
             if (columns[c].Size > 0)
-              commit.Blocks.Add((columns[c].Child, ZfsConstants.DataStart + columns[c].Offset, encoded[c]));
+              commit.Blocks.Add((first[block.Vdev] + columns[c].Child, ZfsConstants.DataStart + columns[c].Offset, encoded[c]));
         } else {
           // a plain device, or every side of a mirror
-          for (var d = 0; d < devices; ++d)
-            commit.Blocks.Add((d, ZfsConstants.DataStart + block.Offset, block.Data!));
+          for (var d = 0; d < top.Children.Length; ++d)
+            commit.Blocks.Add((first[block.Vdev] + d, ZfsConstants.DataStart + block.Offset, block.Data!));
         }
       }
-      var slots = ZfsConstants.UberblockRingSize / this._s.SlotSize;
-      for (var d = 0; d < devices; ++d) {
-        var aligned = this._s.Children[d].Length / ZfsConstants.LabelSize * ZfsConstants.LabelSize;
-        foreach (var labelAt in PoolState.LabelOffsets(aligned)) {
-          var ub = this._s.Uberblock.ToArray();
-          W64(ub, 0x10, this.Txg);
-          W64(ub, 0x20, (ulong)new DateTimeOffset(this._now).ToUnixTimeSeconds());
-          mosRoot.CopyTo(ub, 0x28);
-          var at = labelAt + ZfsConstants.UberblockRingOffset + (long)(this.Txg % (ulong)slots) * this._s.SlotSize;
-          ZfsWriter.Seal(ub, at);
-          commit.Uberblocks.Add((d, at, ub));
+      foreach (var top in this._s.Tops) {
+        var slots = ZfsConstants.UberblockRingSize / top.SlotSize;
+        for (var d = 0; d < top.Children.Length; ++d) {
+          var aligned = top.Children[d].Length / ZfsConstants.LabelSize * ZfsConstants.LabelSize;
+          foreach (var labelAt in PoolState.LabelOffsets(aligned)) {
+            var ub = new byte[top.SlotSize];
+            this._s.Uberblock.AsSpan(0, Math.Min(ub.Length, this._s.Uberblock.Length) - 40).CopyTo(ub);
+            W64(ub, 0x10, this.Txg);
+            W64(ub, 0x20, (ulong)new DateTimeOffset(this._now).ToUnixTimeSeconds());
+            mosRoot.CopyTo(ub, 0x28);
+            var at = labelAt + ZfsConstants.UberblockRingOffset + (long)(this.Txg % (ulong)slots) * top.SlotSize;
+            ZfsWriter.Seal(ub, at);
+            commit.Uberblocks.Add((first[top.Id] + d, at, ub));
+          }
         }
       }
       return commit;

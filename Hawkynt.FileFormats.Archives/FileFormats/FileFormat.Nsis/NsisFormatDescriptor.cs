@@ -16,13 +16,13 @@ namespace FileFormat.Nsis;
 ///   <item><description><c>https://www.7-zip.org</c> — 7-Zip's NSIS handler, the reference reader this one is checked against</description></item>
 /// </list>
 /// </summary>
-public sealed class NsisFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class NsisFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   public string Id => "Nsis";
   public string DisplayName => "NSIS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".exe";
   // Detection is by the "NullsoftInst" first header (FormatDetector.DetectInstaller), not by ".exe".
@@ -60,6 +60,44 @@ public sealed class NsisFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
     var wanted = reader.Entries.Where(e => files == null || MatchesFilter(e.FileName, files)).ToList();
     reader.ExtractMany(wanted, (e, data) => WriteFile(outputDir, e.FileName, data));
+  }
+
+  /// <summary>
+  /// Writes an installer that extracts every input below the installation directory. The method
+  /// is "zlib", "bzip2" or "lzma" (the default), with ":solid" for one solid stream. The exehead
+  /// stub comes from <c>FormatSpecific["stub"]</c> (a stub file), <c>FormatSpecific["nsisdir"]</c>
+  /// or an installed NSIS 3 (<see cref="NsisInstallerWriter.LoadStub"/>);
+  /// <c>FormatSpecific["name"]</c> sets the product name.
+  /// </summary>
+  /// <exception cref="InvalidOperationException">No NSIS 3 stub is available.</exception>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    options ??= new FormatCreateOptions();
+    var method = (options.MethodName ?? "lzma").ToLowerInvariant();
+    var solid = method.EndsWith(":solid", StringComparison.Ordinal)
+      || (options.FormatSpecific.TryGetValue("solid", out var s) && bool.TryParse(s, out var b) && b);
+    var compression = method.Split(':')[0] switch {
+      "zlib" or "deflate" => NsisCompression.Zlib,
+      "bzip2" => NsisCompression.BZip2,
+      "lzma" or "" => NsisCompression.Lzma,
+      var other => throw new ArgumentException($"NSIS installers are compressed with zlib, bzip2 or lzma, not '{other}'."),
+    };
+    var stub = options.FormatSpecific.TryGetValue("stub", out var stubPath) && File.Exists(stubPath)
+      ? File.ReadAllBytes(stubPath)
+      : NsisInstallerWriter.LoadStub(compression, solid, options.FormatSpecific.GetValueOrDefault("nsisdir"));
+    if (stub == null)
+      throw new InvalidOperationException(
+        $"Creating an NSIS installer needs NSIS 3's exehead stub Stubs/{NsisInstallerWriter.StubFileName(compression, solid)}: "
+        + "install NSIS 3, set NSISDIR, or pass FormatSpecific[\"nsisdir\"] or [\"stub\"].");
+    var files = inputs.Where(i => !i.IsDirectory)
+      .Select(i => new NsisInstallerFile(i.ArchiveName, i.ReadContent(), i.Metadata?.LastWriteTimeUtc?.UtcDateTime))
+      .ToList();
+    NsisInstallerWriter.Write(output, stub, files, new NsisInstallerOptions {
+      Compression = compression,
+      Solid = solid,
+      Name = options.FormatSpecific.GetValueOrDefault("name") ?? "Setup",
+    });
   }
 
   /// <summary>Opens one entry as a bounded read-only stream.</summary>

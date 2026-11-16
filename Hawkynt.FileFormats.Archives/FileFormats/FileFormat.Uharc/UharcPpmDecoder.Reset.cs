@@ -72,7 +72,7 @@ internal sealed partial class UharcPpmDecoder {
   }
 
   /// <summary>The reset at a reset point; ends by reading the multimedia class for the next block.</summary>
-  private void ResetBlock() {
+  private void ResetBlock(ResetPoints reset, long written) {
     for (var row = 0; row <= 0x208; ++row) {
       this._novelty[row] = (uint)this._kind;
       this._budget[row] = 0x4000;
@@ -134,6 +134,7 @@ internal sealed partial class UharcPpmDecoder {
     this._o2Charge = false;
     this._wpCost = 0;
 
+    this.ApplyFileSizeRules(reset, written);
     this.SelectClass((int)this._coder.DecodeUniform(10));
   }
 
@@ -160,7 +161,7 @@ internal sealed partial class UharcPpmDecoder {
     var transform = new UharcPpmTextTransform();
     var expanded = new byte[64];
     while (read != oldPosition) {
-      var count = transform.Emit(this._window[read], 0, long.MaxValue, expanded);
+      var count = transform.Emit(this._window[read], 0, long.MaxValue, long.MaxValue, expanded);
       var met = false;
       for (var j = 0; j < count; ++j) {
         this._window[write] = (byte)~expanded[j];

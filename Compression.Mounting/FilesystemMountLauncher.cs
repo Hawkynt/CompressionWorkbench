@@ -40,9 +40,13 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
     ArgumentException.ThrowIfNullOrWhiteSpace(target);
     cancellationToken.ThrowIfCancellationRequested();
 
-    var descriptor = FormatRegistry.GetById(formatId)
-      ?? throw new ArgumentException($"Format '{formatId}' is not registered.", nameof(formatId));
-    _ = descriptor;
+    // "Raw"/"Unknown" are explicit opt-ins for formats that have no registered
+    // parser, never a silent fallback for a recognized but malformed container.
+    if (!formatId.Equals("Raw", StringComparison.OrdinalIgnoreCase) &&
+        !formatId.Equals("Unknown", StringComparison.OrdinalIgnoreCase) &&
+        !formatId.Equals(MountNamespaceResolver.RawDiskFormatId, StringComparison.OrdinalIgnoreCase) &&
+        FormatRegistry.GetById(formatId) is null)
+      throw new ArgumentException($"Format '{formatId}' is not registered.", nameof(formatId));
 
     var backend = this._backends.GetBackend(requestedPlan.BackendId);
     FileStream? source = null;
@@ -51,26 +55,42 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
 
     try {
       source = OpenBackingSource(imagePath, requestedPlan.AccessMode);
+      if (source.CanWrite)
+        JournaledArchiveWriteback.RecoverIfRequired(source);
+      else if (File.Exists(JournaledArchiveWriteback.JournalPath(source.Name)))
+        throw new IOException("The source has a pending undo journal; mount it read/write to recover before allowing reads.");
 
       var probe = MountNamespaceResolver.Probe(formatId, source, password, volumeParameters);
+      var backingWritable = source.CanWrite;
       var resolvedPlan = this._backends.ResolveFilesystem(
         requestedPlan.BackendId,
         probe.Profile,
         requestedPlan.AccessMode,
-        source.CanWrite
+        backingWritable
       );
       EnsureSupported(resolvedPlan);
 
-      filesystem = MountNamespaceResolver.Open(
-        formatId,
-        source,
-        new FilesystemOpenOptions(
-          ReadOnly: requestedPlan.AccessMode == MountAccessMode.ReadOnly,
-          LeaveOpen: false
-        ),
-        password,
-        volumeParameters
-      );
+      if (requestedPlan.AccessMode == MountAccessMode.ReadWrite &&
+          probe.Layers.Contains("namespace:staged-worm-rebuild", StringComparer.Ordinal)) {
+        // The source handle must be closed before same-directory replacement
+        // (Windows will not rename an open archive without delete sharing).
+        source.Dispose();
+        source = null;
+        var descriptor = FormatRegistry.GetById(formatId)!;
+        filesystem = ArchiveRebuildMountProjection.OpenPath(descriptor, imagePath, password);
+      } else {
+        filesystem = MountNamespaceResolver.Open(
+          formatId,
+          source,
+          new FilesystemOpenOptions(
+            ReadOnly: requestedPlan.AccessMode == MountAccessMode.ReadOnly,
+            LeaveOpen: false
+          ),
+          password,
+          volumeParameters,
+          Path.GetFileName(imagePath)
+        );
+      }
 
       // The opened namespace can be more specific than the probe (for example a
       // container can resolve to FAT/NTFS after opening its logical block view).
@@ -80,7 +100,7 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
         requestedPlan.BackendId,
         filesystem.Profile,
         requestedPlan.AccessMode,
-        source.CanWrite
+        backingWritable
       );
       EnsureSupported(resolvedPlan);
 

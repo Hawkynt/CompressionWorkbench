@@ -92,9 +92,10 @@ public sealed class CloneCdFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var fullSize = SafeLength(stream);
+    var metadataSize = Encoding.UTF8.GetByteCount(BuildMetadataIni(ReadText(stream, out _)));
     var entries = new List<ArchiveEntryInfo> {
       new(0, "FULL.ccd", fullSize, fullSize, "Stored", false, false, null),
-      new(1, "metadata.ini", 0, 0, "Stored", false, false, null),
+      new(1, "metadata.ini", metadataSize, metadataSize, "Stored", false, false, null),
     };
 
     var idx = 2;
@@ -120,6 +121,37 @@ public sealed class CloneCdFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       if (path != null && File.Exists(path))
         WriteFile(outputDir, name, File.ReadAllBytes(path));
     }
+  }
+
+  /// <summary>
+  /// Opens only the requested logical entry. Raw companion tracks are streamed
+  /// directly from their sibling files instead of being copied to a temporary
+  /// extraction directory for every FUSE read handle.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentException.ThrowIfNullOrWhiteSpace(entryName);
+
+    if (string.Equals(entryName, "FULL.ccd", StringComparison.Ordinal)) {
+      if (archive is FileStream file)
+        return new FileStream(file.Name, FileMode.Open, FileAccess.Read,
+          FileShare.Read | FileShare.Delete, 64 * 1024, FileOptions.RandomAccess);
+      ReadText(archive, out var full);
+      return new MemoryStream(full, writable: false);
+    }
+
+    if (string.Equals(entryName, "metadata.ini", StringComparison.Ordinal))
+      return new MemoryStream(
+        Encoding.UTF8.GetBytes(BuildMetadataIni(ReadText(archive, out _))),
+        writable: false);
+
+    if (DiscoverCompanions(archive).Any(companion =>
+          string.Equals(companion.Name, entryName, StringComparison.Ordinal)) &&
+        CompanionPath(archive, entryName) is { } path)
+      return new FileStream(path, FileMode.Open, FileAccess.Read,
+        FileShare.Read | FileShare.Delete, 64 * 1024, FileOptions.RandomAccess);
+
+    throw new FileNotFoundException($"CloneCD entry '{entryName}' does not exist.", entryName);
   }
 
   /// <summary>Gets the size limit of a created image set.</summary>

@@ -22,10 +22,19 @@ namespace FileSystem.Iso;
 /// <para>New Rock Ridge entries carry PX, TF and NM (RRIP 1.10), with the name in a
 /// continuation area (SUSP CE) when it does not fit the record, as <see cref="IsoWriter"/>
 /// writes them. New ISO 9660 identifiers are made unique within their directory.</para>
+/// <para>An interleaved file (ECMA-119 6.4.3) occupies its file units only: removing it zeroes
+/// those and leaves the interleave gaps, which may hold another file's units, as they are; new
+/// files are always written contiguously.</para>
+/// <para>Rock Ridge relocated folders (RRIP 1.10 4.1.5) are edited where a reader shows them:
+/// the folder keeps its RE record in rr_moved, the CL placeholder where it belongs and the PL
+/// entry in its "..", all repointed when it moves. Removing it drops its RE record too (and
+/// rr_moved once empty). A folder added below the eighth level is relocated the same way, while
+/// the Joliet tree records the real hierarchy.</para>
 /// <para>Refused, with the image left as it was: data stored after the volume space (a
 /// hybrid image's partitions or another session), a Joliet tree that has no folder matching
-/// the one being edited, a path through something that is not a folder, and interleaved or
-/// multi-extent directories.</para>
+/// the one being edited, a path through something that is not a folder, removing rr_moved
+/// itself, relocation entries outside their record, and interleaved or multi-extent
+/// directories.</para>
 /// </remarks>
 internal static class IsoTreeEditor {
   private const int SectorSize = 2048;
@@ -45,6 +54,15 @@ internal static class IsoTreeEditor {
     public readonly List<Rec> Records = [];
     public bool Dirty;
     public Dir? Counterpart;      // the matching directory of the other tree
+
+    // Rock Ridge relocation (RRIP 1.10 4.1.5): a directory too deep for ECMA-119 lives in
+    // rr_moved (Parent, its record there marked RE) and is shown where it belongs, in
+    // LogicalParent, through a CL placeholder record; its ".." carries PL naming LogicalParent.
+    public Rec? Placeholder;
+    public Dir? LogicalParent;
+
+    /// <summary>The folder a reader shows this one in.</summary>
+    public Dir? ShownParent => this.LogicalParent ?? this.Parent;
   }
 
   private sealed class Rec {
@@ -52,9 +70,31 @@ internal static class IsoTreeEditor {
     public required string Name;   // logical name as a reader shows it
     public required byte[] Identifier;
     public Dir? Child;
-    public bool IsDirectory => (this.Raw[25] & 0x02) != 0;
+    public bool Relocated;        // RE: the record of a relocated directory in rr_moved
+    public bool IsPlaceholder;    // CL: a file record standing for a relocated directory
+    public bool IsDirectory => (this.Raw[25] & 0x02) != 0 || this.IsPlaceholder;
     public int DataLba => (int)BinaryPrimitives.ReadUInt32LittleEndian(this.Raw.AsSpan(2));
     public int DataLength => (int)BinaryPrimitives.ReadUInt32LittleEndian(this.Raw.AsSpan(10));
+
+    /// <summary>
+    /// The sectors the file's data occupies (with its extended attribute record): one run, or for
+    /// an interleaved file (ECMA-119 6.4.3) one run per file unit — the interleave gaps between
+    /// them are not the file's and may hold another file's units.
+    /// </summary>
+    public IEnumerable<(int Lba, int Sectors)> DataRuns() {
+      var start = this.DataLba;
+      var xar = this.Raw[1];
+      var sectors = (this.DataLength + SectorSize - 1) / SectorSize;
+      var unit = this.Raw[26];
+      var gap = this.Raw[27];
+      if (unit == 0) {
+        if (sectors + xar > 0) yield return (start, sectors + xar);
+        yield break;
+      }
+      if (xar > 0) yield return (start, xar);
+      for (int done = 0, at = start + xar; done < sectors; done += unit, at += unit + gap)
+        yield return (at, Math.Min(unit, sectors - done));
+    }
   }
 
   private sealed class Volume {
@@ -154,6 +194,9 @@ internal static class IsoTreeEditor {
     if (filesOnly && hits.Any(h => h.IsDirectory))
       throw new IOException($"ISO 9660: '{string.Join('/', segments)}' is a folder.");
 
+    if (hits.Any(h => h.Child != null && HoldsRelocated(h.Child)))
+      throw new NotSupportedException(
+        $"ISO 9660: '{string.Join('/', segments)}' holds relocated folders (rr_moved); remove those folders where they are shown instead.");
     var other = shown == dir ? jdir : dir;
     foreach (var hit in hits) {
       // The other tree's entry: the matching folder, or the file record sharing the data.
@@ -168,11 +211,40 @@ internal static class IsoTreeEditor {
         if (parent == null || rec == null) continue;
         parent.Records.Remove(rec);
         parent.Dirty = true;
-        if (rec.Child != null) WipeTree(vol, rec.Child);
+        if (rec.Child != null) DropDirectory(vol, rec);
         else WipeData(vol, rec);
       }
     }
     return true;
+  }
+
+  /// <summary>Whether a folder, or one shown inside it, records relocated folders (is an rr_moved).</summary>
+  private static bool HoldsRelocated(Dir dir)
+    => dir.Records.Any(r => r.Relocated)
+       || dir.Records.Where(r => r.Child != null && !r.Relocated).Any(r => HoldsRelocated(r.Child!));
+
+  /// <summary>
+  /// Drops the folder a record names. For a CL placeholder the relocated folder's RE record
+  /// leaves rr_moved as well, and an rr_moved left empty goes with it.
+  /// </summary>
+  private static void DropDirectory(Volume vol, Rec rec) {
+    var child = rec.Child!;
+    if (rec.IsPlaceholder && child.InParent is { Relocated: true } re && child.Parent is { } moved) {
+      moved.Records.Remove(re);
+      moved.Dirty = true;
+      if (moved.Records.Count == 0 && moved.InParent is { } movedRecord && moved.Parent is { } root) {
+        root.Records.Remove(movedRecord);
+        root.Dirty = true;
+        WipeTree(vol, moved);
+        // A Joliet tree that shows rr_moved as a folder of its own loses it too.
+        if (moved.Counterpart is { InParent: { } jrecord, Parent: { } jroot } jmoved && jmoved.Records.Count == 0) {
+          jroot.Records.Remove(jrecord);
+          jroot.Dirty = true;
+          WipeTree(vol, jmoved);
+        }
+      }
+    }
+    WipeTree(vol, child);
   }
 
   /// <summary>The other tree's file record that shares this one's data (and, when several do, its name).</summary>
@@ -185,16 +257,17 @@ internal static class IsoTreeEditor {
 
   /// <summary>Zeroes a removed folder's extent and its files' data.</summary>
   private static void WipeTree(Volume vol, Dir dir) {
-    vol.Wipe.Add(((long)dir.OldLba * SectorSize, RoundUp(dir.OldLength)));
-    foreach (var r in dir.Records) {
-      if (r.Child != null) WipeTree(vol, r.Child);
-      else WipeData(vol, r);
+    if (dir.OldLength > 0) vol.Wipe.Add(((long)dir.OldLba * SectorSize, RoundUp(dir.OldLength)));
+    foreach (var r in dir.Records.ToList()) {
+      if (r.Child == null) WipeData(vol, r);
+      else if (r.IsPlaceholder) DropDirectory(vol, r);
+      else if (!r.Relocated) WipeTree(vol, r.Child);
     }
   }
 
   private static void WipeData(Volume vol, Rec rec) {
     if (rec.DataLength > 0 && !rec.IsDirectory)
-      vol.FreedData.Add((rec.DataLba, (rec.DataLength + SectorSize - 1) / SectorSize));
+      vol.FreedData.AddRange(rec.DataRuns());
   }
 
   /// <summary>The primary and Joliet folders at the path; (null, null) when a part is missing.</summary>
@@ -232,7 +305,11 @@ internal static class IsoTreeEditor {
         continue;
       }
       var when = modified ?? DateTime.UtcNow;
-      var child = NewDirectory(vol, dir, segments[i], mode, when, joliet: false);
+      // ECMA-119 6.8.2.1 allows eight levels (the root is the first); with Rock Ridge a folder
+      // below that is relocated, as the writer does, without Rock Ridge there is no way to.
+      var child = vol.RockRidge && Level(dir) >= 8
+        ? NewRelocatedDirectory(vol, dir, segments[i], mode, when)
+        : NewDirectory(vol, dir, segments[i], mode, when, joliet: false);
       if (jdir != null) {
         var jchild = NewDirectory(vol, jdir, segments[i], mode, when, joliet: true);
         child.Counterpart = jchild;
@@ -259,8 +336,51 @@ internal static class IsoTreeEditor {
     return dir;
   }
 
+  /// <summary>The level a folder is recorded at (the root is 1), following where it physically is.</summary>
+  private static int Level(Dir dir) {
+    var level = 1;
+    for (var d = dir; d.Parent != null; d = d.Parent) ++level;
+    return level;
+  }
+
+  /// <summary>
+  /// A folder below the eighth level, relocated (RRIP 1.10 4.1.5): its record goes into rr_moved
+  /// marked RE, a CL placeholder of its name into the folder that shows it, and a PL entry into
+  /// its ".." naming that folder. rr_moved is the one already holding relocated folders, or a new
+  /// one at the root.
+  /// </summary>
+  private static Dir NewRelocatedDirectory(Volume vol, Dir shownIn, string name, int? mode, DateTime when) {
+    var moved = vol.Root.Records.FirstOrDefault(r => r.Child != null && !r.IsPlaceholder && r.Child.Records.Any(x => x.Relocated))?.Child
+      ?? vol.Root.Records.FirstOrDefault(r => r.Child != null && !r.IsPlaceholder && r.Name is "rr_moved" or ".rr_moved" or "RR_MOVED")?.Child
+      ?? NewDirectory(vol, vol.Root, "rr_moved", null, when, joliet: false);
+
+    var dir = new Dir { Parent = moved, LogicalParent = shownIn, Lba = vol.Allocate(1), Length = SectorSize, Dirty = true };
+    dir.OldLba = dir.Lba;
+    dir.OldLength = 0;
+    dir.Dot = BuildRecord([0], dir.Lba, SectorSize, 0x02, IsoRockRidgeWriter.Fields(new RockRidgeRecord('d', mode, when, null), 1, null), when);
+    dir.DotDot = BuildRecord([1], moved.Lba, moved.Length, 0x02,
+      IsoRockRidgeWriter.Fields(new RockRidgeRecord('d', null, when, null, ParentLink: shownIn.Lba), 1, null), when);
+
+    var re = NewRecord(vol, moved, name, isDirectory: true, dir.Lba, SectorSize, mode, when, joliet: false,
+      new RockRidgeRecord('d', mode, when, name, Relocated: true));
+    re.Relocated = true;
+    re.Child = dir;
+    dir.InParent = re;
+    moved.Records.Add(re);
+    moved.Dirty = true;
+
+    var cl = NewRecord(vol, shownIn, name, isDirectory: true, dir.Lba, 0, mode, when, joliet: false,
+      new RockRidgeRecord('d', mode, when, name, ChildLink: dir.Lba), flags: 0x00);
+    cl.IsPlaceholder = true;
+    cl.Child = dir;
+    dir.Placeholder = cl;
+    shownIn.Records.Add(cl);
+    shownIn.Dirty = true;
+    return dir;
+  }
+
   private static Rec NewRecord(Volume vol, Dir dir, string name, bool isDirectory, int lba, int length,
-      int? mode, DateTime when, bool joliet) {
+      int? mode, DateTime when, bool joliet, RockRidgeRecord? rockRidge = null, byte? flags = null) {
     byte[] identifier;
     byte[]? systemUse = null;
     if (joliet) {
@@ -283,19 +403,20 @@ internal static class IsoTreeEditor {
       id = UniqueName(id, dir, joliet: false, maxLength);
       identifier = Encoding.ASCII.GetBytes(isDirectory ? id : id + ";1");
       if (vol.RockRidge) {
+        var record = rockRidge ?? new RockRidgeRecord(isDirectory ? 'd' : 'f', mode, when, name);
         IsoWriter.ContinuationArea? continuation = null;
-        if (IsoWriter.NameContinuation(name, identifier.Length) is { } area) {
+        if (IsoRockRidgeWriter.Overflow(record, identifier.Length) is { } area) {
           var areaLba = vol.Allocate(1);
           var sector = new byte[SectorSize];
           area.CopyTo(sector, 0);
           vol.Appended.Add((areaLba, sector));
           continuation = new IsoWriter.ContinuationArea(areaLba, 0, area.Length);
         }
-        systemUse = IsoWriter.RockRidgeFields(mode, when, isDirectory, name, identifier.Length, continuation);
+        systemUse = IsoRockRidgeWriter.Fields(record, identifier.Length, continuation);
       }
     }
     return new Rec {
-      Raw = BuildRecord(identifier, lba, length, isDirectory ? (byte)0x02 : (byte)0x00, systemUse, when),
+      Raw = BuildRecord(identifier, lba, length, flags ?? (isDirectory ? (byte)0x02 : (byte)0x00), systemUse, when),
       Name = name,
       Identifier = identifier,
     };
@@ -376,7 +497,14 @@ internal static class IsoTreeEditor {
     var rootLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(pvd.AsSpan(156 + 10));
     var rockRidge = HasSuspSp(ReadSector(image, rootLba), 0);
     var visited = new HashSet<int>();
-    var root = LoadDirectory(image, data, rootLba, rootLen, null, joliet: false, rockRidge, visited, 0);
+    var loaded = new Dictionary<int, Dir>();
+    var root = LoadDirectory(image, data, rootLba, rootLen, null, joliet: false, rockRidge, visited, 0, loaded);
+    foreach (var moved in loaded.Values.Where(d => d.Placeholder != null)) {
+      if (moved.Parent == null || moved.InParent is not { Relocated: true })
+        throw new NotSupportedException("ISO 9660: a relocated folder has no RE record in rr_moved; the image is not edited in place.");
+      if (FindSusp(moved.DotDot, "PL") < 0)
+        throw new NotSupportedException("ISO 9660: a relocated folder's \"..\" carries no PL entry in its record; the image is not edited in place.");
+    }
 
     var vol = new Volume { Image = image, Pvd = pvd, Root = root, RockRidge = rockRidge, VolumeSpace = volumeSpace };
     for (var lba = PvdLba + 1; lba < 64 && (long)(lba + 1) * SectorSize <= image.Length; ++lba) {
@@ -418,9 +546,12 @@ internal static class IsoTreeEditor {
     }
   }
 
-  /// <summary>Matches each primary folder with the Joliet folder of the same name.</summary>
+  /// <summary>
+  /// Matches each primary folder with the Joliet folder of the same name, along the tree a
+  /// reader shows: a relocated folder where its CL placeholder is, not in rr_moved.
+  /// </summary>
   private static void Pair(Dir primary, Dir joliet) {
-    foreach (var rec in primary.Records.Where(r => r.Child != null)) {
+    foreach (var rec in primary.Records.Where(r => r.Child != null && !r.Relocated)) {
       var jname = IsoWriter.TruncateJolietName(rec.Name);
       var match = joliet.Records.FirstOrDefault(j => j.Child != null && j.Child.Counterpart == null && j.Name == jname)
         ?? joliet.Records.FirstOrDefault(j => j.Child != null && j.Child.Counterpart == null
@@ -432,11 +563,29 @@ internal static class IsoTreeEditor {
     }
   }
 
+  /// <summary>
+  /// A relocated directory is reached twice — through its RE record in rr_moved and through
+  /// its CL placeholder — and must be one object; every other directory exactly once.
+  /// </summary>
+  private static Dir LoadRelocated(Stream image, ImageAccessor data, int lba, int length, bool rockRidge,
+      Dictionary<int, Dir> loaded, HashSet<int> visited, int depth) {
+    if (loaded.TryGetValue(lba, out var known)) return known;
+    if (length <= 0) {
+      // Through a CL placeholder: the directory's size is in its own "." record.
+      var first = ReadSector(image, lba);
+      length = (int)BinaryPrimitives.ReadUInt32LittleEndian(first.AsSpan(10));
+    }
+    var dir = LoadDirectory(image, data, lba, length, null, joliet: false, rockRidge, visited, depth, loaded);
+    loaded[lba] = dir;
+    return dir;
+  }
+
   private static Dir LoadDirectory(Stream image, ImageAccessor data, int lba, int length, Dir? parent,
-      bool joliet, bool rockRidge, HashSet<int> visited, int depth) {
+      bool joliet, bool rockRidge, HashSet<int> visited, int depth, Dictionary<int, Dir>? loaded = null) {
     if (depth > 64 || !visited.Add(lba))
       throw new InvalidDataException("ISO 9660: the directory hierarchy loops or is too deep to edit.");
     var dir = new Dir { Lba = lba, Length = length, OldLba = lba, OldLength = length, Parent = parent };
+    if (loaded != null) loaded[lba] = dir;
     var sectors = (length + SectorSize - 1) / SectorSize;
     for (var s = 0; s < sectors; ++s) {
       var sector = ReadSector(image, lba + s);
@@ -451,8 +600,8 @@ internal static class IsoTreeEditor {
         var identifier = raw.AsSpan(33, idLen).ToArray();
         if ((raw[25] & 0x80) != 0 && (raw[25] & 0x02) != 0)
           throw new NotSupportedException("ISO 9660: a multi-extent directory cannot be edited in place.");
-        if (raw[26] != 0 || raw[27] != 0)
-          throw new NotSupportedException("ISO 9660: an interleaved entry cannot be edited in place.");
+        if ((raw[26] != 0 || raw[27] != 0) && (raw[25] & 0x02) != 0)
+          throw new NotSupportedException("ISO 9660: an interleaved directory cannot be edited in place.");
         if (idLen == 1 && identifier[0] is 0 or 1) {
           if (identifier[0] == 0 && dir.Dot.Length == 0) dir.Dot = raw;
           else if (identifier[0] == 1 && dir.DotDot.Length == 0) dir.DotDot = raw;
@@ -460,6 +609,8 @@ internal static class IsoTreeEditor {
           continue;
         }
         string name;
+        var relocated = false;
+        uint? childLink = null;
         if (joliet) {
           name = Encoding.BigEndianUnicode.GetString(identifier);
         } else {
@@ -468,16 +619,30 @@ internal static class IsoTreeEditor {
             var suStart = 33 + idLen + ((idLen & 1) == 0 ? 1 : 0);
             var abs = (long)(lba + s) * SectorSize + pos;
             if (suStart < len && IsoRockRidge.Parse(data, abs + suStart, abs + len, SectorSize) is { } rr) {
-              if (rr.Relocated || rr.ChildLink != null)
-                throw new NotSupportedException("ISO 9660: the image relocates deep folders (Rock Ridge RE/CL); it is not edited in place.");
+              relocated = rr.Relocated && (raw[25] & 0x02) != 0;
+              childLink = (raw[25] & 0x02) == 0 ? rr.ChildLink : null;
               if (rr.Name is { Length: > 0 } rrName) name = rrName;
             }
           }
         }
-        var rec = new Rec { Raw = raw, Name = StripVersion(name).TrimEnd('.'), Identifier = identifier };
-        if (rec.IsDirectory)
-          rec.Child = LoadDirectory(image, data, rec.DataLba, rec.DataLength, dir, joliet, rockRidge, visited, depth + 1);
-        if (rec.Child != null) rec.Child.InParent = rec;
+        var rec = new Rec { Raw = raw, Name = StripVersion(name).TrimEnd('.'), Identifier = identifier, Relocated = relocated };
+        if (relocated) {
+          // RE: the directory moved here from too deep a place; this is where it is recorded.
+          rec.Child = LoadRelocated(image, data, rec.DataLba, rec.DataLength, rockRidge, loaded!, visited, depth + 1);
+          rec.Child.Parent = dir;
+          rec.Child.InParent = rec;
+        } else if (childLink is { } target) {
+          // CL: this file record stands for the relocated directory at that block.
+          if (FindSusp(raw, "CL") < 0)
+            throw new NotSupportedException("ISO 9660: a Rock Ridge CL entry outside its record; the image is not edited in place.");
+          rec.IsPlaceholder = true;
+          rec.Child = LoadRelocated(image, data, (int)target, 0, rockRidge, loaded!, visited, depth + 1);
+          rec.Child.Placeholder = rec;
+          rec.Child.LogicalParent = dir;
+        } else if (rec.IsDirectory) {
+          rec.Child = LoadDirectory(image, data, rec.DataLba, rec.DataLength, dir, joliet, rockRidge, visited, depth + 1, loaded);
+          rec.Child.InParent = rec;
+        }
         dir.Records.Add(rec);
         pos += len;
       }
@@ -492,7 +657,9 @@ internal static class IsoTreeEditor {
     if (vol.JolietRoot != null) trees.Add(vol.JolietRoot);
 
     // Directories whose records changed are packed; one that outgrows its extent moves to
-    // new sectors, which makes its parent (record) and children ("..") dirty too.
+    // new sectors, which makes its parent (record) and children ("..") dirty too — and for
+    // relocation, the folder holding its CL placeholder (CL) and the relocated folders whose
+    // placeholders it holds (their ".." carries PL naming it).
     for (var round = 0; round < 64; ++round) {
       var moved = false;
       foreach (var dir in trees.SelectMany(AllDirectories).Where(d => d.Dirty).ToList()) {
@@ -504,6 +671,7 @@ internal static class IsoTreeEditor {
         dir.Lba = vol.Allocate(sectors);
         dir.Length = needed;
         if (dir.Parent != null) dir.Parent.Dirty = true;
+        if (dir.LogicalParent != null) dir.LogicalParent.Dirty = true;
         foreach (var child in dir.Records.Where(r => r.Child != null)) child.Child!.Dirty = true;
         moved = true;
       }
@@ -515,8 +683,19 @@ internal static class IsoTreeEditor {
       var parent = dir.Parent ?? dir;
       SetExtent(dir.Dot, dir.Lba, dir.Length);
       SetExtent(dir.DotDot, parent.Lba, parent.Length);
-      foreach (var rec in dir.Records.Where(r => r.Child != null))
-        SetExtent(rec.Raw, rec.Child!.Lba, rec.Child.Length);
+      if (dir.LogicalParent != null) SetLink(dir.DotDot, "PL", dir.LogicalParent.Lba);
+      foreach (var rec in dir.Records.Where(r => r.Child != null)) {
+        if (!rec.IsPlaceholder) {
+          SetExtent(rec.Raw, rec.Child!.Lba, rec.Child.Length);
+          continue;
+        }
+        // The placeholder's CL entry, and its extent where it named the directory too.
+        SetLink(rec.Raw, "CL", rec.Child!.Lba);
+        if (rec.DataLba == rec.Child.OldLba) {
+          BinaryPrimitives.WriteUInt32LittleEndian(rec.Raw.AsSpan(2), (uint)rec.Child.Lba);
+          BinaryPrimitives.WriteUInt32BigEndian(rec.Raw.AsSpan(6), (uint)rec.Child.Lba);
+        }
+      }
     }
 
     // Zero what was freed first (nothing is allocated into freed sectors, so no wipe can hit
@@ -524,10 +703,13 @@ internal static class IsoTreeEditor {
     // deduplicated extent — is kept.
     var image = vol.Image;
     var referenced = trees.SelectMany(AllDirectories).SelectMany(d => d.Records)
-      .Where(r => !r.IsDirectory).Select(r => r.DataLba).ToHashSet();
+      .Where(r => !r.IsDirectory && r.DataLength > 0).SelectMany(r => r.DataRuns())
+      .Concat(vol.Protected.Select(lba => (Lba: lba, Sectors: 1)))
+      .Select(r => (Start: (long)r.Lba, End: (long)r.Lba + r.Sectors))
+      .OrderBy(r => r.Start).ToList();
     foreach (var (lba, sectors) in vol.FreedData)
-      if (!referenced.Contains(lba) && !vol.Protected.Contains(lba))
-        vol.Wipe.Add(((long)lba * SectorSize, sectors * SectorSize));
+      foreach (var (start, end) in Subtract(lba, lba + (long)sectors, referenced))
+        vol.Wipe.Add((start * SectorSize, (int)((end - start) * SectorSize)));
     foreach (var (offset, length) in vol.Wipe) {
       if (offset >= image.Length) continue;
       image.Position = offset;
@@ -560,6 +742,26 @@ internal static class IsoTreeEditor {
     image.Flush();
   }
 
+  /// <summary>
+  /// The sectors of [<paramref name="start"/>, <paramref name="end"/>) no remaining record uses
+  /// (<paramref name="used"/> sorted by start): what a removal may zero.
+  /// </summary>
+  private static IEnumerable<(long Start, long End)> Subtract(long start, long end, List<(long Start, long End)> used) {
+    var at = start;
+    foreach (var (s, e) in used) {
+      if (e <= at) continue;
+      if (s >= end) break;
+      if (s > at) yield return (at, s);
+      at = Math.Max(at, e);
+      if (at >= end) yield break;
+    }
+    if (at < end) yield return (at, end);
+  }
+
+  /// <summary>
+  /// Every directory as it is recorded (the physical tree): relocated directories are reached
+  /// through their RE record in rr_moved, not through their CL placeholder.
+  /// </summary>
   private static IEnumerable<Dir> AllDirectories(Dir root) {
     var queue = new Queue<Dir>();
     queue.Enqueue(root);
@@ -567,7 +769,7 @@ internal static class IsoTreeEditor {
       var dir = queue.Dequeue();
       yield return dir;
       foreach (var rec in dir.Records)
-        if (rec.Child != null) queue.Enqueue(rec.Child);
+        if (rec.Child != null && !rec.IsPlaceholder) queue.Enqueue(rec.Child);
     }
   }
 
@@ -620,7 +822,7 @@ internal static class IsoTreeEditor {
     while (level.Count > 0) {
       var next = new List<Dir>();
       foreach (var dir in level)
-        foreach (var rec in dir.Records.Where(r => r.Child != null).OrderBy(r => r.Identifier, IdentifierComparer.Instance)) {
+        foreach (var rec in dir.Records.Where(r => r.Child != null && !r.IsPlaceholder).OrderBy(r => r.Identifier, IdentifierComparer.Instance)) {
           ordered.Add((rec.Child!, rec.Identifier, numbers[dir]));
           numbers[rec.Child!] = ordered.Count;
           next.Add(rec.Child!);
@@ -690,6 +892,31 @@ internal static class IsoTreeEditor {
   private sealed class IdentifierComparer : IComparer<byte[]> {
     public static readonly IdentifierComparer Instance = new();
     public int Compare(byte[]? x, byte[]? y) => x.AsSpan().SequenceCompareTo(y);
+  }
+
+  /// <summary>
+  /// Where a SUSP entry with this signature sits in a record's own System Use area, or -1 when
+  /// the record does not carry it there (it may be in a continuation area).
+  /// </summary>
+  private static int FindSusp(byte[] raw, string signature) {
+    var idLen = raw[32];
+    var at = 33 + idLen + ((idLen & 1) == 0 ? 1 : 0);
+    while (at + 4 <= raw.Length) {
+      var len = raw[at + 2];
+      if (len < 4 || at + len > raw.Length) break;
+      if (raw[at] == signature[0] && raw[at + 1] == signature[1]) return at;
+      at += len;
+    }
+    return -1;
+  }
+
+  /// <summary>Writes the block number of a CL or PL entry (both-endian, RRIP 1.10 4.1.5).</summary>
+  private static void SetLink(byte[] raw, string signature, int lba) {
+    var at = FindSusp(raw, signature);
+    if (at < 0 || raw[at + 2] < 12)
+      throw new NotSupportedException($"ISO 9660: a Rock Ridge {signature} entry outside its record cannot be updated in place.");
+    BinaryPrimitives.WriteUInt32LittleEndian(raw.AsSpan(at + 4), (uint)lba);
+    BinaryPrimitives.WriteUInt32BigEndian(raw.AsSpan(at + 8), (uint)lba);
   }
 
   private static bool HasSuspSp(byte[] sector, int pos) {

@@ -125,7 +125,7 @@ public class StuffItCorpusTests {
         var path = Path.Combine(dir, vector);
         File.WriteAllBytes(path, LoadVector(vector));
         var outDir = Path.Combine(dir, vector + ".out");
-        var r = FsInteropToolbox.RunWsl($"unar -q -f -k hidden -D -o '{FsInteropToolbox.WinToWsl(outDir)}' '{FsInteropToolbox.WinToWsl(path)}'");
+        var r = FsInteropToolbox.RunWsl($"unar -q -f -k visible -D -o '{FsInteropToolbox.WinToWsl(outDir)}' '{FsInteropToolbox.WinToWsl(path)}'");
         Assert.That(r.ExitCode, Is.EqualTo(0), $"unar failed on {vector}:\n{r.StdOut}\n{r.StdErr}");
 
         using var reader = new StuffItReader(File.OpenRead(path));
@@ -144,7 +144,7 @@ public class StuffItCorpusTests {
   /// Any further real archives (raw or MacBinary-wrapped .sit) in the directory named by
   /// <c>CWB_STUFFIT_SAMPLES</c> are decoded and compared with unar, fork by fork. Used for samples
   /// whose licence keeps them out of the repository (e.g. the dexvert StuffIt set, which carries
-  /// methods 2 and 3).
+  /// methods 2, 3, 13 and 14). Resource forks are compared with the AppleDouble files unar writes beside them.
   /// </summary>
   [Test, Category("ExternalInterop")]
   public void GivenLocalSampleArchives_WhenDecoded_ThenEveryDataForkMatchesUnar() {
@@ -159,29 +159,55 @@ public class StuffItCorpusTests {
     try {
       foreach (var file in Directory.EnumerateFiles(samples)) {
         var bytes = File.ReadAllBytes(file);
-        var offset = bytes.Length > 132 && bytes.AsSpan(128, 4).SequenceEqual("SIT!"u8) ? 128 : 0;
-        if (!bytes.AsSpan(offset).StartsWith("SIT!"u8) && !bytes.AsSpan(offset).StartsWith("StuffIt (c)1997-"u8)) continue;
-        var raw = Path.Combine(tmp, Path.GetFileName(file) + ".raw.sit");
+        static bool IsStuffIt(ReadOnlySpan<byte> b) => b.Length > 14 && (b.StartsWith("StuffIt (c)1997-"u8) || b.Slice(10, 4).SequenceEqual("rLau"u8));
+        var offset = bytes.Length > 142 && IsStuffIt(bytes.AsSpan(128)) ? 128 : 0;
+        if (!IsStuffIt(bytes.AsSpan(offset))) continue;
+        // plain names: sample names carry spaces and parentheses the WSL command line would mangle
+        var raw = Path.Combine(tmp, $"s{compared}_{methods.Count}_{Guid.NewGuid():N}.sit");
         Directory.CreateDirectory(tmp);
         File.WriteAllBytes(raw, bytes[offset..]);
-        var outDir = Path.Combine(tmp, Path.GetFileName(file) + ".out");
+        var outDir = raw + ".out";
         var r = FsInteropToolbox.RunWsl($"unar -q -f -k hidden -D -o '{FsInteropToolbox.WinToWsl(outDir)}' '{FsInteropToolbox.WinToWsl(raw)}'");
-        Assert.That(r.ExitCode, Is.EqualTo(0), $"unar failed on {file}:\n{r.StdErr}");
+        if (r.ExitCode != 0) {
+          // unar cannot open some unwrapped copies (it wants the original file); nothing to compare against
+          TestContext.Out.WriteLine($"unar could not open {file}: {r.StdErr.Trim()}");
+          continue;
+        }
 
         using var reader = new StuffItReader(new MemoryStream(bytes, offset, bytes.Length - offset));
-        foreach (var e in reader.Entries.Where(x => !x.IsDirectory && x.DataForkSize > 0 && !x.IsEncrypted)) {
+        foreach (var e in reader.Entries.Where(x => !x.IsDirectory && !x.IsEncrypted)) {
           var theirs = Path.Combine(outDir, e.FileName.Replace('/', Path.DirectorySeparatorChar));
-          if (!File.Exists(theirs)) continue; // unar renames names the host cannot hold
-          Assert.That(reader.Extract(e), Is.EqualTo(File.ReadAllBytes(theirs)), $"{file}: {e.FileName} (method {e.DataMethod})");
-          methods.Add(e.DataMethod);
-          ++compared;
+          if (e.DataForkSize > 0 && File.Exists(theirs)) { // unar renames names the host cannot hold
+            Assert.That(reader.Extract(e), Is.EqualTo(File.ReadAllBytes(theirs)), $"{file}: {e.FileName} (method {e.DataMethod})");
+            methods.Add(e.DataMethod);
+            ++compared;
+          }
+          if (e.ResourceForkSize > 0 && File.Exists(theirs + ".rsrc") && AppleDoubleResourceFork(File.ReadAllBytes(theirs + ".rsrc")) is { } rsrc) {
+            Assert.That(reader.ExtractResourceFork(e), Is.EqualTo(rsrc), $"{file}: {e.FileName} resource fork (method {e.ResourceMethod})");
+            methods.Add(e.ResourceMethod);
+            ++compared;
+          }
         }
       }
     } finally {
       try { Directory.Delete(tmp, true); } catch { /* best effort */ }
     }
     Assert.That(compared, Is.GreaterThan(0), "no StuffIt archive found in CWB_STUFFIT_SAMPLES");
-    TestContext.Out.WriteLine($"compared {compared} data forks; methods {string.Join(',', methods)}");
+    TestContext.Out.WriteLine($"compared {compared} forks; methods {string.Join(',', methods)}");
+  }
+
+  /// <summary>Entry 2 (resource fork) of an AppleDouble file, or null.</summary>
+  private static byte[]? AppleDoubleResourceFork(byte[] file) {
+    if (file.Length < 26 || System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(file) != 0x00051607) return null;
+    int count = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(24));
+    for (var i = 0; i < count; ++i) {
+      var at = 26 + 12 * i;
+      if (System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(at)) != 2) continue;
+      var offset = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(at + 4));
+      var length = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(at + 8));
+      return file.AsSpan(offset, length).ToArray();
+    }
+    return null;
   }
 
   [Test, Category("ExternalInterop")]

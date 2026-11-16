@@ -252,6 +252,14 @@ i, `guid`, `path`, `create_txg` 4} per device]}; the MOS config nests the same m
 root. The uberblock's `guid_sum` covers every vdev of the tree: pool guid + mirror guid + every
 device guid.
 
+**Striped pools.** With several top-level vdevs (one device each here) every vdev has its own
+`id` (0, 1, …), metaslab array, metaslab shift and space maps; a DVA names its vdev in the high
+32 bits of its first word. Each device's label carries `vdev_children` = the number of vdevs,
+`top_guid` = `guid` = its own guid and its own vdev as `vdev_tree`; the MOS config lists all of
+them under the root. `guid_sum` is the pool guid plus every device guid. The writer gives blocks
+to the vdevs in turn; the editor does the same, finds each device's vdev through the MOS config
+(the labels describe only their own vdev), and needs every vdev's devices present.
+
 **Config object.** Its data blocks are 16 KiB (`SPA_CONFIG_BLOCKSIZE`): the kernel rewrites the
 config in whole 16 KiB units whenever it changes (a device path that differs on import is
 enough), and a config object with one smaller block stops it.

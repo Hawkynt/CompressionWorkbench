@@ -129,14 +129,20 @@ internal sealed class MountWindow : Form {
     try {
       FormatRegistration.EnsureInitialized();
       var detected = FormatDetector.Detect(path);
-      if (detected == FormatDetector.Format.Unknown) {
+      var rawDisk = detected == FormatDetector.Format.Unknown &&
+        Path.GetExtension(path) is { } extension &&
+        (extension.Equals(".img", StringComparison.OrdinalIgnoreCase) ||
+         extension.Equals(".ima", StringComparison.OrdinalIgnoreCase) ||
+         extension.Equals(".dd", StringComparison.OrdinalIgnoreCase) ||
+         extension.Equals(".raw", StringComparison.OrdinalIgnoreCase));
+      if (detected == FormatDetector.Format.Unknown && !rawDisk) {
         this.ShowProbeFailure("No registered format could be detected for this file.");
         return;
       }
 
-      var formatId = detected.ToString();
-      var descriptor = FormatRegistry.GetById(formatId);
-      if (descriptor is null) {
+      var formatId = rawDisk ? MountNamespaceResolver.RawDiskFormatId : detected.ToString();
+      var descriptor = rawDisk ? null : FormatRegistry.GetById(formatId);
+      if (descriptor is null && !rawDisk) {
         this.ShowProbeFailure($"Detected format '{formatId}' has no registered descriptor.");
         return;
       }
@@ -150,7 +156,7 @@ internal sealed class MountWindow : Form {
       this._driverProfile = probe.Profile;
       this._mountLayers = probe.Layers;
       this._sourceCanWrite = sourceCanWrite;
-      this._statusLabel.Text = $"Detected {descriptor.DisplayName}: {probe.Profile.ProfileName}.";
+      this._statusLabel.Text = $"Detected {descriptor?.DisplayName ?? "raw disk image"}: {probe.Profile.ProfileName}.";
       this.RefreshPlan();
     } catch (Exception ex) {
       this.ShowProbeFailure($"Probe failed: {ex.GetType().Name}: {ex.Message}");

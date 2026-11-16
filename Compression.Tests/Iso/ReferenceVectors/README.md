@@ -17,14 +17,15 @@ driver and 7-Zip do not implement interleaving (isofs reports such files as empt
 
 ## Rock Ridge
 
-ISO images xorriso wrote, gzip-compressed (`gzip -9 -n`). `generate.sh` documents how they
+ISO images xorriso (and, for relocation, genisoimage) wrote, gzip-compressed (`gzip -9 -n`). `generate.sh` documents how they
 were made; it is not a build input.
 
 | File | What it is |
 |------|------------|
 | `rr.iso.gz` | Rock Ridge, no Joliet; `big.txt` and `zeros.bin` zisofs-compressed (`-set_filter --zisofs`) |
 | `rr-joliet.iso.gz` | the same with a Joliet tree, so zisofs is only flagged in the primary tree's Rock Ridge records |
-| `rr-moved.iso.gz` | the same tree through `xorriso -as mkisofs -R` (mkisofs emulation and its deep-directory rules) |
+| `rr-moved.iso.gz` | the same tree through `xorriso -as mkisofs -R` (mkisofs emulation; xorriso records the deep directory where it is, it does not relocate it) |
+| `rr-relocated.iso.gz` | genisoimage 1.1.11 `-R -J`: a ten-level tree whose ninth-level folder is relocated into `rr_moved` (RE there, a CL placeholder at its real place, PL in its ".."), with a Joliet tree of the real hierarchy; the in-place editing tests start from it |
 | `manifest-*.txt` | what the Linux kernel's isofs driver lists and reads back from each image: `<type> <path>\|<link target>` lines, then `<sha256> <path>` per file |
 
 The tree holds a 214-character name (too long for one directory record, so NM continues
