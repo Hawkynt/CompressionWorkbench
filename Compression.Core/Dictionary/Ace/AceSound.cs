@@ -1,5 +1,6 @@
 // ACE 2.0 SOUND mode, converted from acefile (https://github.com/droe/acefile, BSD-2-Clause,
 // Copyright (c) 2017-2026 Daniel Roethlisberger and contributors). See THIRD-PARTY-NOTICE.acefile.txt.
+// Encode is our inverse of that decoder.
 
 namespace Compression.Core.Dictionary.Ace;
 
@@ -39,7 +40,7 @@ internal sealed class AceSound {
     }
   }
 
-  private sealed class Channel(SymbolReader reader, int channelIndex) {
+  private sealed class Channel(SymbolReader? reader, int channelIndex) {
     private readonly int _modelBase = 3 * channelIndex;
     private readonly int[] _predDifCnt = new int[2];
     private readonly int[] _lastPredDifCnt = new int[2];
@@ -58,7 +59,7 @@ internal sealed class AceSound {
       var model = this._getState << 1;
       if (model == 0)
         model += this._adaptModelUse;
-      return reader.ReadSymbol(bs, model + this._modelBase);
+      return reader!.ReadSymbol(bs, model + this._modelBase);
     }
 
     /// <summary>The next residual, or null when a mode instruction (stored in <paramref name="mode"/>) ends the block.</summary>
@@ -180,5 +181,103 @@ internal sealed class AceSound {
       channel.RarAdjust(SChar(sample));
     }
     return ([.. chunk], nextMode);
+  }
+
+  private const int MaxBlockSymbols = 32767;
+
+  /// <summary>
+  /// The bits <see cref="Read"/> decodes back to <paramref name="data"/> after a switch to SOUND
+  /// <paramref name="mode"/>: the predictors run over the real samples, so every residual is known up
+  /// front; each channel then codes them as literals (32 + value) or, for at least two zeros followed by
+  /// another value of the same channel, as a run code (zeros - 1) plus that value from the third model.
+  /// With <paramref name="switchBack"/> the block ends with the type code and mode 0 (LZ77); the reader
+  /// takes it at byte <c>data.Length</c>, so the caller keeps that below the member's remaining size
+  /// rounded down to four. Every run is closed inside the block, so the channel reading that code is
+  /// never in the middle of one.
+  /// </summary>
+  internal static AceBitWriter Encode(ReadOnlySpan<byte> data, int mode, bool switchBack) {
+    var m = mode - AceConstants.ModeSound8;
+    var numChannels = NumChannels[m];
+    var channels = new Channel[numChannels];
+    var values = new List<int>[numChannels];
+    for (var c = 0; c < numChannels; ++c) {
+      channels[c] = new Channel(null, c);
+      values[c] = new List<int>(data.Length / numChannels + 1);
+    }
+    var order = new int[data.Length];
+    for (var i = 0; i < data.Length; ++i) {
+      var c = UseChannels[m][i % 4];
+      var channel = channels[c];
+      var residual = UChar(data[i] - channel.RarPredict());
+      values[c].Add(residual <= 127 ? 2 * residual : 2 * (255 - residual) + 1);
+      order[i] = values[c].Count - 1;
+      channel.RarAdjust(SChar(data[i]));
+    }
+
+    var symbols = new List<(int Model, int Code)>(data.Length + 1);
+    var state = new int[numChannels];
+    var pending = new int[numChannels];
+    var adaptCount = new int[numChannels];
+    var adaptUse = new int[numChannels];
+    for (var i = 0; i < data.Length; ++i) {
+      var c = UseChannels[m][i % 4];
+      var list = values[c];
+      var j = order[i];
+      switch (state[c]) {
+        case 2:
+          if (--pending[c] == 0)
+            state[c] = 1;
+          break;
+        case 1:
+          symbols.Add((3 * c + 2, list[j]));
+          state[c] = 0;
+          break;
+        default: {
+          var zeros = 0;
+          while (zeros < RunLenCodes && j + zeros < list.Count && list[j + zeros] == 0)
+            ++zeros;
+          if (zeros >= 2 && j + zeros < list.Count) {
+            symbols.Add((3 * c + adaptUse[c], zeros - 1));
+            pending[c] = zeros - 1;
+            state[c] = 2;
+          } else {
+            var v = list[j];
+            symbols.Add((3 * c + adaptUse[c], RunLenCodes + v));
+            adaptCount[c] = (adaptCount[c] * 7 >> 3) + v;
+            adaptUse[c] = adaptCount[c] > 40 ? 1 : 0;
+          }
+          break;
+        }
+      }
+    }
+    if (switchBack) {
+      var c = UseChannels[m][data.Length % 4];
+      symbols.Add((3 * c + adaptUse[c], TypeCode));
+    }
+
+    var w = new AceBitWriter();
+    var models = numChannels * 3;
+    for (var start = 0; start < symbols.Count; start += MaxBlockSymbols) {
+      var count = Math.Min(MaxBlockSymbols, symbols.Count - start);
+      var freq = new long[models][];
+      for (var k = 0; k < models; ++k)
+        freq[k] = new long[NumCodes];
+      for (var s = start; s < start + count; ++s)
+        ++freq[symbols[s].Model][symbols[s].Code];
+      var codes = new (uint Code, int Width)[models][];
+      for (var k = 0; k < models; ++k) {
+        var widths = AceHuffman.BuildWidths(freq[k], MaxCodeWidth);
+        AceHuffman.WriteTree(w, widths);
+        codes[k] = AceHuffman.Codes(widths, MaxCodeWidth);
+      }
+      w.WriteBits((uint)count, 15);
+      for (var s = start; s < start + count; ++s) {
+        var (code, width) = codes[symbols[s].Model][symbols[s].Code];
+        w.WriteBits(code, width);
+      }
+    }
+    if (switchBack)
+      w.WriteBits(AceConstants.ModeLz77, 8);
+    return w;
   }
 }
