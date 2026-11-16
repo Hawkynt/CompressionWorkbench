@@ -60,6 +60,13 @@ internal static class ZfsOracle {
     return d.StdOut;
   }
 
+  /// <summary><c>zdb -DDDDD</c>: every dedup table with its histogram and entries.</summary>
+  public static string DedupTables(string wsl, string pool) {
+    var d = FsInteropToolbox.RunWsl($"zdb -e -p {wsl} -DDDDD {pool} 2>&1");
+    Assert.That(d.ExitCode, Is.Zero, d.StdOut);
+    return d.StdOut;
+  }
+
   /// <summary><c>zdb -r</c> copies <paramref name="path"/> of <paramref name="dataset"/> out byte for byte.</summary>
   public static void AssertCopiesOut(string dir, string wsl, string dataset, string path, string sha) {
     var copy = FsInteropToolbox.RunWsl($"zdb -e -p {wsl} -r {dataset} '{path}' {wsl}/copy.bin 2>&1");
@@ -75,9 +82,18 @@ internal static class ZfsOracle {
   public static Dictionary<string, string> KernelManifest(string dir, string wsl, string pool) => KernelManifest(dir, wsl, pool, out _);
 
   /// <summary>As <see cref="KernelManifest(string, string, string)"/>; <paramref name="log"/> also lists every <c>feature@</c> property as <c>FEATURE name state</c>.</summary>
-  public static Dictionary<string, string> KernelManifest(string dir, string wsl, string pool, out string log) {
-    var uploads = string.Concat(Directory.GetFiles(dir, "*.img").Select(Path.GetFileName).Order(StringComparer.Ordinal)
-      .Select(f => $"upload {f} /out/{f}\\n"));
+  public static Dictionary<string, string> KernelManifest(string dir, string wsl, string pool, out string log) =>
+    KernelManifest(dir, wsl, pool, out log, after: "", download: false);
+
+  /// <summary>
+  /// As <see cref="KernelManifest(string, string, string, out string)"/>, running <paramref name="after"/>
+  /// (shell, pool imported and mounted) before the export, and with <paramref name="download"/> copying
+  /// the device images back over the staged ones, so OpenZFS's own later writes can be checked too.
+  /// </summary>
+  public static Dictionary<string, string> KernelManifest(string dir, string wsl, string pool, out string log, string after, bool download) {
+    var images = Directory.GetFiles(dir, "*.img").Select(f => Path.GetFileName(f)!).Order(StringComparer.Ordinal).ToList();
+    var uploads = string.Concat(images.Select(f => $"upload {f} /out/{f}\\n"));
+    var downloads = download ? string.Concat(images.Select(f => $"download /out/{f} {f}\\n")) : "";
     File.WriteAllText(Path.Combine(dir, "inner.sh"), $$"""
       modprobe zfs
       O=/sysroot/out; M=/sysroot/mnt; mkdir -p $M
@@ -88,6 +104,7 @@ internal static class ZfsOracle {
       zfs set mountpoint=/ {{pool}}
       zfs mount -a
       ( cd $M && find . -mindepth 1 -type f | sort | while read -r p; do echo "$(sha256sum < "$p" | cut -d' ' -f1) ${p#./}"; done ) > $O/pool.manifest
+      {{after}}
       zpool export {{pool}} && echo EXPORTED
       """.Replace("\r\n", "\n"));
     var run = FsInteropToolbox.RunWsl(
@@ -95,7 +112,7 @@ internal static class ZfsOracle {
       $"mkdir -p $HOME/cwbzfs-work/cache; cd {wsl}; truncate -s 512M scratch.img; " +
       $"printf 'run\\nmkfs ext4 /dev/sda\\nmount /dev/sda /\\nmkdir /out\\n{uploads}upload inner.sh /inner.sh\\n" +
       "debug sh \"sh /sysroot/inner.sh > /sysroot/log.txt 2>&1\"\\ndownload /log.txt log.txt\\n" +
-      "download /out/pool.manifest pool.manifest\\n' | timeout 300 guestfish -a scratch.img 2>&1");
+      $"download /out/pool.manifest pool.manifest\\n{downloads}' | timeout 300 guestfish -a scratch.img 2>&1");
     var logPath = Path.Combine(dir, "log.txt");
     log = File.Exists(logPath) ? File.ReadAllText(logPath) : "";
     if (!File.Exists(Path.Combine(dir, "pool.manifest")) && !log.Contains("IMPORT-FAILED"))

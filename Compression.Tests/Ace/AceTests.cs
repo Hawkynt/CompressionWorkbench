@@ -39,6 +39,8 @@ public class AceTests {
   internal static readonly byte[] Noise = [.. Enumerable.Range(0, 9000).Select(i => (byte)((i * 2654435761u) >> 24))];
 
   internal static byte[] OursArchive(string name) {
+    if (name == "ours-media.ace")
+      return AceMediaWriterTests.Archive(solid: false);
     var (solid, store, password) = name switch {
       "ours-lz77.ace" => (false, false, (string?)null),
       "ours-store.ace" => (false, true, null),
@@ -55,9 +57,15 @@ public class AceTests {
     return w.ToArray();
   }
 
-  private static readonly string[] OursNames = ["ours-lz77.ace", "ours-store.ace", "ours-solid.ace", "ours-encrypted.ace"];
+  private static readonly string[] OursNames = ["ours-lz77.ace", "ours-store.ace", "ours-solid.ace", "ours-encrypted.ace", "ours-media.ace"];
 
   [TestCase("cafe.ace")]
+  [TestCase("ace26-mono8.ace")]
+  [TestCase("ace26-stereo8.ace")]
+  [TestCase("ace26-mono16.ace")]
+  [TestCase("ace26-stereo16.ace")]
+  [TestCase("ace26-rgb24.ace")]
+  [TestCase("ours-media.ace")]
   [TestCase("winappdbg-head.ace")]
   [TestCase("ours-lz77.ace")]
   [TestCase("ours-store.ace")]
@@ -78,6 +86,20 @@ public class AceTests {
       if (!e.IsDirectory)
         Assert.That(Convert.ToHexStringLower(SHA256.HashData(reader.ExtractEntry(e))), Is.EqualTo(p[7]), e.FileName);
     }
+  }
+
+  // ACE 2.6 (ACE32.EXE -m5 -c2) codes these WAVE files entirely in SOUND mode (the variant follows
+  // the sample layout) and the 24-bit BMP's rows in PIC mode after an LZ77 header.
+  [TestCase("ace26-mono8.ace", AceConstants.ModeSound8)]
+  [TestCase("ace26-stereo8.ace", AceConstants.ModeSound16)]
+  [TestCase("ace26-mono16.ace", AceConstants.ModeSound16)]
+  [TestCase("ace26-stereo16.ace", AceConstants.ModeSound32A)]
+  [TestCase("ace26-rgb24.ace", AceConstants.ModePic)]
+  [Category("ThirdPartyVector")]
+  public void Given_Ace26MediaArchive_When_Read_Then_ItWentThroughSoundOrPic(string vector, int mode) {
+    using var reader = new AceReader(new MemoryStream(Vector(vector)));
+    reader.ExtractEntry(reader.Entries[0]);
+    Assert.That(reader.LastModes, Does.Contain(mode));
   }
 
   [TestCaseSource(nameof(OursNames))]

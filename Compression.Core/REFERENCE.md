@@ -642,14 +642,15 @@ Implements `IBuildingBlock`.
 
 #### `AceBlockedCompressor`
 
-Writes ACE 2.0 blocked streams (compression type 2): LZ77 with the four repeat-distance codes, optionally behind the EXE filter (x86 CALL targets made absolute) or the DELTA filter (bytes split into planes and differenced), chosen per member by trial. One instance per archive; with `solid` the dictionary carries over between members as the decoder's does.
+Writes ACE 2.0 blocked streams (compression type 2): LZ77 with the four repeat-distance codes, optionally behind the EXE filter (x86 CALL targets made absolute) or the DELTA filter (bytes split into planes and differenced), or in the SOUND (audio predictor) or PIC (pixel predictor) mode, chosen per member by trial. One instance per archive; with `solid` the dictionary carries over between members as the decoder's does.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AceBlockedCompressor` | `AceBlockedCompressor(int dictionaryBits = 20, bool solid = false)` | Creates a compressor with a dictionary of 2^`dictionaryBits` bytes. |
 | `DictionaryBits` | `int DictionaryBits { get; }` | Dictionary size in bits (what the file header's parameter field records). |
-| `LastMode` | `string LastMode { get; }` | The filter the last `Compress` call chose: "lz77", "exe" or "delta:N". |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses one member, trying the plain, EXE and DELTA layouts and keeping the smallest. |
+| `ForcedMode` | `string ForcedMode { get; set; }` | Encodes every member with one layout instead of the smallest (null, the default: choose by size): "sound:N" puts the whole member in SOUND mode N (3 to 6) whatever it holds, "pic:W:P" codes rows of W bytes with P interleaved planes from the start and the remainder as LZ77. A layout that does not fit the data throws `ArgumentException`. |
+| `LastMode` | `string LastMode { get; }` | The filter the last `Compress` call chose: "lz77", "exe", "delta:N", "sound:N" (N the mode number) or "pic". |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses one member, trying the plain, EXE, DELTA, SOUND (WAVE files) and PIC (BMP files) layouts and keeping the smallest. |
 | `RegisterStored` | `void RegisterStored(ReadOnlySpan<byte> data)` | Tells a solid compressor about a member that was stored: the decoder adds stored bytes to its dictionary too. |
 
 #### `AceBlowfish`
@@ -711,6 +712,7 @@ Decompresses ACE members. One instance serves a whole archive: the LZ77 dictiona
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AceDecompressor` | `AceDecompressor()` |  |
+| `LastModes` | `IReadOnlyList<int> LastModes { get; }` | The mode instructions the last ACE 2.0 member switched to, in stream order. |
 | `DecompressComment` | `static byte[] DecompressComment(ReadOnlySpan<byte> packed)` | Decodes an archive or file comment: a 15-bit length, one LZ77-sized Huffman tree, then literals and copies whose source is found through a hash of the two preceding bytes. |
 | `Decompress` | `byte[] Decompress(ReadOnlyMemory<byte> packed, long size, int compressionType, int dictionaryBits)` | Decodes one member of `size` bytes compressed with `compressionType`. |
 
@@ -1380,6 +1382,33 @@ Implements `IBuildingBlock`.
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+### Namespace `Compression.Core.Dictionary.Lz5`
+
+[`Lz5Block`](#lz5block) · [`Lz5Frame`](#lz5frame)
+
+#### `Lz5Block`
+
+The LZ5 1.5 block format (Przemysław Skibiński's LZ4 derivative, the coder 7-Zip-zstd registers as 04 F7 11 05): sequences of a token, literals, an offset and a match length, with three offset widths and a repeat-offset code.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MaxDistance` | `const int MaxDistance` | The farthest a match reaches back: 4 MiB − 1. |
+| `MinMatch` | `const int MinMatch` | The shortest match. |
+| `Decode` | `static int Decode(ReadOnlySpan<byte> source, Span<byte> window, int prefixLength)` | Decodes one block from `source` into `window` after its first `prefixLength` bytes, which hold the history matches may reach into. Returns the number of bytes decoded. |
+| `Encode` | `static int Encode(ReadOnlySpan<byte> source, Span<byte> destination)` | Encodes `source` as one independent block into `destination` (at least `MaxEncodedLength` bytes) and returns its length: a greedy parse over a hash of 4-byte prefixes, choosing the shortest offset code for every match. |
+| `MaxEncodedLength` | `static int MaxEncodedLength(int length)` | The largest block `Encode` can write for `length` input bytes. |
+
+#### `Lz5Frame`
+
+The LZ5 1.5 frame: the LZ4 frame layout under its own magic, with LZ5 blocks and LZ5's block sizes (identifier 1-7 for 64 KiB × 4^(id−1), up to 256 MiB).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Magic` | `const uint Magic` | The frame magic. |
+| `BlockSize` | `static int BlockSize(int id)` | The maximum block size of block size identifier `id` (1-7). |
+| `Decode` | `static void Decode(ReadOnlySpan<byte> data, Stream output)` | Decodes every frame in `data` (skippable frames passed over) to `output`. Memory holds one block and at most 4 MiB of history. |
+| `Write` | `static void Write(ReadOnlySpan<byte> data, Stream output)` | Writes `data` as one frame — independent blocks of at most 4 MiB, content size and content checksum present — to `output`. |
 
 ### Namespace `Compression.Core.Dictionary.Lz77`
 

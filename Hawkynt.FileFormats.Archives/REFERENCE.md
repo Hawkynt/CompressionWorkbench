@@ -7398,7 +7398,7 @@ Implements `IDisposable`.
 
 #### `AceWriter`
 
-Writes single-volume ACE archives: stored, ACE 1.0 LZ77 or (with `ace20`) ACE 2.0 blocked members (LZ77 with repeat distances, behind the EXE or DELTA filter where that is smaller), optionally solid and/or Blowfish-encrypted, with directory entries. No comments, adverts or recovery records.
+Writes single-volume ACE archives: stored, ACE 1.0 LZ77 or (with `ace20`) ACE 2.0 blocked members (LZ77 with repeat distances, behind the EXE or DELTA filter, or WAVE files in SOUND and BMP pixel rows in PIC mode, where that is smaller), optionally solid and/or Blowfish-encrypted, with directory entries. No comments, adverts or recovery records.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -30172,6 +30172,11 @@ Specifies the compression codec used when writing a 7z archive.
 | `BZip2` | `3` | BZip2 compression. |
 | `PPMd` | `4` | PPMd compression (Model H, variant used by 7-Zip). |
 | `Copy` | `5` | Copy (store without compression). |
+| `Zstd` | `6` | Zstandard, as the 7-Zip-zstd coder 04 F7 11 01 writes it. |
+| `Brotli` | `7` | Brotli, as the 7-Zip-zstd coder 04 F7 11 02 writes it (3 MiB chunks behind skippable-frame headers). |
+| `Lz4` | `8` | LZ4, as the 7-Zip-zstd coder 04 F7 11 04 writes it (4 MiB chunks behind skippable-frame headers). |
+| `Lz5` | `9` | LZ5 1.5, as the 7-Zip-zstd coder 04 F7 11 05 writes it (4 MiB chunks behind skippable-frame headers). |
+| `Lizard` | `10` | Lizard, as the 7-Zip-zstd coder 04 F7 11 06 writes it (4 MiB chunks behind skippable-frame headers). |
 
 #### `SevenZipEntry`
 
@@ -30302,7 +30307,7 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SevenZipWriter` | `SevenZipWriter(Stream stream, SevenZipCodec codec, bool leaveOpen = false, int dictionarySize = 8388608, int ppmdOrder = 6, int ppmdMemorySize = 16777216, SevenZipFilter filter = 0, int deltaDistance = 1, string password = null, bool encryptHeaders = false, bool compressHeaders = false)` | Initializes a new `SevenZipWriter` with an explicit codec. |
+| `SevenZipWriter` | `SevenZipWriter(Stream stream, SevenZipCodec codec, bool leaveOpen = false, int dictionarySize = 8388608, int ppmdOrder = 6, int ppmdMemorySize = 16777216, SevenZipFilter filter = 0, int deltaDistance = 1, string password = null, bool encryptHeaders = false, bool compressHeaders = false, int level = 3)` | Initializes a new `SevenZipWriter` with an explicit codec. |
 | `SevenZipWriter` | `SevenZipWriter(Stream stream, bool leaveOpen = false, int dictionarySize = 8388608)` | Initializes a new `SevenZipWriter`. |
 | `AddDirectory` | `void AddDirectory(SevenZipEntry entry)` | Adds a directory entry carrying its own times and attributes. |
 | `AddDirectory` | `void AddDirectory(string name)` | Adds a directory entry. |

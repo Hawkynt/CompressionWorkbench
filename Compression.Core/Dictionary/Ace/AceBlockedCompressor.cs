@@ -1,16 +1,21 @@
+using System.Buffers.Binary;
+
 namespace Compression.Core.Dictionary.Ace;
 
 /// <summary>
 /// Writes ACE 2.0 blocked streams (compression type 2): LZ77 with the four repeat-distance codes,
 /// optionally behind the EXE filter (x86 CALL targets made absolute) or the DELTA filter (bytes
-/// split into planes and differenced), chosen per member by trial. One instance per archive; with
+/// split into planes and differenced), or in the SOUND (audio predictor) or PIC (pixel predictor)
+/// mode, chosen per member by trial. One instance per archive; with
 /// <c>solid</c> the dictionary carries over between members as the decoder's does.
 /// </summary>
 /// <remarks>
 /// The stream layout mirrors <see cref="AceDecompressor"/>: a mode instruction is the main-tree
 /// symbol after the distance codes followed by 8 bits of mode and its parameters (DELTA: 8-bit
 /// distance, 17-bit length; EXE: 8-bit variant), and the LZ77 dictionary holds the filtered bytes.
-/// The SOUND and PIC modes are not emitted. The match search is our own hash-chain parser.
+/// WAVE files are also tried in the four SOUND modes and BMP pixel rows in PIC mode; those blocks
+/// enter the dictionary without LZ77 symbols, as the decoder registers them. The match search is
+/// our own hash-chain parser.
 /// </remarks>
 public sealed class AceBlockedCompressor {
   private const int HashBits = 16;
@@ -32,7 +37,7 @@ public sealed class AceBlockedCompressor {
   /// <summary>Dictionary size in bits (what the file header's parameter field records).</summary>
   public int DictionaryBits => this._dictBits;
 
-  /// <summary>The filter the last <see cref="Compress"/> call chose: "lz77", "exe" or "delta:N".</summary>
+  /// <summary>The filter the last <see cref="Compress"/> call chose: "lz77", "exe", "delta:N", "sound:N" (N the mode number) or "pic".</summary>
   public string LastMode { get; private set; } = "lz77";
 
   /// <summary>Tells a solid compressor about a member that was stored: the decoder adds stored bytes to its dictionary too.</summary>
@@ -52,18 +57,14 @@ public sealed class AceBlockedCompressor {
   }
 
   /// <summary>One segment of the LZ77 input: the bytes the dictionary will hold, and the mode instruction before them (null: none).</summary>
-  private sealed record Segment(byte[] Bytes, AceMode? Mode);
+  /// <remarks>A SOUND or PIC segment carries its coded <paramref name="Media"/> bits, which follow the mode instruction; its bytes enter the dictionary without LZ77 symbols.</remarks>
+  private sealed record Segment(byte[] Bytes, AceMode? Mode, AceBitWriter? Media = null);
 
-  /// <summary>Compresses one member, trying the plain, EXE and DELTA layouts and keeping the smallest.</summary>
+  /// <summary>Compresses one member, trying the plain, EXE, DELTA, SOUND (WAVE files) and PIC (BMP files) layouts and keeping the smallest.</summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     if (data.IsEmpty)
       return [];
-    var candidates = new List<(string Name, Segment[] Plan)> { ("lz77", [new(data.ToArray(), null)]) };
-    if (LooksLikeX86(data))
-      candidates.Add(("exe", [new(ExeForward(data), new AceMode(AceConstants.ModeLz77Exe, ExeMode: ExeVariant32))]));
-    if (data.Length >= 64)
-      foreach (var distance in new[] { 1, 2, 3, 4 })
-        candidates.Add(($"delta:{distance}", DeltaPlan(data, distance)));
+    List<(string Name, Segment[] Plan)> candidates = this.ForcedMode is { } forced ? [(forced, Forced(data, forced))] : Candidates(data);
 
     byte[]? best = null;
     Segment[]? bestPlan = null;
@@ -79,6 +80,41 @@ public sealed class AceBlockedCompressor {
       foreach (var segment in bestPlan!)
         this.Remember(segment.Bytes);
     return best!;
+  }
+
+  /// <summary>
+  /// Encodes every member with one layout instead of the smallest (null, the default: choose by size):
+  /// "sound:N" puts the whole member in SOUND mode N (3 to 6) whatever it holds, "pic:W:P" codes rows
+  /// of W bytes with P interleaved planes from the start and the remainder as LZ77. A layout that does
+  /// not fit the data throws <see cref="ArgumentException"/>.
+  /// </summary>
+  public string? ForcedMode { get; set; }
+
+  private static Segment[] Forced(ReadOnlySpan<byte> data, string mode) {
+    var parts = mode.Split(':');
+    int Arg(int i) => i < parts.Length && int.TryParse(parts[i], System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : -1;
+    var plan = parts[0] switch {
+      "sound" when parts.Length == 2 && Arg(1) is >= AceConstants.ModeSound8 and <= AceConstants.ModeSound32B => SoundPlan(data, Arg(1)),
+      "pic" when parts.Length == 3 && Arg(1) > 0 && Arg(2) is > 0 and <= 255 => PicSegments(data, 0, data.Length / Arg(1) * Arg(1), Arg(1), Arg(2)),
+      _ => null,
+    };
+    return plan ?? throw new ArgumentException($"ACE layout '{mode}' does not fit this data.", nameof(mode));
+  }
+
+  private static List<(string Name, Segment[] Plan)> Candidates(ReadOnlySpan<byte> data) {
+    var candidates = new List<(string Name, Segment[] Plan)> { ("lz77", [new(data.ToArray(), null)]) };
+    if (LooksLikeX86(data))
+      candidates.Add(("exe", [new(ExeForward(data), new AceMode(AceConstants.ModeLz77Exe, ExeMode: ExeVariant32))]));
+    if (data.Length >= 64)
+      foreach (var distance in new[] { 1, 2, 3, 4 })
+        candidates.Add(($"delta:{distance}", DeltaPlan(data, distance)));
+    if (IsWave(data))
+      for (var mode = AceConstants.ModeSound8; mode <= AceConstants.ModeSound32B; ++mode)
+        if (SoundPlan(data, mode) is { } sound)
+          candidates.Add(($"sound:{mode}", sound));
+    if (PicPlan(data) is { } pic)
+      candidates.Add(("pic", pic));
+    return candidates;
   }
 
   /// <summary>A rough x86 test: CALL opcodes are frequent enough to make the EXE filter worth a trial.</summary>
@@ -146,12 +182,71 @@ public sealed class AceBlockedCompressor {
     return [.. segments];
   }
 
+  /// <summary>A RIFF WAVE file: the SOUND modes are worth a trial.</summary>
+  private static bool IsWave(ReadOnlySpan<byte> data)
+    => data.Length >= 64 && data[..4].SequenceEqual("RIFF"u8) && data.Slice(8, 4).SequenceEqual("WAVE"u8);
+
+  /// <summary>
+  /// The whole member in SOUND <paramref name="mode"/>, header included, as WinAce 2.6 lays a WAVE file
+  /// out. The SOUND reader decodes the member's remaining size rounded down to four bytes, so a member
+  /// that is not a multiple of four ends with the sound block at least four bytes short of that, a
+  /// switch back to LZ77, and the tail as LZ77.
+  /// </summary>
+  private static Segment[]? SoundPlan(ReadOnlySpan<byte> data, int mode) {
+    var switchTo = new AceMode(mode);
+    if (data.Length % 4 == 0)
+      return [new(data.ToArray(), switchTo, AceSound.Encode(data, mode, switchBack: false))];
+    var length = (data.Length & ~3) - 4;
+    if (length <= 0)
+      return null;
+    var sound = data[..length];
+    return [new(sound.ToArray(), switchTo, AceSound.Encode(sound, mode, switchBack: true)), new(data[length..].ToArray(), null)];
+  }
+
+  /// <summary>
+  /// An uncompressed BMP (8, 16, 24 or 32 bits per pixel): the headers and palette as LZ77, the pixel
+  /// rows in PIC mode with the row stride as width and one plane per byte of a pixel, and whatever
+  /// follows the rows as LZ77 again.
+  /// </summary>
+  private static Segment[]? PicPlan(ReadOnlySpan<byte> data) {
+    if (data.Length < 54 || data[0] != (byte)'B' || data[1] != (byte)'M')
+      return null;
+    var offset = BinaryPrimitives.ReadInt32LittleEndian(data[10..]);
+    var headerSize = BinaryPrimitives.ReadInt32LittleEndian(data[14..]);
+    if (headerSize < 40 || offset < 14 + headerSize || offset >= data.Length)
+      return null;
+    var width = BinaryPrimitives.ReadInt32LittleEndian(data[18..]);
+    var height = Math.Abs(BinaryPrimitives.ReadInt32LittleEndian(data[22..]));
+    var bitsPerPixel = BinaryPrimitives.ReadUInt16LittleEndian(data[28..]);
+    var compression = BinaryPrimitives.ReadInt32LittleEndian(data[30..]);
+    if (width <= 0 || height <= 0 || compression != 0 || bitsPerPixel is not (8 or 16 or 24 or 32))
+      return null;
+    var stride = (int)(((long)width * bitsPerPixel + 31) / 32 * 4);
+    var size = (long)stride * height;
+    return size > data.Length - offset ? null : PicSegments(data, offset, (int)size, stride, bitsPerPixel / 8);
+  }
+
+  /// <summary>LZ77 up to <paramref name="offset"/>, <paramref name="length"/> bytes of PIC rows, LZ77 for the rest.</summary>
+  private static Segment[]? PicSegments(ReadOnlySpan<byte> data, int offset, int length, int width, int planes) {
+    if (length <= 0)
+      return null;
+    var rows = data.Slice(offset, length);
+    var end = offset + length;
+    var segments = new List<Segment>();
+    if (offset > 0)
+      segments.Add(new(data[..offset].ToArray(), null));
+    segments.Add(new(rows.ToArray(), new AceMode(AceConstants.ModePic), AcePic.Encode(rows, width, planes, switchBack: end < data.Length)));
+    if (end < data.Length)
+      segments.Add(new(data[end..].ToArray(), null));
+    return [.. segments];
+  }
+
   private static int BitLength(uint v) => v == 0 ? 0 : 32 - System.Numerics.BitOperations.LeadingZeroCount(v);
 
   private static int MinLengthFor(int dist) => dist - 1 <= AceConstants.MaxDistAtLen2 ? 2 : dist - 1 <= AceConstants.MaxDistAtLen3 ? 3 : 4;
 
   /// <summary>A token: literal, explicit match, repeat match (slot 0 = most recent) or mode instruction.</summary>
-  private readonly record struct Token(int Kind, int Value, int Length, AceMode? Mode) {
+  private readonly record struct Token(int Kind, int Value, int Length, AceMode? Mode, AceBitWriter? Media = null) {
     public const int Literal = 0, Match = 1, Repeat = 2, ModeSwitch = 3;
   }
 
@@ -187,8 +282,14 @@ public sealed class AceBlockedCompressor {
     var pos = history.Length;
     foreach (var segment in plan) {
       if (segment.Mode != null)
-        tokens.Add(new(Token.ModeSwitch, 0, 0, segment.Mode));
+        tokens.Add(new(Token.ModeSwitch, 0, 0, segment.Mode, segment.Media));
       var end = pos + segment.Bytes.Length;
+      if (segment.Media != null) {
+        // The decoder registers SOUND and PIC output in the dictionary, so later matches may reach into it.
+        for (; pos < end; ++pos)
+          Insert(pos);
+        continue;
+      }
       while (pos < end) {
         var remaining = end - pos;
         int MatchLength(int dist, int limit) {
@@ -258,8 +359,13 @@ public sealed class AceBlockedCompressor {
     }
 
     var writer = new AceBitWriter();
-    for (var blockStart = 0; blockStart < tokens.Count; blockStart += MaxBlockSymbols) {
-      var count = Math.Min(MaxBlockSymbols, tokens.Count - blockStart);
+    for (int blockStart = 0, count; blockStart < tokens.Count; blockStart += count) {
+      // A block also ends with a switch into SOUND or PIC: the LZ77 symbols after that excursion
+      // start a block of their own, as WinAce writes them and unace expects.
+      count = 0;
+      while (count < MaxBlockSymbols && blockStart + count < tokens.Count)
+        if (tokens[blockStart + count++].Media != null)
+          break;
       var mainFreq = new long[AceConstants.Lz77NumMainCodes];
       var lenFreq = new long[AceConstants.Lz77NumLenCodes];
       for (var t = blockStart; t < blockStart + count; ++t) {
@@ -300,6 +406,8 @@ public sealed class AceBlockedCompressor {
               writer.WriteBits((uint)mode.DeltaLen, 17);
             } else if (mode.Mode == AceConstants.ModeLz77Exe)
               writer.WriteBits((uint)mode.ExeMode, 8);
+            if (token.Media != null)
+              writer.Append(token.Media);
             break;
           }
           case Token.Repeat:

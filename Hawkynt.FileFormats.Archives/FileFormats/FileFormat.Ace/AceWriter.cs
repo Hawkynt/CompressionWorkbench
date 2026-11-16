@@ -7,8 +7,8 @@ namespace FileFormat.Ace;
 
 /// <summary>
 /// Writes single-volume ACE archives: stored, ACE 1.0 LZ77 or (with <c>ace20</c>) ACE 2.0 blocked
-/// members (LZ77 with repeat distances, behind the EXE or DELTA filter where that is smaller),
-/// optionally solid and/or Blowfish-encrypted, with directory entries. No comments, adverts or
+/// members (LZ77 with repeat distances, behind the EXE or DELTA filter, or WAVE files in SOUND and
+/// BMP pixel rows in PIC mode, where that is smaller), optionally solid and/or Blowfish-encrypted, with directory entries. No comments, adverts or
 /// recovery records.
 /// </summary>
 public sealed class AceWriter {
@@ -34,6 +34,9 @@ public sealed class AceWriter {
 
   /// <summary>Archive creation time recorded in the main header (defaults to now).</summary>
   public DateTime? CreatedTime { get; init; }
+
+  /// <summary>Test hook: one ACE 2.0 layout for every member instead of the smallest (see <see cref="AceBlockedCompressor.ForcedMode"/>).</summary>
+  internal string? ForcedAce20Mode { get; init; }
 
   public void AddFile(string name, byte[] data, DateTime? modified = null)
     => this._members.Add((name, data, modified ?? DateTime.Now, false));
@@ -81,7 +84,7 @@ public sealed class AceWriter {
     WriteHeader(output, main.ToArray());
 
     var compressor = new AceCompressor(this._dictBits, this._solid);
-    var blocked = new AceBlockedCompressor(this._dictBits, this._solid);
+    var blocked = new AceBlockedCompressor(this._dictBits, this._solid) { ForcedMode = this.ForcedAce20Mode };
     var first = true;
     foreach (var (name, data, modified, isDirectory) in this._members) {
       byte[] packed;

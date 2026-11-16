@@ -108,6 +108,31 @@ internal sealed class AceBitWriter {
     this.WriteBits(value & ((1u << (bits - 1)) - 1), bits - 1);
   }
 
+  /// <summary>The inverse of <see cref="AceBitStream.ReadGolombRice"/>: the low <paramref name="rBits"/> bits, then the rest in unary (ones ended by a zero).</summary>
+  public void WriteGolombRice(int value, int rBits, bool signed = false) {
+    var u = (uint)(!signed ? value : value >= 0 ? 2 * value : -2 * value - 1);
+    this.WriteBits(u, rBits);
+    for (var ones = u >> rBits; ones > 0;) {
+      var n = (int)Math.Min(ones, 24u);
+      this.WriteBits((1u << n) - 1, n);
+      ones -= (uint)n;
+    }
+    this.WriteBits(0, 1);
+  }
+
+  /// <summary>Bits written so far.</summary>
+  public long BitCount => (long)this._words.Count * 32 + this._used;
+
+  /// <summary>Appends every bit <paramref name="other"/> holds, unaligned.</summary>
+  public void Append(AceBitWriter other) {
+    foreach (var word in other._words) {
+      this.WriteBits(word >> 16, 16);
+      this.WriteBits(word & 0xFFFF, 16);
+    }
+    if (other._used > 0)
+      this.WriteBits(other._current >> (32 - other._used), other._used);
+  }
+
   private void Flush() {
     this._words.Add(this._current);
     this._current = 0;
