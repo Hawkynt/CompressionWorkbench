@@ -187,12 +187,13 @@ public sealed class ArchiveOverlayFilesystemSession : IFilesystemSession {
       $"{Path.GetFullPath(path)}\0{formatId}\0{info.Length}\0{info.LastWriteTimeUtc.Ticks}"));
     var buffer = new byte[64 * 1024];
     source.Position = 0;
-    var head = source.Read(buffer);
+    var head = (int)Math.Min(source.Length, buffer.Length);
+    source.ReadExactly(buffer.AsSpan(0, head));
     hash.AppendData(buffer.AsSpan(0, head));
     if (source.Length > buffer.Length) {
-      source.Position = Math.Max(0, source.Length - buffer.Length);
-      var tail = source.Read(buffer);
-      hash.AppendData(buffer.AsSpan(0, tail));
+      source.Position = source.Length - buffer.Length;
+      source.ReadExactly(buffer);
+      hash.AppendData(buffer);
     }
     return hash.GetHashAndReset();
   }
@@ -532,16 +533,15 @@ public sealed class ArchiveOverlayFilesystemSession : IFilesystemSession {
   public void Dispose() {
     lock (_gate) {
       if (_disposed) return;
-      _log.Flush(true);
       _disposed = true;
-      try { _log.Dispose(); }
-      finally {
-        try { _source.Dispose(); }
-        finally {
-          foreach (var owner in _owners)
-            owner.Dispose();
-        }
+      Exception? error = null;
+      try { _log.Flush(true); }
+      catch (Exception ex) { error = ex; }
+      foreach (var resource in new IDisposable[] { _log, _source }.Concat(_owners)) {
+        try { resource.Dispose(); }
+        catch (Exception ex) { error ??= ex; }
       }
+      if (error is not null) throw error;
     }
   }
 
