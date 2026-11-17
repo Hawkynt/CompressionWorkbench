@@ -8,7 +8,8 @@ For eligible local WORM archives, `ArchiveOverlayFilesystemSession` provides
 a separately qualified `FilesystemMutationModel.LogStructured` writable view.
 The on-disk archive stays byte-for-byte unchanged; another archive reader still
 sees the original version. The sidecar is **not** a portable archive extension
-and must travel with its original archive if the writable view is to be retained.
+and must remain paired with its original archive at the same absolute path
+(the current source-identity check deliberately binds to that path).
 
 ## Selection and ownership
 
