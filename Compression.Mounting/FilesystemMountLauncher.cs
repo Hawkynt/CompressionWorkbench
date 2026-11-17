@@ -49,19 +49,29 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
       throw new ArgumentException($"Format '{formatId}' is not registered.", nameof(formatId));
 
     var backend = this._backends.GetBackend(requestedPlan.BackendId);
+    // WORM archives can be writable through an adjacent log without opening the
+    // original archive for mutation. Other formats retain their qualified path.
+    var overlayCandidate = requestedPlan.AccessMode == MountAccessMode.ReadWrite &&
+      FormatRegistry.GetById(formatId) is { } overlayDescriptor &&
+      overlayDescriptor is IArchiveFormatOperations and IArchiveCreatable &&
+      overlayDescriptor is not IArchiveModifiable &&
+      overlayDescriptor.Category is FormatCategory.Archive or FormatCategory.CompoundTar;
     FileStream? source = null;
     IFilesystemSession? filesystem = null;
     var ownershipTransferred = false;
 
     try {
-      source = OpenBackingSource(imagePath, requestedPlan.AccessMode);
+      source = OpenBackingSource(imagePath,
+        overlayCandidate ? MountAccessMode.ReadOnly : requestedPlan.AccessMode);
       if (source.CanWrite)
         JournaledArchiveWriteback.RecoverIfRequired(source);
       else if (File.Exists(JournaledArchiveWriteback.JournalPath(source.Name)))
         throw new IOException("The source has a pending undo journal; mount it read/write to recover before allowing reads.");
 
-      var probe = MountNamespaceResolver.Probe(formatId, source, password, volumeParameters);
-      var backingWritable = source.CanWrite;
+      var probe = MountNamespaceResolver.Probe(formatId, source, password, volumeParameters,
+        preferArchiveOverlay: overlayCandidate);
+      var usingOverlay = probe.Layers.Contains("namespace:append-only-sidecar", StringComparer.Ordinal);
+      var backingWritable = source.CanWrite || usingOverlay;
       var resolvedPlan = this._backends.ResolveFilesystem(
         requestedPlan.BackendId,
         probe.Profile,
@@ -70,7 +80,11 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
       );
       EnsureSupported(resolvedPlan);
 
-      if (requestedPlan.AccessMode == MountAccessMode.ReadWrite &&
+      if (requestedPlan.AccessMode == MountAccessMode.ReadWrite && usingOverlay) {
+        source.Dispose();
+        source = null;
+        filesystem = MountNamespaceResolver.OpenOverlayArchivePath(formatId, imagePath, password);
+      } else if (requestedPlan.AccessMode == MountAccessMode.ReadWrite &&
           probe.Layers.Contains("namespace:staged-worm-rebuild", StringComparer.Ordinal)) {
         // The source handle must be closed before same-directory replacement
         // (Windows will not rename an open archive without delete sharing).
