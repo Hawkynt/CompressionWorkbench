@@ -71,6 +71,15 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
       var probe = MountNamespaceResolver.Probe(formatId, source, password, volumeParameters,
         preferArchiveOverlay: overlayCandidate);
       var usingOverlay = probe.Layers.Contains("namespace:append-only-sidecar", StringComparer.Ordinal);
+      if (overlayCandidate && !usingOverlay) {
+        // Overlay qualification is deliberately stricter than the existing
+        // verified rebuild path. Do not strand an otherwise writable WORM archive
+        // on a read-only source handle when the sidecar path declines it.
+        source.Dispose();
+        source = OpenBackingSource(imagePath, requestedPlan.AccessMode);
+        JournaledArchiveWriteback.RecoverIfRequired(source);
+        probe = MountNamespaceResolver.Probe(formatId, source, password, volumeParameters);
+      }
       var backingWritable = source.CanWrite || usingOverlay;
       var resolvedPlan = this._backends.ResolveFilesystem(
         requestedPlan.BackendId,
