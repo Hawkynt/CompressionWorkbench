@@ -3766,7 +3766,7 @@ Writes PSP CSO v1/v2 and ZSO compressed-ISO containers.
 
 #### `DaaFormatDescriptor`
 
-PowerISO DAA ("Direct Access Archive") compressed CD/DVD image, format version 0x100: exposes the ISO as `image.iso` plus a synthetic `metadata.ini`; creates and rewrites version 0x100 images PowerISO reads. Version 0x110, split, password-protected and gBurner GBI images are refused.
+PowerISO DAA ("Direct Access Archive") compressed CD/DVD image, format version 0x100: exposes the ISO as `image.iso` plus a synthetic `metadata.ini`; reads split images (from their first volume's path) and password-protected ones (with the password); creates and rewrites unsplit, unprotected version 0x100 images PowerISO reads. Version 0x110 and gBurner GBI images are refused.
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
 
@@ -3797,21 +3797,28 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`
 
 #### `DaaImage`
 
-PowerISO DAA image, format version 0x100 (single volume, unencrypted): a 76-byte header, a table of 3-byte compressed chunk lengths and raw-deflate chunks. Implemented from `docs/DAA-ON-DISK.md`.
+PowerISO DAA image, format version 0x100: a 76-byte header, descriptors, a table of 3-byte compressed chunk lengths and raw-deflate chunks, optionally split into volumes and protected by a password. Implemented from `docs/DAA-ON-DISK.md`.
+
+Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DaaImage` | `DaaImage()` |  |
 | `DefaultChunkSize` | `const int DefaultChunkSize` |  |
+| `DescriptorPassword` | `const uint DescriptorPassword` | Descriptor type of a password-protected image. |
+| `DescriptorVolumes` | `const uint DescriptorVolumes` | Descriptor type of a multi-volume image. |
 | `HeaderSize` | `const int HeaderSize` |  |
 | `Version100` | `const uint Version100` |  |
 | `Version110` | `const uint Version110` |  |
 | `ChunkSize` | `uint ChunkSize { get; }` |  |
 | `Chunks` | `IReadOnlyList<ValueTuple<long, int>> Chunks { get; }` |  |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether the image is password-protected. |
 | `IsoSize` | `long IsoSize { get; }` |  |
 | `Version` | `uint Version { get; }` |  |
-| `CopyIsoTo` | `void CopyIsoTo(Stream source, Stream output)` |  |
-| `Read` | `static DaaImage Read(Stream stream)` |  |
+| `VolumeCount` | `int VolumeCount { get; }` | Gets the number of volume files the image spans (1 for a single file). |
+| `CopyIsoTo` | `void CopyIsoTo(Stream source, Stream output)` | Decodes the ISO into `output`, every chunk checked against its CRC-32. |
+| `Dispose` | `void Dispose()` | Closes the later volumes of a split image; the first stream stays with its owner. |
+| `Read` | `static DaaImage Read(Stream stream, string password = null, Func<int, Stream> openVolume = null)` | Reads the image header and chunk table. A split image needs `openVolume`, which opens volume 2, 3, … (or returns null when it does not exist); a password-protected one needs the password before its chunks can be read (`CopyIsoTo`). |
 | `Write` | `static void Write(Stream output, ReadOnlySpan<byte> iso, int chunkSize = 65536, DeflateCompressionLevel level = 6)` | Writes a version 0x100 image: header, 3-byte length table, raw-deflate chunks each followed by its CRC-32. |
 
 ### Namespace `FileFormat.DiskCopy42`

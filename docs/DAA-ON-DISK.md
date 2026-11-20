@@ -31,9 +31,71 @@ All integers are little-endian.
 ## Descriptors
 
 From `0x4C` up to the chunk table there are `{type, length}` records (8 bytes
-plus a body, where `length` includes the 8). Type 1 marks a multi-volume image.
-Type 3 marks a password-protected image: its body holds the password type, the
-password CRC and a 128-byte key. Both are refused.
+plus a body, where `length` includes the 8). PowerISO 1.3 writes:
+
+| Type | Length | Meaning |
+| --- | --- | --- |
+| 1 | `0x3C` | multi-volume image; the body holds the volume count and the volume size, which a reader does not need |
+| 2 | `0x1FF` | follows type 1; zero apart from its own fields in every measured image |
+| 3 | `0x90` | password: u32 password type (0), u32 check CRC, 128-byte key |
+
+A reader skips every record by its length and acts only on types 1 and 3.
+
+## Split images
+
+`-volsize` cuts the image file into volumes named `<name>.part01.daa`,
+`<name>.part02.daa`, … (daa2iso also accepts `<name>.001.daa`). They behave as
+one file:
+
+- The first volume is a normal DAA file with a type-1 descriptor. The header's
+  DAA size (0x30) is the sum of all the volume file sizes.
+- Each later volume starts with a 100-byte (`0x64`) header. Its signature is
+  `"DAA VOL"` + 9 NULs and its field at 0x10 is `0x64`, the start of its data.
+  The rest of that header was not needed.
+- The chunk data continues from the end of one volume to the data start of the
+  next, so a chunk can straddle two volumes. Chunk offsets count through that
+  joined data.
+
+## Password-protected images
+
+The type-3 descriptor holds a check CRC and a 128-byte key. The password turns
+into 128 nibble permutations, table *Tₙ* for each block size *n* = 1 … 128.
+Each table sends the 2*n* nibbles of an *n*-byte block to new positions:
+
+- Input byte *i* has its low nibble at position 2*i* and its high nibble at
+  position 2*i*+1.
+- Table entry *t* = *Tₙ*[*k*] for nibble *k* says where that nibble goes: into
+  output byte *t* div 2, as the high nibble if *t* is odd, otherwise as the
+  low nibble.
+
+**Check.** Apply *T₁₂₈* to the 128-byte key. The CRC-32 of the result equals
+the check CRC exactly when the password is right.
+
+**Chunks.** Before inflating, each stored chunk (deflate data and CRC trailer)
+is undone block by block: every full 128 bytes with *T₁₂₈*, then a final
+partial block of *r* bytes with *Tᵣ*.
+
+**Building *Tₙ*.** Let *m* = 2*n* and *p₀*, *p₁*, … be the password bytes. Each
+of the *m* positions is used exactly once. "Step *k*" below means: move the
+cursor forward to the *k*-th unused position, wrapping at *m* to the given
+restart point.
+
+- *m* ≤ 64: the cursor starts at min(*p₀* ≫ 5, *m* − 1). Repeat *m* times: step
+  11 (restart 0), take that position.
+- *m* > 64:
+  1. Take position (*p₀* ≫ 5) + 32 first. The cursor starts at *p₀* ≫ 5.
+  2. Then take *m* − 33 positions. For each one, step *c* with restart 32,
+     where *c* is the next password byte *p₁*, *p₂*, … When the password is
+     used up, or the byte is 0, *c* = 11.
+  3. Take the remaining 32 positions by step *p₀* & 7 (7 when that is 0),
+     restart 0.
+  4. If *p₀* & 24 is not zero, reorder the finished table. Walk it
+     cyclically, skipping entries already taken, with a cursor that starts at
+     index 0 and moves *p₀* & 24 entries each time. The entries picked, in
+     that order, form the new table.
+
+Measured on PowerISO 1.3 images with the password `Secret-30`: the check CRC
+matches, and every chunk inflates to the ISO PowerISO was given.
 
 ## Version 0x100 chunk table
 
@@ -61,4 +123,3 @@ deflate's own stored blocks, not as an uncompressed chunk.
 - **gBurner GBI.** It has the same layout, but the chunk table is additionally
   offset by the low byte of the header CRC and XORed with `table length / 4`.
   There is no sample.
-- **Split and password-protected images.**

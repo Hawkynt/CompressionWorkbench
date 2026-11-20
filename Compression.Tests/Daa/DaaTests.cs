@@ -130,6 +130,102 @@ public class DaaTests {
     Assert.Throws<NotSupportedException>(() => DaaImage.Read(new MemoryStream(daa)));
   }
 
+  // ── password-protected and split images (ReferenceVectors/README.md) ──────
+
+  internal const string Password = "Secret-30";
+  internal const string PasswordIsoSha256 = "b8f9ec037566899baa8875772de0bb18d93a371533af8cabd076112693f28603";
+  internal const string SplitIsoSha256 = "49c551705e03389de73a9adfdde82bf0b2ac3d272c880abf1cff3684420d14ae";
+
+  private static string ExtractIsoSha(string vector, string? password) {
+    var dir = Path.Combine(Path.GetTempPath(), "cwb-daa-" + Guid.NewGuid().ToString("N"));
+    try {
+      using (var s = File.OpenRead(VectorPath(vector)))
+        new DaaFormatDescriptor().Extract(s, dir, password, null);
+      return Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Path.Combine(dir, DaaFormatDescriptor.ImageName))));
+    } finally {
+      if (Directory.Exists(dir)) Directory.Delete(dir, true);
+    }
+  }
+
+  [Test, Category("ThirdPartyVector")]
+  public void GivenAPowerIsoPasswordImage_WhenExtractedWithThePassword_ThenTheIsoMatches()
+    => Assert.That(ExtractIsoSha("pw.daa", Password), Is.EqualTo(PasswordIsoSha256));
+
+  [Test, Category("ThirdPartyVector")]
+  public void GivenAPowerIsoSplitPasswordImage_WhenExtractedFromItsFirstVolume_ThenTheIsoMatches() {
+    Assert.That(ExtractIsoSha("splitpw.part01.daa", Password), Is.EqualTo(SplitIsoSha256));
+    using var s = File.OpenRead(VectorPath("splitpw.part01.daa"));
+    using var image = DaaImage.Read(s, Password, DaaFormatDescriptor.VolumeOpener(VectorPath("splitpw.part01.daa")));
+    Assert.That((image.VolumeCount, image.IsEncrypted), Is.EqualTo((2, true)));
+    // the chunks run across the volume boundary
+    Assert.That(image.Chunks.Any(c => c.Offset < s.Length && c.Offset + c.Length > s.Length), Is.True);
+  }
+
+  [Test, Category("ThirdPartyVector")]
+  public void GivenAPasswordImage_WhenListedWithoutThePassword_ThenTheImageShowsEncrypted() {
+    using var s = File.OpenRead(VectorPath("pw.daa"));
+    var listing = new DaaFormatDescriptor().List(s, null);
+    Assert.That(listing.Single(e => e.Name == DaaFormatDescriptor.ImageName).IsEncrypted, Is.True);
+  }
+
+  [TestCase(null, false)]
+  [TestCase("Secret-31", true)]
+  [TestCase("", true)]
+  [Category("Exception")]
+  public void GivenAPasswordImage_WhenExtractedWithoutTheRightPassword_ThenRefused(string? password, bool supplied) {
+    var e = Assert.Throws<ArchivePasswordException>(() => ExtractIsoSha("pw.daa", password));
+    Assert.That(e!.PasswordWasSupplied, Is.EqualTo(supplied));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenASplitImageWithoutItsPath_WhenRead_ThenNotSupported() {
+    var first = File.ReadAllBytes(VectorPath("splitpw.part01.daa"));
+    Assert.Throws<NotSupportedException>(() => DaaImage.Read(new MemoryStream(first), Password));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenASplitImageWithAVolumeMissing_WhenRead_ThenInvalidData() {
+    var first = File.ReadAllBytes(VectorPath("splitpw.part01.daa"));
+    Assert.Throws<InvalidDataException>(() => DaaImage.Read(new MemoryStream(first), Password, _ => null));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenASplitImageWhoseSecondVolumeIsNotAVolume_WhenRead_ThenInvalidData() {
+    var first = File.ReadAllBytes(VectorPath("splitpw.part01.daa"));
+    var second = File.ReadAllBytes(VectorPath("splitpw.part02.daa"));
+    second[4] = (byte)'X';
+    Assert.Throws<InvalidDataException>(() => DaaImage.Read(new MemoryStream(first), Password, _ => new MemoryStream(second)));
+  }
+
+  [TestCase("disc.part01.daa", "disc.part02.daa")]
+  [TestCase("disc.part09.daa", "disc.part10.daa")]
+  [TestCase("disc.001.DAA", "disc.002.DAA")]
+  [TestCase("disc.daa", null)]
+  public void GivenAFirstVolumeName_WhenTheNextIsLookedFor_ThenTheNumberCountsUp(string first, string? second) {
+    var dir = Path.Combine(Path.GetTempPath(), "cwb-daa-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(dir);
+    try {
+      if (second != null) File.WriteAllBytes(Path.Combine(dir, second), [1]);
+      var opener = DaaFormatDescriptor.VolumeOpener(Path.Combine(dir, first));
+      if (second == null) {
+        Assert.That(opener, Is.Null);
+        return;
+      }
+      var number = int.Parse(System.Text.RegularExpressions.Regex.Match(first, @"(\d+)\.daa$", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Groups[1].Value);
+      using var stream = opener!(number + 1);
+      Assert.That(stream, Is.Not.Null);
+      Assert.That(Path.GetFileName(((FileStream)stream!).Name), Is.EqualTo(second));
+    } finally {
+      Directory.Delete(dir, true);
+    }
+  }
+
+  [Test, Category("Exception")]
+  public void GivenAPasswordImage_WhenItsImageIsReplaced_ThenRefusedRatherThanDroppingTheProtection() {
+    using var ms = new MemoryStream(File.ReadAllBytes(VectorPath("pw.daa")));
+    Assert.Throws<NotSupportedException>(() => new DaaFormatDescriptor().Add(ms, [ArchiveInputInfo.InMemory("image.iso", SampleIso(4096, 9))]));
+  }
+
   private static uint Crc(ReadOnlySpan<byte> data) {
     var crc = 0xFFFFFFFFu;
     foreach (var b in data) {
@@ -199,6 +295,36 @@ public class DaaExternalConformanceTests {
       using var s = File.OpenRead(daa);
       using var o = new MemoryStream();
       DaaImage.Read(s).CopyIsoTo(s, o);
+      Assert.That(o.ToArray(), Is.EqualTo(iso));
+    } finally {
+      try { Directory.Delete(dir, true); } catch { /* best effort */ }
+    }
+  }
+
+  // PowerISO's smallest volume is 300 KiB, and these ISOs are half random, so the split ones give
+  // two to four volumes.
+  [TestCase(800 * 1024, true, null)]
+  [TestCase(2000 * 1024, true, null)]
+  [TestCase(900 * 1024, true, "pw")]
+  [TestCase(3000, false, "A long passphrase, with spaces & symbols: 1234567890!")]
+  public void GivenAPowerIsoSplitOrProtectedDaa_WhenWeReadIt_ThenTheIsoMatches(int size, bool split, string? password) {
+    var tool = RequirePowerIso();
+    var dir = Path.Combine(Path.GetTempPath(), "cwb-daax-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(dir);
+    try {
+      var iso = DaaTests.RealIso(size, size + 5);
+      var isoPath = Path.Combine(dir, "source.iso");
+      File.WriteAllBytes(isoPath, iso);
+      var daa = Path.Combine(dir, "theirs.daa");
+      var options = (split ? " -volsize 300K" : "") + (password is null ? "" : $" -setpassword '{password}'");
+      Run($"{tool} convert {FsInteropToolbox.WinToWsl(isoPath)} -o {FsInteropToolbox.WinToWsl(daa)} -ot daa{options}");
+      var first = split ? Path.Combine(dir, "theirs.part01.daa") : daa;
+      Assert.That(File.Exists(first), Is.True, "PowerISO wrote no image");
+      using var s = File.OpenRead(first);
+      using var image = DaaImage.Read(s, password, DaaFormatDescriptor.VolumeOpener(first));
+      Assert.That(image.IsEncrypted, Is.EqualTo(password is not null));
+      using var o = new MemoryStream();
+      image.CopyIsoTo(s, o);
       Assert.That(o.ToArray(), Is.EqualTo(iso));
     } finally {
       try { Directory.Delete(dir, true); } catch { /* best effort */ }
