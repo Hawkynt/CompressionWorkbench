@@ -41,8 +41,7 @@ public sealed class Reiser4NativeTreeExternalTests {
 
       Assert.That(process, Is.Not.Null);
       using (var started = process!) {
-        var stdout = started.StandardOutput.ReadToEnd();
-        var stderr = started.StandardError.ReadToEnd();
+        var (stdout, stderr) = started.ReadOutput();
         started.WaitForExit();
         Assert.Multiple(() => {
           Assert.That(started.ExitCode, Is.EqualTo(0),

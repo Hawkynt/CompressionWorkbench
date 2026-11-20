@@ -4,13 +4,14 @@ namespace FileFormat.Uharc;
 /// The encoder side of <see cref="UharcRleDecoder"/> (docs/UHARC-ON-DISK.md, "RLE"): runs of four
 /// or more become <c>R n x</c> (or <c>R FF lo hi x</c> from 255), runs of three <c>T x</c>, shorter
 /// runs stay literal, and a literal marker byte is escaped as <c>R c</c>, which moves both markers
-/// down by 0x40.
+/// down by 0x40. UHARC 0.2's stream (the byteFirst argument of <see cref="Encode"/>) puts the
+/// byte of a long run before its count.
 /// </summary>
 internal static class UharcRleEncoder {
 
   private const int MaxRun = 0xFFFF;
 
-  public static byte[] Encode(ReadOnlySpan<byte> data) {
+  public static byte[] Encode(ReadOnlySpan<byte> data, bool byteFirst = false) {
     var output = new MemoryStream(data.Length + data.Length / 64 + 16);
     byte triple = 0xED;
     var i = 0;
@@ -27,8 +28,14 @@ internal static class UharcRleEncoder {
           output.WriteByte((byte)length);
         else {
           output.WriteByte(0xFF);
+          if (byteFirst)
+            output.WriteByte(value);
           output.WriteByte((byte)length);
           output.WriteByte((byte)(length >> 8));
+          if (byteFirst) {
+            i += length;
+            continue;
+          }
         }
 
         output.WriteByte(value);

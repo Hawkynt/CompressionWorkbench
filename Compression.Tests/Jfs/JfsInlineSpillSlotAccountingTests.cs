@@ -61,8 +61,7 @@ public class JfsInlineSpillSlotAccountingTests {
       RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
     };
     using var proc = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start {exe}");
-    var stdout = proc.StandardOutput.ReadToEnd();
-    var stderr = proc.StandardError.ReadToEnd();
+    var (stdout, stderr) = proc.ReadOutput();
     if (!proc.WaitForExit(timeoutMs)) { try { proc.Kill(); } catch { /* best effort */ } }
     return (stdout, stderr, proc.ExitCode);
   }

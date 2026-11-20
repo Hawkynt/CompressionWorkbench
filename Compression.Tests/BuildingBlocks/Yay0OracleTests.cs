@@ -95,11 +95,10 @@ public sealed class Yay0OracleTests {
       start.ArgumentList.Add("import sys, crunch64; sys.stdout.write(crunch64.yay0.decompress(open(sys.argv[1], 'rb').read()).hex())");
       start.ArgumentList.Add(input);
       using var process = Process.Start(start)!;
-      var stdout = process.StandardOutput.ReadToEndAsync();
-      var stderr = process.StandardError.ReadToEnd();
+      var (stdout, stderr) = process.ReadOutput();
       process.WaitForExit();
       Assert.That(process.ExitCode, Is.EqualTo(0), $"crunch64 refused our stream:\n{stderr}");
-      return Convert.FromHexString(stdout.Result);
+      return Convert.FromHexString(stdout);
     } finally {
       File.Delete(input);
     }

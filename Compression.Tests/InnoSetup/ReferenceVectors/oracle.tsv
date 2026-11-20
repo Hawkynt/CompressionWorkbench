@@ -45,3 +45,7 @@ inno711-encfull-lzma2-solid.exe	app/readme.txt	46	62981db4724efbd958840214ca8eb0
 inno711-encfull-lzma2-solid.exe	app/sub/random.bin	3000	ea9a04acd72963e6c050896f128a26ced2a8a41696550c6cf4a81fb57f530a91
 inno711-encfull-lzma2-solid.exe	app/sub/readme-copy.txt	46	62981db4724efbd958840214ca8eb0a9a45f06a565a9254ad5890b0a68d3491b
 inno711-encfull-lzma2-solid.exe	app/sub/repeat.txt	32000	755a009b306c9e7bedbb976fbf50710eb9dddd63e9e17ac59ca8d32769fd7627
+inno1216-16bit.exe	app/DATA/DATA.BIN	3000	de9374c4faecb07bcf19f855cb01a6dc6c7af2b42f90331138a4c62409b2de1d
+inno1216-16bit.exe	app/EMPTY.TXT	0	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+inno1216-16bit.exe	app/NOTES.TXT	21643	697c1bee07bd5b758aad115884f3042b22cec9a67a9c6d79031b8743aa842b85
+inno1216-16bit.exe	app/SUB/INNER.TXT	16	dd38a3960d503d46bb3011397486cea6e19653334770cb45431354461c12c5c9

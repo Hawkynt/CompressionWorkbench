@@ -23,6 +23,17 @@ All inputs come from this repository or are generated, so nothing third-party is
 | `cpy.ha` | `ha a0q cpy.ha in\tiny.txt in\empty.txt` | stored members |
 | `ours.ha` | our `HaWriter` (see `WriteProbe.Ha`) | `ha t` and `ha x` accept it; see below |
 
+`special.ha` comes from a Linux build of the same revision (`make -f makefile.nix`). It was run
+with `ha asd special.ha * sub/uplink` in a directory holding:
+- `file.txt` (`hello special\n`);
+- `link` → `file.txt` and `sub/uplink` → `../file.txt`;
+- the FIFO `pipe` (0640) and the socket `sock`;
+- the devices `tty0` (`c 4,1`, 0600), `loopx` (`b 7,200`, 0660) and `bigdev` (`c 300,70000`, 0644),
+  created by root.
+
+Run as root, `ha xya special.ha` re-created the three devices and the FIFO with those numbers and
+modes. It could not re-create the links (see `docs/HA-ON-DISK.md` §1.4).
+
 `HaReferenceTests` asserts the listings `ha lf` printed. It also checks that every member extracts
 to the input bytes (the reader verifies each CRC-32), and that `HaHsc.Encode` reproduces both HSC
 streams in `hsc.ha` byte for byte.

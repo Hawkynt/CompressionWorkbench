@@ -66,8 +66,7 @@ public class CxfsExternalConformanceTests {
     };
     using var process = Process.Start(psi)
       ?? throw new InvalidOperationException($"Failed to start {tool}.");
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     if (!process.WaitForExit(timeoutMs)) {
       try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
       throw new TimeoutException($"{tool} did not exit within {timeoutMs} ms.");

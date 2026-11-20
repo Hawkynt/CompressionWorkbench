@@ -31,6 +31,9 @@ public sealed class SqxReader : IDisposable {
   /// <summary>Whether the archive's headers are encrypted (they open only with the password).</summary>
   public bool HeadersEncrypted { get; private set; }
 
+  /// <summary>Whether the archive carries an internal recovery record (see <see cref="SqxRecovery"/>).</summary>
+  public bool HasRecoveryRecord { get; private set; }
+
   /// <summary>Volumes read: 1 for a single-volume archive.</summary>
   public int VolumeCount => this._volumes.Count;
 
@@ -264,8 +267,13 @@ public sealed class SqxReader : IDisposable {
           break;
         case SqxContainer.BlockEnd:
           return (multi, lastVolume);
+        case SqxContainer.BlockRecovery when headerKey == null && SqxRecoveryRecord.TryRead(data.AsSpan(position), out var record):
+          // an internal recovery record: its CRCs and parity follow its header
+          this.HasRecoveryRecord = true;
+          position += (int)record.Length;
+          break;
         default:
-          // Comments, recovery and other records: header only, nothing extracted.
+          // Comments and other records: header only, nothing extracted.
           position = next;
           break;
       }

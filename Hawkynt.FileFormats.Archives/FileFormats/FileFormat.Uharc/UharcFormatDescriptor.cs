@@ -9,10 +9,10 @@ namespace FileFormat.Uharc;
 /// <summary>
 /// UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (<c>-mr</c>), LZ78 (<c>-mw</c>), LZP (<c>-mz</c>), PPM (<c>-mx</c>) and ALZ
 /// (<c>-m1</c>..<c>-m3</c>, including the multimedia predictors) modes, password-protected archives
-/// and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP and ALZ modes, with passwords and
+/// and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP, PPM and ALZ modes, with passwords and
 /// the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP and ALZ modes; and UHARC 0.2 archives.
-/// 0.4 and 0.3 PPM streams are refused. Creates 0.6
-/// archives in every 0.6 method and 0.4 archives in every method but PPM, optionally password-protected or behind a self-extractor stub, that <c>uharc.exe</c> extracts; it cannot modify them.
+/// 0.3 PPM streams are refused. Creates 0.6 archives in every 0.6 method, 0.4 and 0.3 archives in every method
+/// but PPM and 0.2 archives (store, RLE, LZW, main coder), optionally password-protected or behind a self-extractor stub, that <c>uharc.exe</c> extracts; it cannot modify them.
 ///
 /// References:
 /// <list type="bullet">
@@ -42,9 +42,9 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "UHARC 0.6 archive. Lists and extracts the store, RLE, LZ78, LZP, PPM and ALZ modes (with multimedia " +
-    "and executable filters, passwords and SFX stubs), UHARC 0.4 store, RLE, LZW, LZP and ALZ archives, UHARC 0.2 " +
-    "archives, UHARC 0.3 store, RLE, LZW, LZP and ALZ archives. 0.4 and 0.3 PPM streams are refused. " +
-    "Creates 0.6 archives in every method and 0.4 archives in every method but PPM, with passwords and self-extractor stubs.";
+    "and executable filters, passwords and SFX stubs), UHARC 0.4 store, RLE, LZW, LZP, PPM and ALZ archives, and UHARC 0.2 " +
+    "archives, UHARC 0.3 store, RLE, LZW, LZP and ALZ archives. 0.3 PPM streams are refused. " +
+    "Creates 0.6 archives in every method, 0.4 and 0.3 archives in every method but PPM and 0.2 archives, with passwords and self-extractor stubs.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (TryOpen(stream, password, out var reader, out var image) is { } failure)
@@ -78,7 +78,7 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <summary>Format-specific option naming a self-extractor stub file (UHARC's <c>UHARCSFX.EXE</c>).</summary>
   public const string SfxStubOption = "sfx-stub";
 
-  /// <summary>Format-specific option choosing the archive version: 6 (the default) or 4.</summary>
+  /// <summary>Format-specific option choosing the archive version: 6 (the default), 4, 3 or 2.</summary>
   public const string VersionOption = "version";
 
   /// <summary>
@@ -86,8 +86,9 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <c>rle</c> or <c>store</c>; a password enciphers the stream and the tables as <c>-pw</c> does; the
   /// <see cref="SfxStubOption"/> option puts the named Win32 stub in front, as <c>-sfx</c> does;
   /// <see cref="FormatCreateOptions.DictSize"/> caps the LZP and ALZ window, as <c>-md</c> does;
-  /// the <see cref="VersionOption"/> option 4 writes a UHARC 0.4 archive (store, RLE, LZW as
-  /// <c>lz78</c>, LZP, ALZ).
+  /// the <see cref="VersionOption"/> option 4 or 3 writes a UHARC 0.4 or 0.3 archive (store, RLE,
+  /// LZW as <c>lz78</c>, LZP, ALZ), and 2 a UHARC 0.2 archive (store, LZW as <c>lz78</c>, the main
+  /// coder as <c>alz</c>, RLE; DOS 8.3 names).
   /// </summary>
   /// <exception cref="NotSupportedException">
   /// Another method, a password that is not printable ASCII or longer than 255 characters, a stub

@@ -206,8 +206,7 @@ public class SqlarTests {
       psi.ArgumentList.Add(file);
       foreach (var a in args) psi.ArgumentList.Add(a);
       using var p = Process.Start(psi)!;
-      var stdout = p.StandardOutput.ReadToEnd();
-      var stderr = p.StandardError.ReadToEnd();
+      var (stdout, stderr) = p.ReadOutput();
       p.WaitForExit();
       return (p.ExitCode, stdout + stderr);
     } finally {

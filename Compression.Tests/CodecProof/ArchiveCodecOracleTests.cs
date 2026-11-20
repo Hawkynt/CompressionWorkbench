@@ -159,8 +159,7 @@ public class ArchiveCodecOracleTests {
       RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
     };
     using var process = Process.Start(psi)!;
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit(120_000);
     return (stdout, stderr, process.ExitCode);
   }

@@ -35,10 +35,9 @@ internal static class FirmwareUtilsOracle {
     var start = new ProcessStartInfo(tool) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
     foreach (var a in arguments) start.ArgumentList.Add(a);
     using var process = Process.Start(start)!;
-    var stdout = process.StandardOutput.ReadToEndAsync();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit();
-    return (process.ExitCode, stdout.Result + stderr);
+    return (process.ExitCode, stdout + stderr);
   }
 
   /// <summary>Runs <paramref name="tool"/> with <paramref name="data"/> saved to a temporary file whose path replaces <c>{0}</c> in the arguments.</summary>

@@ -54,5 +54,10 @@ CommandLine 5.2 for Linux (`sqc`, from the SQX SDK mirror https://github.com/wes
 `sqc a -ep -fmt SQX2 -m0 -mv 140000` from `text.txt` (3000 lines `line i of the volume test`),
 `huge.bin` (200000 random bytes, split over all three volumes) and `small.bin` (`tiny file`).
 
+`recovery/`: `a3000_1.sqx` and `a60000_3.sqx` with their external records (`.sqx.sqr`), written by
+Squeez CommandLine 5.2 with `sqc a -ep -fmt SQX2 -m0 -rr1|-rr3 -rre` from 3000 and 60000 random bytes;
+`sdk_DamagedArchive.sqx`, the SQX SDK 2.06's `Archives/DamagedArchive.sqx` (an internal recovery
+record and a damaged file), unchanged.
+
 The `*_ultra.sqx` archives come from the same `packed_corpus` at revision
 `03211cd1e86473da08bc675198f6902e15a28ca3`; `records.bin` (240000 bytes) is in its `corpus`.

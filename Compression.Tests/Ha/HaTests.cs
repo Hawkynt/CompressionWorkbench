@@ -196,13 +196,85 @@ public class HaTests {
   }
 
   [Test, Category("EdgeCase")]
-  public void Given_SpecialRecord_When_Extracted_Then_Refused() {
+  public void Given_SpecialRecord_When_Extracted_Then_RefusedInFavourOfReadSpecial() {
     using var ms = Build(w => w.AddFile("dev", [], Stamp));
     var bytes = ms.ToArray();
     bytes[4] = 0x2F; // version 2, SPECIAL
     using var r = new HaReader(new MemoryStream(bytes));
-    Assert.That(r.Entries[0].MethodName, Is.EqualTo("SPECIAL"));
+    Assert.That(r.Entries[0].MethodName, Is.EqualTo("SPC"));
     Assert.Throws<NotSupportedException>(() => r.Extract(r.Entries[0]));
+  }
+
+  /// <summary>An archive with one special-file record: Unix machine information with <paramref name="mode"/>, then <paramref name="data"/>.</summary>
+  private static byte[] SpecialArchive(ushort? mode, byte[] data, string name = "s") {
+    var record = new List<byte> { (byte)'H', (byte)'A', 1, 0, 0x2F };
+    record.AddRange(BitConverter.GetBytes(data.Length));
+    record.AddRange(BitConverter.GetBytes(data.Length));
+    record.AddRange(BitConverter.GetBytes(0u));
+    record.AddRange(BitConverter.GetBytes(1714979290u));
+    record.Add(0);
+    record.AddRange(Encoding.ASCII.GetBytes(name));
+    record.Add(0);
+    if (mode is { } m)
+      record.AddRange([7, HaEntry.MachineUnix, (byte)m, (byte)(m >> 8), 0xE8, 0x03, 0xE8, 0x03]);
+    else
+      record.AddRange([2, 1, 0x20]); // MS-DOS machine information
+    record.AddRange(data);
+    return [.. record];
+  }
+
+  [TestCase(new byte[] { 0x01, 0x04 }, 0x0401ul)]
+  [TestCase(new byte[] { 0x01, 0x04, 0x00, 0x00 }, 0x0401ul)]
+  [Category("EdgeCase")]
+  public void Given_NarrowDeviceNumber_When_Read_Then_NumberWithoutMajorMinor(byte[] data, ulong number) {
+    using var r = new HaReader(new MemoryStream(SpecialArchive(0x2180, data)));
+    var special = r.ReadSpecial(r.Entries[0]);
+    Assert.That(special.Kind, Is.EqualTo(HaSpecialKind.CharacterDevice));
+    Assert.That(special.DeviceNumber, Is.EqualTo(number));
+    Assert.That((special.DeviceMajor, special.DeviceMinor), Is.EqualTo(((uint?)null, (uint?)null)));
+  }
+
+  [Test, Category("Boundary")]
+  public void Given_WidestLinuxDeviceNumber_When_Read_Then_AllMajorAndMinorBitsRecovered() {
+    using var r = new HaReader(new MemoryStream(SpecialArchive(0x61B0, [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])));
+    var special = r.ReadSpecial(r.Entries[0]);
+    Assert.That((special.DeviceMajor, special.DeviceMinor), Is.EqualTo(((uint?)uint.MaxValue, (uint?)uint.MaxValue)));
+  }
+
+  [TestCase(0x2180, new byte[] { 1, 2, 3 }, TestName = "Device with a 3-byte number")]
+  [TestCase(0x2180, new byte[0], TestName = "Device without a number")]
+  [TestCase(0xA1FF, new byte[] { (byte)'a', (byte)'b' }, TestName = "Link text without NUL")]
+  [TestCase(0xA1FF, new byte[] { 0 }, TestName = "Empty link text")]
+  [TestCase(0xA1FF, new byte[] { (byte)'a', 0, (byte)'b', 0 }, TestName = "Link text with an inner NUL")]
+  [TestCase(0x11A0, new byte[] { 1 }, TestName = "FIFO with data")]
+  [TestCase(0xC1ED, new byte[] { 1 }, TestName = "Socket with data")]
+  [Category("Exception")]
+  public void Given_MalformedSpecialRecord_When_Read_Then_InvalidData(int mode, byte[] data) {
+    using var r = new HaReader(new MemoryStream(SpecialArchive((ushort)mode, data)));
+    Assert.Throws<InvalidDataException>(() => r.ReadSpecial(r.Entries[0]));
+  }
+
+  [Test, Category("EdgeCase")]
+  public void Given_SpecialRecordWithoutUnixMode_When_Read_Then_UnknownKindWithRawData() {
+    using var r = new HaReader(new MemoryStream(SpecialArchive(null, [9, 8])));
+    Assert.That(r.Entries[0].UnixMode, Is.Null);
+    var special = r.ReadSpecial(r.Entries[0]);
+    Assert.That(special.Kind, Is.EqualTo(HaSpecialKind.Unknown));
+    Assert.That(special.Data, Is.EqualTo(new byte[] { 9, 8 }));
+  }
+
+  [Test, Category("Exception")]
+  public void Given_RegularMember_When_ReadAsSpecial_Then_ArgumentException() {
+    using var ms = Build(w => w.AddFile("t.txt", Text(10), Stamp));
+    using var r = new HaReader(ms);
+    Assert.That(r.Entries[0].SpecialKind, Is.Null);
+    Assert.Throws<ArgumentException>(() => r.ReadSpecial(r.Entries[0]));
+  }
+
+  [Test, Category("EdgeCase")]
+  public void Given_MalformedLink_When_Listed_Then_ListedWithoutTargetInsteadOfThrowing() {
+    var listing = new HaFormatDescriptor().List(new MemoryStream(SpecialArchive(0xA1FF, "ab"u8.ToArray())), null);
+    Assert.That(listing.Single(), Has.Property("Name").EqualTo("s").And.Property("IsSymlink").False.And.Property("LinkTarget").Null);
   }
 
   [Test, Category("EdgeCase")]

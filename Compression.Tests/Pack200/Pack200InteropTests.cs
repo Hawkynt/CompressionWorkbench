@@ -64,10 +64,9 @@ public class Pack200InteropTests {
     };
     foreach (var a in args) psi.ArgumentList.Add(a);
     using var p = Process.Start(psi)!;
-    p.WaitForExit(60_000);
-    if (!p.HasExited) { p.Kill(true); Assert.Fail($"{exe} timed out."); }
+    var (_, stderr) = p.ReadOutput(TimeSpan.FromSeconds(60));
     if (p.ExitCode != 0)
-      Assert.Fail($"{Path.GetFileName(exe)} exited {p.ExitCode}: {p.StandardError.ReadToEnd()}");
+      Assert.Fail($"{Path.GetFileName(exe)} exited {p.ExitCode}: {stderr}");
   }
 
   [Test]

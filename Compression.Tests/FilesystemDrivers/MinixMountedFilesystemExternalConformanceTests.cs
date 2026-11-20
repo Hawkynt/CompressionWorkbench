@@ -103,8 +103,7 @@ public sealed class MinixMountedFilesystemExternalConformanceTests {
     foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
     using var process = Process.Start(startInfo)
       ?? throw new InvalidOperationException($"Failed to start {fileName}.");
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     if (!process.WaitForExit(60_000)) {
       try { process.Kill(entireProcessTree: true); } catch { }
       throw new TimeoutException($"{fileName} did not exit within 60 seconds.");

@@ -252,8 +252,7 @@ public class CoherentWormTests {
       CreateNoWindow = true,
     };
     using var p = Process.Start(psi)!;
-    var stdout = p.StandardOutput.ReadToEnd();
-    var stderr = p.StandardError.ReadToEnd();
+    var (stdout, stderr) = p.ReadOutput();
     p.WaitForExit(30000);
     return (p.ExitCode, stdout, stderr);
   }

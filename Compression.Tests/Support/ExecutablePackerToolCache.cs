@@ -395,8 +395,7 @@ internal static class ExecutablePackerToolCache {
   public static string Run(string exe, params string[] args) {
     var start = CreateStartInfo(exe, args);
     using var process = Process.Start(start) ?? throw new InvalidOperationException($"Failed to start {exe}.");
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit(30_000);
     return stdout + stderr;
   }
@@ -406,8 +405,7 @@ internal static class ExecutablePackerToolCache {
     foreach (var (key, value) in environment)
       start.Environment[key] = value;
     using var process = Process.Start(start) ?? throw new InvalidOperationException($"Failed to start {exe}.");
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit(30_000);
     return stdout + stderr;
   }
@@ -416,8 +414,7 @@ internal static class ExecutablePackerToolCache {
     var start = CreateStartInfo(exe, args);
     start.WorkingDirectory = workingDirectory;
     using var process = Process.Start(start) ?? throw new InvalidOperationException($"Failed to start {exe}.");
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit(60_000);
     return stdout + stderr;
   }

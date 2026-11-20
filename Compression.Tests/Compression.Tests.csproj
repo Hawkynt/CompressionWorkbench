@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <!-- Authored directory fixture and captured native-decoder facts; see NowCompress/ReferenceVectors/README.md. -->
-    <EmbeddedResource Include="NowCompress/ReferenceVectors/*.now;NowCompress/ReferenceVectors/*.json">
+    <EmbeddedResource Include="NowCompress/ReferenceVectors/*.now;NowCompress/ReferenceVectors/*.json;NowCompress/ReferenceVectors/*.txt">
       <LogicalName>NowCompressVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- Real DOS packer output and UNP 4.11 restorations; see ExePackers/DosVectors/README.md. -->
@@ -540,6 +540,9 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Sqx\ReferenceVectors\volumes\*">
       <LogicalName>SqxVolumes.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Sqx\ReferenceVectors\recovery\*">
+      <LogicalName>SqxRecovery.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- keramics' HFS+ volume written on macOS (decmpfs files); see HfsPlus/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="HfsPlus\ReferenceVectors\*.gz">

@@ -188,8 +188,7 @@ public class F2fsPostMutationExternalTests {
       UseShellExecute = false, CreateNoWindow = true,
     };
     using var p = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start {fileName}");
-    var stdout = p.StandardOutput.ReadToEnd();
-    var stderr = p.StandardError.ReadToEnd();
+    var (stdout, stderr) = p.ReadOutput();
     if (!p.WaitForExit(60_000)) {
       try { p.Kill(); } catch { /* best effort */ }
     }

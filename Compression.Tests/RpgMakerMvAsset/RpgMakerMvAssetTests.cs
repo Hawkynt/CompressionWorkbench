@@ -164,9 +164,7 @@ public class RpgMakerMvAssetTests {
         RedirectStandardError = true, RedirectStandardOutput = true, UseShellExecute = false,
       };
       using var p = Process.Start(psi)!;
-      var errors = p.StandardError.ReadToEnd();
-      p.StandardOutput.ReadToEnd();
-      p.WaitForExit();
+      var (_, errors) = p.ReadOutput();
       Assert.That(p.ExitCode, Is.Zero, errors);
       Assert.That(File.ReadAllBytes(back), Is.EqualTo(Vector(original)));
     } finally { Directory.Delete(dir, true); }

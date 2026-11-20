@@ -2,8 +2,29 @@ namespace FileFormat.Uharc;
 
 /// <summary>
 /// UHARC 0.3 ALZ decoder (stream methods 36..79, modes <c>-m1</c>..<c>-m3</c>), implemented from
-/// docs/UHARC-ON-DISK.md section "UHARC 0.3 ALZ".
+/// docs/UHARC-ON-DISK.md section "UHARC 0.3 ALZ". The model is <see cref="Uharc03AlzModel{TCoder}"/>,
+/// shared with <see cref="Uharc03AlzEncoder"/>.
 /// </summary>
+internal static class Uharc03AlzDecoder {
+
+  /// <summary>Decodes <paramref name="unpackedSize"/> bytes of a 0.3 ALZ stream.</summary>
+  public static byte[] Decode(byte[] packed, int offset, int length, int method, int unpackedSize) {
+    if (method is < UharcMethods.Alz03First or > UharcMethods.Alz03Last)
+      throw new ArgumentOutOfRangeException(nameof(method));
+
+    var output = new byte[unpackedSize];
+    if (unpackedSize == 0)
+      return output;
+
+    var model = new Uharc03AlzModel<Uharc03Decoding>(new(new Uharc03RangeDecoder(packed, offset, length)), method);
+    var position = 0;
+    while (position < unpackedSize)
+      position = model.Step(output, position, default);
+    return output;
+  }
+}
+
+/// <summary>The 0.3 ALZ model, written once for both directions (<see cref="IUharcCoder"/>).</summary>
 /// <remarks>
 /// Each step is a three-way decision: switch the literal model, copy, or literal. Literals come
 /// from one of six context groups (plain bytes, or differences from the byte 1..4 back); copies
@@ -11,7 +32,7 @@ namespace FileFormat.Uharc;
 /// class. Every output byte, copied or not, trains the current literal group. The stream never
 /// resets its models.
 /// </remarks>
-internal sealed class Uharc03AlzDecoder {
+internal sealed class Uharc03AlzModel<TCoder> where TCoder : struct, IUharcCoder {
 
   private const int Bottom = 0x4000;
   private const int DistanceSymbols = 61;
@@ -91,7 +112,8 @@ internal sealed class Uharc03AlzDecoder {
     0, 0, 1, 2, 2, 0, 0, 1, 4, 2, 0, 0, 6, 4, 2, 0,
   ];
 
-  private readonly Uharc03RangeDecoder _coder;
+  private TCoder _coder;
+  private int _switches;
   private readonly byte[] _window;
   private readonly uint _mask;
   private uint _position;
@@ -124,7 +146,7 @@ internal sealed class Uharc03AlzDecoder {
   private readonly uint[] _recent = new uint[16];
   private readonly int _recentCount;
 
-  private Uharc03AlzDecoder(byte[] packed, int offset, int length, int method) {
+  public Uharc03AlzModel(TCoder coder, int method) {
     var stepThree = method == 79 ? (ushort)0x40 : (ushort)0x20;
     if (method is 78 or 79)
       method = 36;
@@ -133,7 +155,7 @@ internal sealed class Uharc03AlzDecoder {
     this._window = new byte[size];
     this._mask = size - 1;
     this._historyLimit = size - 511;
-    this._coder = new Uharc03RangeDecoder(packed, offset, length);
+    this._coder = coder;
     this._steps = [2, 8, stepThree, 128];
     this._recentCount = RecentByFamily[method <= 49 ? 0 : method <= 63 ? 1 : 2];
     Array.Fill(this._recent, uint.MaxValue);
@@ -154,31 +176,55 @@ internal sealed class Uharc03AlzDecoder {
     }
   }
 
-  /// <summary>Decodes <paramref name="unpackedSize"/> bytes of a 0.3 ALZ stream.</summary>
-  public static byte[] Decode(byte[] packed, int offset, int length, int method, int unpackedSize) {
-    if (method is < UharcMethods.Alz03First or > UharcMethods.Alz03Last)
-      throw new ArgumentOutOfRangeException(nameof(method));
+  /// <summary>Recent distances held, by method family (5, 8 or 16).</summary>
+  public int RecentCount => this._recentCount;
 
-    var output = new byte[unpackedSize];
-    if (unpackedSize == 0)
-      return output;
+  /// <summary>Distance <paramref name="index"/> of the recent list; <see cref="uint.MaxValue"/> when no copy has filled it.</summary>
+  public uint Recent(int index) => this._recent[index];
 
-    var decoder = new Uharc03AlzDecoder(packed, offset, length, method);
-    var position = 0;
-    var switches = 0;
-    while (position < unpackedSize) {
-      var decision = decoder.DecodeDecision();
-      if (decision == 0) {
-        if (++switches > 1 << 20)
-          throw new InvalidDataException("UHARC: ALZ switch loop.");
-        decoder.Switch(position);
-        continue;
-      }
+  /// <summary>The farthest distance a copy may reach now.</summary>
+  public uint Reach => Math.Min(this._historyLength + 1, (uint)this._window.Length);
 
-      position = decision == 1 ? decoder.DecodeCopy(output, position) : decoder.DecodeLiteral(output, position);
+  /// <summary>
+  /// Whether a new distance can be coded now: its slot has a share of the distance table (slots
+  /// open as the history grows) and its offset lies within the slot as narrowed by the history.
+  /// </summary>
+  public bool CanCodeDistance(uint distance) {
+    if (distance == 0 || distance > this.Reach)
+      return false;
+    if (distance == 1)
+      return true;
+
+    var slot = SlotOf(distance);
+    if (slot < 52 && this._historyLength < SlotThreshold[slot + 1])
+      return false;
+    var span = SlotSpan[slot];
+    if (span + SlotBase[slot] - 1 > this._historyLength)
+      span = this._historyLength - SlotBase[slot] + 1;
+    return distance - SlotBase[slot] < span;
+  }
+
+  private static int SlotOf(uint distance) {
+    var slot = 0;
+    while (SlotBase[slot] > distance)
+      ++slot;
+    return slot;
+  }
+
+  /// <summary>
+  /// Codes one step — a copy (token 1 new distance, 3 a recent one by <see cref="UharcAlzChoice.Slot"/>)
+  /// or a literal (token 4); model switches are read but never written. Returns the position
+  /// after the bytes it produced.
+  /// </summary>
+  public int Step(byte[] output, int position, in UharcAlzChoice choice) {
+    while (true) {
+      var decision = this.DecodeDecision(choice.Token == 4 ? 2 : 1);
+      if (decision != 0)
+        return decision == 1 ? this.DecodeCopy(output, position, choice) : this.DecodeLiteral(output, position, choice.Literal);
+      if (++this._switches > 1 << 20)
+        throw new InvalidDataException("UHARC: ALZ switch loop.");
+      this.Switch(position);
     }
-
-    return output;
   }
 
   private void Seed(int group) {
@@ -189,9 +235,9 @@ internal sealed class Uharc03AlzDecoder {
   // ── Decisions and model switches ───────────────────────────────────────
 
   /// <summary>0 switches the literal model, 1 is a copy, 2 a literal.</summary>
-  private int DecodeDecision() {
+  private int DecodeDecision(int target) {
     var row = this._outcomes * 4;
-    var count = this._coder.GetCount(this._decisions[row + 3]);
+    var count = this._coder.Count(this._decisions[row + 3], TCoder.Encoding ? this._decisions[row + target] : 0u);
     var decision = 2;
     while (decision > 0 && count < this._decisions[row + decision])
       --decision;
@@ -216,7 +262,7 @@ internal sealed class Uharc03AlzDecoder {
   }
 
   private void Switch(int position) {
-    var value = (int)this._coder.DecodeUniform(12);
+    var value = (int)this._coder.Uniform(12, 0);
     switch (value) {
       case <= 5:
         this._group = value;
@@ -248,12 +294,14 @@ internal sealed class Uharc03AlzDecoder {
 
   // ── Literal model ──────────────────────────────────────────────────────
 
-  private int DecodeLiteral(byte[] output, int position) {
+  private int DecodeLiteral(byte[] output, int position, byte literal) {
+    // The encoder keeps group 0, where the model symbol is the complemented byte.
+    var target = (byte)~literal;
     int symbol;
     if (this._rawLiterals)
-      symbol = (int)this._coder.DecodeUniform(256);
+      symbol = (int)this._coder.Uniform(256, target);
     else
-      symbol = this.DecodeSymbol(this._highLiterals ? 128 : 0);
+      symbol = this.DecodeSymbol(this._highLiterals ? 128 : 0, target);
 
     this.Learn(symbol);
     var value = (byte)~symbol;
@@ -274,18 +322,22 @@ internal sealed class Uharc03AlzDecoder {
   private byte LagByte() => (byte)(this._recentBytes >> (8 * this._lag));
 
   /// <summary>Decodes a symbol of the current context among <paramref name="first"/>..255; 255 lies nearest 0.</summary>
-  private int DecodeSymbol(int first) {
+  private int DecodeSymbol(int first, int target) {
     var basis = this._context * 256;
     var counts = this._frequency[this._group];
     var total = 0u;
-    for (var s = first; s < 256; ++s)
+    var above = 0u;
+    for (var s = first; s < 256; ++s) {
       total += counts[basis + s];
+      if (s > target)
+        above += counts[basis + s];
+    }
 
-    var target = this._coder.GetCount(total);
+    var wanted = this._coder.Count(total, TCoder.Encoding ? above : 0u);
     var low = 0u;
     for (var s = 255; s >= first; --s) {
       var f = (uint)counts[basis + s];
-      if (target < low + f) {
+      if (wanted < low + f) {
         this._coder.Consume(low, f);
         return s;
       }
@@ -353,13 +405,16 @@ internal sealed class Uharc03AlzDecoder {
 
   // ── Copies ─────────────────────────────────────────────────────────────
 
-  private int DecodeCopy(byte[] output, int position) {
+  private int DecodeCopy(byte[] output, int position, in UharcAlzChoice choice) {
     while (this._historyLength >= SlotThreshold[this._slotLimit]) {
       this.OpenSlot(this._slotLimit);
       --this._slotLimit;
     }
 
-    var slot = this.DecodeCumulative(this._distance, DistanceSymbols);
+    var wantedSlot = !TCoder.Encoding ? 0
+      : choice.Token == 1 ? choice.Distance == 1 ? 56 : SlotOf(choice.Distance)
+      : choice.Slot == 0 ? 59 : choice.Slot < 3 ? 58 : 57;
+    var slot = this.DecodeCumulative(this._distance, DistanceSymbols, wantedSlot);
     this.CountDistance(slot);
     if (slot == LongRunSymbol)
       return this.DecodeLongRun(output, position);
@@ -369,12 +424,12 @@ internal sealed class Uharc03AlzDecoder {
     int recent;
     var repeated = slot >= 57;
     if (!repeated) {
-      distance = slot == 56 ? 1u : this.DecodeDistance(slot);
+      distance = slot == 56 ? 1u : this.DecodeDistance(slot, choice.Distance);
       recent = this._recentCount - 1;
     } else {
       recent = slot switch {
-        57 => 3 + (this._recentCount - 4) - this.DecodeCumulative(this._recentIndex, this._recentCount - 3),
-        58 => 2 - this.DecodeCumulative(this._nearIndex, 2),
+        57 => 3 + (this._recentCount - 4) - this.DecodeCumulative(this._recentIndex, this._recentCount - 3, this._recentCount - 1 - choice.Slot),
+        58 => 2 - this.DecodeCumulative(this._nearIndex, 2, 2 - choice.Slot),
         _ => 0,
       };
       if (recent >= this._recentCount)
@@ -395,9 +450,12 @@ internal sealed class Uharc03AlzDecoder {
 
     var lengths = repeated ? this._repeatLength : this._newLength;
     var classes = repeated ? 22 : 21;
-    var lengthClass = this.DecodeCumulative(lengths, classes);
-    var extra = LengthExtra[lengthClass] != 0 ? this._coder.DecodeUniform(LengthExtra[lengthClass]) : 0;
+    var wantedClass = TCoder.Encoding ? LengthClassOf(choice.Length) : 0;
+    var lengthClass = this.DecodeCumulative(lengths, classes, wantedClass);
+    var extra = LengthExtra[lengthClass] != 0 ? this._coder.Uniform(LengthExtra[lengthClass], (uint)(choice.Length - LengthBase[wantedClass])) : 0;
     var count = (byte)(LengthBase[lengthClass] + extra);
+    if (TCoder.Encoding && count != choice.Length)
+      throw new InvalidOperationException("UHARC: 0.3 ALZ copy length cannot be coded.");
     CountLength(lengths, classes, lengthClass);
     if (count < 2)
       throw new InvalidDataException("UHARC: ALZ copy too short.");
@@ -416,8 +474,17 @@ internal sealed class Uharc03AlzDecoder {
     return position + count;
   }
 
-  private uint DecodeDistance(int slot) {
+  /// <summary>The length class of copy length <paramref name="length"/> (2..255).</summary>
+  internal static int LengthClassOf(int length) {
+    var lengthClass = 0;
+    while (LengthBase[lengthClass] > length)
+      ++lengthClass;
+    return lengthClass;
+  }
+
+  private uint DecodeDistance(int slot, uint target) {
     var distance = SlotBase[slot];
+    var offset = TCoder.Encoding ? target - distance : 0;
     var span = SlotSpan[slot];
     if (distance > this._historyLength + 1)
       throw new InvalidDataException("UHARC: ALZ distance slot beyond the decoded data.");
@@ -426,21 +493,26 @@ internal sealed class Uharc03AlzDecoder {
     if (span >= 2) {
       if (span > 0x1000) {
         var blocks = ((span - 1) >> 12) + 1;
-        var block = this._coder.DecodeUniform(blocks);
+        var block = this._coder.Uniform(blocks, offset >> 12);
         distance += block << 12;
         span = block + 1 == blocks ? span - (block << 12) : 0x1000;
+        offset -= block << 12;
       }
 
       if (span >= 2)
-        distance += this._coder.DecodeUniform(span);
+        distance += this._coder.Uniform(span, offset);
     }
 
+    if (TCoder.Encoding && distance != target)
+      throw new InvalidOperationException("UHARC: 0.3 ALZ distance cannot be coded here.");
     return distance;
   }
 
   /// <summary>Decodes a symbol 0..<paramref name="symbols"/>−1 of a cumulative table whose total is at index <paramref name="symbols"/>.</summary>
-  private int DecodeCumulative(ushort[] table, int symbols) {
-    var count = this._coder.GetCount(table[symbols]);
+  private int DecodeCumulative(ushort[] table, int symbols, int target) {
+    if (TCoder.Encoding && (target < 0 || target >= symbols || table[target + 1] == table[target]))
+      throw new InvalidOperationException("UHARC: 0.3 ALZ symbol has no share of its table.");
+    var count = this._coder.Count(table[symbols], TCoder.Encoding ? table[target] : 0u);
     var symbol = symbols - 1;
     while (symbol > 0 && count < table[symbol])
       --symbol;
@@ -511,7 +583,7 @@ internal sealed class Uharc03AlzDecoder {
   // ── Long runs ──────────────────────────────────────────────────────────
 
   private int DecodeLongRun(byte[] output, int position) {
-    var lengthClass = this.DecodeCumulative(LongRun, 15);
+    var lengthClass = this.DecodeCumulative(LongRun, 15, 0);
     uint extra;
     if (lengthClass == 14)
       extra = this._lastRun;
@@ -525,11 +597,11 @@ internal sealed class Uharc03AlzDecoder {
 
       if (span > 0x2000) {
         var blocks = span >> 12;
-        extra += this._coder.DecodeUniform(blocks) << 12;
+        extra += this._coder.Uniform(blocks, 0) << 12;
         span = 0x1000;
       }
 
-      extra += this._coder.DecodeUniform(span);
+      extra += this._coder.Uniform(span, 0);
       this._lastRun = extra;
     }
 

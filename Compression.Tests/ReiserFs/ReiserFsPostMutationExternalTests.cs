@@ -323,8 +323,7 @@ public class ReiserFsPostMutationExternalTests {
     };
     try {
       using var p = Process.Start(psi)!;
-      var so = p.StandardOutput.ReadToEnd();
-      var se = p.StandardError.ReadToEnd();
+      var (so, se) = p.ReadOutput();
       p.WaitForExit(120_000);
       return (so, se, p.ExitCode);
     } catch (Exception ex) {

@@ -79,8 +79,7 @@ public sealed class AsfExternalInteropTests {
       start.ArgumentList.Add(argument);
 
     using var process = Process.Start(start) ?? throw new InvalidOperationException($"Could not start {fileName}.");
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit();
     return (process.ExitCode, stdout, stderr);
   }

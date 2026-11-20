@@ -196,8 +196,7 @@ public class ExecutablePackerCliTests {
       start.ArgumentList.Add(arg);
 
     using var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start CLI process.");
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit();
     return new(process.ExitCode, stdout, stderr);
   }

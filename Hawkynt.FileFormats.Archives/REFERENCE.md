@@ -19508,7 +19508,7 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 
 ### Namespace `FileFormat.Ha`
 
-[`HaEntry`](#haentry) · [`HaFormatDescriptor`](#haformatdescriptor) · [`HaModifier`](#hamodifier) · [`HaReader`](#hareader) · [`HaWriter`](#hawriter)
+[`HaEntry`](#haentry) · [`HaFormatDescriptor`](#haformatdescriptor) · [`HaModifier`](#hamodifier) · [`HaReader`](#hareader) · [`HaSpecialFile`](#haspecialfile) · [`HaSpecialKind`](#haspecialkind) · [`HaWriter`](#hawriter)
 
 #### `HaEntry`
 
@@ -19517,20 +19517,26 @@ One member record of an HA archive (docs/HA-ON-DISK.md §1.1).
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `HaEntry` | `HaEntry()` |  |
+| `MachineUnix` | `const byte MachineUnix` | First machine-information byte of a record written on Unix. |
 | `MethodAsc` | `const int MethodAsc` | LZ77 with arithmetic-coded tokens (ASC). |
 | `MethodCpy` | `const int MethodCpy` | Stored data (CPY). |
 | `MethodDirectory` | `const int MethodDirectory` | Directory record. |
 | `MethodHsc` | `const int MethodHsc` | Order-4 finite-context model (HSC). |
-| `MethodSpecial` | `const int MethodSpecial` | Unix special file (device, FIFO or symlink data). |
+| `MethodSpecial` | `const int MethodSpecial` | Unix special file: a device, FIFO, socket or symbolic link (docs/HA-ON-DISK.md §1.4). |
 | `CompressedSize` | `uint CompressedSize { get; init; }` | Gets the stored (compressed) length. |
 | `Crc32` | `uint Crc32 { get; init; }` | Gets the CRC-32 of the original data (0 for directories). |
 | `FileName` | `string FileName { get; init; }` | Gets the full name, directories separated by '/'. |
 | `IsDirectory` | `bool IsDirectory { get; }` | Gets whether this is a directory record. |
+| `IsSpecial` | `bool IsSpecial { get; }` | Gets whether this is a Unix special-file record (read it with `ReadSpecial`). |
 | `LastModified` | `DateTime LastModified { get; init; }` | Gets the modification time (stored as Unix seconds), in UTC. |
 | `MachineInfo` | `byte[] MachineInfo { get; init; }` | Gets the machine-specific information bytes (first byte: 1 MS-DOS, 2 Unix). |
 | `MethodName` | `string MethodName { get; }` | Gets the method's name as HA lists it. |
 | `Method` | `int Method { get; init; }` | Gets the record type (method): 0 CPY, 1 ASC, 2 HSC, 14 directory, 15 special. |
 | `OriginalSize` | `uint OriginalSize { get; init; }` | Gets the original length. |
+| `SpecialKind` | `HaSpecialKind? SpecialKind { get; }` | Gets what a special-file record holds, from the file-type bits of its Unix mode; null for any other record, `Unknown` when the record carries no Unix mode. |
+| `UnixGroupId` | `ushort? UnixGroupId { get; }` | Gets the Unix group id of a record written on Unix, or null. |
+| `UnixMode` | `ushort? UnixMode { get; }` | Gets the Unix mode (file type and permission bits) of a record written on Unix, or null. |
+| `UnixUserId` | `ushort? UnixUserId { get; }` | Gets the Unix owner id of a record written on Unix, or null. |
 
 #### `HaFormatDescriptor`
 
@@ -19557,7 +19563,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Compacts away records `ha d` marked deleted, as `ha` does on its next write. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts files and directories; special files (devices, FIFOs, sockets, links) have no content and are listed only. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named members; every other record is copied byte for byte. |
 
@@ -19572,7 +19578,7 @@ Edits an HA archive by rewriting it: every member that stays is copied byte for 
 
 #### `HaReader`
 
-Reads an HA archive (Harri Hirvola, 1993–1995): CPY, ASC and HSC members, directory records, deleted records skipped. Layout and methods: docs/HA-ON-DISK.md.
+Reads an HA archive (Harri Hirvola, 1993–1995): CPY, ASC and HSC members, directory records, Unix special files (devices, FIFOs, sockets, symbolic links; `ReadSpecial`), deleted records skipped. Layout and methods: docs/HA-ON-DISK.md.
 
 Implements `IDisposable`.
 
@@ -19584,6 +19590,36 @@ Implements `IDisposable`.
 | `IsTruncated` | `bool IsTruncated { get; }` | Gets whether a record could not be parsed; `Entries` holds those before it. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(HaEntry entry)` | Decodes a member and checks its CRC-32. |
+| `ReadSpecial` | `HaSpecialFile ReadSpecial(HaEntry entry)` | Reads and decodes a Unix special-file record (docs/HA-ON-DISK.md §1.4). |
+
+#### `HaSpecialFile`
+
+The decoded content of an HA special-file record (docs/HA-ON-DISK.md §1.4).
+
+Implements `IEquatable<HaSpecialFile>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HaSpecialFile` | `HaSpecialFile(HaSpecialKind Kind, byte[] Data, string LinkTarget = null, ulong? DeviceNumber = null, uint? DeviceMajor = null, uint? DeviceMinor = null)` | The decoded content of an HA special-file record (docs/HA-ON-DISK.md §1.4). |
+| `Data` | `byte[] Data { get; init; }` | The record's stored bytes, unchanged. |
+| `DeviceMajor` | `uint? DeviceMajor { get; init; }` | The major number of a device stored as an 8-byte number, split the way Linux (glibc) packs `dev_t`; null for any other width, whose packing depends on the writing system. |
+| `DeviceMinor` | `uint? DeviceMinor { get; init; }` | The minor number, under the same condition as `DeviceMajor`. |
+| `DeviceNumber` | `ulong? DeviceNumber { get; init; }` | The device number of a device, read little-endian from all of its 2, 4 or 8 stored bytes; otherwise null. |
+| `Kind` | `HaSpecialKind Kind { get; init; }` | What the record holds. |
+| `LinkTarget` | `string LinkTarget { get; init; }` | The link text of a symbolic link, without its NUL; otherwise null. |
+
+#### `HaSpecialKind`
+
+What an HA special-file record (type 15) holds, from the file-type bits of its Unix mode.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Unknown` | `0` | The record carries no Unix mode, or one with a file type HA does not store as special. |
+| `CharacterDevice` | `1` | A character device; the data is the device number. |
+| `BlockDevice` | `2` | A block device; the data is the device number. |
+| `SymbolicLink` | `3` | A symbolic link; the data is the link text and a terminating NUL. |
+| `Fifo` | `4` | A named pipe; no data. |
+| `Socket` | `5` | A Unix-domain socket; no data. |
 
 #### `HaWriter`
 
@@ -20455,7 +20491,7 @@ Implements `IEquatable<InnoSetupEntry>`.
 | `DataIndex` | `int DataIndex { get; init; }` | Index of the file location (data entry) holding the bytes. |
 | `FileName` | `string FileName { get; init; }` | The destination path with Inno constants spelled as directories, as innoextract writes it: `{app}\bin\x.dll` becomes `app/bin/x.dll`. |
 | `IsDirectory` | `bool IsDirectory { get; }` | Gets whether the entry is a directory; Inno [Files] entries never are. |
-| `LastModified` | `DateTime? LastModified { get; init; }` | The file time the compiler recorded (UTC), or null. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | The file time the compiler recorded, or null: UTC, except in 16-bit (1.2.x) installers, which record a DOS date and time without a zone (`Unspecified`). |
 | `Size` | `long Size { get; init; }` | The uncompressed size in bytes. |
 
 #### `InnoSetupFormatDescriptor`
@@ -20514,18 +20550,23 @@ Implements `IEquatable<InnoVersion>`.
 | --- | --- | --- |
 | `InnoVersion` | `InnoVersion(uint Value, bool IsUnicode, bool IsIsx, bool IsKnown)` | The setup-data version an Inno Setup installer was written with, packed as `(a << 24) \| (b << 16) \| (c << 8) \| d`. |
 | `Build` | `int Build { get; }` | Gets the fourth version component (variant or build). |
+| `IntegerSize` | `int IntegerSize { get; }` | Gets the width in bytes of a Delphi `Integer` in this installer's records. |
+| `Is16Bit` | `bool Is16Bit { get; init; }` | Gets whether this is a 16-bit installer (Inno Setup 1.2.x for Windows 3.x): integers that are `Integer` in the Delphi records are then 16 bits wide, timestamps are DOS date/time, and flag sets of three bytes carry no padding byte. |
 | `IsAmbiguous` | `bool IsAmbiguous { get; }` | True for the tags that more than one layout used (the compiler was changed without the tag). |
 | `IsIsx` | `bool IsIsx { get; init; }` |  |
 | `IsKnown` | `bool IsKnown { get; init; }` |  |
+| `IsLegacyTag` | `bool IsLegacyTag { get; init; }` | Gets whether the version came from a 12-byte 1.2.x tag ("i1.2.10--16\x1a") rather than the 64-byte one. |
 | `IsUnicode` | `bool IsUnicode { get; init; }` |  |
 | `Major` | `int Major { get; }` | Gets the major version. |
 | `Minor` | `int Minor { get; }` | Gets the minor version. |
 | `Patch` | `int Patch { get; }` | Gets the patch version. |
+| `TagLength` | `int TagLength { get; }` | Gets the length of the version tag that opens setup-0: 12 bytes for 1.2.x, 64 otherwise. |
 | `Value` | `uint Value { get; init; }` |  |
 | `AtLeast` | `bool AtLeast(int a, int b, int c, int d = 0)` | True when this version is at least a.b.c.d. |
 | `Below` | `bool Below(int a, int b, int c, int d = 0)` | True when this version is below a.b.c.d. |
 | `Next` | `InnoVersion? Next()` | The next known version of the same flavour (ANSI/Unicode, ISX), or null. |
 | `Parse` | `static InnoVersion Parse(ReadOnlySpan<byte> tag64)` | Parses the 64-byte version tag at the start of setup-0. |
+| `StartsWithLegacyTag` | `static bool StartsWithLegacyTag(ReadOnlySpan<byte> tag)` | Whether the bytes open with a 12-byte Inno Setup 1.2.x tag: "i", the version, "--16" or "--32", then 0x1A. |
 | `ToString` | `override string ToString()` |  |
 | `V` | `static uint V(int a, int b, int c, int d = 0)` | Packs a version number. |
 
@@ -25174,7 +25215,7 @@ The NIfTI header revision the file declares.
 
 ### Namespace `FileFormat.NowCompress`
 
-[`NowCompressArchive`](#nowcompressarchive) · [`NowCompressEntry`](#nowcompressentry) · [`NowCompressFormatDescriptor`](#nowcompressformatdescriptor)
+[`NowCompressArchive`](#nowcompressarchive) · [`NowCompressEntry`](#nowcompressentry) · [`NowCompressFormatDescriptor`](#nowcompressformatdescriptor) · [`NowCompressInput`](#nowcompressinput) · [`NowCompressWriter`](#nowcompresswriter)
 
 #### `NowCompressArchive`
 
@@ -25182,6 +25223,7 @@ Now Compress (Now Software, Macintosh, early 1990s): a directory of 110-byte rec
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `HasNowCompressHeader` | `static bool HasNowCompressHeader(ReadOnlySpan<byte> b)` | Whether the bytes start like a Now Compress archive and the archive header's own sum (bytes 20-23, the sum of bytes 0-19) holds too. Content detection uses this stricter test: bytes 2-7 of the header differ between archives, so no fixed signature covers them all. |
 | `IsNowCompress` | `static bool IsNowCompress(ReadOnlySpan<byte> b)` | Whether the bytes start like a Now Compress archive (magic, file count, first name, header checksum). |
 | `Read` | `static List<NowCompressEntry> Read(Stream stream)` | Parses the directory and decodes every fork. |
 
@@ -25202,9 +25244,9 @@ One file or folder of a Now Compress archive.
 
 #### `NowCompressFormatDescriptor`
 
-Now Compress archive (Now Software, Macintosh). Read-only.
+Now Compress archive (Now Software, Macintosh): read in every block method, written with stored and LZSS blocks (docs/NOW-COMPRESS-ON-DISK.md).
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -25222,9 +25264,34 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates an archive. An input named "x.rsrc" becomes the resource fork of "x" when "x" is also an input (or has no data fork of its own); everything else is a data fork. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `NowCompressInput`
+
+One file or folder to put into a Now Compress archive.
+
+Implements `IEquatable<NowCompressInput>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NowCompressInput` | `NowCompressInput(string Path, bool IsDirectory = false, byte[] Data = null, byte[] Resource = null, DateTime? LastModified = null)` | One file or folder to put into a Now Compress archive. |
+| `Data` | `byte[] Data { get; init; }` | The data fork (ignored for a folder). |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this is a folder. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | The modification time; stored as the creation and modification time. |
+| `Path` | `string Path { get; init; }` | The path inside the archive, '/'-separated; missing parent folders are created. |
+| `Resource` | `byte[] Resource { get; init; }` | The resource fork (ignored for a folder). |
+
+#### `NowCompressWriter`
+
+Writes Now Compress archives (docs/NOW-COMPRESS-ON-DISK.md): the directory of 110-byte records, then one stream per file holding its resource fork and its data fork in 32 KiB blocks, each block stored or packed with the original LZSS, whichever is shorter.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsRepresentableName` | `static bool IsRepresentableName(string name)` | Whether a path component can be stored: 1 to 31 Mac OS Roman bytes, none of them a control character or ':'. |
+| `Write` | `static void Write(Stream output, IEnumerable<NowCompressInput> items, bool compress = true)` | Writes an archive holding `items`, in the given order within each folder. |
 
 ### Namespace `FileFormat.Nrbf`
 
@@ -31857,7 +31924,7 @@ Provides static methods for reading and writing the CP/M Squeeze (.sqz / .??q) f
 
 ### Namespace `FileFormat.Sqx`
 
-[`SqxEntry`](#sqxentry) · [`SqxFormatDescriptor`](#sqxformatdescriptor) · [`SqxReader`](#sqxreader) · [`SqxWriter`](#sqxwriter)
+[`SqxEntry`](#sqxentry) · [`SqxFormatDescriptor`](#sqxformatdescriptor) · [`SqxReader`](#sqxreader) · [`SqxRecovery`](#sqxrecovery) · [`SqxRecoveryRecord`](#sqxrecoveryrecord) · [`SqxRecoveryReport`](#sqxrecoveryreport) · [`SqxWriter`](#sqxwriter)
 
 #### `SqxEntry`
 
@@ -31922,12 +31989,59 @@ Implements `IDisposable`.
 | `SqxReader` | `SqxReader(Stream stream, bool leaveOpen = false)` | Opens an SQX archive. |
 | `SqxReader` | `SqxReader(Stream stream, string password, bool leaveOpen = false)` | Opens an SQX archive with the password its encrypted files (AES-128 in ECB mode, keyed with the MD5 of the password) and, when the archive encrypts them, its headers (Blowfish, keyed the same way) need. |
 | `Entries` | `IReadOnlyList<SqxEntry> Entries { get; }` | Gets the entries in the archive, in archive order. |
+| `HasRecoveryRecord` | `bool HasRecoveryRecord { get; }` | Whether the archive carries an internal recovery record (see `SqxRecovery`). |
 | `HeadersEncrypted` | `bool HeadersEncrypted { get; }` | Whether the archive's headers are encrypted (they open only with the password). |
 | `IsSolid` | `bool IsSolid { get; }` | Whether the main block marks the archive solid. |
 | `VolumeCount` | `int VolumeCount { get; }` | Volumes read: 1 for a single-volume archive. |
 | `Dispose` | `void Dispose()` |  |
 | `ExtractAll` | `byte[][] ExtractAll()` | Extracts every file in archive order (directories yield empty arrays). |
 | `ExtractEntry` | `byte[] ExtractEntry(SqxEntry entry)` | Extracts one file, decoding the files before it when it continues a solid chain. |
+
+#### `SqxRecovery`
+
+SQX recovery records: creates the external one (`name.sqx.sqr`) for an archive and repairs an archive from its internal record or an external one. A parity group (the blocks with the same index modulo the parity count) can lose one block.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CreateExternal` | `static byte[] CreateExternal(ReadOnlySpan<byte> archive, int level = 2)` | The external recovery record of `archive` with `level` percent of recovery data: ceil(blocks × level / 100) parity blocks, as Squeez writes them. |
+| `Repair` | `static SqxRecoveryReport Repair(byte[] archive, byte[] externalRecord = null)` | Repairs `archive` in place from `externalRecord` or, when that is null, from the archive's own recovery record. |
+
+#### `SqxRecoveryRecord`
+
+An SQX recovery record (block type 0x58, `SQ4RD`): the protected data in 512-byte blocks (the last zero-padded), one 16-bit CRC per block, and R parity blocks, parity k being the XOR of every block whose index is k modulo R. A 49-byte header precedes them: CRC-16, type, flags, size, `SQ4RD`, level (percent), block count, parity count, format, protected size, the raw CRC-32 of the CRCs and parity, and (external records only) the raw CRC-32 of the protected data.
+
+Implements `IEquatable<SqxRecoveryRecord>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SqxRecoveryRecord` | `SqxRecoveryRecord(uint Level, long FileBlocks, long ParityBlocks, byte Version, long DataSize, uint RecoveryCrc, uint DataCrc, ushort[] BlockCrcs, byte[] Parity)` | An SQX recovery record (block type 0x58, `SQ4RD`): the protected data in 512-byte blocks (the last zero-padded), one 16-bit CRC per block, and R parity blocks, parity k being the XOR of every block whose index is k modulo R. A 49-byte header precedes them: CRC-16, type, flags, size, `SQ4RD`, level (percent), block count, parity count, format, protected size, the raw CRC-32 of the CRCs and parity, and (external records only) the raw CRC-32 of the protected data. |
+| `BlockSize` | `const int BlockSize` | Bytes of one protected block and one parity block. |
+| `HeaderSize` | `const int HeaderSize` | Bytes of the record's header. |
+| `BlockCrcs` | `ushort[] BlockCrcs { get; init; }` |  |
+| `DataCrc` | `uint DataCrc { get; init; }` |  |
+| `DataSize` | `long DataSize { get; init; }` |  |
+| `FileBlocks` | `long FileBlocks { get; init; }` |  |
+| `Length` | `long Length { get; }` | The record's whole length: header, CRCs and parity. |
+| `Level` | `uint Level { get; init; }` |  |
+| `ParityBlocks` | `long ParityBlocks { get; init; }` |  |
+| `Parity` | `byte[] Parity { get; init; }` |  |
+| `RecoveryCrc` | `uint RecoveryCrc { get; init; }` |  |
+| `Version` | `byte Version { get; init; }` |  |
+| `ToArray` | `byte[] ToArray()` | Serializes the record (an external one carries the data's CRC in `DataCrc`, an internal one 0xFFFFFFFF). |
+| `TryRead` | `static bool TryRead(ReadOnlySpan<byte> data, out SqxRecoveryRecord record)` | Reads a record at the start of `data`; false when there is none, or it does not check out. |
+
+#### `SqxRecoveryReport`
+
+What `Repair` found and did.
+
+Implements `IEquatable<SqxRecoveryReport>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SqxRecoveryReport` | `SqxRecoveryReport(int Damaged, bool Repaired, string Message)` | What `Repair` found and did. |
+| `Damaged` | `int Damaged { get; init; }` | Protected blocks whose CRC failed. |
+| `Message` | `string Message { get; init; }` | A summary for the user. |
+| `Repaired` | `bool Repaired { get; init; }` | Whether every damaged block was rebuilt (or none was damaged). |
 
 #### `SqxWriter`
 
@@ -33631,7 +33745,7 @@ One file or directory of a UHARC archive.
 
 #### `UharcFormatDescriptor`
 
-UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP and ALZ modes, with passwords and the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP and ALZ modes; and UHARC 0.2 archives. 0.4 and 0.3 PPM streams are refused. Creates 0.6 archives in every 0.6 method and 0.4 archives in every method but PPM, optionally password-protected or behind a self-extractor stub, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
+UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP, PPM and ALZ modes, with passwords and the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP and ALZ modes; and UHARC 0.2 archives. 0.3 PPM streams are refused. Creates 0.6 archives in every 0.6 method, 0.4 and 0.3 archives in every method but PPM and 0.2 archives (store, RLE, LZW, main coder), optionally password-protected or behind a self-extractor stub, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
 
@@ -33639,7 +33753,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | --- | --- | --- |
 | `UharcFormatDescriptor` | `UharcFormatDescriptor()` |  |
 | `SfxStubOption` | `const string SfxStubOption` | Format-specific option naming a self-extractor stub file (UHARC's `UHARCSFX.EXE`). |
-| `VersionOption` | `const string VersionOption` | Format-specific option choosing the archive version: 6 (the default) or 4. |
+| `VersionOption` | `const string VersionOption` | Format-specific option choosing the archive version: 6 (the default), 4, 3 or 2. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
@@ -33652,7 +33766,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a UHARC 0.6 archive: method `lzp` (the default), `ppm`, `alz`, `lz78`, `rle` or `store`; a password enciphers the stream and the tables as `-pw` does; the `SfxStubOption` option puts the named Win32 stub in front, as `-sfx` does; `DictSize` caps the LZP and ALZ window, as `-md` does; the `VersionOption` option 4 writes a UHARC 0.4 archive (store, RLE, LZW as `lz78`, LZP, ALZ). |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a UHARC 0.6 archive: method `lzp` (the default), `ppm`, `alz`, `lz78`, `rle` or `store`; a password enciphers the stream and the tables as `-pw` does; the `SfxStubOption` option puts the named Win32 stub in front, as `-sfx` does; `DictSize` caps the LZP and ALZ window, as `-md` does; the `VersionOption` option 4 or 3 writes a UHARC 0.4 or 0.3 archive (store, RLE, LZW as `lz78`, LZP, ALZ), and 2 a UHARC 0.2 archive (store, LZW as `lz78`, the main coder as `alz`, RLE; DOS 8.3 names). |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |

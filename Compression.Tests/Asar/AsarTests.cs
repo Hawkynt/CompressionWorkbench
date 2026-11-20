@@ -263,8 +263,7 @@ public class AsarTests {
     };
     foreach (var a in args) psi.ArgumentList.Add(a);
     using var proc = Process.Start(psi)!;
-    var stdout = proc.StandardOutput.ReadToEnd();
-    var stderr = proc.StandardError.ReadToEnd();
+    var (stdout, stderr) = proc.ReadOutput();
     proc.WaitForExit(60000);
     if (proc.ExitCode != 0)
       Assert.Ignore($"asar tool exited {proc.ExitCode}: {stderr}");

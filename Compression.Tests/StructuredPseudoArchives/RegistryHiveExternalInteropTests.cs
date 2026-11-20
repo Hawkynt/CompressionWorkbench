@@ -77,8 +77,7 @@ public sealed class RegistryHiveExternalInteropTests {
       process.StartInfo.ArgumentList.Add(argument);
 
     process.Start();
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit();
     return (process.ExitCode, stdout + stderr);
   }

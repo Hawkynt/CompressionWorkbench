@@ -2517,6 +2517,43 @@ internal static class FsInteropToolbox {
   }
 
   /// <summary>
+  /// <see cref="RunWsl(string)"/> with a hard time limit: both output streams are drained while the
+  /// command runs (a tool that writes more than a pipe buffer to one stream cannot stall the other),
+  /// and a command still running after <paramref name="timeout"/> is killed with its process tree.
+  /// </summary>
+  /// <returns>The output and exit code; <c>TimedOut</c> is true when the command was killed (exit code -1).</returns>
+  public static (string StdOut, string StdErr, int ExitCode, bool TimedOut) RunWsl(string linuxCommand, TimeSpan timeout) {
+    var dqEscaped = linuxCommand.Replace("\"", "\\\"");
+    var (tool, args) = OperatingSystem.IsWindows()
+      ? (TryFromPath("wsl") ?? "wsl", $"-e bash -c \"{dqEscaped}\"")
+      : ("/bin/bash", $"-c \"{dqEscaped}\"");
+    var psi = new ProcessStartInfo {
+      FileName = tool,
+      Arguments = args,
+      RedirectStandardInput = true,
+      RedirectStandardOutput = true,
+      RedirectStandardError = true,
+      UseShellExecute = false,
+      CreateNoWindow = true,
+    };
+    try {
+      using var proc = Process.Start(psi)!;
+      proc.StandardInput.Close();
+      var stdout = proc.StandardOutput.ReadToEndAsync();
+      var stderr = proc.StandardError.ReadToEndAsync();
+      if (!proc.WaitForExit(timeout)) {
+        try { proc.Kill(entireProcessTree: true); } catch (InvalidOperationException) { /* already gone */ }
+        proc.WaitForExit(5000);
+        return (string.Empty, $"timed out after {timeout.TotalSeconds:0} s: {linuxCommand}", -1, true);
+      }
+      proc.WaitForExit();
+      return (stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult(), proc.ExitCode, false);
+    } catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException) {
+      return (string.Empty, ex.Message, -1, false);
+    }
+  }
+
+  /// <summary>
   /// Converts a Windows path (e.g. <c>C:\Users\x\foo</c>) to its WSL
   /// equivalent (<c>/mnt/c/Users/x/foo</c>). Paths with spaces are
   /// wrapped in single-quotes by the caller via <see cref="RunWsl"/>.
@@ -2613,11 +2650,9 @@ internal static class FsInteropToolbox {
     };
     try {
       using var proc = Process.Start(psi)!;
-      var stdout = proc.StandardOutput.ReadToEnd();
-      var stderr = proc.StandardError.ReadToEnd();
-      proc.WaitForExit(60000);
+      var (stdout, stderr) = proc.ReadOutput(); // both streams at once; past ProcessOutput.DefaultTimeout the tool is killed
       return (stdout, stderr, proc.ExitCode);
-    } catch (Exception ex) {
+    } catch (Exception ex) when (ex is not TimeoutException) {
       return (string.Empty, ex.Message, -1);
     }
   }

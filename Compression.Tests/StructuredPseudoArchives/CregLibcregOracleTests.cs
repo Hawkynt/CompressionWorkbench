@@ -67,10 +67,9 @@ public sealed class CregLibcregOracleTests {
     start.Environment["PYTHONIOENCODING"] = "utf-8";
     foreach (var argument in arguments) start.ArgumentList.Add(argument);
     using var process = Process.Start(start)!;
-    var stdout = process.StandardOutput.ReadToEndAsync();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit();
-    return (process.ExitCode, stdout.Result, stderr);
+    return (process.ExitCode, stdout, stderr);
   }
 
   private string[] Walk(string path) {

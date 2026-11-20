@@ -218,8 +218,7 @@ public class ExtInPlaceShrinkTests {
       UseShellExecute = false, CreateNoWindow = true,
     };
     using var p = Process.Start(psi) ?? throw new InvalidOperationException($"failed to start {tool}");
-    var o = p.StandardOutput.ReadToEnd();
-    var e = p.StandardError.ReadToEnd();
+    var (o, e) = p.ReadOutput();
     if (!p.WaitForExit(90_000)) { try { p.Kill(); } catch { /* best effort */ } }
     return new ProcResult(o, e, p.ExitCode);
   }

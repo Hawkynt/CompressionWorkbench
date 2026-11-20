@@ -87,9 +87,14 @@ internal sealed class InnoSetupInfo {
 
   private InnoVersion V => this.Version;
 
+  /// <summary>16-bit installers (1.2.x for Windows 3.x) store 16-bit Integers and unpadded flag sets.</summary>
+  private bool Bits16 => this.Version.Is16Bit;
+
+  private InnoCursor Cursor(byte[] block) => new(block) { IntegerSize = this.V.IntegerSize, PadFlagSets = !this.Bits16 };
+
   /// <summary>Parses the primary header block (header, languages ... run entries, images).</summary>
   public void LoadPrimary(byte[] block, out int warnings, out bool trailing) {
-    var c = new InnoCursor(block);
+    var c = this.Cursor(block);
     this.LoadHeader(c);
 
     // Languages decide the text encoding of ANSI installers.
@@ -140,7 +145,7 @@ internal sealed class InnoSetupInfo {
 
   /// <summary>Parses the secondary header block: the file locations.</summary>
   public void LoadData(byte[] block, out int warnings, out bool trailing) {
-    var c = new InnoCursor(block);
+    var c = this.Cursor(block);
     for (var i = 0; i < this._dataEntries; ++i)
       this.DataEntries.Add(this.LoadDataEntry(c));
     warnings = c.Warnings;
@@ -194,21 +199,21 @@ internal sealed class InnoSetupInfo {
     this._permissions = v.AtLeast(4, 1, 0) ? c.U32() : 0;
     if (v.AtLeast(2, 0, 0) || v.IsIsx) { this._types = c.U32(); this._components = c.U32(); }
     if (v.AtLeast(2, 0, 0) || (v.IsIsx && v.AtLeast(1, 3, 17))) this._tasks = c.U32();
-    this._directories = c.U32();
+    this._directories = c.UInt();
     if (v.AtLeast(6, 5, 0)) this._issigKeys = c.U32();
-    this._files = c.U32();
-    this._dataEntries = c.U32();
-    this._icons = c.U32();
-    this._ini = c.U32();
-    this._registry = c.U32();
-    this._delete = c.U32();
-    this._uninstallDelete = c.U32();
-    this._run = c.U32();
-    this._uninstallRun = c.U32();
+    this._files = c.UInt();
+    this._dataEntries = c.UInt();
+    this._icons = c.UInt();
+    this._ini = c.UInt();
+    this._registry = c.UInt();
+    this._delete = c.UInt();
+    this._uninstallDelete = c.UInt();
+    this._run = c.UInt();
+    this._uninstallRun = c.UInt();
     if (v.AtLeast(7, 0, 0, 3)) c.U32(); // compiled code version
 
     int licenseSize = 0, infoBeforeSize = 0, infoAfterSize = 0;
-    if (v.Below(1, 3, 0)) { licenseSize = c.I32(); infoBeforeSize = c.I32(); infoAfterSize = c.I32(); }
+    if (v.Below(1, 3, 0)) { licenseSize = c.Int(); infoBeforeSize = c.Int(); infoAfterSize = c.Int(); }
 
     this.SkipWindowsVersionRange(c);
 
@@ -306,10 +311,11 @@ internal sealed class InnoSetupInfo {
     f.Next(); // password
     f.NextIf(v.AtLeast(1, 2, 6)); // allow root directory
     f.NextIf(v.AtLeast(1, 2, 14)); // disable finished page
-    f.NextIf(v.Below(3, 0, 4)); // admin privileges required
-    f.NextIf(v.Below(3, 0, 0)); // always create uninstall icon
-    f.NextIf(v.Below(1, 3, 6)); // overwrite uninst reg entries
-    f.NextIf(v.Below(5, 6, 1)); // changes associations
+    var bits32 = !this.Bits16; // 16-bit installers have none of the next four
+    f.NextIf(bits32 && v.Below(3, 0, 4)); // admin privileges required
+    f.NextIf(bits32 && v.Below(3, 0, 0)); // always create uninstall icon
+    f.NextIf(bits32 && v.Below(1, 3, 6)); // overwrite uninst reg entries
+    f.NextIf(bits32 && v.Below(5, 6, 1)); // changes associations
     f.NextIf(v.AtLeast(1, 3, 0) && v.Below(5, 3, 8)); // create uninstall reg key
     f.NextIf(v.AtLeast(1, 3, 1)); // use previous app dir
     f.NextIf(v.AtLeast(1, 3, 3) && v.Below(6, 4, 0, 1)); // back color horizontal
@@ -514,8 +520,8 @@ internal sealed class InnoSetupInfo {
     if (v.AtLeast(5, 2, 5)) c.SkipString(); // strong assembly name
     var languages = this.ReadConditionsLanguages(c);
     this.SkipWindowsVersionRange(c);
-    var location = c.U32();
-    c.U32(); // attributes
+    var location = c.UInt();
+    c.UInt(); // attributes
     var externalSize = v.AtLeast(4, 0, 0) ? c.U64() : c.U32();
     var copyModeOptions = (ignoreVersion: false, promptIfOlder: false);
     if (v.Below(3, 0, 5)) {
@@ -532,7 +538,7 @@ internal sealed class InnoSetupInfo {
     f.Next(); // never uninstall
     f.Next(); // restart replace
     var deleteAfterInstall = f.Next();
-    f.Next(); f.Next(); f.Next(); // register server, register type lib, shared file
+    if (!this.Bits16) { f.Next(); f.Next(); f.Next(); } // register server, register type lib, shared file
     f.NextIf(v.Below(2, 0, 0) && !v.IsIsx); // is readme file
     var compareTimeStamp = f.Next();
     f.Next(); // font is not truetype
@@ -558,7 +564,7 @@ internal sealed class InnoSetupInfo {
     if (v.AtLeast(5, 2, 0)) { f.Next(); f.Next(); f.Next(); } // external size preset, set/unset ntfs compression
     f.NextIf(v.AtLeast(5, 2, 5)); // gac install
     f.End();
-    var type = v.AtLeast(5, 0, 0) ? c.Enum(2) : c.Enum(3);
+    var type = this.Bits16 || v.AtLeast(5, 0, 0) ? c.Enum(2) : c.Enum(3);
     return new(source, destination, languages, location, externalSize, deleteAfterInstall, bits32, bits64,
       ignoreVersion, promptIfOlder, compareTimeStamp, overwriteSameVersion, replaceSameIfDiffer, type == 1);
   }
@@ -597,7 +603,7 @@ internal sealed class InnoSetupInfo {
     if (v.AtLeast(5, 3, 5)) c.SkipString(); // app user model id
     if (v.AtLeast(6, 1, 0)) c.Skip(16); // toast activator CLSID
     this.SkipWindowsVersionRange(c);
-    c.I32(); // icon index
+    c.Int(); // icon index
     if (v.AtLeast(1, 3, 24)) c.I32(); // show command
     if (v.AtLeast(1, 3, 15)) c.Enum(3); // close on exit
     if (v.AtLeast(2, 0, 7)) c.U16(); // hotkey
@@ -605,7 +611,7 @@ internal sealed class InnoSetupInfo {
     f.Next();
     f.NextIf(v.Below(1, 3, 26));
     f.Next();
-    f.Next();
+    f.NextIf(!this.Bits16); // use app paths
     f.NextIf(v.AtLeast(5, 0, 3) && v.Below(6, 3, 0));
     f.NextIf(v.AtLeast(5, 4, 2));
     f.NextIf(v.AtLeast(5, 5, 0));
@@ -625,16 +631,18 @@ internal sealed class InnoSetupInfo {
   private void SkipRegistry(InnoCursor c) {
     var v = this.V;
     if (v.Below(1, 3, 0)) c.U32();
-    c.SkipString(); c.SkipString(); c.SkipString(); // key, name, value
+    c.SkipString(); // key
+    if (!this.Bits16) c.SkipString(); // name
+    c.SkipString(); // value
     this.SkipConditions(c);
     if (v.AtLeast(4, 0, 11) && v.Below(4, 1, 0)) c.SkipString(); // permissions
     this.SkipWindowsVersionRange(c);
-    c.U32(); // hive
+    if (!this.Bits16) c.U32(); // hive
     if (v.AtLeast(4, 1, 0)) c.I16(); // permission
-    if (v.AtLeast(5, 2, 5)) c.Enum(7); else c.Enum(6); // type
+    if (v.AtLeast(5, 2, 5)) c.Enum(7); else if (!this.Bits16) c.Enum(6); else c.Enum(2); // type
     if (v.AtLeast(7, 0, 0, 3)) { c.U8(); c.Flags(10); return; } // bitness, options
     var f = c.BeginFlags();
-    f.Next(); f.Next(); // create value if doesn't exist, unins delete value
+    if (!this.Bits16) { f.Next(); f.Next(); } // create value if doesn't exist, unins delete value
     f.Next(); f.Next(); f.Next(); // unins clear value, delete entire key, delete entire key if empty
     f.NextIf(v.AtLeast(1, 2, 6));
     if (v.AtLeast(1, 3, 9)) { f.Next(); f.Next(); }
@@ -683,8 +691,8 @@ internal sealed class InnoSetupInfo {
 
   private InnoDataEntry LoadDataEntry(InnoCursor c) {
     var v = this.V;
-    var firstSlice = c.U32();
-    var lastSlice = c.U32();
+    var firstSlice = c.UInt();
+    var lastSlice = c.UInt();
     if (v.Below(4, 0, 0)) {
       if (firstSlice >= 1 && lastSlice >= 1) { --firstSlice; --lastSlice; } else ++c.Warnings;
     }
@@ -701,8 +709,13 @@ internal sealed class InnoSetupInfo {
     else if (v.AtLeast(4, 0, 1)) { kind = InnoChecksumKind.Crc32; checksum = c.Bytes(4); }
     else { kind = InnoChecksumKind.Adler32; checksum = c.Bytes(4); }
 
-    var filetime = c.I64();
-    DateTime? timestamp = filetime > 0 && filetime < DateTime.MaxValue.ToFileTimeUtc() ? DateTime.FromFileTimeUtc(filetime) : null;
+    DateTime? timestamp;
+    if (this.Bits16) {
+      timestamp = DosTime(c.U16(), c.U16()); // 16-bit installers keep the FAT time, then date
+    } else {
+      var filetime = c.I64();
+      timestamp = filetime > 0 && filetime < DateTime.MaxValue.ToFileTimeUtc() ? DateTime.FromFileTimeUtc(filetime) : null;
+    }
     var versionMs = c.U32();
     var versionLs = c.U32();
 
@@ -749,6 +762,15 @@ internal sealed class InnoSetupInfo {
     var filter = (flags & 4) != 0 ? InnoExeFilter.Filter5309 : InnoExeFilter.None;
     return new(firstSlice, lastSlice, chunkOffset, fileOffset, fileSize, chunkSize, InnoChecksumKind.Sha256, checksum, timestamp,
       ((ulong)versionMs << 32) | versionLs, (flags & 1) != 0, compression, encryption, filter);
+  }
+
+  /// <summary>A FAT time and date (2-second resolution, years from 1980), or null when out of range.</summary>
+  private static DateTime? DosTime(ushort time, ushort date) {
+    int second = (time & 0x1F) * 2, minute = (time >> 5) & 0x3F, hour = time >> 11;
+    int day = date & 0x1F, month = (date >> 5) & 0x0F, year = (date >> 9) + 1980;
+    if (month is < 1 or > 12 || day < 1 || day > DateTime.DaysInMonth(year, month) || hour > 23 || minute > 59 || second > 59)
+      return null;
+    return new DateTime(year, month, day, hour, minute, second, DateTimeKind.Unspecified); // a DOS time carries no zone
   }
 
   private static int DefaultCodepage(uint languageId) => languageId switch {

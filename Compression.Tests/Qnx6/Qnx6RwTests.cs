@@ -330,7 +330,7 @@ public class Qnx6RwTests {
     psi.ArgumentList.Add(program);
     foreach (var a in args) psi.ArgumentList.Add(a);
     using var p = Process.Start(psi)!;
-    var stdout = p.StandardOutput.ReadToEnd();
+    var (stdout, _) = p.ReadOutput();
     if (!p.WaitForExit(15_000)) {
       try { p.Kill(); } catch { /* ignore */ }
       return (-1, stdout);

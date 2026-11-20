@@ -5,6 +5,7 @@ namespace FileFormat.Ha;
 
 /// <summary>
 /// Reads an HA archive (Harri Hirvola, 1993–1995): CPY, ASC and HSC members, directory records,
+/// Unix special files (devices, FIFOs, sockets, symbolic links; <see cref="ReadSpecial"/>),
 /// deleted records skipped. Layout and methods: docs/HA-ON-DISK.md.
 /// </summary>
 public sealed class HaReader : IDisposable {
@@ -140,14 +141,14 @@ public sealed class HaReader : IDisposable {
   /// <summary>Decodes a member and checks its CRC-32.</summary>
   /// <param name="entry">A member of this archive.</param>
   /// <returns>The member's bytes (empty for a directory).</returns>
-  /// <exception cref="NotSupportedException">The record is a Unix special file.</exception>
+  /// <exception cref="NotSupportedException">The record is a Unix special file; read it with <see cref="ReadSpecial"/>.</exception>
   /// <exception cref="InvalidDataException">The data is corrupt or its CRC-32 does not match.</exception>
   public byte[] Extract(HaEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory)
       return [];
-    if (entry.Method == HaEntry.MethodSpecial)
-      throw new NotSupportedException($"HA special-file record '{entry.FileName}' (device, FIFO or link) has no file content.");
+    if (entry.IsSpecial)
+      throw new NotSupportedException($"HA special-file record '{entry.FileName}' (device, FIFO, socket or link) has no file content; use ReadSpecial.");
     if (entry.OriginalSize > Array.MaxLength)
       throw new NotSupportedException($"HA member '{entry.FileName}' is larger than a single buffer.");
 
@@ -167,6 +168,55 @@ public sealed class HaReader : IDisposable {
     if (crc != entry.Crc32)
       throw new InvalidDataException($"CRC-32 mismatch for HA member '{entry.FileName}': stored 0x{entry.Crc32:X8}, computed 0x{crc:X8}.");
     return data;
+  }
+
+  /// <summary>Largest special-file payload accepted; a link text is at most a path, a device number 8 bytes.</summary>
+  internal const int MaxSpecialLength = 65536;
+
+  /// <summary>Reads and decodes a Unix special-file record (docs/HA-ON-DISK.md §1.4).</summary>
+  /// <param name="entry">A special-file member of this archive.</param>
+  /// <returns>The record's kind and decoded content.</returns>
+  /// <exception cref="ArgumentException"><paramref name="entry"/> is not a special-file record.</exception>
+  /// <exception cref="InvalidDataException">The stored bytes do not have the shape the record's kind requires.</exception>
+  public HaSpecialFile ReadSpecial(HaEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (!entry.IsSpecial)
+      throw new ArgumentException($"HA member '{entry.FileName}' is not a special-file record.", nameof(entry));
+    if (entry.CompressedSize != entry.OriginalSize || entry.CompressedSize > MaxSpecialLength)
+      throw new InvalidDataException($"HA special-file record '{entry.FileName}' stores {entry.CompressedSize} bytes for {entry.OriginalSize}.");
+
+    this._stream.Position = entry.DataOffset;
+    var data = new byte[entry.CompressedSize];
+    this._stream.ReadExactly(data);
+
+    var kind = entry.SpecialKind!.Value;
+    switch (kind) {
+      case HaSpecialKind.SymbolicLink:
+        if (data.Length < 2 || data[^1] != 0 || Array.IndexOf(data, (byte)0) != data.Length - 1)
+          throw new InvalidDataException($"HA symbolic link '{entry.FileName}' does not hold a non-empty NUL-terminated link text.");
+        return new(kind, data, LinkTarget: NameEncoding.GetString(data, 0, data.Length - 1));
+
+      case HaSpecialKind.CharacterDevice or HaSpecialKind.BlockDevice:
+        if (data.Length is not (2 or 4 or 8))
+          throw new InvalidDataException($"HA device '{entry.FileName}' stores a {data.Length}-byte device number.");
+        ulong number = 0;
+        for (var i = data.Length - 1; i >= 0; --i)
+          number = (number << 8) | data[i];
+        if (data.Length != 8)
+          return new(kind, data, DeviceNumber: number);
+        // Linux (glibc) dev_t: minor bits 0-7 and 20-43, major bits 8-19 and 44-63.
+        var major = (uint)(((number >> 8) & 0xFFF) | ((number >> 32) & 0xFFFFF000));
+        var minor = (uint)((number & 0xFF) | ((number >> 12) & 0xFFFFFF00));
+        return new(kind, data, DeviceNumber: number, DeviceMajor: major, DeviceMinor: minor);
+
+      case HaSpecialKind.Fifo or HaSpecialKind.Socket:
+        if (data.Length != 0)
+          throw new InvalidDataException($"HA {(kind == HaSpecialKind.Fifo ? "FIFO" : "socket")} '{entry.FileName}' stores {data.Length} bytes; it should store none.");
+        return new(kind, data);
+
+      default:
+        return new(kind, data);
+    }
   }
 
   /// <inheritdoc />

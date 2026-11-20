@@ -164,10 +164,8 @@ public class RarCompatibilityTests {
 
       using (process) {
         Assert.That(process, Is.Not.Null);
-        var stdOut = process!.StandardOutput.ReadToEnd();
-        var stdErr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        Assert.That(process.ExitCode, Is.EqualTo(0), $"7z failed. stdout: {stdOut}\nstderr: {stdErr}");
+        var (stdOut, stdErr) = process!.ReadOutput();
+        Assert.That(process!.ExitCode, Is.EqualTo(0), $"7z failed. stdout: {stdOut}\nstderr: {stdErr}");
       }
 
       Assert.That(File.ReadAllBytes(Path.Combine(outputPath, "legacy.txt")), Is.EqualTo(data));

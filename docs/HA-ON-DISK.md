@@ -35,7 +35,7 @@ and checks that it found exactly that many.
 | clen | data |
 
 - **Version.** 0.999 writes and accepts only version 2 (its "too old" and "too new" checks are both 2).
-- **Type.** 0 CPY (stored), 1 ASC, 2 HSC, 14 DIR, 15 SPECIAL (Unix device, FIFO or symlink data).
+- **Type.** 0 CPY (stored), 1 ASC, 2 HSC, 14 DIR, 15 SPECIAL (Unix device, FIFO, socket or symbolic link; §1.4).
   Any other type is an error.
 - **Path.** Directory components are separated by byte 0xFF, and a non-empty path ends with one,
   e.g. `in\xFF` or `in\xFFsub\xFF`. A member in the archive root has an empty path. A directory
@@ -60,6 +60,36 @@ reference reads past it into the next record. After the last data byte a decoder
 (§2.2), or the real following bytes; the stream's termination makes either work. CPY is `olen`
 raw bytes. `olen` = 0 means no stream at all (`clen` = 0). The reference tries the selected
 methods in order and keeps the shortest, with CPY always the last resort.
+
+### 1.4 Special-file records
+
+The Unix build stores anything that is neither a regular file nor a directory as type 15 when the
+`s` switch is given. The record has Unix machine information (`k` = 7), and the file type comes
+from the top four bits of its mode, which use the classic Unix values:
+
+| Mode & 0xF000 | Kind | Data (`clen` = `olen`, stored raw) |
+| --- | --- | --- |
+| 0x2000 | character device | the writing system's `dev_t`, in its own size and byte order |
+| 0x6000 | block device | as for a character device |
+| 0xA000 | symbolic link | the link text followed by one NUL (`olen` = length + 1) |
+| 0x1000 | FIFO | nothing |
+| 0xC000 | socket | nothing |
+
+- **CRC.** The CRC-32 field is 0, and `ha t` does not check it for this type.
+- **Device numbers.** Linux on x86 writes 8 bytes, little-endian, packed the glibc way:
+  - minor = bits 0–7 | bits 20–43 (shifted down by 12);
+  - major = bits 8–19 | bits 44–63 (shifted down by 32).
+  
+  For example, `c 300,70000` is stored as `70 2C 11 11 00 00 00 00`. Other systems wrote other
+  widths and packings. A reader can report such a number but cannot split it.
+- **Mode bits.** The low twelve bits of the mode are the permissions: 0x800 setuid, 0x400 setgid,
+  0x200 sticky, then rwx for owner, group and other. They match the Unix values. A regular file
+  has no type bits at all: a `-rw-r--r--` file is stored as 0x01A4, not 0x81A4. Only directories
+  (0x4000) and special files carry a type.
+- **Re-creation.** The reference re-creates devices with `mknod` and FIFOs with `mkfifo`. A record
+  without Unix machine information cannot be re-created, and the reference refuses it. When the
+  0.999b Unix build re-creates a link, it passes the link name and the link text in the wrong
+  order, so creating the link fails. The stored text itself is correct (see *Provenance*).
 
 ## 2. Binary arithmetic coder (shared by ASC and HSC)
 
@@ -408,6 +438,10 @@ Pop the stack from the top, the most recently pushed entry first. For each (x, n
   f112fbeb282c2393639393f759a11887c0dad3b5 (GPL-2.0-or-later). It was read to write this
   document; no code was taken.
 - **Oracle.** That repository's release `v0.999b` `ha.exe`, a Win32 build of the same source.
+  For special files (§1.4), a Linux build of the same revision (`makefile.nix`) wrote
+  `special.ha` from a symbolic link, a FIFO, a socket and character and block devices.
+  `ha lf` listed it, and `ha xya` re-created the devices and the FIFO with the same numbers and
+  modes. The link texts equal what `readlink` returned for the sources.
 - **Original 1995 archive.** `HA_SRC.HA` from the original 0.999 beta distribution
   (archive.org item `ha-0.999beta`, md5 32bc5e964219c3fc00bef392efc2fb77). It was written by the
   original DOS `ha.exe`, which the author built partly from hand-optimised assembly. Decoding it

@@ -7,7 +7,7 @@ namespace FileFormat.InnoSetup;
 /// </summary>
 /// <remarks>
 /// <para>Layout: the setup loader exe holds an offset table (at 0x30 before 5.1.5, otherwise in
-/// RCDATA resource 11111) pointing at setup-0 (a 64-byte version tag and two compressed header
+/// RCDATA resource 11111) pointing at setup-0 (a 64-byte version tag, 12 bytes for 1.2.x, and two compressed header
 /// blocks) and setup-1 (the file data as "zlb\x1a" chunks, embedded or in setup-N.bin slices).
 /// Header block one holds the setup header and every script section; block two holds the file
 /// locations: chunk, offset inside the decompressed chunk, size and checksum.</para>
@@ -60,7 +60,6 @@ public sealed class InnoSetupReader {
   /// </summary>
   /// <param name="stream">A seekable stream over the whole file.</param>
   /// <exception cref="InvalidDataException">No Inno Setup data, or headers that do not parse.</exception>
-  /// <exception cref="NotSupportedException">The 16-bit Inno Setup 1.2.x format.</exception>
   public InnoSetupReader(Stream stream) : this(stream, null) { }
 
   /// <summary>
@@ -70,7 +69,6 @@ public sealed class InnoSetupReader {
   /// <param name="stream">A seekable stream over the whole file.</param>
   /// <param name="password">The installer's password, or <see langword="null"/>.</param>
   /// <exception cref="InvalidDataException">No Inno Setup data, or headers that do not parse.</exception>
-  /// <exception cref="NotSupportedException">The 16-bit Inno Setup 1.2.x format.</exception>
   /// <exception cref="Compression.Registry.ArchivePasswordException">Encrypted headers without the right password.</exception>
   public InnoSetupReader(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);
@@ -128,7 +126,7 @@ public sealed class InnoSetupReader {
       var tag = new byte[64];
       stream.Position = offsets.HeaderOffset;
       stream.ReadExactly(tag);
-      return tag.AsSpan().IndexOf("Inno Setup"u8) >= 0;
+      return tag.AsSpan().IndexOf("Inno Setup"u8) >= 0 || InnoVersion.StartsWithLegacyTag(tag);
     } catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException) {
       return false;
     }
@@ -144,7 +142,7 @@ public sealed class InnoSetupReader {
     while (candidate is { } v) {
       try {
         var info = new InnoSetupInfo { Version = v };
-        this._stream.Position = this._offsets.HeaderOffset + 64;
+        this._stream.Position = this._offsets.HeaderOffset + version.TagLength;
         var (mode, password) = ReadEncryptionHeader(this._stream, v);
         Action<Span<byte>>? block1 = null, block2 = null;
         if (mode == 2) {

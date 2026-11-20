@@ -37,16 +37,48 @@ public sealed class HaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new HaReader(stream, leaveOpen: true);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.OriginalSize, e.CompressedSize,
-      e.MethodName, e.IsDirectory, false, e.LastModified)).ToList();
+    var entries = r.Entries.Select((e, i) => {
+      if (!e.IsSpecial)
+        return new ArchiveEntryInfo(i, e.FileName, e.OriginalSize, e.CompressedSize, e.MethodName, e.IsDirectory, false, e.LastModified);
+      var link = TryLinkTarget(r, e);
+      return new ArchiveEntryInfo(i, e.FileName, (long?)link?.Length ?? e.OriginalSize, e.CompressedSize, e.MethodName, false, false,
+        e.LastModified, Kind: KindName(e.SpecialKind!.Value), IsSymlink: link != null, LinkTarget: link);
+    }).ToList();
+    return SymlinkResolver.Resolve(entries);
   }
 
+  private static string? TryLinkTarget(HaReader reader, HaEntry entry) {
+    if (entry.SpecialKind != HaSpecialKind.SymbolicLink)
+      return null;
+    try {
+      return reader.ReadSpecial(entry).LinkTarget;
+    } catch (InvalidDataException) {
+      return null;
+    } catch (EndOfStreamException) {
+      return null;
+    }
+  }
+
+  private static string? KindName(HaSpecialKind kind) => kind switch {
+    HaSpecialKind.CharacterDevice => "char-device",
+    HaSpecialKind.BlockDevice => "block-device",
+    HaSpecialKind.SymbolicLink => null, // IsSymlink says it
+    HaSpecialKind.Fifo => "fifo",
+    HaSpecialKind.Socket => "socket",
+    _ => "special",
+  };
+
+  /// <summary>Extracts files and directories; special files (devices, FIFOs, sockets, links) have no content and are listed only.</summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new HaReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
       if (e.IsDirectory) {
         Directory.CreateDirectory(Path.Combine(outputDir, e.FileName));
+        continue;
+      }
+      if (e.IsSpecial) {
+        r.ReadSpecial(e); // validates the record
         continue;
       }
       WriteFile(outputDir, e.FileName, r.Extract(e));

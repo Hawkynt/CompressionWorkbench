@@ -166,7 +166,7 @@ public class DxbcTests {
       File.WriteAllBytes(path, ms.ToArray());
       var psi = new ProcessStartInfo(fxc, ["-nologo", "-dumpbin", path]) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
       using var p = Process.Start(psi)!;
-      var output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+      var output = p.ReadOutputJoined();
       p.WaitForExit();
       Assert.That(p.ExitCode, Is.Zero, output);
       Assert.That(output, Does.Contain("ps_4_0"));

@@ -14,8 +14,11 @@ public sealed class HaEntry {
   /// <summary>Directory record.</summary>
   public const int MethodDirectory = 14;
 
-  /// <summary>Unix special file (device, FIFO or symlink data).</summary>
+  /// <summary>Unix special file: a device, FIFO, socket or symbolic link (docs/HA-ON-DISK.md §1.4).</summary>
   public const int MethodSpecial = 15;
+
+  /// <summary>First machine-information byte of a record written on Unix.</summary>
+  public const byte MachineUnix = 2;
 
   /// <summary>Gets the full name, directories separated by '/'.</summary>
   public string FileName { get; init; } = string.Empty;
@@ -29,7 +32,7 @@ public sealed class HaEntry {
     MethodAsc => "ASC",
     MethodHsc => "HSC",
     MethodDirectory => "DIR",
-    MethodSpecial => "SPECIAL",
+    MethodSpecial => "SPC",
     _ => $"Method{this.Method}",
   };
 
@@ -50,6 +53,31 @@ public sealed class HaEntry {
 
   /// <summary>Gets whether this is a directory record.</summary>
   public bool IsDirectory => this.Method == MethodDirectory;
+
+  /// <summary>Gets whether this is a Unix special-file record (read it with <see cref="HaReader.ReadSpecial"/>).</summary>
+  public bool IsSpecial => this.Method == MethodSpecial;
+
+  /// <summary>Gets the Unix mode (file type and permission bits) of a record written on Unix, or null.</summary>
+  public ushort? UnixMode => this.MachineInfo is [MachineUnix, var lo, var hi, _, _, _, _, ..] ? (ushort)(lo | (hi << 8)) : null;
+
+  /// <summary>Gets the Unix owner id of a record written on Unix, or null.</summary>
+  public ushort? UnixUserId => this.MachineInfo is [MachineUnix, _, _, var lo, var hi, _, _, ..] ? (ushort)(lo | (hi << 8)) : null;
+
+  /// <summary>Gets the Unix group id of a record written on Unix, or null.</summary>
+  public ushort? UnixGroupId => this.MachineInfo is [MachineUnix, _, _, _, _, var lo, var hi, ..] ? (ushort)(lo | (hi << 8)) : null;
+
+  /// <summary>
+  /// Gets what a special-file record holds, from the file-type bits of its Unix mode; null for any
+  /// other record, <see cref="HaSpecialKind.Unknown"/> when the record carries no Unix mode.
+  /// </summary>
+  public HaSpecialKind? SpecialKind => !this.IsSpecial ? null : (this.UnixMode & 0xF000) switch {
+    0x1000 => HaSpecialKind.Fifo,
+    0x2000 => HaSpecialKind.CharacterDevice,
+    0x6000 => HaSpecialKind.BlockDevice,
+    0xA000 => HaSpecialKind.SymbolicLink,
+    0xC000 => HaSpecialKind.Socket,
+    _ => HaSpecialKind.Unknown,
+  };
 
   /// <summary>Offset of the record's first byte.</summary>
   internal long RecordOffset { get; init; }

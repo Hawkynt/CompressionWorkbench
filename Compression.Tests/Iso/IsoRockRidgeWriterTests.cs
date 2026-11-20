@@ -287,10 +287,9 @@ internal static class IsoOracle {
       RedirectStandardError = true,
     };
     using var p = Process.Start(psi)!;
-    var stdout = p.StandardOutput.ReadToEndAsync();
-    var stderr = p.StandardError.ReadToEnd();
+    var (stdout, stderr) = p.ReadOutput();
     p.WaitForExit();
     if (p.ExitCode == 127) Assert.Ignore($"'{tool}' is not installed.");
-    return (stdout.Result, stderr, p.ExitCode);
+    return (stdout, stderr, p.ExitCode);
   }
 }

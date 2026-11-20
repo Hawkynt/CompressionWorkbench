@@ -14,6 +14,22 @@ namespace FileFormat.InnoSetup;
 /// </remarks>
 public readonly record struct InnoVersion(uint Value, bool IsUnicode, bool IsIsx, bool IsKnown) {
 
+  /// <summary>
+  /// Gets whether this is a 16-bit installer (Inno Setup 1.2.x for Windows 3.x): integers that are
+  /// <c>Integer</c> in the Delphi records are then 16 bits wide, timestamps are DOS date/time, and
+  /// flag sets of three bytes carry no padding byte.
+  /// </summary>
+  public bool Is16Bit { get; init; }
+
+  /// <summary>Gets whether the version came from a 12-byte 1.2.x tag ("i1.2.10--16\x1a") rather than the 64-byte one.</summary>
+  public bool IsLegacyTag { get; init; }
+
+  /// <summary>Gets the length of the version tag that opens setup-0: 12 bytes for 1.2.x, 64 otherwise.</summary>
+  public int TagLength => this.IsLegacyTag ? 12 : 64;
+
+  /// <summary>Gets the width in bytes of a Delphi <c>Integer</c> in this installer's records.</summary>
+  public int IntegerSize => this.Is16Bit ? 2 : 4;
+
   /// <summary>Packs a version number.</summary>
   public static uint V(int a, int b, int c, int d = 0) => (uint)((a << 24) | (b << 16) | (c << 8) | d);
 
@@ -37,6 +53,7 @@ public readonly record struct InnoVersion(uint Value, bool IsUnicode, bool IsIsx
     var s = $"{this.Major}.{this.Minor}.{this.Patch}" + (this.Build != 0 ? $".{this.Build}" : "");
     if (this.IsUnicode) s += " (unicode)";
     if (this.IsIsx) s += " (isx)";
+    if (this.Is16Bit) s += " (16-bit)";
     return s;
   }
 
@@ -172,12 +189,12 @@ public readonly record struct InnoVersion(uint Value, bool IsUnicode, bool IsIsx
   /// <summary>
   /// Parses the 64-byte version tag at the start of setup-0.
   /// </summary>
-  /// <exception cref="InvalidDataException">Not an Inno Setup tag, or the 16-bit 1.2.x format.</exception>
+  /// <exception cref="InvalidDataException">Not an Inno Setup tag.</exception>
   public static InnoVersion Parse(ReadOnlySpan<byte> tag64) {
+    if (tag64.Length >= 12 && StartsWithLegacyTag(tag64))
+      return ParseLegacy(tag64[..12]);
     if (tag64.Length < 64)
       throw new InvalidDataException("Inno Setup version tag is truncated.");
-    if (tag64[0] == 'i' && tag64[11] == 0x1A)
-      throw new NotSupportedException("Inno Setup 1.2.x setup data (\"i1.2.10--\" tags) is not supported.");
 
     var end = tag64[..64].IndexOf((byte)0);
     var text = Encoding.ASCII.GetString(tag64[..(end < 0 ? 64 : end)]);
@@ -201,6 +218,21 @@ public readonly record struct InnoVersion(uint Value, bool IsUnicode, bool IsIsx
     var unicode = value >= V(6, 3, 0) || text.Contains("(u)", StringComparison.Ordinal) || text.Contains("(U)", StringComparison.Ordinal);
     var isx = text.Contains("My Inno Setup Extensions", StringComparison.Ordinal) || text.Contains("with ISX", StringComparison.Ordinal);
     return new(value, unicode, isx, false);
+  }
+
+  /// <summary>Whether the bytes open with a 12-byte Inno Setup 1.2.x tag: "i", the version, "--16" or "--32", then 0x1A.</summary>
+  public static bool StartsWithLegacyTag(ReadOnlySpan<byte> tag)
+    => tag.Length >= 12 && tag[0] == 'i' && tag[11] == 0x1A && tag[2] == '.' && tag[4] == '.' && tag[7] == '-' && tag[8] == '-'
+       && ((tag[9] == '1' && tag[10] == '6') || (tag[9] == '3' && tag[10] == '2'));
+
+  // innoextract knows "i1.2.10--16\x1a" and "i1.2.10--32\x1a"; any other legacy tag is read the same way.
+  private static InnoVersion ParseLegacy(ReadOnlySpan<byte> tag) {
+    static int Digit(byte b) => char.IsAsciiDigit((char)b) ? b - '0' : throw new InvalidDataException("Malformed Inno Setup 1.2.x version tag.");
+    var major = Digit(tag[1]);
+    var minor = Digit(tag[3]);
+    var patch = Digit(tag[5]) * 10 + Digit(tag[6]);
+    var known = major == 1 && minor == 2 && patch == 10;
+    return new(V(major, minor, patch), false, false, known) { Is16Bit = tag[9] == '1', IsLegacyTag = true };
   }
 
   private static uint ParseNumber(string s, int at) {

@@ -16,6 +16,18 @@ internal sealed class InnoCursor(byte[] data) {
   private int _pos;
 
   public int Warnings { get; set; }
+
+  /// <summary>Gets or sets whether three-byte flag sets carry a padding byte (32-bit installers; 16-bit ones do not).</summary>
+  public bool PadFlagSets { get; init; } = true;
+
+  /// <summary>Gets or sets the width of a Delphi <c>Integer</c>: 2 bytes in 16-bit installers, 4 otherwise.</summary>
+  public int IntegerSize { get; init; } = 4;
+
+  /// <summary>A Delphi <c>Integer</c>: 16 or 32 bits wide depending on the installer (<see cref="IntegerSize"/>).</summary>
+  public int Int() => this.IntegerSize == 2 ? this.I16() : this.I32();
+
+  /// <summary>An unsigned Delphi <c>Integer</c>-sized value: 16 or 32 bits wide depending on the installer.</summary>
+  public uint UInt() => this.IntegerSize == 2 ? this.U16() : this.U32();
   public int Position => this._pos;
   public bool AtEnd => this._pos >= data.Length;
 
@@ -70,12 +82,12 @@ internal sealed class InnoCursor(byte[] data) {
   /// A set of <paramref name="count"/> flags known at compile time: one byte per eight flags,
   /// with three-byte sets padded to four.
   /// </summary>
-  public ulong Flags(int count, bool pad32 = true) {
+  public ulong Flags(int count, bool? pad32 = null) {
     var bytes = (count + 7) / 8;
     ulong value = 0;
     for (var i = 0; i < bytes; ++i)
       value |= (ulong)this.U8() << (8 * i);
-    if (bytes == 3 && pad32)
+    if (bytes == 3 && (pad32 ?? this.PadFlagSets))
       this.U8();
     if (count < 64 && (value >> count) != 0)
       ++this.Warnings;
@@ -83,7 +95,7 @@ internal sealed class InnoCursor(byte[] data) {
   }
 
   /// <summary>Starts reading a flag set whose members depend on the version.</summary>
-  public FlagReader BeginFlags(bool pad32 = true) => new(this, pad32);
+  public FlagReader BeginFlags(bool? pad32 = null) => new(this, pad32 ?? this.PadFlagSets);
 
   /// <summary>Reads the flags of a version-dependent set one declaration at a time.</summary>
   internal sealed class FlagReader(InnoCursor cursor, bool pad32) {

@@ -193,10 +193,9 @@ public sealed class AndroidVbmetaTests {
     var start = new ProcessStartInfo(tool[0]) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
     foreach (var a in tool.Skip(1).Concat(arguments)) start.ArgumentList.Add(a);
     using var process = Process.Start(start)!;
-    var stdout = process.StandardOutput.ReadToEndAsync();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit();
-    return (process.ExitCode, stdout.Result, stderr);
+    return (process.ExitCode, stdout, stderr);
   }
 
   [Test, Category("ArchiveExternal")]

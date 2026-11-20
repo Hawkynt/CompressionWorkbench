@@ -359,7 +359,7 @@ public class BtrfsExternalConformanceTests {
       };
       using var proc = Process.Start(psi);
       if (proc == null) return false;
-      var stdout = proc.StandardOutput.ReadToEnd();
+      var (stdout, _) = proc.ReadOutput();
       proc.WaitForExit(10_000);
       return proc.ExitCode == 0 && !string.IsNullOrWhiteSpace(stdout);
     } catch {
@@ -375,8 +375,7 @@ public class BtrfsExternalConformanceTests {
     };
     using var proc = Process.Start(psi)
       ?? throw new InvalidOperationException($"Failed to start {tool}");
-    var stdout = proc.StandardOutput.ReadToEnd();
-    var stderr = proc.StandardError.ReadToEnd();
+    var (stdout, stderr) = proc.ReadOutput();
     if (!proc.WaitForExit(timeoutMs)) {
       try { proc.Kill(); } catch { /* best effort */ }
     }

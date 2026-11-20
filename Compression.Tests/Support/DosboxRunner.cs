@@ -168,8 +168,7 @@ internal static class DosboxRunner {
     };
     try {
       using var proc = Process.Start(psi)!;
-      var stdout = proc.StandardOutput.ReadToEnd();
-      var stderr = proc.StandardError.ReadToEnd();
+      var (stdout, stderr) = proc.ReadOutput();
       proc.WaitForExit(15000);
       return (stdout, stderr, proc.ExitCode);
     } catch (Exception ex) {
