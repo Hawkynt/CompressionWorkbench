@@ -8,9 +8,10 @@ namespace FileFormat.Daa;
 
 /// <summary>
 /// PowerISO DAA ("Direct Access Archive") compressed CD/DVD image, format version 0x100: exposes
-/// the ISO as <c>image.iso</c> plus a synthetic <c>metadata.ini</c>; creates and rewrites
-/// version 0x100 images PowerISO reads. Version 0x110, split, password-protected and gBurner GBI
-/// images are refused.
+/// the ISO as <c>image.iso</c> plus a synthetic <c>metadata.ini</c>; reads split images (from their
+/// first volume's path) and password-protected ones (with the password); creates and rewrites
+/// unsplit, unprotected version 0x100 images PowerISO reads. Version 0x110 and gBurner GBI images
+/// are refused.
 /// </summary>
 /// <remarks>Specification: <c>docs/DAA-ON-DISK.md</c>.</remarks>
 public sealed class DaaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
@@ -41,12 +42,13 @@ public sealed class DaaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     try {
-      var image = DaaImage.Read(stream);
+      // Listing needs no password: the header and chunk table are not protected.
+      using var image = Open(stream, null);
       var packed = image.Chunks.Sum(c => (long)c.Length);
       var metadata = Metadata(image);
       return [
         new(0, MetadataName, metadata.Length, metadata.Length, "stored", false, false, null),
-        new(1, ImageName, image.IsoSize, packed, "deflate", false, false, null),
+        new(1, ImageName, image.IsoSize, packed, "deflate", false, image.IsEncrypted, null),
       ];
     } catch (Exception e) when (e is InvalidDataException or NotSupportedException) {
       var length = stream.CanSeek ? stream.Length : 0;
@@ -54,8 +56,30 @@ public sealed class DaaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Reads the image; the later volumes of a split image are found beside a file stream by
+  /// counting up the number before ".daa" (<c>x.part01.daa</c> → <c>x.part02.daa</c>).
+  /// </summary>
+  internal static DaaImage Open(Stream stream, string? password)
+    => DaaImage.Read(stream, password, stream is FileStream file ? VolumeOpener(file.Name) : null);
+
+  /// <summary>Opens volume n of the split image whose first volume is <paramref name="firstPath"/>, or null.</summary>
+  internal static Func<int, Stream?>? VolumeOpener(string firstPath) {
+    var name = Path.GetFileName(firstPath);
+    var match = System.Text.RegularExpressions.Regex.Match(name, @"^(?<stem>.*?)(?<number>\d+)(?<ext>\.daa)$",
+      System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    if (!match.Success)
+      return null;
+    var directory = Path.GetDirectoryName(Path.GetFullPath(firstPath)) ?? ".";
+    var width = match.Groups["number"].Length;
+    return n => {
+      var path = Path.Combine(directory, match.Groups["stem"].Value + n.ToString(CultureInfo.InvariantCulture).PadLeft(width, '0') + match.Groups["ext"].Value);
+      return File.Exists(path) ? File.OpenRead(path) : null;
+    };
+  }
+
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var image = DaaImage.Read(stream);
+    using var image = Open(stream, password);
     if (files is not { Length: > 0 } || MatchesFilter(MetadataName, files))
       WriteFile(outputDir, MetadataName, Metadata(image));
     if (files is not { Length: > 0 } || MatchesFilter(ImageName, files)) {
@@ -72,7 +96,9 @@ public sealed class DaaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>Replaces <c>image.iso</c>, keeping the chunk size.</summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
-    var existing = DaaImage.Read(archive);
+    using var existing = DaaImage.Read(archive);
+    if (existing.IsEncrypted)
+      throw new NotSupportedException("DAA: replacing the image of a password-protected DAA would drop its protection; the writer does not protect images.");
     var replacement = SingleImage(inputs);
     if (replacement is null) return;
     WholeImageRebuildCommitter.Replace(archive,
@@ -87,7 +113,7 @@ public sealed class DaaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   private static byte[] Metadata(DaaImage i) => Encoding.UTF8.GetBytes(string.Create(CultureInfo.InvariantCulture,
-    $"[daa]\nversion=0x{i.Version:X}\nchunk_size={i.ChunkSize}\nchunks={i.Chunks.Count}\niso_size={i.IsoSize}\n"));
+    $"[daa]\nversion=0x{i.Version:X}\nchunk_size={i.ChunkSize}\nchunks={i.Chunks.Count}\niso_size={i.IsoSize}\nvolumes={i.VolumeCount}\nencrypted={(i.IsEncrypted ? "yes" : "no")}\n"));
 
   private static byte[]? SingleImage(IReadOnlyList<ArchiveInputInfo> inputs) {
     byte[]? image = null;
