@@ -7,11 +7,12 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Daa;
 
 /// <summary>
-/// PowerISO DAA ("Direct Access Archive") compressed CD/DVD image, format version 0x100: exposes
-/// the ISO as <c>image.iso</c> plus a synthetic <c>metadata.ini</c>; reads split images (from their
-/// first volume's path) and password-protected ones (with the password); creates and rewrites
-/// unsplit, unprotected version 0x100 images PowerISO reads. Version 0x110 and gBurner GBI images
-/// are refused.
+/// PowerISO DAA ("Direct Access Archive") compressed CD/DVD image: exposes the ISO as
+/// <c>image.iso</c> plus a synthetic <c>metadata.ini</c>; reads format versions 0x100 and 0x110
+/// (deflate, LZMA with its x86 filter, stored chunks), split images (from their first volume's path)
+/// and password-protected ones (with the password); creates and rewrites unsplit, unprotected
+/// version 0x100 images PowerISO reads. gBurner GBI images and 0x110 options no sample uses are
+/// refused.
 /// </summary>
 /// <remarks>Specification: <c>docs/DAA-ON-DISK.md</c>.</remarks>
 public sealed class DaaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,

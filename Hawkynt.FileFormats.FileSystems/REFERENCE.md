@@ -3762,11 +3762,21 @@ Writes PSP CSO v1/v2 and ZSO compressed-ISO containers.
 
 ### Namespace `FileFormat.Daa`
 
-[`DaaFormatDescriptor`](#daaformatdescriptor) · [`DaaImage`](#daaimage)
+[`DaaChunkKind`](#daachunkkind) · [`DaaFormatDescriptor`](#daaformatdescriptor) · [`DaaImage`](#daaimage)
+
+#### `DaaChunkKind`
+
+How a DAA chunk is coded.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Deflate` | `0` | Raw deflate followed by the CRC-32 of the deflate bytes. |
+| `Lzma` | `1` | Raw LZMA with the header's properties, optionally behind an x86 branch filter (version 0x110). |
+| `Stored` | `2` | The chunk's bytes as they are (version 0x110, when coding would not shrink them). |
 
 #### `DaaFormatDescriptor`
 
-PowerISO DAA ("Direct Access Archive") compressed CD/DVD image, format version 0x100: exposes the ISO as `image.iso` plus a synthetic `metadata.ini`; reads split images (from their first volume's path) and password-protected ones (with the password); creates and rewrites unsplit, unprotected version 0x100 images PowerISO reads. Version 0x110 and gBurner GBI images are refused.
+PowerISO DAA ("Direct Access Archive") compressed CD/DVD image: exposes the ISO as `image.iso` plus a synthetic `metadata.ini`; reads format versions 0x100 and 0x110 (deflate, LZMA with its x86 filter, stored chunks), split images (from their first volume's path) and password-protected ones (with the password); creates and rewrites unsplit, unprotected version 0x100 images PowerISO reads. gBurner GBI images and 0x110 options no sample uses are refused.
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
 
@@ -3797,7 +3807,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`
 
 #### `DaaImage`
 
-PowerISO DAA image, format version 0x100: a 76-byte header, descriptors, a table of 3-byte compressed chunk lengths and raw-deflate chunks, optionally split into volumes and protected by a password. Implemented from `docs/DAA-ON-DISK.md`.
+PowerISO DAA image: a 76-byte header, descriptors, a chunk table and the chunks, optionally split into volumes and protected by a password. Version 0x100 has 3-byte chunk lengths and raw-deflate chunks; version 0x110 has a bit-packed table of lengths and chunk kinds (deflate or LZMA with an optional x86 filter, or stored). Implemented from `docs/DAA-ON-DISK.md`.
 
 Implements `IDisposable`.
 
@@ -3810,6 +3820,7 @@ Implements `IDisposable`.
 | `HeaderSize` | `const int HeaderSize` |  |
 | `Version100` | `const uint Version100` |  |
 | `Version110` | `const uint Version110` |  |
+| `ChunkKinds` | `IReadOnlyList<DaaChunkKind> ChunkKinds { get; }` | How each chunk is coded (version 0x100: all deflate). |
 | `ChunkSize` | `uint ChunkSize { get; }` |  |
 | `Chunks` | `IReadOnlyList<ValueTuple<long, int>> Chunks { get; }` |  |
 | `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether the image is password-protected. |
