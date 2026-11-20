@@ -145,6 +145,28 @@ All of this is measured: `better` images hold LZMA and deflate chunks, `best`
 images one LZMA chunk, split sets also hold stored chunks, and every one
 decodes to the ISO PowerISO 9.5 converts it to.
 
+## gBurner GBI
+
+gBurner 5.9 writes GBI from its Convert Image dialog (`make-gbi.sh` in the DAA
+reference vectors drives it). A GBI image is a version 0x110 DAA image with
+three differences, all measured on its normal, best, password and split
+images:
+
+- The signature is `"GBI"` + 13 NULs, and later volumes start with
+  `"GBI VOL"` + 9 NULs (same 100-byte volume header). Volumes are named
+  `name.part01.gbi`, `name.part02.gbi`, …
+- The chunk table is obfuscated. Let *n* be the number of bytes the entries
+  occupy, ⌈entries × entry width / 8⌉. Each of those bytes is stored as
+  (*b* XOR (*n* div 4)) + (low byte of the header CRC at 0x48), modulo 256; a
+  reader subtracts the CRC byte and then XORs.
+- The low bit of the deflate block-type selector (chunk-size bits 23-24) is
+  inverted: gBurner sets bit 23, which here means "not permuted".
+
+The header CRC, descriptors, password cipher and chunks are those of DAA. Normal
+images hold deflate chunks, best images LZMA chunks; every image decodes to the
+ISO gBurner was given. Only version 0x110 is measured; a GBI of version 0x100
+is refused.
+
 ## Not supported (refused with a message)
 
 - **0x110 options no PowerISO 9.5 image uses:**
@@ -153,6 +175,3 @@ decodes to the ISO PowerISO 9.5 converts it to.
   - permuted deflate block types (bits 23-24);
   - flags `0x80000`, `0x80000000` and `0x10000000`.
   daa2iso describes them, but no sample could verify them.
-- **gBurner GBI.** It has the same layout, but the chunk table is additionally
-  offset by the low byte of the header CRC and XORed with `table length / 4`.
-  There is no sample.

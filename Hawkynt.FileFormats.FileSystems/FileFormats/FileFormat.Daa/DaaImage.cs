@@ -50,7 +50,7 @@ public sealed class DaaImage : IDisposable {
   /// <param name="password">The password of a protected image, or null.</param>
   /// <param name="openVolume">Opens the later volumes of a split image by number (2, 3, …); null when the image is one file.</param>
   /// <exception cref="InvalidDataException">Not a DAA image, inconsistent, or a volume is missing.</exception>
-  /// <exception cref="NotSupportedException">Version 0x110 or gBurner images, a later volume opened first, or a split image without <paramref name="openVolume"/>.</exception>
+  /// <exception cref="NotSupportedException">0x110 options no sample uses, a version-0x100 GBI, a later volume opened first, or a split image without <paramref name="openVolume"/>.</exception>
   /// <exception cref="Compression.Registry.ArchivePasswordException">A password was given and is wrong.</exception>
   public static DaaImage Read(Stream stream, string? password = null, Func<int, Stream?>? openVolume = null) {
     stream.Position = 0;
@@ -60,10 +60,10 @@ public sealed class DaaImage : IDisposable {
     var signature = h.AsSpan(0, 16);
     if (signature.StartsWith("DAA VOL"u8) || signature.StartsWith("GBI VOL"u8))
       throw new NotSupportedException("DAA: this is a later volume of a split image; open the first part.");
-    if (signature.StartsWith("GBI\0"u8))
-      throw new NotSupportedException("DAA: gBurner GBI images obfuscate their chunk table and are not supported.");
-    if (!signature.SequenceEqual("DAA\0\0\0\0\0\0\0\0\0\0\0\0\0"u8))
-      throw new InvalidDataException("DAA: \"DAA\" signature missing.");
+    // gBurner's GBI is the 0x110 layout with an obfuscated chunk table (DAA-ON-DISK.md, "gBurner GBI")
+    var gbi = signature.SequenceEqual("GBI\0\0\0\0\0\0\0\0\0\0\0\0\0"u8);
+    if (!gbi && !signature.SequenceEqual("DAA\0\0\0\0\0\0\0\0\0\0\0\0\0"u8))
+      throw new InvalidDataException("DAA: \"DAA\" or \"GBI\" signature missing.");
     if (Crc32(h.AsSpan(0, 0x48)) != BinaryPrimitives.ReadUInt32LittleEndian(h.AsSpan(0x48)))
       throw new InvalidDataException("DAA: header CRC mismatch.");
 
@@ -75,14 +75,18 @@ public sealed class DaaImage : IDisposable {
     var daaSize = BinaryPrimitives.ReadInt64LittleEndian(h.AsSpan(0x30));
     if (version != Version100 && version != Version110)
       throw new InvalidDataException($"DAA: unknown format version 0x{version:X}.");
+    if (gbi && version != Version110)
+      throw new NotSupportedException($"DAA: gBurner GBI version 0x{version:X} is not supported; every measured GBI image is 0x110.");
     byte[]? lzmaProperties = null;
     var x86Filter = false;
     int bitsLength = 0, bitsKind = 0;
     if (version == Version110) {
       // The data-offset and chunk-size fields carry flags in their high bits (DAA-ON-DISK.md, "Version 0x110").
       const uint UnverifiedOffsetFlags = 0x90000000;
-      const uint UnverifiedChunkFlags = 0x4000 | 0x20000 | 0x80000 | 0x8000000 | 0x1800000;
-      if ((dataOffset & UnverifiedOffsetFlags) != 0 || (chunkSize & UnverifiedChunkFlags) != 0)
+      const uint UnverifiedChunkFlags = 0x4000 | 0x20000 | 0x80000 | 0x8000000;
+      // bits 23-24 permute deflate's block types; GBI images flip the low bit of that selector
+      var blockTypes = ((chunkSize >> 23) & 3) ^ (gbi ? 1u : 0u);
+      if ((dataOffset & UnverifiedOffsetFlags) != 0 || (chunkSize & UnverifiedChunkFlags) != 0 || blockTypes != 0)
         throw new NotSupportedException($"DAA: version 0x110 options 0x{dataOffset & 0xFF000000:X8}/0x{chunkSize:X8} (compressed or obfuscated chunk table, permuted deflate) are not supported; no sample uses them.");
       var lzma = (chunkSize & 0x100000) != 0;
       dataOffset &= 0xFFFFFF;
@@ -146,6 +150,13 @@ public sealed class DaaImage : IDisposable {
     stream.Position = sizeOffset;
     stream.ReadExactly(table);
     var count = version == Version100 ? table.Length / 3 : (int)((long)table.Length * 8 / (bitsLength + bitsKind));
+    if (gbi) {
+      // every byte the entries use: minus the low byte of the header CRC, then XOR (used bytes / 4)
+      var used = (int)(((long)count * (bitsLength + bitsKind) + 7) >> 3);
+      var crc8 = h[0x48];
+      var key = (byte)(used >> 2);
+      for (var i = 0; i < used; ++i) table[i] = (byte)((table[i] - crc8) ^ key);
+    }
     if ((long)count * chunkSize < isoSize)
       throw new InvalidDataException("DAA: the chunk table is too short for the ISO size.");
     var chunks = new List<(long, int)>(count);

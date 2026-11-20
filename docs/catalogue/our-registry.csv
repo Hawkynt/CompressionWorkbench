@@ -235,6 +235,7 @@ format,G7231,ITU-T G.723.1,Audio,,.g723;.g7231,Y,Y,,
 format,GameMaker,GameMaker data file,Archive,,.win;.unx;.ios,Y,Y,Y,
 format,Gar,Nintendo 3DS GAR,Archive,,.gar,Y,Y,Y,Y
 format,Gb,Game Boy / GBC ROM,Archive,,.gb;.gbc,Y,Y,,
+format,Gbi,GBI (gBurner),Archive,,.gbi,Y,Y,,
 format,Gbs,Game Boy Sound,Audio,,.gbs,Y,Y,,
 format,Gdi,Dreamcast GDI,Archive,,.gdi,Y,Y,,
 format,Gem,Ruby Gem,Archive,,.gem,Y,Y,Y,

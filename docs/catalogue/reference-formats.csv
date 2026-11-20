@@ -278,9 +278,9 @@ CloneCD (CCD/IMG/SUB),ccd;sub;img,disk-image,,,,,R,,Y,,2,https://ecma-internatio
 DiscJuggler CDI,cdi,disk-image,,,,,R,,Y,,2,,Cdi,Y,Y,Y,OK,,
 Dreamcast GDI,gdi,disk-image,,,,,R,,,,1,https://en.wikipedia.org/wiki/GD-ROM,Gdi,Y,,,OK,,track table parsed (quoted names supported); sibling track files listed and extracted byte for byte; read-only because a single stream cannot write the sibling files
 ECM (Error Code Modeler),ecm,disk-image,,,,,R,,,,1,,,,,,MISSING,,
-gBurner image,gbi,disk-image,,,,,R,,,,1,,,,,,MISSING,,
+gBurner image,gbi,disk-image,,,,,R,,,,1,https://www.gburner.com,Gbi,Y,,,PARTIAL,,"read: the DAA 0x110 layout with an obfuscated chunk table; deflate, LZMA, split and password images checked against images gBurner 5.9 wrote; not written; spec docs/DAA-ON-DISK.md"
 ISZ (compressed ISO),isz,disk-image,,,,,R,,Y,,2,https://www.ezbsystems.com/isz/iszspec.txt,Isz,Y,Y,Y,PARTIAL,,single-segment unencrypted only; CRCs and extraction verified by isz-tool; spec docs/ISZ-ON-DISK.md
-PowerISO DAA,daa,disk-image,,,,,R,,Y,,2,https://www.poweriso.com,Daa,Y,Y,Y,PARTIAL,,"format 0x100 read/write verified both ways against PowerISO for Linux 1.3; split and password-protected images read; format 0x110 (LZMA + x86 filter, deflate, stored chunks; split and password too) read and checked against PowerISO 9.5 for Windows; GBI refused (no sample); spec docs/DAA-ON-DISK.md"
+PowerISO DAA,daa,disk-image,,,,,R,,Y,,2,https://www.poweriso.com,Daa,Y,Y,Y,PARTIAL,,"format 0x100 read/write verified both ways against PowerISO for Linux 1.3; split and password-protected images read; format 0x110 (LZMA + x86 filter, deflate, stored chunks; split and password too) read and checked against PowerISO 9.5 for Windows; gBurner's GBI variant is the Gbi descriptor; spec docs/DAA-ON-DISK.md"
 MagicISO UIF,uif,disk-image,,,,,R,,Y,,2,https://www.magiciso.com/,Uif,Y,,,PARTIAL,,"version 1/2 ISO images (zlib runs) equal uif2iso on two real MagicISO images; version 3 (LZMA), mixed-mode (type 9) and encrypted images refused for lack of samples; no free writer"
 Compressed ISO (CSO/ZSO),cso;zso,disk-image,,,,,R,,,,1,,Cso,Y,Y,Y,OK,,
 HTC NBH ROM image,nbh,firmware,,,,,R,,,,1,,,,,,MISSING,,
