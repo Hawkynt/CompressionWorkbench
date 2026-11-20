@@ -10,6 +10,9 @@ public abstract class DosTraceUnpacker : IDosExeUnpacker {
   public abstract string Id { get; }
   public abstract string DisplayName { get; }
 
+  /// <summary>Stub bytes in front of a routine the stub unpacks behind the image and runs.</summary>
+  protected virtual int RoutinePrefix => 0;
+
   /// <summary>The stub layout at the entry point of an MZ file, or null.</summary>
   private protected abstract string? Variant(byte[] entry, DosExe exe);
 
@@ -20,7 +23,7 @@ public abstract class DosTraceUnpacker : IDosExeUnpacker {
 
   public DosUnpacked Unpack(ReadOnlySpan<byte> file) {
     var variant = this.Detect(file) ?? throw new InvalidDataException($"{this.DisplayName}: stub not recognised.");
-    var result = DosTracer.Unpack(file);
+    var result = DosTracer.Unpack(file, routinePrefix: this.RoutinePrefix);
     return new(variant, result.Executable, result.IsCom ? "unpacked.com" : "unpacked.exe");
   }
 
@@ -46,6 +49,7 @@ public sealed class ApackUnpacker : DosTraceUnpacker {
     if (Match(entry, 0, "\x1e\x06" + Body)) return "1.00";
     if (Match(entry, 0, Body)) return "1.00 (-s)";
     if (Match(entry, 0, "\x1e\x06\x0e\x1f\x0e\x07\xbe??\xbf??\x8b\xcf\xfc\x57\xf3\xa4\xc3")) return "1.00 (tiny, -t)";
+    if (Match(entry, 0, "\x1e\x06\x8c\xc8\x8e\xd8\x05??\x8e\xc0\x50\xbe??\x33\xff\xfc\xb2\x80\xbd")) return "1.00 (no code mover, -m)";
     return null;
   }
 }
@@ -94,6 +98,25 @@ public sealed class TinyProgUnpacker : DosTraceUnpacker {
     if (Match(at, 8, sig)) return "3.x";
     return null;
   }
+}
+
+/// <summary>
+/// WWPACK 3.05 (Rafal Wierzbicki, Piotr Warezak), files made with the P command. Recognised as
+/// Deark's src/fmtutil-exe.c recognises it (MIT; see THIRD-PARTY-NOTICE.Deark.txt): no
+/// relocations, a 32-byte header, an entry point after the image start and the stub's opening
+/// bytes. Its stub unpacks a relocation routine right behind the image and runs it; one data byte
+/// of the stub sits in front of that routine (measured on files whose image ends at different
+/// paragraph offsets), so it is not part of the image.
+/// </summary>
+public sealed class WwpackUnpacker : DosTraceUnpacker {
+  public static WwpackUnpacker Instance { get; } = new();
+  public override string Id => "wwpack";
+  public override string DisplayName => "WWPACK (DOS exe)";
+  protected override int RoutinePrefix => 1;
+
+  private protected override string? Variant(byte[] entry, DosExe exe) =>
+    exe.NumRelocs == 0 && exe.StartOfCode == 32 && exe.EntryPoint != exe.StartOfCode
+      && Match(entry, 0, "\xb8??\x8c\xca\x03\xd0\x8c\xc9\x81\xc1") ? "3.0x" : null;
 }
 
 /// <summary>AXE 2.2 (System Enhancement Associates).</summary>

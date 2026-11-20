@@ -14,7 +14,7 @@ namespace FileFormat.ExePackers;
 /// starts a new phase (the stub moved itself). A jump back from outside the unpacked bytes onto
 /// unpacked code that never ran is kept as a weaker candidate, taken when the program then
 /// calls DOS. The image length comes from which instructions wrote what in the final phase
-/// (<see cref="ImageExtent"/>), or from an MZ header the stub unpacked behind the image.
+/// (<see cref="ImageExtent(Run, bool)"/>), or from an MZ header the stub unpacked behind the image.
 /// Unlike IUP, relocations are found by running the stub twice at two load segments and taking
 /// every word that differs by exactly the distance between them.
 /// </para>
@@ -37,6 +37,9 @@ internal static class DosTracer {
     public string? Failure;
     public ushort EndCS, EndIP, EndSS, EndSP;
     public byte[] Snapshot = [];
+    public int ImageStart; // linear address the snapshot starts at
+    public bool RoutineCut; // the image ends where the stub ran code it had unpacked behind it
+    public bool SnapshotRoutineCut;
     public bool UsedFileIo;
     public long FilePos;
     public ushort BlockEnd;
@@ -57,13 +60,24 @@ internal static class DosTracer {
     public int Min = int.MaxValue, Max = int.MinValue;
   }
 
-  public static Result Unpack(ReadOnlySpan<byte> file, long instructionLimit = DefaultInstructionLimit) {
+  /// <summary>Optional sink for a trace of jumps and DOS calls (diagnostics only).</summary>
+  internal static Action<string>? Trace;
+
+  /// <param name="routinePrefix">
+  /// Bytes of the stub that precede a routine it unpacked behind the image and ran (WWPACK puts
+  /// one data byte in front of its relocation routine); taken off the image when it ends there.
+  /// </param>
+  public static Result Unpack(ReadOnlySpan<byte> file, long instructionLimit = DefaultInstructionLimit, int routinePrefix = 0) {
     var isCom = file.Length < 2 || !((file[0] == 'M' && file[1] == 'Z') || (file[0] == 'Z' && file[1] == 'M'));
     var bytes = file.ToArray();
     var a = Execute(bytes, isCom, PspA, instructionLimit);
     var b = Execute(bytes, isCom, PspB, instructionLimit);
     if (a.Snapshot.Length != b.Snapshot.Length)
       throw new InvalidDataException("DOS trace: the two runs restored images of different sizes.");
+    if (routinePrefix > 0 && a.SnapshotRoutineCut && b.SnapshotRoutineCut && a.Snapshot.Length > routinePrefix) {
+      a.Snapshot = a.Snapshot[..^routinePrefix];
+      b.Snapshot = b.Snapshot[..^routinePrefix];
+    }
 
     var delta = (ushort)(PspB - PspA);
     if (!isCom && ((ushort)(b.EndCS - a.EndCS) != delta || (ushort)(b.EndSS - a.EndSS) != delta))
@@ -97,7 +111,11 @@ internal static class DosTracer {
     }
 
     var exe = DosExe.TryRead(bytes)!;
-    var loadSeg = (ushort)(a.Psp + 0x10);
+    // An image unpacked above the stub (aPACK -m) behaves as if loaded that many paragraphs higher.
+    var shift = (a.ImageStart - a.Base) / 16;
+    if (shift != (b.ImageStart - b.Base) / 16)
+      throw new InvalidDataException("DOS trace: the two runs unpacked the image at different places.");
+    var loadSeg = (ushort)(a.Psp + 0x10 + shift);
 
     // Packers that keep the original MZ header behind the image (DIET, ExeLITE) leave it in
     // memory; one whose registers are the ones the program starts with, and whose image size
@@ -233,6 +251,8 @@ internal static class DosTracer {
     cpu.OnTransfer = (from, to) => {
       if (run.Done)
         return;
+      if (Trace != null && (Math.Abs(to - from) >= MinJump || run.LastWrite[to] >= run.PhaseStart))
+        Trace($"t{cpu.Instructions} jump {from - run.Base:X}->{to - run.Base:X} {cpu.S[DosCpu.CS]:X4}:{cpu.IP:X4} ds={cpu.S[DosCpu.DS]:X4} es={cpu.S[DosCpu.ES]:X4} ss={cpu.S[DosCpu.SS]:X4}:{cpu.R[DosCpu.SP]:X4} written=t{run.LastWrite[to]} ran=t{run.LastRun[to]}");
       if (to < from) {
         var newIp = cpu.IP;
         // A short jump back still ends the stub when it lands on bytes the stub unpacked in
@@ -259,12 +279,31 @@ internal static class DosTracer {
         run.EndSS = cpu.S[DosCpu.SS];
         run.EndSP = cpu.R[DosCpu.SP];
         run.Snapshot = mem.AsSpan(run.Base, size).ToArray();
+        run.ImageStart = run.Base;
+        run.SnapshotRoutineCut = run.RoutineCut;
         run.Tentative = weak;
         if (strong) {
           run.Done = true;
           run.Ended = true;
         }
-      } else if (to - from >= MinJump) {
+        return;
+      }
+      // A stub below its image (aPACK -m) jumps forward onto the unpacked code it never ran;
+      // kept as a weak candidate like a short jump back.
+      if (run.LastWrite[to] >= run.PhaseStart && run.LastRun[to] < run.LastWrite[to]) {
+        var (start, length) = ImageExtent(run, true);
+        if (length >= MinImage && from < start && to >= start && to < start + length) {
+          run.EndCS = cpu.S[DosCpu.CS];
+          run.EndIP = cpu.IP;
+          run.EndSS = cpu.S[DosCpu.SS];
+          run.EndSP = cpu.R[DosCpu.SP];
+          run.Snapshot = mem.AsSpan(start, length).ToArray();
+          run.ImageStart = start;
+          run.SnapshotRoutineCut = run.RoutineCut;
+          run.Tentative = true;
+        }
+      }
+      if (to - from >= MinJump) {
         run.AdrSup = 0;
         run.PhaseStart = cpu.Instructions;
         run.Writers.Clear();
@@ -316,31 +355,43 @@ internal static class DosTracer {
   /// place, included), cut where the stub, after the decompressor's last write, read back data
   /// it had unpacked (relocations, a stored header).
   /// </summary>
-  private static int ImageExtent(Run run) {
+  private static int ImageExtent(Run run) => ImageExtent(run, false).Length;
+
+  /// <param name="shifted">
+  /// The image does not start at the load address but where the decompressor began writing,
+  /// rounded down to a paragraph (aPACK -m unpacks above its stub and jumps forward into it).
+  /// </param>
+  private static (int Start, int Length) ImageExtent(Run run, bool shifted) {
     // The decompressor fills the image from (near) its start; a stub moving the compressed data
     // out of the way may write more bytes, but higher up.
-    var dominant = run.Writers.Values.Where(w => w.Min <= 0x100).MaxBy(w => w.Count)
+    var dominant = (shifted ? null : run.Writers.Values.Where(w => w.Min <= 0x100).MaxBy(w => w.Count))
       ?? run.Writers.Values.MaxBy(w => w.Count);
     if (dominant == null)
-      return 0;
+      return (run.Base, 0);
     var helpers = run.Writers.Values
       .Where(w => w.Last >= dominant.First && w.First <= dominant.Last && w.Min <= dominant.Max && w.Max >= dominant.Min)
       .ToList();
     var start = helpers.Min(w => w.First);
     var last = helpers.Max(w => w.Last);
     var lowest = run.Base + helpers.Min(w => w.Min);
-    var end = run.Base;
+    var origin = shifted ? lowest & ~0xF : run.Base;
+    var end = origin;
     while (end < DosCpu.MemorySize && (end < lowest || run.LastWrite[end] >= start))
       ++end;
     var helperAddresses = run.Writers.Where(kv => helpers.Contains(kv.Value)).Select(kv => kv.Key).ToHashSet();
     foreach (var (address, time, reader) in run.PureReads)
-      if (time > last && address >= run.Base && address < end && !helperAddresses.Contains(reader))
+      if (time > last && address >= origin && address < end && !helperAddresses.Contains(reader))
         end = address;
+    run.RoutineCut = false;
     foreach (var (address, time) in run.Executed)
-      if (time > last && address >= run.Base && address < end)
+      if (time > last && address >= origin && address < end) {
         end = address;
-    return end - run.Base;
+        run.RoutineCut = true;
+      }
+    return (origin, end - origin);
   }
+
+  private static ushort Peek16(DosCpu cpu, int linear) => (ushort)(cpu.Memory[linear] | (cpu.Memory[(linear + 1) & 0xFFFFF] << 8));
 
   /// <summary>The handful of BIOS and DOS services a decompression stub uses.</summary>
   private static void Service(Run run, byte[] file, int n) {
@@ -353,6 +404,7 @@ internal static class DosTracer {
       run.Failure = why;
     }
 
+    Trace?.Invoke($"t{cpu.Instructions} int {n:X2} ax={cpu.R[DosCpu.AX]:X4} bx={cpu.R[DosCpu.BX]:X4} cx={cpu.R[DosCpu.CX]:X4} dx={cpu.R[DosCpu.DX]:X4} ds={cpu.S[DosCpu.DS]:X4} es={cpu.S[DosCpu.ES]:X4} from {DosCpu.Linear(Peek16(cpu, DosCpu.Linear(cpu.S[DosCpu.SS], (ushort)(cpu.R[DosCpu.SP] + 2))), Peek16(cpu, DosCpu.Linear(cpu.S[DosCpu.SS], cpu.R[DosCpu.SP]))) - run.Base:X}");
     switch (n) {
       case 0x21:
         switch (ah) {
