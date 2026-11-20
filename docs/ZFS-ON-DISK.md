@@ -578,7 +578,26 @@ txg — and next N, a snapshot or the head; `s1` = S's creation txg):
 A bpobj's bonus may name a sub-object list (at 32, count at 40: an object of `u64` object
 numbers, each a bpobj whose block pointers and space belong to this one too).
 
-Refused: snapshots with clones, user holds, or datasets with bookmarks or clones; old-format
+**User holds** go with the snapshot: its holds ZAP (`ds_userrefs_obj`, at 272) is freed and its
+temporary holds — entries `<hex object>-<tag>` of the MOS directory's `tmp_userrefs` ZAP — are
+removed.
+
+**Bookmarks** live in the head's ZAP under `com.delphix:bookmarks`: a ZAP from the bookmark name
+to `zfs_bookmark_phys_t` as `u64`s — guid, creation txg, creation time (3 words in version 1),
+then redaction object, flags (1 HAS_FBN: the bookmark counts space freed before the next
+snapshot; 2 SNAPSHOT_EXISTS), referenced / compressed / uncompressed bytes at creation and the
+three "freed before next snapshot" (FBN) counts at words 8-10, and the IV set guid. With HAS_FBN:
+
+- whenever the head stops referencing a block (freed or put on the deadlist), every such
+  bookmark at or after the head's previous-snapshot txg whose txg is at least the block's birth
+  adds the block's charge to its FBN counts;
+- destroying S, a bookmark with txg in `[s0, s1)` adds the space of N's deadlist entries with key
+  below its txg (taken before the destroy changes them); one at `s1` loses SNAPSHOT_EXISTS and
+  keeps the head's deadlist key `s1` from being collapsed;
+- creating a snapshot adds, beside the usual keys, a deadlist key for every such bookmark after
+  the old previous snapshot.
+
+Refused: snapshots with clones, datasets with clones, case-insensitive datasets; old-format
 (bpobj) deadlists; encrypted datasets and datasets with an unreplayed intent log (create).
 
 ### Dedup tables

@@ -13,6 +13,8 @@ internal static partial class ZfsPoolEditor {
   private const string SnapshotCountField = "com.joyent:snapshot_count";
   private const string SnapshotsChangedField = "com.ixsystems:snapshots_changed";
   private const string BookmarksField = "com.delphix:bookmarks";
+  private const ulong BookmarkHasFbn = 1, BookmarkSnapshotExists = 2;
+  private const ulong DsFlagCaseInsensitive = 1UL << 16;
 
   /// <summary>A snapshot to create or destroy; an empty name asks for nothing (the <c>.zfs</c> directories themselves).</summary>
   private sealed record SnapshotOp(string Dataset, ulong Dir, ulong Head, string Name, bool Create);
@@ -93,6 +95,8 @@ internal static partial class ZfsPoolEditor {
         throw new NotSupportedException("ZFS: a dataset with an old-format deadlist gets no snapshot here.");
       var root = head.Slice(128, Bp).ToArray();
       if (IsHole(root)) throw new NotSupportedException($"ZFS: dataset '{op.Dataset}' has no object set.");
+      if ((U64(head, 120) & DsFlagCaseInsensitive) != 0)
+        throw new NotSupportedException("ZFS: case-insensitive datasets get no snapshots here.");
       var rootBp = ZfsBlockPointer.Read(root);
       if (rootBp.IsEncrypted) throw new NotSupportedException("ZFS: encrypted datasets get no snapshots here.");
       var objset = this._s.Pool.ReadBlock(rootBp, cache: false).ToArray();
@@ -132,7 +136,10 @@ internal static partial class ZfsPoolEditor {
       }
 
       // the head's new deadlist: every key it had and its previous snapshot's txg, all empty
-      var keys = mos.Old.Zap(oldDeadlist, "deadlist").Select(e => Convert.ToUInt64(e.Name, 16)).Append(oldPrevTxg).Distinct().Order().ToList();
+      // (and the txg of every bookmark after it that counts frees: its range starts there)
+      var keys = mos.Old.Zap(oldDeadlist, "deadlist").Select(e => Convert.ToUInt64(e.Name, 16)).Append(oldPrevTxg)
+        .Concat(this.Bookmarks(op.Head).Entries.Where(b => CountsFrees(b) && BookmarkTxg(b) > oldPrevTxg).Select(BookmarkTxg))
+        .Distinct().Order().ToList();
       var deadlist = Dnode.Create(OtDeadlist, OtDeadlistHeader, 320, 512, 17, 1, FlagUsedBytes);
       var deadlistObj = this.NewObject(mos, deadlist);
       var entries = keys.Select(k => (k.ToString("x"), this.EmptyBpobj())).ToList();
@@ -168,10 +175,8 @@ internal static partial class ZfsPoolEditor {
       var name = $"{op.Dataset}@{op.Name}";
       if (U64(snapOld, 40) > 1 || this.ZapHasEntries(U64(snapOld, 256)))
         throw new NotSupportedException($"ZFS: snapshot '{name}' has clones; it is not destroyed.");
-      if (this.ZapHasEntries(U64(snapOld, 272)))
-        throw new NotSupportedException($"ZFS: snapshot '{name}' has user holds; it is not destroyed.");
-      if (this.ZapHasEntries(this.DatasetZapValue(op.Head, BookmarksField)))
-        throw new NotSupportedException($"ZFS: dataset '{op.Dataset}' has bookmarks; its snapshots are not destroyed.");
+      if ((U64(snapOld, 120) & DsFlagCaseInsensitive) != 0)
+        throw new NotSupportedException($"ZFS: snapshot '{name}' is of a case-insensitive dataset; it is not destroyed here.");
       if (this.ZapHasEntries(U64(old.RequireDnode(op.Dir, "DSL directory").Bonus, 144)))
         throw new NotSupportedException($"ZFS: dataset '{op.Dataset}' has clones; its snapshots are not destroyed.");
       if (old.RequireDnode(snapDeadlist, "deadlist").Type != OtDeadlist || old.RequireDnode(U64(old.RequireDnode(nextObj, "DSL dataset").Bonus, 64), "deadlist").Type != OtDeadlist)
@@ -196,6 +201,28 @@ internal static partial class ZfsPoolEditor {
       W64(nb, 16, s0);
 
       var nextDl = this.OpenDeadlist(U64(nb, 64));
+
+      // bookmarks: those between P and S now count up to N, so they gain what N's deadlist holds
+      // born by their txg; those at S lose "snapshot exists" and keep S's deadlist key alive
+      var (bookmarksObj, bookmarks) = this.Bookmarks(op.Head);
+      var bookmarkAtSnapshot = false;
+      var bookmarkUpdates = new Dictionary<string, ulong[]>(StringComparer.Ordinal);
+      foreach (var bookmark in bookmarks.Where(CountsFrees)) {
+        var txg = BookmarkTxg(bookmark);
+        var values = bookmark.Values.ToArray();
+        if (txg >= s0 && txg < s1) {
+          var gained = this.DeadlistSpace(nextDl, 0, txg);
+          values[8] += (ulong)gained.Used;
+          values[9] += (ulong)gained.Compressed;
+          values[10] += (ulong)gained.Uncompressed;
+        } else if (txg == s1) {
+          values[4] &= ~BookmarkSnapshotExists;
+          bookmarkAtSnapshot = true;
+        } else
+          continue;
+        bookmarkUpdates[bookmark.Name] = values;
+      }
+      this.UpdateBookmarks(bookmarksObj, bookmarkUpdates);
       // what P and S shared and N no longer references is P's alone now
       if (prev != null && !afterBranch)
         Add64(prev.Bonus, 96, this.DeadlistSpace(nextDl, U64(prev.Bonus, 16), s0).Used);
@@ -224,7 +251,7 @@ internal static partial class ZfsPoolEditor {
         Add64(nb, 96, this.DeadlistSpace(nnDl, s0, s1).Used);
         // the head's deadlist loses S's key, its entry merged into the one before
         var headDl = this.OpenDeadlist(U64(this.Load(mos, op.Head).Bonus, 64));
-        if (headDl.Entries.TryGetValue(s1, out var entryObj)) {
+        if (!bookmarkAtSnapshot && headDl.Entries.TryGetValue(s1, out var entryObj)) {
           headDl.Entries.Remove(s1);
           this.DeadlistEnqueue(headDl, s1, entryObj, addSpace: false);
           this.WriteDeadlist(headDl);
@@ -239,10 +266,62 @@ internal static partial class ZfsPoolEditor {
       foreach (var f in this.DatasetFeatureEntries(snapObj)) this.AdjustFeature(f.Name, -1);
       this.RewriteZap(mos, U64(this.Load(mos, op.Head).Bonus, 32), names => names.RemoveAll(n => n.Name == op.Name));
       this.SnapshotsChanged(op.Dir, -1);
+      // user holds go with the snapshot: its holds object below, and its temporary holds ("<hex object>-<tag>")
+      var tmpHolds = old.Zap(1, "MOS object directory").FirstOrDefault(e => e.Name == "tmp_userrefs")?.Value ?? 0;
+      var holdPrefix = snapObj.ToString("x") + "-";
+      if (tmpHolds != 0 && old.Zap(tmpHolds, "temporary holds").Any(e => e.Name.StartsWith(holdPrefix, StringComparison.Ordinal)))
+        this.RewriteZap(mos, tmpHolds, holds => holds.RemoveAll(e => e.Name.StartsWith(holdPrefix, StringComparison.Ordinal)));
       foreach (var at in new[] { 256, 264, 272 })                   // next clones, properties, user holds
         if (U64(snapOld, at) is var obj and not 0) this.FreeObject(mos, obj);
       this.FreeObject(mos, snapObj);
       this.TouchDirChain(op.Dir);
+    }
+
+    // ── bookmarks ──────────────────────────────────────────────────────
+
+    /// <summary>A head's bookmark ZAP and its entries (name → 3 or 12 words of zfs_bookmark_phys_t).</summary>
+    private (ulong Object, List<ZfsZapEntry> Entries) Bookmarks(ulong head) {
+      var obj = this.DatasetZapValue(head, BookmarksField);
+      return obj == 0 ? (0, []) : (obj, this._mos.Old.Zap(obj, "bookmarks"));
+    }
+
+    private static bool CountsFrees(ZfsZapEntry bookmark) => bookmark.Values.Length >= 11 && (bookmark.Values[4] & BookmarkHasFbn) != 0;
+    private static ulong BookmarkTxg(ZfsZapEntry bookmark) => bookmark.Values.Length >= 2 ? bookmark.Values[1] : 0;
+
+    /// <summary>Starts counting what a filesystem's edit frees when a bookmark at or after its previous snapshot keeps that count.</summary>
+    private void TrackBookmarks(Fs fs, ulong prevSnapTxg) {
+      var (obj, entries) = this.Bookmarks(fs.HeadObject);
+      fs.BookmarksObject = obj;
+      fs.CountingBookmarks = entries.Where(b => CountsFrees(b) && BookmarkTxg(b) >= prevSnapTxg).ToList();
+      if (fs.CountingBookmarks.Count > 0) fs.Os.Kills = [];
+    }
+
+    /// <summary>
+    /// A bookmark whose next snapshot is the head counts the space the head frees of what was
+    /// born by the bookmark's txg (its "freed before next snapshot" words 8-10).
+    /// </summary>
+    private void PlanBookmarkKills(Fs fs) {
+      var updated = new Dictionary<string, ulong[]>(StringComparer.Ordinal);
+      foreach (var bookmark in fs.CountingBookmarks) {
+        var txg = BookmarkTxg(bookmark);
+        var values = bookmark.Values.ToArray();
+        foreach (var (birth, used, compressed, uncompressed) in fs.Os.Kills!) {
+          if (birth > txg) continue;
+          values[8] += (ulong)used;
+          values[9] += (ulong)compressed;
+          values[10] += (ulong)uncompressed;
+        }
+        updated[bookmark.Name] = values;
+      }
+      this.UpdateBookmarks(fs.BookmarksObject, updated);
+    }
+
+    private void UpdateBookmarks(ulong obj, Dictionary<string, ulong[]> updated) {
+      if (updated.Count == 0) return;
+      this.EditZap(this._mos, obj, entries => {
+        for (var i = 0; i < entries.Count; ++i)
+          if (updated.TryGetValue(entries[i].Name, out var values)) entries[i] = entries[i] with { Values = values };
+      });
     }
 
     // ── deadlists ──────────────────────────────────────────────────────
