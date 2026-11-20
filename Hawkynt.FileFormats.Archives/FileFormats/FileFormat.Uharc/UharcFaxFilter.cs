@@ -32,4 +32,24 @@ internal static class UharcFaxFilter {
 
     page.CopyTo(data);
   }
+
+  /// <summary>The writer's inverse of <see cref="Restore"/>: stores a page-sized file as bands; other sizes are left alone.</summary>
+  public static void Apply(Span<byte> data) {
+    if (data.Length != PageSize)
+      return;
+
+    var bands = new byte[PageSize];
+    for (var row = 0; row < Height; ++row) {
+      var band = (row >> 3) * Width;
+      var bit = 7 - (row & 7);
+      for (var column = 0; column < RowBytes; ++column) {
+        var value = data[row * RowBytes + column];
+        var target = band + column * 8;
+        for (var i = 0; i < 8; ++i)
+          bands[target + i] |= (byte)(((value >> (7 - i)) & 1) << bit);
+      }
+    }
+
+    bands.CopyTo(data);
+  }
 }

@@ -26805,6 +26805,60 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the trailing directory and patches the PACK header. |
 
+### Namespace `FileFormat.Paq8l`
+
+[`Paq8lArchive`](#paq8larchive) · [`Paq8lEntry`](#paq8lentry) · [`Paq8lFormatDescriptor`](#paq8lformatdescriptor)
+
+#### `Paq8lArchive`
+
+paq8l archives (docs/PAQ8L-FORMAT.md): a text header naming the files and their sizes, then one context-mixing coded stream holding all of them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultLevel` | `const int DefaultLevel` | Level paq8l uses by default. |
+| `Signature` | `static ReadOnlySpan<byte> Signature { get; }` | The header's first bytes: "paq8l -". |
+| `List` | `static List<Paq8lEntry> List(Stream stream)` | Lists the files without decoding anything. |
+| `ReadHeader` | `static ValueTuple<int, List<Paq8lEntry>, long> ReadHeader(Stream stream)` | Reads the header: the level and the files. Returns the offset of the coded data. |
+| `Read` | `static List<ValueTuple<Paq8lEntry, byte[]>> Read(Stream stream)` | Decodes every file, in header order. |
+| `Write` | `static void Write(Stream output, IReadOnlyList<ValueTuple<string, byte[]>> files, int level = 5)` | Writes `files` at `level` (0–9). |
+
+#### `Paq8lEntry`
+
+One file listed in a paq8l header.
+
+Implements `IEquatable<Paq8lEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Paq8lEntry` | `Paq8lEntry(string Name, long Size)` | One file listed in a paq8l header. |
+| `Name` | `string Name { get; init; }` | Name with '/' separators, as stored. |
+| `Size` | `long Size { get; init; }` | Size in bytes. |
+
+#### `Paq8lFormatDescriptor`
+
+paq8l archive (Matt Mahoney et al., 2007): a context-mixing compressor whose output is defined by its model, written from docs/PAQ8L-FORMAT.md. Archives read and written here are byte-identical to what paq8l itself writes and reads.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Paq8lFormatDescriptor` | `Paq8lFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes the inputs as one archive at `Level` (0–9, default 5). Directories are not stored: paq8l records only files, with their relative paths. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Par2`
 
 [`Par2FormatDescriptor`](#par2formatdescriptor) · [`Par2Writer`](#par2writer) · [`Par2Writer.SourceFile`](#par2writersourcefile)
@@ -33747,7 +33801,7 @@ One file or directory of a UHARC archive.
 
 #### `UharcFormatDescriptor`
 
-UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP, PPM and ALZ modes, with passwords and the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP, PPM and ALZ modes; and UHARC 0.2 archives. Creates 0.6 and 0.4 archives in every method, 0.3 archives in every method but PPM and 0.2 archives (store, RLE, LZW, main coder), optionally password-protected or behind a self-extractor stub, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
+UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP, PPM and ALZ modes, with passwords and the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP, PPM and ALZ modes; and UHARC 0.2 archives. Creates 0.6, 0.4 and 0.3 archives in every method and 0.2 archives (store, RLE, LZW, main coder), optionally password-protected or behind a self-extractor stub, with fax pages, BMP/WAV/VOC files and executables run through UHARC's filters, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
 
@@ -33768,7 +33822,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a UHARC 0.6 archive: method `lzp` (the default), `ppm`, `alz`, `lz78`, `rle` or `store`; a password enciphers the stream and the tables as `-pw` does; the `SfxStubOption` option puts the named Win32 stub in front, as `-sfx` does; `DictSize` caps the LZP and ALZ window, as `-md` does; the `VersionOption` option 4 or 3 writes a UHARC 0.4 or 0.3 archive (store, RLE, LZW as `lz78`, LZP, ALZ), and 2 a UHARC 0.2 archive (store, LZW as `lz78`, the main coder as `alz`, RLE; DOS 8.3 names). |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a UHARC 0.6 archive: method `lzp` (the default), `ppm`, `alz`, `lz78`, `rle` or `store`; a password enciphers the stream and the tables as `-pw` does; the `SfxStubOption` option puts the named Win32 stub in front, as `-sfx` does; `DictSize` caps the LZP and ALZ window, as `-md` does; the `VersionOption` option 4 or 3 writes a UHARC 0.4 or 0.3 archive (store, RLE, LZW as `lz78`, LZP, PPM, ALZ), and 2 a UHARC 0.2 archive (store, LZW as `lz78`, the main coder as `alz`, RLE; DOS 8.3 names). PPM stores text files first and codes them as a text stream with UHARC's word transform. |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |

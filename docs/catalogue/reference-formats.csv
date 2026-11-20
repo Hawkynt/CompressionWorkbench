@@ -55,10 +55,10 @@ NuFX / ShrinkIt,shk;sdk;bxy,archive,,,,,,,Y,,1,https://wiki.preterhuman.net/NuFX
 Spark (Acorn),spk;arc,archive,,,,,,,Y,,1,https://en.wikipedia.org/wiki/Spark_(archiver),Spark,Y,Y,Y,OK,,
 HA,ha,archive,,,,,,,Y,Y,2,https://en.wikipedia.org/wiki/HA_(file_format),Ha,Y,Y,Y,OK,,"reads CPY/ASC/HSC (ha.exe 0.999b archives and the original 1995 HA_SRC.HA); writes HSC/CPY that ha.exe extracts, HSC streams byte-identical to ha.exe; Unix special-file records (devices, FIFOs, sockets, symbolic links) decoded as the Unix ha 0.999b wrote them and listed as content-less entries (docs/HA-ON-DISK.md)"
 SQX,sqx,archive,,,,,,,Y,Y,2,https://en.wikipedia.org/wiki/SQX,Sqx,Y,Y,Y,PARTIAL,,"methods 0-4 read and written (Squeez-c's reference archives decode; Squeez-c extracts ours; Squeez CommandLine 5.2 extracts ours and its large-file archives decode); methods 5 (audio), 6 (PPMd) and 7 (ultra) read; encrypted files and headers read with the password and multi-volume sets read (Squeez CommandLine 5.2's archives); external recovery records written as Squeez writes them, archives repaired from internal and external ones (SqxReader.cs, SqxRecovery.cs)"
-UHARC,uha,archive,,,,,R,,Y,Y,3,https://en.wikipedia.org/wiki/UHarc,Uharc,Y,Y,,PARTIAL,,"reads UHARC 0.2, 0.3, 0.4 and 0.6; 0.4 store, LZP, PPM, ALZ, RLE and LZW verified against UHARC04.EXE; 0.3 store, RLE, LZW, LZP, PPM and ALZ verified against the 0.3 tool and unuharc_recon. Writes 0.6 archives in every method (store, RLE, LZ78, LZP, PPM, ALZ), 0.4 archives in store, RLE, LZW, LZP, PPM and ALZ, 0.3 archives in store, RLE, LZW, LZP and ALZ, and 0.2 archives (store, RLE, LZW, main coder), with passwords and SFX stubs (docs/UHARC-ON-DISK.md)"
+UHARC,uha,archive,,,,,R,,Y,Y,3,https://en.wikipedia.org/wiki/UHarc,Uharc,Y,Y,,PARTIAL,,"reads UHARC 0.2, 0.3, 0.4 and 0.6; 0.4 store, LZP, PPM, ALZ, RLE and LZW verified against UHARC04.EXE; 0.3 store, RLE, LZW, LZP, PPM and ALZ verified against the 0.3 tool and unuharc_recon. Writes 0.6 archives in every method (store, RLE, LZ78, LZP, PPM, ALZ), 0.4 and 0.3 archives in store, RLE, LZW, LZP, PPM and ALZ, and 0.2 archives (store, RLE, LZW, main coder), with passwords, the fax-page, multimedia and executable filters, the multimedia predictors for BMP and WAV in ALZ and PPM, 0.3 ALZ's literal groups, PPM text streams with the word transform, and SFX stubs (docs/UHARC-ON-DISK.md)"
 FreeArc,arc;cdx,archive,,,,,R,fmt/1096,Y,Y,4,https://en.wikipedia.org/wiki/FreeArc,FreeArc,Y,Y,Y,PARTIAL,,storing/lzma/tornado/ppmd/grzip blocks decode behind rep/delta/exe/lzp/dict and inside 4x4 (every default -m1..-m9/-mx/-m9x chain) and AES/Blowfish/Serpent/Twofish encryption given the password (data and -hp headers); mm and external compressors are refused (FreeArcMethods.cs)
 ZPAQ,zpaq,archive,,,,,R,fmt/1097,RW,,3,https://mattmahoney.net/dc/zpaq206.pdf,Zpaq,Y,Y,Y,PARTIAL,,"journaling and streaming archives at every method are read and zpaq 7.15 extracts what we write; encrypted (-key) multi-part (arc???) and indexed (-index) archives are read and written: created encrypted; edits append a version in place (encrypted with the password) or as the next part of a set or from an index alone with the index updated; indexes written as zpaq extract -index writes them byte for byte; an index alone lists but cannot extract (ZpaqReader.cs, ZpaqWriter.cs, ZpaqSetEditor.cs)"
-PAQ (paq6/7/8 family),paq6;paq7;paq8;paq8l,archive,,,,,,,Y,Y,2,https://mattmahoney.net/dc/paq.html,,,,,MISSING,,the former Paq8 descriptor wrote an order-0 coder under paq8l's header and paq8l decoded it to wrong bytes; a real paq8l is a rung-2 rewrite (docs/RECLAIM-BACKLOG.md)
+PAQ (paq6/7/8 family),paq6;paq7;paq8;paq8l,archive,,,,,,,Y,Y,2,https://mattmahoney.net/dc/paq.html,Paq8l;Kgb,Y,Y,Y,PARTIAL,paq8l,"paq8l read and written at levels 0-9, byte-identical to paq8l 2007 in both directions (docs/PAQ8L-FORMAT.md); PAQ6 through KGB Archiver 1.0; other paq versions are not read"
 KGB Archiver,kgb;kge,archive,,,,,R,,RW,Y,3,https://en.wikipedia.org/wiki/KGB_Archiver,Kgb,Y,Y,Y,PARTIAL,,KGB Archiver 1.0 (PAQ6) at memory levels 0-9 read and written; KGB Archiver 2 archives and .kge are not read
 PEA (PeaZip),pea,archive,,,,,R,fmt/1095,Y,Y,4,https://peazip.github.io/pea-file-format.html,Pea,Y,Y,,OK,,WORM: no in-place modify
 DGCA,dgc,archive,,,,,R,,Y,,2,,,,,,MISSING,,refused: closed format (Shin-ichi Tsuruta's DGCA); no published specification and no licensable implementation; Universal Extractor only drives the closed dgcac.exe
@@ -280,7 +280,7 @@ Dreamcast GDI,gdi,disk-image,,,,,R,,,,1,https://en.wikipedia.org/wiki/GD-ROM,Gdi
 ECM (Error Code Modeler),ecm,disk-image,,,,,R,,,,1,,,,,,MISSING,,
 gBurner image,gbi,disk-image,,,,,R,,,,1,,,,,,MISSING,,
 ISZ (compressed ISO),isz,disk-image,,,,,R,,Y,,2,https://www.ezbsystems.com/isz/iszspec.txt,Isz,Y,Y,Y,PARTIAL,,single-segment unencrypted only; CRCs and extraction verified by isz-tool; spec docs/ISZ-ON-DISK.md
-PowerISO DAA,daa,disk-image,,,,,R,,Y,,2,https://www.poweriso.com,Daa,Y,Y,Y,PARTIAL,,"format 0x100 read/write verified both ways against PowerISO for Linux 1.3; split and password-protected 0x100 images read (PowerISO writes them); 0x110 and GBI refused (no verifiable samples); spec docs/DAA-ON-DISK.md"
+PowerISO DAA,daa,disk-image,,,,,R,,Y,,2,https://www.poweriso.com,Daa,Y,Y,Y,PARTIAL,,format 0x100 read/write verified both ways against PowerISO for Linux 1.3; split and password-protected 0x100 images read (PowerISO writes them); 0x110 and GBI refused (no verifiable samples); spec docs/DAA-ON-DISK.md
 MagicISO UIF,uif,disk-image,,,,,R,,Y,,2,https://www.magiciso.com/,Uif,Y,,,PARTIAL,,"version 1/2 ISO images (zlib runs) equal uif2iso on two real MagicISO images; version 3 (LZMA), mixed-mode (type 9) and encrypted images refused for lack of samples; no free writer"
 Compressed ISO (CSO/ZSO),cso;zso,disk-image,,,,,R,,,,1,,Cso,Y,Y,Y,OK,,
 HTC NBH ROM image,nbh,firmware,,,,,R,,,,1,,,,,,MISSING,,
@@ -450,7 +450,7 @@ ext3cow,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
 FAT8 (Disk BASIC),,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
 FATX (Xbox),fatx;xbox,filesystem,,,,,,,Y,,1,,Fatx,Y,Y,Y,OK,,
 "UFS / FFS (BSD), UFS2",ufs;ufs1,filesystem,,,,,,,Y,,1,,Ufs,Y,Y,Y,OK,newfs -O2 / makefs (BSD),UFS1 and UFS2 in both byte orders read; created; edited; defragmented; wiped and block-moved in place (little-endian UFS2 checked by FreeBSD fsck_ffs and the Linux ufstype=ufs2 mount; big-endian UFS1 and UFS2 by NetBSD fsck_ffs and a NetBSD mount)
-Fossil (Plan 9),,filesystem,,,,,,,Y,,1,https://github.com/9fans/plan9port/tree/master/src/cmd/fossil,Fossil,Y,,,READ-ONLY-BUT-SOURCES-WRITE,flfmt,writer not yet proven against the fossil server
+Fossil (Plan 9),,filesystem,,,,,,,Y,,1,https://github.com/9fans/plan9port/tree/master/src/cmd/fossil,Fossil,Y,Y,,OK,flfmt,written volumes served and extended by plan9port's fossil server
 Files-11 (ODS-1/2/5),ods2;ods5;ods-1;ods-2;ods-5;openvms,filesystem,,,,,,,Y,,1,,OpenVms;Ods1,Y,Y,Y,OK,,
 FLEX file system,,filesystem,,,,,,,Y,,1,http://www.flexusergroup.com/flexusergroup/pdfs/flexapg.pdf,Flex,Y,Y,Y,OK,flexfloppy,
 HAMMER,,filesystem,,,,,,,Y,,1,,Hammer,Y,Y,Y,OK,,
@@ -527,7 +527,7 @@ QFS (Sun/Oracle),,filesystem,,,,,,,Y,,1,,,,,,MISSING,,refused: SAM-QFS tools wer
 ScoutFS,versity,filesystem,,,,,,,Y,,1,,,,,,MISSING,,refused: needs the scoutfs kernel module with separate metadata and data devices; no image and no standalone tool
 StorNext / Xsan,apple;cvfs;quantum,filesystem,,,,,,,Y,,1,,,,,,MISSING,,"refused: proprietary (Quantum, Apple); no specification, standalone tool or image"
 VMFS,vmfs;vmfs2;vmfs3;vmfs5;vmware,filesystem,,,,,,,Y,,1,https://github.com/glandium/vmfs-tools,Vmfs,Y,,,PARTIAL,ESXi (vmkfstools),"single-extent VMFS3 read (spec in docs/VMFS-ON-DISK.md, checked against an ESX-written volume); VMFS5/6 and spanned volumes are refused: no public volume proves them"
-AXFS,,filesystem,,,,,,,Y,,1,https://github.com/jaredeh/axfs,Axfs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,mkfs.axfs,no reader outside this package to prove a writer
+AXFS,,filesystem,,,,,,,Y,,1,https://github.com/jaredeh/axfs,Axfs,Y,Y,,OK,mkfs.axfs,written images mounted and read by the AXFS kernel driver (Linux 4.19 under QEMU)
 CramFS,cramfs,filesystem,R,,,D,,,Y,,3,,CramFs,Y,Y,Y,OK,,
 LTFS (Linear Tape),,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
 lnfs,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
@@ -541,7 +541,7 @@ DECtape,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
 OS/3x0 FS,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,deferred: IBM OS/360-OS/390 DASD volumes need a CKD container and VTOC/DSCB parsing; Hercules' dasdls (QPL) could serve as oracle; not attempted in this round
 Level-D (DEC),dec,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
 George 3,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
-Version 6 Unix FS,v6,filesystem,,,,,,,Y,,1,https://www.tuhs.org/Archive/Distributions/Research/Dennis_v6/,UnixV6,Y,,,OK,,"read-only: no maintained kernel or tool reads a V6 volume, so a written one could not be checked; reader checked against the 1975 TUHS root volume and its independent tar extraction"
+Version 6 Unix FS,v6,filesystem,,,,,,,Y,,1,https://www.tuhs.org/Archive/Distributions/Research/Dennis_v6/,UnixV6,Y,Y,,OK,V6 icheck/dcheck on SIMH,"reader checked against the 1975 TUHS root volume and its independent tar extraction; written volumes pass V6 icheck and dcheck, and the V6 kernel on SIMH mounts, reads and writes them"
 Version 7 Unix FS,v7,filesystem,,,,,,,Y,,1,https://www.tuhs.org/Archive/Distributions/Research/,UnixV7,Y,Y,,OK,Linux sysv driver (v7),"read, and created fresh (WORM); in-place edits are not implemented; checked by the Linux v7 driver both ways and against the SIMH 1979 distribution volume"
 RT-11 file system,rt11,filesystem,,,,,,,Y,,1,,Rt11,Y,Y,Y,OK,,
 GEC DOS filing system,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,

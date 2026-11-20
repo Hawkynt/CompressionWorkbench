@@ -149,6 +149,102 @@ public class UharcExternalConformanceTests {
     }
   }
 
+  /// <summary>
+  /// A fax page (stored as bands), a WAV file (delta-coded in LZP and LZ78) and executables (their
+  /// branch operands and relocations transformed) beside the sample files: the tool of each
+  /// version extracts our archive byte for byte.
+  /// </summary>
+  [TestCase("6", "store")]
+  [TestCase("6", "lzp")]
+  [TestCase("6", "lz78")]
+  [TestCase("6", "alz")]
+  [TestCase("6", "ppm")]
+  [TestCase("4", "lzp")]
+  [TestCase("4", "lz78")]
+  [TestCase("4", "ppm")]
+  [TestCase("3", "lzp")]
+  [TestCase("3", "alz")]
+  [TestCase("3", "ppm")]
+  public void GivenFilteredFiles_WhenWeWriteThem_ThenTheVersionsToolExtractsThem(string version, string method) {
+    var tool = version switch { "4" => RequireUharc04(), "3" => RequireUharc03(), _ => RequireUharc() };
+    var inputs = UharcWriterTests.SampleInputs()
+      .Append(ArchiveInputInfo.InMemory("page.fax", UharcWriterTests.FaxPage()))
+      .Append(ArchiveInputInfo.InMemory("tone.wav", UharcWriterTests.Wave(30000)))
+      .Concat(UharcWriterTests.ExecutableImages().Select((image, k) => ArchiveInputInfo.InMemory($"prog{k}.exe", image))).ToList();
+    var archive = Path.Combine(this._tmp, "ours.uha");
+    File.WriteAllBytes(archive, UharcWriterTests.CreateWith(new FormatCreateOptions(method) {
+      FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version },
+    }, inputs));
+    var output = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(output);
+    Run(tool, output, version == "6" ? ["x", "-y", "-t" + output, archive] : ["x", "-y", archive]);
+    AssertExtracted(output, inputs);
+  }
+
+  /// <summary>
+  /// A BMP and WAV files of each kind, one per archive so that each block gets its multimedia
+  /// class (3, 5, 7, 8, 9): the tool of each version extracts our ALZ and PPM archives.
+  /// </summary>
+  [TestCase("6", "alz")]
+  [TestCase("6", "ppm")]
+  [TestCase("4", "alz")]
+  [TestCase("4", "ppm")]
+  [TestCase("3", "ppm")]
+  [TestCase("3", "alz")]
+  public void GivenMediaFiles_WhenWeWriteThemWithTheirClasses_ThenTheVersionsToolExtractsThem(string version, string method) {
+    var tool = version switch { "4" => RequireUharc04(), "3" => RequireUharc03(), _ => RequireUharc() };
+    byte[][] media = [
+      UharcWriterTests.Bitmap24(240, 180), UharcWriterTests.Wave(60000, 1, 8), UharcWriterTests.Wave(40000, 2, 8),
+      UharcWriterTests.Wave(40000, 1, 16), UharcWriterTests.Wave(30000),
+    ];
+    for (var k = 0; k < media.Length; ++k) {
+      var inputs = new[] { ArchiveInputInfo.InMemory($"media{k}.bin", media[k]) };
+      var archive = Path.Combine(this._tmp, $"media{k}.uha");
+      File.WriteAllBytes(archive, UharcWriterTests.CreateWith(new FormatCreateOptions(method) {
+        FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version },
+      }, inputs));
+      var output = Path.Combine(this._tmp, $"out{k}");
+      Directory.CreateDirectory(output);
+      Run(tool, output, version == "6" ? ["x", "-y", "-t" + output, archive] : ["x", "-y", archive]);
+      AssertExtracted(output, inputs);
+    }
+  }
+
+  /// <summary>
+  /// Text files (written as a text stream with the word transform: strings, capital prefixes,
+  /// escapes, line ends) ahead of binary files: the tool of each version extracts our PPM
+  /// archive, at the fitted window, at 1 KiB and with a password.
+  /// </summary>
+  [TestCase("6", 0L, null)]
+  [TestCase("6", 1024L, null)]
+  [TestCase("6", 0L, "secret")]
+  [TestCase("4", 0L, null)]
+  [TestCase("4", 1024L, null)]
+  [TestCase("4", 0L, "secret")]
+  [TestCase("3", 0L, null)]
+  [TestCase("3", 1024L, null)]
+  [TestCase("3", 0L, "secret")]
+  public void GivenTextFiles_WhenWeWriteTextPpm_ThenTheVersionsToolExtractsThem(string version, long dictionary, string? password) {
+    var tool = version switch { "4" => RequireUharc04(), "3" => RequireUharc03(), _ => RequireUharc() };
+    var inputs = UharcPpmTextTests.TextFiles().Select(f => ArchiveInputInfo.InMemory(f.Name, f.Data)).ToList();
+    var archive = Path.Combine(this._tmp, "ours.uha");
+    File.WriteAllBytes(archive, UharcWriterTests.CreateWith(new FormatCreateOptions("ppm") {
+      Password = password,
+      DictSize = dictionary,
+      FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version },
+    }, inputs));
+    var output = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(output);
+    List<string> arguments = ["x", "-y"];
+    if (password != null)
+      arguments.Add("-pw" + password);
+    if (version == "6")
+      arguments.Add("-t" + output);
+    arguments.Add(archive);
+    Run(tool, output, [.. arguments]);
+    AssertExtracted(output, inputs);
+  }
+
   private static void AssertExtracted(string output, IEnumerable<ArchiveInputInfo> inputs) {
     foreach (var input in inputs) {
       var path = Path.Combine(output, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
@@ -336,6 +432,8 @@ public class UharcExternalConformanceTests {
   [TestCase("lzp", 1024L, "secret")]
   [TestCase("alz", 0L, null)]
   [TestCase("alz", 1024L, "secret")]
+  [TestCase("ppm", 0L, null)]
+  [TestCase("ppm", 1024L, "secret")]
   public void GivenOurVersion03Archive_WhenUharc03Extracts_ThenEveryFileIsByteIdentical(string method, long dictionary, string? password) {
     var tool = RequireUharc03();
     var random = new Random(2000);

@@ -32,9 +32,10 @@ internal static class Uharc04PpmDecoder {
 
 /// <summary>
 /// The encoder side of the 0.4 PPM stream (docs/UHARC-ON-DISK.md, "Writing UHARC 0.4"): it runs
-/// the decoder's <see cref="Uharc04PpmModel{TCoder}"/> over the input, which then answers every
-/// coding decision from the byte that comes next. It writes a binary stream (no word transform)
-/// with multimedia class 0.
+/// the decoder's <see cref="Uharc04PpmModel{TCoder}"/> over the model symbols of the input
+/// (<see cref="UharcPpmSymbols"/>: leading text files as a text stream with the word transform,
+/// the rest binary), which then answers every coding decision from the symbol that comes next,
+/// with each block's multimedia class (<see cref="UharcMediaClass"/>).
 /// </summary>
 internal static class Uharc04PpmEncoder {
 
@@ -46,7 +47,7 @@ internal static class Uharc04PpmEncoder {
       return [];
 
     var coder = new UharcRangeEncoder();
-    var model = new Uharc04PpmModel<UharcEncoding>(new(coder), method) { Source = data };
+    var model = new Uharc04PpmModel<UharcEncoding>(new(coder), method) { Source = data, Plan = UharcPpmSymbols.Plan(data, fileEnds) };
     var output = new byte[data.Length];
     model.Run(output, fileEnds);
     if (!output.AsSpan().SequenceEqual(data))
@@ -63,7 +64,7 @@ internal static class Uharc04PpmEncoder {
 /// predictor are coded with plain counts (learned only through a few count-pair tables), the
 /// rows have no predicted-byte step, and copy lengths are symbols of four frequency rows.
 /// Generic over the coder direction: decoding reads every decision, encoding answers it from
-/// <see cref="Source"/>.
+/// <see cref="Plan"/>.
 /// </summary>
 internal sealed partial class Uharc04PpmModel<TCoder> where TCoder : struct, IUharcCoder {
 
@@ -115,9 +116,12 @@ internal sealed partial class Uharc04PpmModel<TCoder> where TCoder : struct, IUh
   private readonly UharcAlzSideModel _side = new();
   private int _selector;
 
-  // Encoding only: the input, the step's position in it, the model symbol of the literal being
-  // coded (and its form in the row being coded), and the copy decision.
+  // Encoding only: the input, the symbols coding it and the next one's index, the step's output
+  // position, the model symbol of the literal being coded (and its form in the row being coded),
+  // and the copy decision.
   private byte[] _source = [];
+  private UharcPpmSymbols _plan = UharcPpmSymbols.Binary([]);
+  private int _next;
   private int _written;
   private long _copyLimit;
   private int _target;
@@ -125,9 +129,14 @@ internal sealed partial class Uharc04PpmModel<TCoder> where TCoder : struct, IUh
   private int _copyClassWanted;
   private int _copyLengthWanted;
 
-  /// <summary>The input the encoding instantiation codes; the model chooses copies from it.</summary>
+  /// <summary>The input the encoding instantiation codes (its multimedia classes are read from it).</summary>
   public byte[] Source {
     set => this._source = value;
+  }
+
+  /// <summary>The model symbols the encoding instantiation codes; the model chooses copies from them.</summary>
+  public UharcPpmSymbols Plan {
+    set => this._plan = value;
   }
 
   public Uharc04PpmModel(TCoder coder, int method) {
@@ -162,17 +171,17 @@ internal sealed partial class Uharc04PpmModel<TCoder> where TCoder : struct, IUh
   // ── Stream header and reset points ─────────────────────────────────────
 
   private void ReadStreamKind() {
-    // The encoder always writes a binary stream: no word transform to invert.
-    this._kind = (int)this._coder.Uniform(2, 1);
+    var textLength = TCoder.Encoding ? this._plan.TextLength : 0;
+    this._kind = (int)this._coder.Uniform(2, textLength > 0 ? 0u : 1u);
     if (this._kind != 0)
       return;
 
     long total = 0;
     var shift = 0;
     do {
-      total += (long)this._coder.Uniform(0x800, 0) << shift;
+      total += (long)this._coder.Uniform(0x800, (uint)(textLength >> shift) & 0x7FF) << shift;
       shift += 11;
-    } while (this._coder.Uniform(2, 0) != 0 && shift < 64);
+    } while (this._coder.Uniform(2, textLength >> shift != 0 ? 1u : 0u) != 0 && shift < 64);
 
     this._textEnd = total & 0xFFFFFFFF;
     this._transformEnd = this._textEnd;
@@ -192,6 +201,8 @@ internal sealed partial class Uharc04PpmModel<TCoder> where TCoder : struct, IUh
         this.ResetBlock(reset, written);
 
       this._written = written;
+      if (TCoder.Encoding && this._plan.StartOf(this._next) != written)
+        throw new InvalidOperationException("UHARC: 0.4 PPM encoder lost track of its symbols.");
       this._copyLimit = Math.Min(reset.Next, output.Length);
       written = this.TryCopy(output, written, out var copied) ? copied : this.DecodeLiteral(output, written);
     }
@@ -267,7 +278,7 @@ internal sealed partial class Uharc04PpmModel<TCoder> where TCoder : struct, IUh
 
     reset.Advance(this);
     this.ApplyFileSizeRules(reset, written);
-    this.SelectClass((int)this._coder.Uniform(10, 0));
+    this.SelectClass((int)this._coder.Uniform(10, TCoder.Encoding ? (uint)UharcMediaClass.ForBlock(this._source, reset.Ends, written, reset.Next) : 0u));
   }
 
   /// <summary>
@@ -634,23 +645,25 @@ internal sealed partial class Uharc04PpmModel<TCoder> where TCoder : struct, IUh
   /// </summary>
   private void ChooseCopy(uint source, bool repeated, int floor) {
     var position = this._position;
-    var available = (int)Math.Min(0xFF, this._copyLimit - this._written);
+    var symbols = this._plan.Symbols;
+    var next = this._next;
+    var available = Math.Min(0xFF, this._plan.CopyEnd(this._copyLimit, this._textEnd) - next);
     Span<byte> bytes = stackalloc byte[0x100];
     var length = 0;
     for (; length < available; ++length) {
       var behind = (source - position) & this._mask;
       var value = behind < (uint)length ? bytes[(int)behind] : this._window[source];
-      if ((byte)~value != this._source[this._written + length])
+      if (value != symbols[next + length])
         break;
       bytes[length] = value;
       source = (source + 1) & this._mask;
     }
 
-    var whole = length < available || this._written + length >= this._source.Length;
+    var whole = length < available || next + length >= symbols.Length;
     if (!whole) {
       var behind = (source - position) & this._mask;
-      var next = behind < (uint)length ? bytes[(int)behind] : this._window[source];
-      whole = (byte)~next != this._source[this._written + length];
+      var following = behind < (uint)length ? bytes[(int)behind] : this._window[source];
+      whole = following != symbols[next + length];
     }
 
     if (length is >= 7 and < 0xFF && (!whole || length < floor))
@@ -665,8 +678,11 @@ internal sealed partial class Uharc04PpmModel<TCoder> where TCoder : struct, IUh
 
   // ── Emitting a symbol ──────────────────────────────────────────────────
 
-  private int Emit(byte[] output, int written, byte symbol)
-    => this._transform.Emit(symbol, written, this._transformEnd, this._recordStart, output);
+  private int Emit(byte[] output, int written, byte symbol) {
+    if (TCoder.Encoding)
+      ++this._next;
+    return this._transform.Emit(symbol, written, this._transformEnd, this._recordStart, output);
+  }
 
   private void Store(byte value) {
     this._window[this._position] = value;

@@ -12,7 +12,7 @@ namespace FileSystem.Axfs;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Read-only. Directories, regular files, symbolic links, modes and owners are read from
+/// Directories, regular files, symbolic links, modes and owners are read from
 /// the byte tables, and file data from all three node kinds: XIP pages, byte-aligned
 /// nodes and zlib cblocks. Device nodes, FIFOs and sockets are listed but have no bytes.
 /// Only version 2.x images with zlib compression are accepted; anything else is refused
@@ -22,16 +22,21 @@ namespace FileSystem.Axfs;
 /// Proof: images built by <c>mkfs.axfs</c> (jaredeh/axfs, AXFS 2.2.0) read back byte-identical
 /// to the source tree it was given, with modes and link targets. Sourcing: rung 2. The GPL
 /// tool and kernel driver were read to write <c>docs/AXFS-ON-DISK.md</c> and are used as a
-/// black-box oracle; none of their code is used here. No writer: nothing outside this
-/// package can read an AXFS image back on a current kernel.
+/// black-box oracle; none of their code is used here.
+/// </para>
+/// <para>
+/// Create writes directories and regular files as <c>mkfs.axfs</c> lays them out, with zlib
+/// and byte-aligned nodes (no XIP pages). Proof: the AXFS kernel driver (jaredeh/axfs, built
+/// for Linux 4.19) mounts the images under QEMU and returns every file, size, mode and owner
+/// written (<c>Compression.Tests/Axfs/KernelOracle</c>).
 /// </para>
 /// </remarks>
-public sealed class AxfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class AxfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Axfs";
   public string DisplayName => "AXFS (Advanced XIP File System)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".axfs";
   public IReadOnlyList<string> Extensions => [".axfs"];
@@ -43,7 +48,7 @@ public sealed class AxfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "AXFS embedded read-only XIP filesystem image (XIP, byte-aligned and zlib nodes); read-only.";
+    "AXFS embedded read-only XIP filesystem image (XIP, byte-aligned and zlib nodes).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new AxfsReader(stream);
@@ -80,5 +85,52 @@ public sealed class AxfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var e = r.Entries.FirstOrDefault(x => x.IsFile && x.Path == entryName.Replace('\\', '/').TrimStart('/'))
       ?? throw new FileNotFoundException($"AXFS image has no file '{entryName}'.", entryName);
     return r.Extract(e);
+  }
+
+  /// <summary>
+  /// Writes an image of the inputs: directories 0755 and files 0644 unless the input's
+  /// metadata carries a Unix mode, owner and group from the metadata or root.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var root = new Folder();
+    foreach (var input in inputs) {
+      var parts = input.ArchiveName.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+      if (parts.Length == 0) continue;
+      var folder = root;
+      for (var i = 0; i < parts.Length - 1; ++i) folder = folder.Sub(parts[i]);
+      if (input.IsDirectory) {
+        folder.Sub(parts[^1]).Metadata ??= input.Metadata;
+        continue;
+      }
+      if (folder.Files.Exists(f => f.Name == parts[^1]))
+        throw new ArgumentException($"'{input.ArchiveName}' is added twice.", nameof(inputs));
+      folder.Files.Add(Owned(new AxfsWriteNode(parts[^1], input.ReadContent()), input.Metadata));
+    }
+    AxfsWriter.Write(output, root.Node(""));
+  }
+
+  private static AxfsWriteNode Owned(AxfsWriteNode node, ArchiveEntryMetadata? metadata) => node with {
+    Permissions = metadata?.UnixMode is { } mode ? mode & 0xFFF : null,
+    Uid = metadata?.UnixUserId ?? 0,
+    Gid = metadata?.UnixGroupId ?? 0,
+  };
+
+  private sealed class Folder {
+    public ArchiveEntryMetadata? Metadata { get; set; }
+    public List<(string Name, Folder Folder)> Folders { get; } = [];
+    public List<AxfsWriteNode> Files { get; } = [];
+
+    public Folder Sub(string name) {
+      foreach (var (n, f) in this.Folders)
+        if (n == name) return f;
+      var folder = new Folder();
+      this.Folders.Add((name, folder));
+      return folder;
+    }
+
+    public AxfsWriteNode Node(string name) =>
+      Owned(new(name, Children: [.. this.Folders.Select(f => f.Folder.Node(f.Name)), .. this.Files]), this.Metadata);
   }
 }

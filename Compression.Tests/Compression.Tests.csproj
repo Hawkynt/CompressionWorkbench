@@ -377,6 +377,10 @@
     <EmbeddedResource Include="Spiffs\ReferenceVectors\*.gz;Spiffs\ReferenceVectors\manifest.txt">
       <LogicalName>SpiffsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Archives paq8l itself wrote from generated inputs; see Paq8l/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Paq8l\ReferenceVectors\*.paq8l;Paq8l\ReferenceVectors\inputs.tar.gz">
+      <LogicalName>Paq8lVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- The 1975 UNIX V6 root volume from TUHS; see UnixV6/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="UnixV6\ReferenceVectors\v6root.gz;UnixV6\ReferenceVectors\manifest.txt">
       <LogicalName>UnixV6Vectors.%(Filename)%(Extension)</LogicalName>

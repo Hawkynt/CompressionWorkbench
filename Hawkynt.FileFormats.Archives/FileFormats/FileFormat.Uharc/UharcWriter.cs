@@ -51,9 +51,8 @@ internal static class UharcWriter {
   /// to 32 MiB); 0 fits the window to the stream.
   /// </param>
   /// <param name="version">
-  /// The archive version: 6 (UHARC 0.6, every mode), 4 (UHARC 0.4: every mode, LZW for
-  /// <see cref="Mode.Lz78"/>), 3 (UHARC 0.3: store, RLE, LZW, LZP and ALZ; windows up to 8 MiB),
-  /// or 2 (UHARC 0.2: store, LZW, and its main coder for <see cref="Mode.Alz"/>; DOS 8.3 names,
+  /// The archive version: 6 (UHARC 0.6, every mode), 4 or 3 (UHARC 0.4 and 0.3: every mode, LZW
+  /// for <see cref="Mode.Lz78"/>; 0.3's windows reach 8 MiB), or 2 (UHARC 0.2: store, LZW, and its main coder for <see cref="Mode.Alz"/>; DOS 8.3 names,
   /// upper-cased, no password).
   /// </param>
   public static void Write(Stream output, IReadOnlyList<Item> items, Mode mode, DateTime now, string? password = null, byte[]? sfxStub = null,
@@ -66,8 +65,6 @@ internal static class UharcWriter {
       throw new NotSupportedException($"UHARC: the 0.2 writer writes store, RLE, LZW and its main coder, not {mode}.");
     if (version == 2 && !string.IsNullOrEmpty(password))
       throw new NotSupportedException("UHARC: 0.2 archives have no password.");
-    if (version == 3 && mode is Mode.Ppm)
-      throw new NotSupportedException("UHARC: the 0.3 writer does not write PPM streams.");
     if (version != 6 && sfxStub != null)
       throw new NotSupportedException($"UHARC: 0.{version} has no self-extractor stub.");
     var key = PasswordBytes(password);
@@ -104,6 +101,11 @@ internal static class UharcWriter {
       files.Add((path[(slash + 1)..], directoryIndex[directory], item.Data, item.LastModified));
     }
 
+    // PPM codes only the leading text files as a text stream, so text files go first (the file
+    // table's order is the stream's; readers list whatever order it holds).
+    if (mode == Mode.Ppm && version != 2)
+      files = [.. files.Where(f => UharcPpmSymbols.IsText(f.Data)), .. files.Where(f => !UharcPpmSymbols.IsText(f.Data))];
+
     var n = files.Count;
     long total = 0;
     foreach (var f in files)
@@ -113,14 +115,46 @@ internal static class UharcWriter {
     if (n >= 1 << 24)
       throw new NotSupportedException("UHARC: too many files.");
 
+    // 0.3/0.4/0.6 filters: a fax page is stored as bands whenever one is present (in every mode),
+    // and LZP/LZ78 delta-code recognised BMP/WAV/VOC files; the reader undoes both per file.
+    byte filters = 0;
+    if (version != 2 && files.Any(f => f.Data.Length == UharcFaxFilter.PageSize))
+      filters |= UharcHeader.FaxFilter;
+    var multimedia = version != 2 && mode is Mode.Lzp or Mode.Lz78;
+
+    // The executable filter is all or nothing: one file it cannot express would be damaged by the
+    // restore, so then none gets it. 0.6's PPM restore also swaps operand bytes 0 and 2.
+    var executable = version != 2 && mode is Mode.Lzp or Mode.Lz78 or Mode.Alz or Mode.Ppm;
+    var swapOperandBytes = version == 6 && mode == Mode.Ppm;
+    if (executable)
+      foreach (var f in files) {
+        if ((filters & UharcHeader.FaxFilter) != 0 && f.Data.Length == UharcFaxFilter.PageSize)
+          continue;
+        UharcExecutableFilter.Apply(f.Data.ToArray(), out var encodable, swapOperandBytes);
+        if (!encodable) {
+          executable = false;
+          break;
+        }
+      }
+
     var stream = new byte[total];
     var fileEnds = new List<long>(n);
     long offset = 0;
     foreach (var f in files) {
       f.Data.CopyTo(stream, offset);
+      var slice = stream.AsSpan((int)offset, f.Data.Length);
       // UHARC 0.2 undoes its executable filter on every packed MZ file, so it is applied here.
       if (version == 2 && mode != Mode.Store)
-        UharcExecutableFilter.ApplyLegacy(stream.AsSpan((int)offset, f.Data.Length));
+        UharcExecutableFilter.ApplyLegacy(slice);
+      else if ((filters & UharcHeader.FaxFilter) != 0 && slice.Length == UharcFaxFilter.PageSize)
+        UharcFaxFilter.Apply(slice);
+      else {
+        // The reader undoes the executable filter before the multimedia one.
+        if (multimedia && UharcMultimediaFilter.Apply(slice))
+          filters |= UharcHeader.MultimediaFilter;
+        if (executable && UharcExecutableFilter.Apply(slice, out _, swapOperandBytes))
+          filters |= UharcHeader.ExecutableFilter;
+      }
       offset += f.Data.LongLength;
       fileEnds.Add(offset);
     }
@@ -136,6 +170,7 @@ internal static class UharcWriter {
       Mode.Lz78 => UharcMethods.Lz78Last,
       Mode.Lzp => UharcMethods.LzpFirst + Window03(total, dictionaryLimit),
       Mode.Alz => UharcMethods.Alz03First + 14 + Window03(total, dictionaryLimit),
+      Mode.Ppm => UharcMethods.Ppm03First + Window03(total, dictionaryLimit),
       _ => throw new ArgumentOutOfRangeException(nameof(mode)),
     } : mode switch {
       Mode.Store => UharcMethods.Store,
@@ -155,7 +190,8 @@ internal static class UharcWriter {
       UharcMethods.Store => stream,
       UharcMethods.Rle => UharcRleEncoder.Encode(stream),
       >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => Uharc02LzwEncoder.Encode(stream, method),
-      >= UharcMethods.Alz03First => Uharc03AlzEncoder.Encode(stream, method),
+      >= UharcMethods.Alz03First => Uharc03AlzEncoder.Encode(stream, method, fileEnds),
+      >= UharcMethods.Ppm03First => Uharc03PpmEncoder.Encode(stream, method, fileEnds),
       _ => Uharc03LzpEncoder.Encode(stream, method, fileEnds),
     } : version == 4 ? method switch {
       UharcMethods.Store => stream,
@@ -210,7 +246,7 @@ internal static class UharcWriter {
     }
 
     if (version != 6) {
-      WriteVersion4(output, version, now, key, method, directories.Count, total, packed, crcs, nameTable, fileTable, n);
+      WriteVersion4(output, version, now, key, filters, method, directories.Count, total, packed, crcs, nameTable, fileTable, n);
       return;
     }
 
@@ -233,6 +269,7 @@ internal static class UharcWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(6), archiveDate);
     if (key != null)
       header[8] = (byte)(UharcHeader.TablesUsePassword | UharcHeader.StreamUsesPassword);
+    header[9] = filters;
     header[10] = (byte)method;
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(11), (ushort)directories.Count);
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(13), (uint)total);
@@ -366,7 +403,7 @@ internal static class UharcWriter {
   /// version's LZP method 17, the dates-then-times table as LZW method 2 and the size table
   /// (directory planes, size-delta planes, attributes) as LZW method 7.
   /// </summary>
-  private static void WriteVersion4(Stream output, int version, DateTime now, byte[]? key, int method, int directoryCount, long total, byte[] packed,
+  private static void WriteVersion4(Stream output, int version, DateTime now, byte[]? key, byte filters, int method, int directoryCount, long total, byte[] packed,
     byte[] crcs, byte[] nameTable, byte[] fileTable, int n) {
     // The 0.6 file table holds the same planes: dates, times, directory, size delta, attribute.
     var dates = fileTable.AsSpan(0, 4 * n).ToArray();
@@ -393,6 +430,7 @@ internal static class UharcWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(6), archiveDate);
     if (key != null)
       header[8] = Uharc04Header.UsesPassword;
+    header[9] = filters;
     header[10] = (byte)method;
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(11), (ushort)directoryCount);
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(13), (uint)total);

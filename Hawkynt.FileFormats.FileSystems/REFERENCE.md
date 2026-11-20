@@ -7912,7 +7912,7 @@ Builds a fresh Atari 8-bit AtariDOS 2.x `.atr` disk image from scratch (WORM).
 
 ### Namespace `FileSystem.Axfs`
 
-[`AxfsEntry`](#axfsentry) · [`AxfsFormatDescriptor`](#axfsformatdescriptor) · [`AxfsReader`](#axfsreader)
+[`AxfsEntry`](#axfsentry) · [`AxfsFormatDescriptor`](#axfsformatdescriptor) · [`AxfsReader`](#axfsreader) · [`AxfsWriteNode`](#axfswritenode) · [`AxfsWriter`](#axfswriter)
 
 #### `AxfsEntry`
 
@@ -7937,7 +7937,7 @@ Implements `IEquatable<AxfsEntry>`.
 
 AXFS — the "Advanced XIP File System" for embedded Linux (Numonyx, 2008): a read-only, compressed, execute-in-place image. Magic `0x48A0E4CD` and the signature "Advanced XIP FS" at offset 0.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7954,6 +7954,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes an image of the inputs: directories 0755 and files 0644 unless the input's metadata carries a Unix mode, owner and group from the metadata or root. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
@@ -7976,6 +7977,32 @@ Reads an AXFS ("Advanced XIP File System") image as `mkfs.axfs` writes it: a big
 | `Version` | `ValueTuple<byte, byte, byte> Version { get; }` | Version as major.minor.sub. |
 | `CountNodes` | `ValueTuple<ulong, ulong, ulong> CountNodes()` | Distinct nodes the files and symlinks use, by kind (XIP, byte-aligned, compressed). |
 | `Extract` | `byte[] Extract(AxfsEntry entry)` | Returns a regular file's bytes, or a symlink's target bytes. |
+
+#### `AxfsWriteNode`
+
+A file (`Data`), symbolic link (`LinkTarget`) or directory (`Children`) to write into an AXFS image.
+
+Implements `IEquatable<AxfsWriteNode>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AxfsWriteNode` | `AxfsWriteNode(string Name, byte[] Data = null, IReadOnlyList<AxfsWriteNode> Children = null, string LinkTarget = null)` | A file (`Data`), symbolic link (`LinkTarget`) or directory (`Children`) to write into an AXFS image. |
+| `Children` | `IReadOnlyList<AxfsWriteNode> Children { get; init; }` | Directory contents. |
+| `Data` | `byte[] Data { get; init; }` | File contents. |
+| `Gid` | `uint Gid { get; init; }` | Group. |
+| `IsDirectory` | `bool IsDirectory { get; }` | True for a directory. |
+| `LinkTarget` | `string LinkTarget { get; init; }` | Symbolic-link target. |
+| `Name` | `string Name { get; init; }` | Entry name (UTF-8, no '/' or NUL); ignored for the root. |
+| `Permissions` | `int? Permissions { get; init; }` | Permission bits (`07777`); defaults to 0644 for files, 0755 for directories, 0777 for links. |
+| `Uid` | `uint Uid { get; init; }` | Owner. |
+
+#### `AxfsWriter`
+
+Writes AXFS 2.2 images the AXFS kernel driver mounts, laid out as `mkfs.axfs` lays them out (see `docs/AXFS-ON-DISK.md`, "Writing"): the superblock, then the 18 region descriptors from offset 264, then the byte tables packed back to back;an empty XIP region at the next page boundary, then the byte-aligned region, the compressed region and the strings, and the magic once more as the last four bytes the superblock's size covers; the file is padded to whole pages. Inodes are numbered breadth-first from the root (inode 0), each directory's children consecutive and sorted by name, and every file's pages take consecutive nodes in inode order. A page that zlib shrinks is its own cblock; any other is stored byte-aligned. Each byte table uses the fewest bytes per entry that hold its largest value.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Write` | `static void Write(Stream output, AxfsWriteNode root, ulong timestamp = 0)` | Writes `root` as a complete image. |
 
 ### Namespace `FileSystem.Bbc`
 
@@ -11827,7 +11854,7 @@ Formats FLEX disks the way NEWDISK does and edits them the way the File Manageme
 
 ### Namespace `FileSystem.Fossil`
 
-[`FossilEntry`](#fossilentry) · [`FossilFormatDescriptor`](#fossilformatdescriptor) · [`FossilReader`](#fossilreader) · [`FossilSourceEntry`](#fossilsourceentry)
+[`FossilEntry`](#fossilentry) · [`FossilFormatDescriptor`](#fossilformatdescriptor) · [`FossilReader`](#fossilreader) · [`FossilSourceEntry`](#fossilsourceentry) · [`FossilWriteNode`](#fossilwritenode) · [`FossilWriter`](#fossilwriter)
 
 #### `FossilEntry`
 
@@ -11851,7 +11878,7 @@ Implements `IEquatable<FossilEntry>`.
 
 Fossil — the Plan 9 file server's on-disk format (Quinlan, McKie, Cox, 2002), as plan9port's `flfmt` and `fossil` write it. Header magic `0x3776ae89` at 128 KiB.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11868,6 +11895,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a volume (8 KiB blocks) whose `active` tree holds the inputs: directories 0775, files 0664, owner `adm`, each input's modification time. A leading `active/` in the names is taken as the tree's root, so a volume listed by this descriptor writes back alike. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
@@ -11922,6 +11950,32 @@ Implements `IEquatable<FossilSourceEntry>`.
 | `Size` | `long Size { get; init; }` |  |
 | `Snap` | `uint Snap { get; init; }` |  |
 | `Tag` | `uint Tag { get; init; }` |  |
+
+#### `FossilWriteNode`
+
+A file or directory to write into a Fossil volume's active tree.
+
+Implements `IEquatable<FossilWriteNode>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FossilWriteNode` | `FossilWriteNode(string Name, bool IsDirectory)` | A file or directory to write into a Fossil volume's active tree. |
+| `Children` | `IReadOnlyList<FossilWriteNode> Children { get; init; }` | Gets a directory's entries. |
+| `Data` | `byte[] Data { get; init; }` | Gets the file contents (ignored for a directory). |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this is a directory. |
+| `MTime` | `uint MTime { get; init; }` | Gets the modification time, also used as the change and access time (UNIX seconds). |
+| `Name` | `string Name { get; init; }` | The path element (UTF-8, 1 to 255 bytes, no '/'). |
+| `Owner` | `string Owner { get; init; }` | Gets the owner (and group and last modifier). |
+| `Permissions` | `uint Permissions { get; init; }` | Gets the permission bits (Plan 9 rwx for owner, group and other). |
+
+#### `FossilWriter`
+
+Writes a Fossil volume as plan9port's `flfmt` formats it and its `fossil` server lays out files: the 128 KiB gap, the header, the superblock, the label partition and the data partition. Every block lives locally (no Venti) in epoch 1. The Fossil root holds `active`, `archive` and `snapshot`; the given tree is `active`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultBlockSize` | `const int DefaultBlockSize` | The block size `flfmt` uses by default. |
+| `Write` | `static void Write(Stream output, IReadOnlyList<FossilWriteNode> active, int blockSize = 8192, uint time = 0, string label = "main")` | Writes a volume whose active tree holds `active`. |
 
 ### Namespace `FileSystem.Gemdos`
 
@@ -20256,7 +20310,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileSystem.UnixV6`
 
-[`UnixV6Entry`](#unixv6entry) · [`UnixV6FormatDescriptor`](#unixv6formatdescriptor) · [`UnixV6Reader`](#unixv6reader)
+[`UnixV6Entry`](#unixv6entry) · [`UnixV6FormatDescriptor`](#unixv6formatdescriptor) · [`UnixV6Reader`](#unixv6reader) · [`UnixV6WriteNode`](#unixv6writenode) · [`UnixV6Writer`](#unixv6writer)
 
 #### `UnixV6Entry`
 
@@ -20275,9 +20329,9 @@ Implements `IEquatable<UnixV6Entry>`.
 
 #### `UnixV6FormatDescriptor`
 
-Sixth Edition UNIX file system (PDP-11, 1975), read-only. The volume has no magic number, so it is found by its `.v6` extension or selected by id rather than sniffed. Read-only because nothing outside this package can check a V6 volume written here: no maintained kernel or tool mounts the format. The reader is checked against the 1975 root volume Dennis Ritchie's tapes preserve (TUHS), whose files were independently extracted to a tar archive. References:V6 `/usr/sys/filsys.h`, `inode.h`, `ken/subr.c` (The Unix Heritage Society archive)John Lions, A Commentary on the Sixth Edition UNIX Operating System (1977)`https://en.wikipedia.org/wiki/Version_6_Unix`
+Sixth Edition UNIX file system (PDP-11, 1975). The volume has no magic number, so it is found by its `.v6` extension or selected by id rather than sniffed. The reader is checked against the 1975 root volume Dennis Ritchie's tapes preserve (TUHS), whose files were independently extracted to a tar archive. Written volumes are checked by the V6 system itself, running on a simulated PDP-11: `icheck` and `dcheck` pass, the kernel mounts the volume, reads every file back unchanged and writes into it. References:V6 `/usr/sys/filsys.h`, `inode.h`, `ken/subr.c` (The Unix Heritage Society archive)John Lions, A Commentary on the Sixth Edition UNIX Operating System (1977)`https://en.wikipedia.org/wiki/Version_6_Unix`
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -20294,6 +20348,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a volume with directories 0755 and files 0644 owned by root, each input's modification time as its access and modification time. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
@@ -20310,6 +20365,33 @@ Implements `IDisposable`.
 | `VolumeBlocks` | `int VolumeBlocks { get; }` | Size of the volume in blocks (`s_fsize`). |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(UnixV6Entry entry)` |  |
+
+#### `UnixV6WriteNode`
+
+A file (`Data` set) or directory (`Children` set) to write into a V6 volume.
+
+Implements `IEquatable<UnixV6WriteNode>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UnixV6WriteNode` | `UnixV6WriteNode(string Name, byte[] Data = null, IReadOnlyList<UnixV6WriteNode> Children = null)` | A file (`Data` set) or directory (`Children` set) to write into a V6 volume. |
+| `Children` | `IReadOnlyList<UnixV6WriteNode> Children { get; init; }` | Directory contents. |
+| `Data` | `byte[] Data { get; init; }` | File contents, at most 16 MiB - 1 (the 24-bit `i_size`). |
+| `IsDirectory` | `bool IsDirectory { get; }` |  |
+| `Name` | `string Name { get; init; }` | Entry name, at most 14 Latin-1 bytes; ignored for the root. |
+| `Permissions` | `int? Permissions { get; init; }` | Permission bits (`0777` and the set-id/sticky bits); defaults to 0644 / 0755. |
+| `Time` | `uint Time { get; init; }` | Access and modification time, seconds since 1970 (a PDP-11 long). |
+
+#### `UnixV6Writer`
+
+Writes Sixth Edition UNIX volumes the V6 kernel mounts and V6 `icheck`/`dcheck` pass: boot block 0, the superblock in block 1, the i-list from block 2, then the data blocks. The root is inode 1 and each directory's entries take consecutive numbers; every directory starts with `.` and `..` and has two links plus one per subdirectory. Data is laid out in inode order, each large file's indirect blocks ahead of the data they map. A file of up to eight blocks is small (direct addresses); a longer one is `ILARG` with `i_addr[0..6]` single-indirect and `i_addr[7]` double-indirect, the mapping of the kernel's `bmap`. The free blocks are chained as the kernel's `alloc` consumes them: `s_free[0]` of the last link is 0, and each full set of 100 is stored in the block named by the next set's `s_free[0]` (count word, then the 100 numbers). Blocks are pushed from the top of the volume down, so allocation proceeds upwards. `s_ninode` is left 0, which makes the kernel's `ialloc` scan the i-list for free inodes. References: V6 `/usr/sys/filsys.h`, `inode.h`, `ken/alloc.c`, `ken/subr.c` (TUHS); Lions, A Commentary on the Sixth Edition UNIX Operating System.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultSpareBlocks` | `const int DefaultSpareBlocks` | Free blocks added on top of the used ones when no volume size is given. |
+| `DefaultSpareInodes` | `const int DefaultSpareInodes` | Free inodes added on top of the used ones (rounded up to whole i-list blocks). |
+| `Rk05Blocks` | `const int Rk05Blocks` | Blocks on an RK05 cartridge, the V6 distribution's own medium. |
+| `Write` | `static void Write(Stream output, UnixV6WriteNode root, int volumeBlocks = 0, uint time = 0)` | Writes `root` as a complete volume. |
 
 ### Namespace `FileSystem.UnixV7`
 

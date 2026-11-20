@@ -4,7 +4,8 @@ namespace FileFormat.Uharc;
 /// The encoder side of the ALZ stream (docs/UHARC-ON-DISK.md, "ALZ" and "Writing"): it runs the
 /// decoder's <see cref="UharcAlzModel{TCoder}"/> step for step and answers each step with a
 /// greedy choice — a copy at the last distance, one of the older distances or a new one found
-/// by a hash chain, or a literal. It uses selector 0 (no multimedia predictor).
+/// by a hash chain, or a literal. Each block gets its multimedia class as its selector
+/// (<see cref="UharcMediaClass"/>).
 /// </summary>
 internal static class UharcAlzEncoder {
 
@@ -16,14 +17,14 @@ internal static class UharcAlzEncoder {
       return [];
 
     var coder = new UharcRangeEncoder();
-    var model = new UharcAlzModel<UharcEncoding>(new(coder), method, selector: 0);
-    var finder = new UharcMatchFinder(data, model.DictionarySize);
     var resets = new UharcModelResets(fileEnds, data.Length, UharcModelResets.AlzSpan, mergeSmallFiles: false);
+    var model = new UharcAlzModel<UharcEncoding>(new(coder), method, UharcMediaClass.ForBlock(data, fileEnds, 0, resets.Next));
+    var finder = new UharcMatchFinder(data, model.DictionarySize);
     var output = new byte[data.Length];
     var position = 0;
     while (position < data.Length) {
       if (resets.IsResetPoint(position))
-        model.ResetForNextFile(selector: 0);
+        model.ResetForNextFile(UharcMediaClass.ForBlock(data, fileEnds, position, resets.Next));
 
       var limit = (int)Math.Min(data.Length - position, position < resets.Next ? resets.Next - position : data.Length - position);
       var choice = Choose(data, finder, model, position, limit);

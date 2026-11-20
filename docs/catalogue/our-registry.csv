@@ -70,7 +70,7 @@ format,Avr,AVR (Audio Visual Research),Audio,,.avr,Y,Y,Y,
 format,Avro,Apache Avro OCF,Archive,,.avro,Y,Y,,
 format,Awb,CRI Audio Wave Bank,Archive,,.awb;.acb,Y,Y,Y,
 format,Axe,AXE (DOS exe),Archive,,,Y,Y,,
-format,Axfs,AXFS (Advanced XIP File System),Archive,Y,.axfs,Y,Y,,
+format,Axfs,AXFS (Advanced XIP File System),Archive,Y,.axfs,Y,Y,Y,
 format,Ay,ZX Spectrum AY,Audio,,.ay,Y,Y,,
 format,B1,B1,Archive,,.b1,Y,Y,Y,Y
 format,B64Encoding,Base64 (uuencode wrapper),Wrapper,,.b64;.base64,,Y,Y,
@@ -224,7 +224,7 @@ format,Flex,FLEX disk (6800/6809),Archive,Y,.flx;.dsk,Y,Y,Y,Y
 format,Fli,FLI/FLC (Autodesk animation),Archive,,.fli;.flc,Y,Y,,
 format,Flv,Flash Video (FLV),Video,,.flv,Y,Y,Y,
 format,Fmod,FMOD Sample Bank,Archive,,.fsb,Y,Y,,
-format,Fossil,Fossil (Plan 9),Archive,Y,.fossil,Y,Y,,
+format,Fossil,Fossil (Plan 9),Archive,Y,.fossil,Y,Y,Y,
 format,FreeArc,FreeArc,Archive,,.arc,Y,Y,Y,Y
 format,Freeze,Freeze,Stream,,.f;.freeze,,Y,Y,
 format,Fsg,FSG (Win32 PE),Archive,,,Y,Y,,
@@ -452,6 +452,7 @@ format,PackIt,PackIt,Archive,,.pit,Y,Y,Y,Y
 format,Paf,PARIS Audio File (Ensoniq),Audio,,.paf,Y,Y,Y,
 format,Pak,PAK,Archive,,.pak,Y,Y,Y,Y
 format,Papaw,Papaw executable wrapper,Archive,,,Y,Y,,
+format,Paq8l,paq8l,Archive,,.paq8l,Y,Y,Y,
 format,Par2,Parchive v2 (PAR2),Archive,,.par2,Y,Y,Y,
 format,Paragon,Paragon Backup,Archive,,.pbf,Y,Y,Y,Y
 format,ParallelsHdd,Parallels Disk (HDS),Archive,,.hds,Y,Y,,
@@ -643,7 +644,7 @@ format,Umx,Unreal Music (UMX),Archive,,.umx,Y,Y,Y,
 format,UnityBundle,Unity Asset Bundle,Archive,,.bundle;.unity3d;.assetbundle,Y,Y,Y,Y
 format,UnityPackage,Unity package,Archive,,.unitypackage,Y,Y,Y,Y
 format,UnixPack,pack (.z),Stream,,,,Y,Y,
-format,UnixV6,UNIX V6 file system,Archive,Y,.v6,Y,Y,,
+format,UnixV6,UNIX V6 file system,Archive,Y,.v6,Y,Y,Y,
 format,UnixV7,UNIX V7 file system,Archive,Y,.v7,Y,Y,Y,
 format,UnrealPak,Unreal Pak,Archive,,.pak,Y,Y,Y,
 format,Upx,UPX-packed executable,Archive,,,Y,Y,,

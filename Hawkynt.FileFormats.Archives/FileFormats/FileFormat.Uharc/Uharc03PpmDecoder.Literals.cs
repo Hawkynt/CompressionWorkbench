@@ -5,7 +5,7 @@ namespace FileFormat.Uharc;
 /// record, order-2 record and binary predictor in an order set by the predictor's strength, then
 /// the frequency rows.
 /// </summary>
-internal sealed partial class Uharc03PpmModel {
+internal sealed partial class Uharc03PpmModel<TCoder> {
 
   private const int Order4Records = 0x40000;
   private const int Order4Stride = 32;
@@ -144,10 +144,10 @@ internal sealed partial class Uharc03PpmModel {
 
   // ── Count pairs ────────────────────────────────────────────────────────
 
-  /// <summary>A binary decision with (hits, misses) at <paramref name="at"/> as frequencies; true for a hit.</summary>
-  private bool DecodePair(int at) {
+  /// <summary>A binary decision with (hits, misses) at <paramref name="at"/> as frequencies; true for a hit (the encoder's <paramref name="hitWanted"/>).</summary>
+  private bool DecodePair(int at, bool hitWanted) {
     uint hits = this._pairs[at], misses = this._pairs[at + 1];
-    var count = this._coder.GetCount(hits + misses);
+    var count = this._coder.Count(hits + misses, !TCoder.Encoding || hitWanted ? 0u : hits);
     var hit = count < hits;
     if (hit)
       this._coder.Consume(0, hits);
@@ -185,17 +185,30 @@ internal sealed partial class Uharc03PpmModel {
       foreach (var s in excluded)
         rest -= this.C(fallback, s);
       rest &= 0xFFFF;
-      return this.DecodeIn(fallback, rest, this._coder.GetCount(rest), excluded);
+      return this.DecodeIn(fallback, rest, this._coder.Count(rest, TCoder.Encoding ? this.SlotInRow(fallback, excluded) : 0u), excluded);
     }
 
     var all = total + this._escape[row];
-    var count = this._coder.GetCount(all);
+    var present = TCoder.Encoding && this.C(row, this._rowTarget) != 0 && !excluded.Contains((byte)this._rowTarget);
+    var count = this._coder.Count(all, !TCoder.Encoding ? 0u : present ? this.SlotInRow(row, excluded) : total);
     if ((count & 0xFFFF) < total)
       return this.DecodeIn(row, all, count, excluded);
 
     this._coder.Consume(total, all - total);
     this._cost += Price[((all - total) << 14) / all];
     return this.DecodeNovel(row, excluded);
+  }
+
+  /// <summary>The encoder's slot for its target in <paramref name="row"/>: what the symbols above it take.</summary>
+  private uint SlotInRow(int row, ReadOnlySpan<byte> excluded) {
+    var target = this._rowTarget;
+    if (this.C(row, target) == 0 || excluded.Contains((byte)target))
+      throw new InvalidOperationException("UHARC: 0.3 PPM symbol cannot be coded in its row.");
+    var low = 0u;
+    for (var s = 255; s > target; --s)
+      if (!excluded.Contains((byte)s))
+        low += this.C(row, s);
+    return low;
   }
 
   /// <summary>Symbols take the interval from the top down: symbol 255 lies nearest 0.</summary>
@@ -228,7 +241,17 @@ internal sealed partial class Uharc03PpmModel {
       if (this._count[rowBase + s] != 0 || excluded.Contains((byte)s))
         total -= this._count[fallbackBase + s];
 
-    var count = this._coder.GetCount(total) & 0xFFFF;
+    var slot = 0u;
+    if (TCoder.Encoding) {
+      var target = this._rowTarget;
+      if (this._count[rowBase + target] != 0 || excluded.Contains((byte)target) || this._count[fallbackBase + target] == 0)
+        throw new InvalidOperationException("UHARC: 0.3 PPM symbol cannot be coded after the escape.");
+      for (var s = 255; s > target; --s)
+        if (this._count[rowBase + s] == 0 && !excluded.Contains((byte)s))
+          slot = (slot + this._count[fallbackBase + s]) & 0xFFFF;
+    }
+
+    var count = this._coder.Count(total, slot) & 0xFFFF;
     uint high = 0;
     for (var s = 255; s >= 0; --s) {
       if (this._count[rowBase + s] != 0 || excluded.Contains((byte)s))
@@ -335,7 +358,7 @@ internal sealed partial class Uharc03PpmModel {
       if (this._classCharge)
         this._classCost += this._cost;
     } else if (this._ageTotal >= RawCost) {
-      symbol = (int)this._coder.DecodeUniform(256);
+      symbol = (int)this._coder.Uniform(256, (uint)this._rowTarget);
       if (this._classCharge)
         this._classCost += UniformCost;
       this.EstimateRow(row, symbol);
@@ -396,6 +419,8 @@ internal sealed partial class Uharc03PpmModel {
   // ── One literal ────────────────────────────────────────────────────────
 
   private int DecodeLiteral(byte[] output, int written) {
+    if (TCoder.Encoding)
+      this._target = this._plan.Symbols[this._next];
     var binary = this._kind != 0;
     var word = this._markerState == 2
       ? ((this._roll0 >> 8) & 0xFF) | ((this._roll0 >> 16) & 0xFF00) | ((this._roll1 << 8) & 0xFF0000) | (this._roll1 & 0xFF000000)
@@ -564,7 +589,7 @@ internal sealed partial class Uharc03PpmModel {
 
     if (this._o4Total <= 8 && r[0] + r[1] == this._o4Total) {
       var pair = Order4PairBase + ((r[0] >> 1) * 4 + (r[1] >> 1)) * 2;
-      if (this.DecodePair(pair)) {
+      if (this.DecodePair(pair, r[0xE] == this._target)) {
         this._o4Slot = 0;
         return r[0xE];
       }
@@ -574,7 +599,7 @@ internal sealed partial class Uharc03PpmModel {
       return -1;
     }
 
-    var count = this._coder.GetCount(rest);
+    var count = this._coder.Count(rest, TCoder.Encoding ? this.SlotInRecord(r, active, Order4Slots, 0xE) : 0u);
     uint low = 0;
     var symbol = -1;
     var slot = 0;
@@ -601,6 +626,27 @@ internal sealed partial class Uharc03PpmModel {
 
     this._o4Slot = slot;
     return symbol;
+  }
+
+  /// <summary>
+  /// The encoder's slot in a record of <paramref name="slots"/> counts (symbols from
+  /// <paramref name="symbolBase"/>): what the active symbols before its target take, or, for a
+  /// target the record does not offer, the start of the escape.
+  /// </summary>
+  private uint SlotInRecord(ReadOnlySpan<byte> r, ReadOnlySpan<bool> active, int slots, int symbolBase) {
+    var low = 0u;
+    for (var slot = 0; slot < slots; ++slot) {
+      if (!active[slot])
+        continue;
+      uint f = r[slot + 1];
+      if (f == 0)
+        break;
+      if (r[symbolBase + slot] == this._target)
+        return low;
+      low += f;
+    }
+
+    return low;
   }
 
   private void UpdateOrder4(byte symbol) {
@@ -753,7 +799,7 @@ internal sealed partial class Uharc03PpmModel {
 
     if (rest <= 0x10 && symbols == 1) {
       var pair = Order2PairBase + ((r[0] >> 2) * 4 + (r[1] >> 2)) * 2;
-      if (this.DecodePair(pair)) {
+      if (this.DecodePair(pair, r[9] == this._target)) {
         this._o2Slot = 0;
         return r[9];
       }
@@ -763,7 +809,7 @@ internal sealed partial class Uharc03PpmModel {
       return -1;
     }
 
-    var count = this._coder.GetCount(rest);
+    var count = this._coder.Count(rest, TCoder.Encoding ? this.SlotInRecord(r, active, 8, 9) : 0u);
     uint low = 0;
     var symbol = -1;
     var slot = 0;
@@ -977,7 +1023,7 @@ internal sealed partial class Uharc03PpmModel {
       missCount = order[at + 1];
     }
 
-    var count = this._coder.GetCount(hits + missCount);
+    var count = this._coder.Count(hits + missCount, !TCoder.Encoding || guess == this._target ? 0u : hits);
     if (count < hits) {
       if (this._rankBoost) {
         this._rank[this._rankPointer] += this._rankStep;
@@ -1089,6 +1135,7 @@ internal sealed partial class Uharc03PpmModel {
     }
 
     if (!gate) {
+      this._rowTarget = this._target;
       var symbol = this.DecodeChosen(row, LiteralFallback);
       if (binary) {
         var delta = negate ? (byte)(bias - symbol) : (byte)(symbol - bias);
@@ -1100,6 +1147,7 @@ internal sealed partial class Uharc03PpmModel {
     }
 
     this.ToDifferences(bias, negate);
+    this._rowTarget = negate ? (byte)(bias - this._target) : (byte)(this._target - bias);
     var difference = this.DecodeChosen(classRow, classFallback);
     var value = negate ? (byte)(bias - difference) : (byte)(bias + difference);
     for (var k = 0; k < this._excludedCount; ++k)

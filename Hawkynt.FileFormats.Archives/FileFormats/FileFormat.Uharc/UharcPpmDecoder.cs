@@ -108,9 +108,12 @@ internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUhar
   private readonly UharcAlzSideModel _side = new();
   private int _selector;
 
-  // Encoding only: the input, the step's position in it, the model symbol of the literal being
-  // coded (and its form in the row being coded), and the copy decision.
+  // Encoding only: the input, the symbols coding it and the next one's index, the step's output
+  // position, the model symbol of the literal being coded (and its form in the row being coded),
+  // and the copy decision.
   private byte[] _source = [];
+  private UharcPpmSymbols _plan = UharcPpmSymbols.Binary([]);
+  private int _next;
   private int _written;
   private long _copyLimit;
   private int _target;
@@ -118,9 +121,14 @@ internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUhar
   private int _copyClassWanted;
   private int _copyLengthWanted;
 
-  /// <summary>The input the encoding instantiation codes; the model chooses copies from it.</summary>
+  /// <summary>The input the encoding instantiation codes (its multimedia classes are read from it).</summary>
   public byte[] Source {
     set => this._source = value;
+  }
+
+  /// <summary>The model symbols the encoding instantiation codes; the model chooses copies from them.</summary>
+  public UharcPpmSymbols Plan {
+    set => this._plan = value;
   }
 
   public UharcPpmModel(TCoder coder, int method) {
@@ -160,8 +168,8 @@ internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUhar
   // ── Stream header and reset points ─────────────────────────────────────
 
   private void ReadStreamKind() {
-    // The encoder always writes a binary stream: no word transform to invert.
-    this._kind = (int)this._coder.Uniform(2, 1);
+    var textLength = TCoder.Encoding ? this._plan.TextLength : 0;
+    this._kind = (int)this._coder.Uniform(2, textLength > 0 ? 0u : 1u);
     if (this._kind != 0)
       return;
 
@@ -169,9 +177,9 @@ internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUhar
     long total = 0;
     var shift = 0;
     do {
-      total += (long)this._coder.Uniform(0x800, 0) << shift;
+      total += (long)this._coder.Uniform(0x800, (uint)(textLength >> shift) & 0x7FF) << shift;
       shift += 11;
-    } while (this._coder.Uniform(2, 0) != 0 && shift < 64);
+    } while (this._coder.Uniform(2, textLength >> shift != 0 ? 1u : 0u) != 0 && shift < 64);
 
     this._textEnd = total & 0xFFFFFFFF;
     this._transformEnd = this._textEnd;
@@ -270,6 +278,8 @@ internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUhar
 
   private int Step(byte[] output, int written) {
     this._written = written;
+    if (TCoder.Encoding && this._plan.StartOf(this._next) != written)
+      throw new InvalidOperationException("UHARC: PPM encoder lost track of its symbols.");
     var length = this.TryCopy(out var copyContext, out var copyClass);
     if (copyContext >= 0) {
       this.CountCopyClass(copyContext, copyClass);
@@ -482,31 +492,33 @@ internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUhar
   }
 
   /// <summary>
-  /// The encoder's copy decision: take the candidate when the bytes it would produce match the
-  /// input for longer than the floor, and only whole — the full match, or 255 for a run — and
-  /// never past the next reset point; a shortened copy would leave the next byte equal to the
-  /// byte the literal coder then excludes.
+  /// The encoder's copy decision: take the candidate when the symbols it would produce match the
+  /// input's for longer than the floor, and only whole — the full match, or 255 for a run — and
+  /// never past the next reset point or the end of the text; a shortened copy would leave the next
+  /// symbol equal to the one the literal coder then excludes.
   /// </summary>
   private void ChooseCopy(uint source, int floor) {
     var position = this._position;
-    var available = (int)Math.Min(0xFF, this._copyLimit - this._written);
+    var symbols = this._plan.Symbols;
+    var next = this._next;
+    var available = Math.Min(0xFF, this._plan.CopyEnd(this._copyLimit, this._textEnd) - next);
     var bytes = this._copyBuffer;
     var length = 0;
     for (; length < available; ++length) {
       var behind = (source - position) & this._mask;
       var value = behind < (uint)length ? bytes[behind] : this._window[source];
-      if ((byte)~value != this._source[this._written + length])
+      if (value != symbols[next + length])
         break;
       bytes[length] = value;
       source = (source + 1) & this._mask;
     }
 
-    var whole = length == 0xFF || this._written + length >= this._source.Length;
+    var whole = length == 0xFF || next + length >= symbols.Length;
     if (!whole && length == available) {
       // Cut short by the reset point: whole only when the match ends right there.
       var behind = (source - position) & this._mask;
-      var next = behind < (uint)length ? bytes[behind] : this._window[source];
-      whole = (byte)~next != this._source[this._written + length];
+      var following = behind < (uint)length ? bytes[behind] : this._window[source];
+      whole = following != symbols[next + length];
     }
 
     var hit = whole && length > floor;
@@ -550,8 +562,11 @@ internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUhar
 
   private void Advance() => this._position = (this._position + 1) & this._mask;
 
-  private int Emit(byte[] output, int written, byte symbol)
-    => this._transform.Emit(symbol, written, this._transformEnd, this._recordStart, output);
+  private int Emit(byte[] output, int written, byte symbol) {
+    if (TCoder.Encoding)
+      ++this._next;
+    return this._transform.Emit(symbol, written, this._transformEnd, this._recordStart, output);
+  }
 
   private readonly UharcPpmTextTransform _transform = new();
 

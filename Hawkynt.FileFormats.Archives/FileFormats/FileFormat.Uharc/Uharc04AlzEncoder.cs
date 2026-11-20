@@ -4,7 +4,7 @@ namespace FileFormat.Uharc;
 /// The encoder side of the 0.4 ALZ stream (docs/UHARC-ON-DISK.md, "UHARC 0.4 ALZ" and "Writing
 /// UHARC 0.4"): it runs the decoder's <see cref="Uharc04AlzModel{TCoder}"/> step for step and
 /// answers each step greedily with a whole copy (a recent distance or one from the hash chain) or
-/// a literal, with group 0 (no multimedia predictor). A copy whose length the model would take
+/// a literal, with each block's multimedia class as its group (<see cref="UharcMediaClass"/>). A copy whose length the model would take
 /// from a fully trusted per-byte-pair prediction is used only when that prediction is its length.
 /// </summary>
 internal static class Uharc04AlzEncoder {
@@ -17,7 +17,7 @@ internal static class Uharc04AlzEncoder {
       return [];
 
     var coder = new UharcRangeEncoder();
-    var model = new Uharc04AlzModel<UharcEncoding>(new(coder), method, fileEnds, data.Length);
+    var model = new Uharc04AlzModel<UharcEncoding>(new(coder), method, fileEnds, data.Length) { Source = data };
     var finder = new UharcMatchFinder(data, model.DictionarySize);
     var output = new byte[data.Length];
     var position = 0;

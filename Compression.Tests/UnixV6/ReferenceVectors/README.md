@@ -8,6 +8,14 @@
 The manifest was made with Python's `tarfile` on 2026-10-26; the tar records no
 device nodes, and the reader does not list them either.
 
+## Checking written volumes
+
+`v6check.py` boots UNIX V6 on SIMH's PDP-11 simulator (`pdp11`, SIMH 3.8) from the root
+volume of SIMH's V6 kit (`uv6swre.zip`, `unix0_v6_rk.dsk`; same Caldera licence), with a
+written volume attached as RK05 drive 4. V6 then runs `icheck` and `dcheck` on it, mounts
+it, lists it, copies files inside it, unmounts it and checks it again. The kit is not
+committed; `UnixV6WriterTests` looks for it in `$CWB_V6_KIT`, else `~/v6kit`, inside WSL.
+
 The software in `v6root.gz` is distributed under the Caldera Ancient UNIX licence
 of 23 January 2002, reproduced in `LICENSE.Caldera.txt`:
 

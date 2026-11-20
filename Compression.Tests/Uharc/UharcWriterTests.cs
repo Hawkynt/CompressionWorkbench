@@ -171,6 +171,8 @@ public class UharcWriterTests {
   [TestCase("lzp", "LZP", "secret", 1024L)]
   [TestCase("alz", "ALZ:2", null, 0L)]
   [TestCase("alz", "ALZ:2", "secret", 1024L)]
+  [TestCase("ppm", "PPM", null, 0L)]
+  [TestCase("ppm", "PPM", "secret", 1024L)]
   [Category("HappyPath"), Category("RoundTrip")]
   public void GivenFilesAndDirectories_WhenWrittenAsVersion03AndRead_ThenEverythingComesBack(string? method, string mode, string? password, long dictionary) {
     var inputs = SampleInputs();
@@ -183,9 +185,26 @@ public class UharcWriterTests {
     Assert.That(reader.Entries.Where(e => e.IsDirectory).Select(e => e.FileName).Order(), Is.EqualTo(new[] { "emptydir", "sub", "sub/deeper" }));
   }
 
-  [Test, Category("ErrorHandling")]
-  public void GivenPpm_WhenWrittenAsVersion03_ThenItIsRefused()
-    => Assert.That(() => CreateWith(Version3("ppm")), Throws.TypeOf<NotSupportedException>());
+  [TestCase(22)]
+  [TestCase(28)]
+  [TestCase(35)]
+  [Category("RoundTrip")]
+  public void GivenData_WhenVersion03PpmEncodedAndDecoded_ThenItIsUnchanged(int method) {
+    var data = MixedData(method);
+    var ends = new long[] { data.Length / 3, data.Length };
+    var packed = Uharc03PpmEncoder.Encode(data, method, ends);
+    Assert.That(Uharc03PpmDecoder.Decode(packed, 0, packed.Length, method, data.Length, ends), Is.EqualTo(data));
+  }
+
+  [TestCase(new byte[0])]
+  [TestCase(new byte[] { 0x42 })]
+  [TestCase(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF })]
+  [Category("Boundary")]
+  public void GivenTinyInputs_WhenVersion03PpmEncodedAndDecoded_ThenTheyAreUnchanged(byte[] data) {
+    long[] ends = [data.Length];
+    var packed = Uharc03PpmEncoder.Encode(data, 22, ends);
+    Assert.That(Uharc03PpmDecoder.Decode(packed, 0, packed.Length, 22, data.Length, ends), Is.EqualTo(data));
+  }
 
   [TestCase(8)]
   [TestCase(17)]
@@ -203,9 +222,39 @@ public class UharcWriterTests {
   [Category("RoundTrip")]
   public void GivenData_WhenVersion03AlzEncodedAndDecoded_ThenItIsUnchanged(int method) {
     var data = MixedData(method);
-    var packed = Uharc03AlzEncoder.Encode(data, method);
+    var packed = Uharc03AlzEncoder.Encode(data, method, []);
     Assert.That(Uharc03AlzDecoder.Decode(packed, 0, packed.Length, method, data.Length), Is.EqualTo(data));
   }
+
+  [TestCase(36)]
+  [TestCase(50)]
+  [Category("RoundTrip")]
+  public void GivenMediaBetweenText_WhenVersion03AlzEncodedInTheirGroups_ThenTheStreamIsUnchanged(int method) {
+    // Text, BMP, every WAV kind, an empty file, text again: groups 3, 5, 2, 2, 4 and back to 0.
+    byte[][] files = [
+      MixedData(1)[..3000], Bitmap24(60, 40), Wave(3000, 1, 8), Wave(2000, 2, 8), Wave(2000, 1, 16), Wave(1500), [],
+      MixedData(2)[..3000],
+    ];
+    var data = files.SelectMany(f => f).ToArray();
+    var ends = new List<long>();
+    long end = 0;
+    foreach (var f in files)
+      ends.Add(end += f.Length);
+    var packed = Uharc03AlzEncoder.Encode(data, method, ends);
+    Assert.That(Uharc03AlzDecoder.Decode(packed, 0, packed.Length, method, data.Length), Is.EqualTo(data));
+  }
+
+  [TestCase(3, 0, new[] { 3, 9 })]
+  [TestCase(5, 0, new[] { 5, 9 })]
+  [TestCase(7, 0, new[] { 2, 9 })]
+  [TestCase(8, 0, new[] { 2, 8 })]
+  [TestCase(9, 0, new[] { 4 })]
+  [TestCase(0, 4, new[] { 0, 9 })]
+  [TestCase(0, 0, new int[0])]
+  [TestCase(8, 2, new int[0])]
+  [Category("HappyPath"), Category("Boundary")]
+  public void GivenAMediaClass_WhenTheVersion03AlzSwitchesAreChosen_ThenTheGroupAndStepFollowIt(int mediaClass, int group, int[] switches)
+    => Assert.That(Uharc03AlzEncoder.SwitchesFor(mediaClass, group), Is.EqualTo(switches));
 
   [TestCase(new byte[0])]
   [TestCase(new byte[] { 0x42 })]
@@ -636,4 +685,286 @@ public class UharcWriterTests {
   [Category("Boundary")]
   public void GivenAStreamSize_WhenTheDictionaryIsChosen_ThenItIsTheSmallestThatHoldsIt(long size, int method)
     => Assert.That(UharcWriter.LzpMethodFor(size), Is.EqualTo(method));
+
+  // ── Filters ────────────────────────────────────────────────────────────
+
+  /// <summary>A one-bit page of the fax size with a drawn diagonal and frame.</summary>
+  internal static byte[] FaxPage() {
+    var page = new byte[UharcFaxFilter.PageSize];
+    for (var row = 0; row < 2376; ++row) {
+      page[row * 216] = 0x80;
+      page[row * 216 + (row % 1728) / 8] |= (byte)(0x80 >> (row % 8));
+    }
+
+    page.AsSpan(0, 216).Fill(0xFF);
+    return page;
+  }
+
+  /// <summary>A PCM WAV file of a slow sine (16-bit stereo unless told otherwise), header included.</summary>
+  internal static byte[] Wave(int frames, int channels = 2, int bits = 16) {
+    var block = channels * bits / 8;
+    var data = new byte[44 + frames * block];
+    "RIFF"u8.CopyTo(data);
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(4), data.Length - 8);
+    "WAVEfmt "u8.CopyTo(data.AsSpan(8));
+    data[16] = 16;
+    data[20] = 1;
+    data[22] = (byte)channels;
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(24), 22050);
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(28), 22050 * block);
+    data[32] = (byte)block;
+    data[34] = (byte)bits;
+    "data"u8.CopyTo(data.AsSpan(36));
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(40), frames * block);
+    for (var i = 0; i < frames; ++i)
+      for (var c = 0; c < channels; ++c) {
+        var value = Math.Sin(i / (20.0 + 7 * c)) * 0.4;
+        var at = 44 + i * block + c * bits / 8;
+        if (bits == 8)
+          data[at] = (byte)(128 + value * 250);
+        else
+          System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(at), (short)(value * 30000));
+      }
+
+    return data;
+  }
+
+  /// <summary>An uncompressed 24-bit BMP of smooth gradients.</summary>
+  internal static byte[] Bitmap24(int width, int height, int bits = 24) {
+    var row = (width * bits / 8 + 3) & ~3;
+    var data = new byte[54 + row * height];
+    data[0] = (byte)'B';
+    data[1] = (byte)'M';
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(2), data.Length);
+    data[10] = 54;
+    data[14] = 40;
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(18), width);
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(22), height);
+    data[26] = 1;
+    data[28] = (byte)bits;
+    for (var y = 0; y < height; ++y)
+      for (var x = 0; x < width * bits / 8; ++x)
+        data[54 + y * row + x] = (byte)(x * 2 + y + (x % 3) * 40);
+    return data;
+  }
+
+  private static IEnumerable<TestCaseData> Executables()
+    => ExecutableImages().Select((image, k) => new TestCaseData(image).SetName($"ExecutableFilter_{k}_{image.Length:X}"));
+
+  /// <summary>MZ, ELF and relocation-table images dense with E8/E9 operands of every kind the filter tells apart.</summary>
+  internal static IEnumerable<byte[]> ExecutableImages() {
+    var random = new Random(2026);
+    foreach (var (kind, size) in new[] { ("pe", 0x5000), ("pe", 0x40000), ("mz-relocations", 0x3000), ("elf", 0x2000), ("tight-lows", 0x8000) }) {
+      var image = new byte[size];
+      random.NextBytes(image);
+      switch (kind) {
+        case "elf":
+          image[0] = 0x7F; image[1] = (byte)'E'; image[2] = (byte)'L'; image[3] = (byte)'F'; image[0x12] = 3; image[0x13] = 0;
+          break;
+        case "mz-relocations":
+          image[0] = (byte)'M'; image[1] = (byte)'Z';
+          System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(6), 40);
+          System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(0x18), 0x40);
+          break;
+        default:
+          image[0] = (byte)'M'; image[1] = (byte)'Z';
+          System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(6), 3);
+          break;
+      }
+
+      for (var i = 0x200; i < size - 20; i += random.Next(2, 12)) {
+        image[i] = random.Next(2) == 0 ? (byte)0xE8 : (byte)0xE9;
+        var operand = random.Next(7) switch {
+          0 => random.Next(-i, size - i),
+          1 => -i,
+          2 => 0,
+          3 => size - i + random.Next(0, i),
+          // Far targets with a nontrivial high half, low halves repeating and in the index range.
+          4 => (random.Next(2, 0x7000) << 16) | random.Next(0x8000, 0x8080),
+          5 => (random.Next(2, 0x7000) << 16) | ((0x4000 - i) & 0xFFFF),
+          _ => random.Next(),
+        };
+        if (kind == "tight-lows")
+          operand = (random.Next(2, 0x7000) << 16) | random.Next(0x7FF0, 0x8090);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(i + 1), operand);
+      }
+
+      yield return image;
+    }
+  }
+
+  [TestCaseSource(nameof(Executables))]
+  [Category("RoundTrip")]
+  public void GivenAnExecutable_WhenTheFilterIsAppliedAndRestored_ThenItIsUnchanged(byte[] image) {
+    var filtered = image.ToArray();
+    Assert.That(UharcExecutableFilter.Apply(filtered, out var encodable), Is.True);
+    Assert.Multiple(() => {
+      Assert.That(encodable, Is.True);
+      Assert.That(filtered, Is.Not.EqualTo(image));
+    });
+    UharcExecutableFilter.Restore(filtered);
+    Assert.That(filtered, Is.EqualTo(image));
+  }
+
+  [TestCaseSource(nameof(Executables))]
+  [Category("RoundTrip")]
+  public void GivenAnExecutable_WhenThePpmFilterWithTheOperandSwapIsAppliedAndRestored_ThenItIsUnchanged(byte[] image) {
+    var filtered = image.ToArray();
+    Assert.That(UharcExecutableFilter.Apply(filtered, out var encodable, swapOperandBytes: true), Is.True);
+    Assert.That(encodable, Is.True);
+    UharcExecutableFilter.Restore(filtered, swapOperandBytes: true);
+    Assert.That(filtered, Is.EqualTo(image));
+  }
+
+  [Test, Category("Boundary")]
+  public void GivenOperandsTheFilterLeavesAlone_WhenTheSwappingFilterIsApplied_ThenOnlyThoseWhoseSwapIsATargetAreSwapped() {
+    // Beyond 64 KiB the high half 0xFFFE is trivial: such an operand is otherwise left as it is.
+    // 0xFFFE00FF swaps to 0xFFFF00FE, a target 0xFF02 bytes back, so it is stored swapped (the
+    // restore swaps it back); 0xFFFE1234 swaps to no target and stays as it is.
+    var image = new byte[0x10100];
+    image[0] = (byte)'M';
+    image[1] = (byte)'Z';
+    image[0x10010] = 0xE8;
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x10011), 0xFFFE_00FF);
+    image[0x10030] = 0xE9;
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x10031), 0xFFFE_1234);
+    var filtered = image.ToArray();
+    UharcExecutableFilter.Apply(filtered, out var encodable, swapOperandBytes: true);
+    Assert.Multiple(() => {
+      Assert.That(encodable, Is.True);
+      Assert.That(filtered.AsSpan(0x10011, 4).ToArray(), Is.EqualTo(new byte[] { 0xFE, 0x00, 0xFF, 0xFF }));
+      Assert.That(filtered.AsSpan(0x10031, 4).ToArray(), Is.EqualTo(image.AsSpan(0x10031, 4).ToArray()));
+    });
+    UharcExecutableFilter.Restore(filtered, swapOperandBytes: true);
+    Assert.That(filtered, Is.EqualTo(image));
+  }
+
+  [TestCase(1023)]
+  [TestCase(0)]
+  [Category("Boundary")]
+  public void GivenAnExecutableTooShortForTheFilter_WhenApplied_ThenItIsLeftAlone(int length) {
+    var image = new byte[length];
+    if (length > 1)
+      image[0] = (byte)'M';
+    if (length > 1)
+      image[1] = (byte)'Z';
+    var filtered = image.ToArray();
+    Assert.Multiple(() => {
+      Assert.That(UharcExecutableFilter.Apply(filtered, out var encodable), Is.False);
+      Assert.That(encodable, Is.True);
+      Assert.That(filtered, Is.EqualTo(image));
+    });
+  }
+
+  [TestCase("lzp", "6")]
+  [TestCase("alz", "6")]
+  [TestCase("lz78", "6")]
+  [TestCase("ppm", "6")]
+  [TestCase("ppm", "4")]
+  [TestCase("alz", "3")]
+  [Category("HappyPath"), Category("RoundTrip")]
+  public void GivenExecutablesAmongOtherFiles_WhenWritten_ThenEveryFileComesBack(string method, string version) {
+    var inputs = SampleInputs().Concat(ExecutableImages().Select((image, k) => ArchiveInputInfo.InMemory($"prog{k}.exe", image))).ToList();
+    var reader = new UharcReader(new MemoryStream(CreateWith(new FormatCreateOptions(method) { FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version } }, inputs)));
+    foreach (var input in inputs.Where(i => !i.IsDirectory))
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == input.ArchiveName)), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+  }
+
+  private static IEnumerable<TestCaseData> MediaFiles() {
+    yield return new TestCaseData(Bitmap24(200, 150), 3).SetName("MediaClass_Bmp24");
+    yield return new TestCaseData(Bitmap24(200, 150, bits: 8), 0).SetName("MediaClass_Bmp8IsNone");
+    yield return new TestCaseData(Wave(40000, 1, 8), 5).SetName("MediaClass_Wave8Mono");
+    yield return new TestCaseData(Wave(30000, 2, 8), 7).SetName("MediaClass_Wave8Stereo");
+    yield return new TestCaseData(Wave(30000, 1, 16), 8).SetName("MediaClass_Wave16Mono");
+    yield return new TestCaseData(Wave(20000), 9).SetName("MediaClass_Wave16Stereo");
+    yield return new TestCaseData(Wave(20000, 4, 16), 0).SetName("MediaClass_Wave4ChannelsIsNone");
+    yield return new TestCaseData(Wave(10)[..43], 0).SetName("MediaClass_ShortWaveIsNone");
+    yield return new TestCaseData("plain text, not media"u8.ToArray(), 0).SetName("MediaClass_TextIsNone");
+  }
+
+  [TestCaseSource(nameof(MediaFiles))]
+  [Category("HappyPath"), Category("Boundary")]
+  public void GivenAFile_WhenItsMediaClassIsChosen_ThenItMatchesItsFormat(byte[] file, int selector)
+    => Assert.That(UharcMediaClass.Of(file), Is.EqualTo(selector));
+
+  [TestCase(0, 100, 9)]
+  [TestCase(90, 130, 0)]
+  [TestCase(100, 130, 0)]
+  [TestCase(50, 140, 9)]
+  [TestCase(50, 50, 0)]
+  [Category("Boundary")]
+  public void GivenABlock_WhenItsMediaClassIsChosen_ThenTheFileCoveringHalfOrMoreDecides(long start, long end, int selector) {
+    var stream = new byte[140];
+    Wave(20000).AsSpan(0, 100).CopyTo(stream);
+    Assert.That(UharcMediaClass.ForBlock(stream, [100, 140], start, end), Is.EqualTo(selector));
+  }
+
+  [TestCase("alz", "6")]
+  [TestCase("ppm", "6")]
+  [TestCase("alz", "4")]
+  [TestCase("ppm", "4")]
+  [TestCase("ppm", "3")]
+  [Category("HappyPath"), Category("RoundTrip")]
+  public void GivenMediaFiles_WhenWrittenWithTheirClasses_ThenEveryFileComesBack(string method, string version) {
+    foreach (var data in MediaFiles().Select(c => (byte[])c.Arguments[0]!)) {
+      var inputs = new[] { ArchiveInputInfo.InMemory("media.bin", data) };
+      var reader = new UharcReader(new MemoryStream(CreateWith(new FormatCreateOptions(method) { FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version } }, inputs)));
+      Assert.That(reader.Extract(reader.Entries.Single()), Is.EqualTo(data));
+    }
+  }
+
+  [Test, Category("RoundTrip")]
+  public void GivenAFaxPage_WhenTheFilterIsAppliedAndRestored_ThenItIsUnchanged() {
+    var page = FaxPage();
+    var filtered = page.ToArray();
+    UharcFaxFilter.Apply(filtered);
+    Assert.That(filtered, Is.Not.EqualTo(page));
+    UharcFaxFilter.Restore(filtered);
+    Assert.That(filtered, Is.EqualTo(page));
+  }
+
+  [TestCase(1023, false)]
+  [TestCase(1024, true)]
+  [TestCase(20000, true)]
+  [Category("RoundTrip"), Category("Boundary")]
+  public void GivenAWave_WhenTheMultimediaFilterIsAppliedAndRestored_ThenItIsUnchanged(int length, bool recognised) {
+    var wave = Wave(20000)[..length];
+    var filtered = wave.ToArray();
+    Assert.That(UharcMultimediaFilter.Apply(filtered), Is.EqualTo(recognised));
+    Assert.That(filtered.AsSpan().SequenceEqual(wave), Is.EqualTo(!recognised));
+    UharcMultimediaFilter.Restore(filtered);
+    Assert.That(filtered, Is.EqualTo(wave));
+  }
+
+  [TestCase("store", "6")]
+  [TestCase("lzp", "6")]
+  [TestCase("store", "4")]
+  [TestCase("lzp", "3")]
+  [Category("HappyPath")]
+  public void GivenAFaxPage_WhenWritten_ThenItIsStoredAsBandsAndExtractedAsAPage(string method, string version) {
+    var page = FaxPage();
+    var inputs = new[] { ArchiveInputInfo.InMemory("page.fax", page), ArchiveInputInfo.InMemory("note.txt", "a page\r\n"u8.ToArray()) };
+    var archive = CreateWith(new FormatCreateOptions(method) { FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version } }, inputs);
+    if (method == "store")
+      Assert.That(archive.AsSpan().IndexOf(page.AsSpan(0, 432)), Is.LessThan(0));
+    var reader = new UharcReader(new MemoryStream(archive));
+    Assert.Multiple(() => {
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == "page.fax")), Is.EqualTo(page));
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == "note.txt")), Is.EqualTo("a page\r\n"u8.ToArray()));
+    });
+  }
+
+  [TestCase("lzp", "6")]
+  [TestCase("lz78", "6")]
+  [TestCase("lzp", "4")]
+  [TestCase("lz78", "3")]
+  [TestCase("alz", "6")]
+  [Category("HappyPath"), Category("RoundTrip")]
+  public void GivenAWaveAmongOtherFiles_WhenWritten_ThenEveryFileComesBack(string method, string version) {
+    var wave = Wave(30000);
+    var inputs = SampleInputs().Append(ArchiveInputInfo.InMemory("tone.wav", wave)).ToList();
+    var reader = new UharcReader(new MemoryStream(CreateWith(new FormatCreateOptions(method) { FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version } }, inputs)));
+    foreach (var input in inputs.Where(i => !i.IsDirectory))
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == input.ArchiveName)), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+  }
 }

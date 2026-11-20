@@ -166,7 +166,7 @@ Textbook primitives with no external bitstream to match. Round-trip and ratio te
 | `Lzop`, `Kwaj`, `Ecm` | both | `LzopInteropTests`; `KwajLibmspackInteropTests`; `Ecm` (#489) |
 | `Flac` | not probed here | Audio; its own test classes |
 | `Lzham`, `Bsc`, `Bcm`, `Mcm`, `Cmix` | named-codec owner | Their own pull requests (#647, #658, #662, #663, #677) |
-| `Paq8` | removed #761 | paq8l's header over an order-0 coder: paq8l 8l decodes our file to wrong bytes and we decoded its file to wrong bytes, both without an error. A real paq8l is a rung-2 rewrite (`RECLAIM-BACKLOG.md`) |
+| `Paq8` | removed #761 | paq8l's header over an order-0 coder: paq8l 8l decodes our file to wrong bytes and we decoded its file to wrong bytes, both without an error. Replaced by the `Paq8l` descriptor, written from `docs/PAQ8L-FORMAT.md`; its archives are byte-identical to paq8l's in both directions |
 | `Sqx` | fixed #782 | Private codec and CRC convention. Converted from Squeez-c (MIT): Squeez-c's 13 reference archives (formats 1.1 and 2.0, methods 0-4) decode, Squeez-c extracts ours; methods 5-7, encryption and volumes refused. The official archiver itself was not reached |
 
 ## Containers with embedded codecs
