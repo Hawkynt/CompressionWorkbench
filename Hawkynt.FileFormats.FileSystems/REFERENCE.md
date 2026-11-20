@@ -3762,7 +3762,7 @@ Writes PSP CSO v1/v2 and ZSO compressed-ISO containers.
 
 ### Namespace `FileFormat.Daa`
 
-[`DaaChunkKind`](#daachunkkind) · [`DaaFormatDescriptor`](#daaformatdescriptor) · [`DaaImage`](#daaimage)
+[`DaaChunkKind`](#daachunkkind) · [`DaaFormatDescriptor`](#daaformatdescriptor) · [`DaaImage`](#daaimage) · [`GbiFormatDescriptor`](#gbiformatdescriptor)
 
 #### `DaaChunkKind`
 
@@ -3776,7 +3776,7 @@ How a DAA chunk is coded.
 
 #### `DaaFormatDescriptor`
 
-PowerISO DAA ("Direct Access Archive") compressed CD/DVD image: exposes the ISO as `image.iso` plus a synthetic `metadata.ini`; reads format versions 0x100 and 0x110 (deflate, LZMA with its x86 filter, stored chunks), split images (from their first volume's path) and password-protected ones (with the password); creates and rewrites unsplit, unprotected version 0x100 images PowerISO reads. gBurner GBI images and 0x110 options no sample uses are refused.
+PowerISO DAA ("Direct Access Archive") compressed CD/DVD image: exposes the ISO as `image.iso` plus a synthetic `metadata.ini`; reads format versions 0x100 and 0x110 (deflate, LZMA with its x86 filter, stored chunks), split images (from their first volume's path) and password-protected ones (with the password); creates and rewrites unsplit, unprotected version 0x100 images PowerISO reads. 0x110 options no sample uses are refused; gBurner's GBI variant is `GbiFormatDescriptor`.
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
 
@@ -3831,6 +3831,31 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` | Closes the later volumes of a split image; the first stream stays with its owner. |
 | `Read` | `static DaaImage Read(Stream stream, string password = null, Func<int, Stream> openVolume = null)` | Reads the image header and chunk table. A split image needs `openVolume`, which opens volume 2, 3, … (or returns null when it does not exist); a password-protected one needs the password before its chunks can be read (`CopyIsoTo`). |
 | `Write` | `static void Write(Stream output, ReadOnlySpan<byte> iso, int chunkSize = 65536, DeflateCompressionLevel level = 6)` | Writes a version 0x100 image: header, 3-byte length table, raw-deflate chunks each followed by its CRC-32. |
+
+#### `GbiFormatDescriptor`
+
+gBurner GBI compressed CD/DVD image: PowerISO's DAA version 0x110 layout under a "GBI" signature, with an obfuscated chunk table. Exposes the ISO as `image.iso` plus a synthetic `metadata.ini`; reads deflate, LZMA and stored chunks, split images (from their first volume's path, `x.part01.gbi`) and password-protected ones (with the password).
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GbiFormatDescriptor` | `GbiFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 ### Namespace `FileFormat.DiskCopy42`
 

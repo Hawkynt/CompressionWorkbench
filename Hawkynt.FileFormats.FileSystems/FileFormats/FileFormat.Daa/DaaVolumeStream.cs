@@ -34,8 +34,8 @@ internal sealed class DaaVolumeStream : Stream {
         var header = new byte[VolumeHeaderSize];
         volume.Position = 0;
         if (volume.ReadAtLeast(header, header.Length, throwOnEndOfStream: false) < header.Length
-            || !header.AsSpan(0, 16).SequenceEqual("DAA VOL\0\0\0\0\0\0\0\0\0"u8))
-          throw new InvalidDataException($"DAA: volume {number} has no \"DAA VOL\" header.");
+            || !(header.AsSpan(0, 16).SequenceEqual("DAA VOL\0\0\0\0\0\0\0\0\0"u8) || header.AsSpan(0, 16).SequenceEqual("GBI VOL\0\0\0\0\0\0\0\0\0"u8)))
+          throw new InvalidDataException($"DAA: volume {number} has no \"DAA VOL\" or \"GBI VOL\" header.");
         var start = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(0x10));
         if (start < VolumeHeaderSize || start > volume.Length)
           throw new InvalidDataException($"DAA: volume {number} names an invalid data start.");
