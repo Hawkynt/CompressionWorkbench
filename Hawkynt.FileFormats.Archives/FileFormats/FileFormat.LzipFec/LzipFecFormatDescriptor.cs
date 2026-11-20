@@ -20,8 +20,8 @@ public sealed record LzipFecFile(
 }
 
 /// <summary>
-/// lziprecover forward-error-correction file (<c>.fec</c>), read-only: the parity lziprecover repairs a file
-/// from. It holds no files, so the view is <c>metadata.ini</c>, the CRC arrays of the chksum packets and one
+/// lziprecover forward-error-correction file (<c>.fec</c>): the parity lziprecover repairs a file from. Creating
+/// one (<see cref="LzipFecWriter"/>) protects a single file. It holds no files, so the view is <c>metadata.ini</c>, the CRC arrays of the chksum packets and one
 /// entry per FEC block (<c>fec_NNNNN.bin</c>); every packet's header and payload CRC is checked.
 ///
 /// References:
@@ -35,7 +35,7 @@ public sealed record LzipFecFile(
 /// UInt32 CRC32 of the array; fec <c>B3 46 45 43</c>, UInt16 block number, UInt16 fbs, UInt32 header CRC32,
 /// fbs bytes, UInt32 CRC32 of them. <c>fbs</c> is an 11-bit mantissa and 5-bit exponent: mantissa × 2^(exponent+9).
 /// </remarks>
-public sealed class LzipFecFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class LzipFecFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   private static ReadOnlySpan<byte> ChksumMagic => [0xB3, 0xA5, 0xB6, 0xAF];
   private static ReadOnlySpan<byte> FecMagic => [0xB3, 0x46, 0x45, 0x43];
@@ -44,7 +44,8 @@ public sealed class LzipFecFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public string DisplayName => "lziprecover fec";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
+    FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".fec";
   public IReadOnlyList<string> Extensions => [".fec"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -52,7 +53,7 @@ public sealed class LzipFecFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public IReadOnlyList<FormatMethodInfo> Methods => [new("gf8", "GF(2^8)"), new("gf16", "GF(2^16)")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "lziprecover fec file: metadata.ini, CRC arrays and FEC blocks, every packet CRC checked (read-only)";
+  public string Description => "lziprecover fec file: metadata.ini, CRC arrays and FEC blocks, every packet CRC checked; created for one file";
 
   /// <summary>Decodes the 16-bit floating-point block size.</summary>
   public static long DecodeFbs(ushort coded) => (long)(coded & 0x7FF) << ((coded >> 11) + 9);
@@ -118,6 +119,28 @@ public sealed class LzipFecFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     if (Crc32.Compute(p.Slice(36, (int)(4 * n))) != BinaryPrimitives.ReadUInt32LittleEndian(p[(36 + 4 * (int)n)..]))
       throw new InvalidDataException($"fec: chksum packet at {offset} has a bad CRC-array CRC.");
     return (new Chksum((flags & 1) != 0, (flags & 2) != 0, fbs, size, p.Slice(16, 16).ToArray(), crcs), 40 + 4 * (int)n);
+  }
+
+  /// <summary>
+  /// Creates the fec file of the one input file. Method <c>gf8</c> or <c>gf16</c> picks the field (default: GF(2^8)
+  /// when it suffices); options <c>FecBlocks</c> (default 9) and <c>BlockSize</c> (bytes, a multiple of 512).
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    var files = inputs.Where(i => !i.IsDirectory).ToList();
+    if (files.Count != 1)
+      throw new NotSupportedException($"fec: a fec file protects exactly one file ({files.Count} given).");
+    bool? gf16 = (options.MethodName ?? "").Trim().ToLowerInvariant() switch {
+      "" => null,
+      "gf8" => false,
+      "gf16" => true,
+      var m => throw new NotSupportedException($"fec: method '{m}' is not gf8 or gf16."),
+    };
+    var blocks = int.Parse(options.GetOption("FecBlocks", LzipFecWriter.DefaultFecBlocks.ToString(CultureInfo.InvariantCulture)), CultureInfo.InvariantCulture);
+    var size = long.Parse(options.GetOption("BlockSize", "0"), CultureInfo.InvariantCulture);
+    output.Write(LzipFecWriter.Create(files[0].ReadContent(), blocks, size, gf16));
   }
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
