@@ -163,6 +163,55 @@ public class DaaTests {
     }
   }
 
+  // ── gBurner GBI images gBurner 5.9 wrote (ReferenceVectors/make-gbi.sh) ──────
+
+  private static Dictionary<string, (string Sha, long Size)> IsoGbi() =>
+    File.ReadAllLines(VectorPath("gbi-iso.sha256")).Select(l => l.Split("  "))
+      .ToDictionary(p => p[2], p => (p[0], long.Parse(p[1])));
+
+  [TestCase("gbi-normal.gbi", null)]
+  [TestCase("gbi-best.gbi", null)]
+  [TestCase("gbi-password.gbi", "Gbi-Secret_1")]
+  [TestCase("gbi-split.part01.gbi", null)]
+  [Category("ThirdPartyVector")]
+  public void GivenAGbiImage_WhenRead_ThenTheIsoIsTheOneGBurnerConverted(string vector, string? password) {
+    var path = VectorPath(vector);
+    using var s = File.OpenRead(path);
+    using var image = DaaImage.Read(s, password, DaaFormatDescriptor.VolumeOpener(path));
+    Assert.That(image.Version, Is.EqualTo(DaaImage.Version110));
+    using var iso = new MemoryStream();
+    image.CopyIsoTo(s, iso);
+    var (sha, size) = IsoGbi()[vector];
+    Assert.That(iso.Length, Is.EqualTo(size));
+    Assert.That(Convert.ToHexStringLower(SHA256.HashData(iso.ToArray())), Is.EqualTo(sha));
+  }
+
+  [Test, Category("ThirdPartyVector")]
+  public void GivenTheGbiImages_WhenRead_ThenNormalIsDeflateBestIsLzmaAndTheSplitSetHasThreeVolumes() {
+    using (var s = File.OpenRead(VectorPath("gbi-normal.gbi")))
+    using (var image = DaaImage.Read(s))
+      Assert.That(image.ChunkKinds, Does.Contain(DaaChunkKind.Deflate).And.No.Member(DaaChunkKind.Lzma));
+    using (var s = File.OpenRead(VectorPath("gbi-best.gbi")))
+    using (var image = DaaImage.Read(s))
+      Assert.That(image.ChunkKinds, Does.Contain(DaaChunkKind.Lzma));
+    var first = VectorPath("gbi-split.part01.gbi");
+    using (var s = File.OpenRead(first))
+    using (var image = DaaImage.Read(s, null, DaaFormatDescriptor.VolumeOpener(first)))
+      Assert.That(image.VolumeCount, Is.EqualTo(3));
+  }
+
+  [Test, Category("ThirdPartyVector")]
+  public void GivenTheGbiPasswordImage_WhenReadWithTheWrongPassword_ThenRefused() {
+    using var s = File.OpenRead(VectorPath("gbi-password.gbi"));
+    Assert.Throws<ArchivePasswordException>(() => DaaImage.Read(s, "wrong"));
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenAGbiImage_WhenListedThroughItsDescriptor_ThenTheIsoIsListed() {
+    using var s = File.OpenRead(VectorPath("gbi-normal.gbi"));
+    Assert.That(new GbiFormatDescriptor().List(s, null).Select(e => e.Name), Does.Contain(DaaFormatDescriptor.ImageName));
+  }
+
   [TestCase(0x4000u)]     // zlib-compressed chunk table
   [TestCase(0x8000000u)]  // obfuscated chunk table
   [TestCase(0x800000u)]   // permuted deflate block types
@@ -186,10 +235,11 @@ public class DaaTests {
   }
 
   [Test]
-  public void GivenGbiOrVolumeSignatures_WhenRead_ThenNotSupported() {
+  public void GivenAVersion100GbiOrAVolumeSignature_WhenRead_ThenNotSupported() {
     var daa = Write(SampleIso(100, 7));
     "GBI\0"u8.CopyTo(daa);
-    Assert.Throws<NotSupportedException>(() => DaaImage.Read(new MemoryStream(daa)));
+    BinaryPrimitives.WriteUInt32LittleEndian(daa.AsSpan(0x48), Crc(daa.AsSpan(0, 0x48)));
+    Assert.Throws<NotSupportedException>(() => DaaImage.Read(new MemoryStream(daa)), "no GBI image measured is version 0x100");
     "DAA VOL"u8.CopyTo(daa);
     Assert.Throws<NotSupportedException>(() => DaaImage.Read(new MemoryStream(daa)));
   }

@@ -7,19 +7,21 @@ namespace FileFormat.Sqx;
 /// <summary>
 /// Writes SQX archives the way Squeez-c (MIT) does: a main block, one file block per file with its
 /// LZ77 + Huffman stream (methods 1-4, each file on its own, not solid) or the stored bytes when
-/// compression does not pay, and the end block.
+/// compression does not pay, and the end block, or in its place an internal recovery record.
 /// </summary>
 public sealed class SqxWriter {
   private readonly List<(string Name, byte[] Data, DateTime? Modified)> _files = [];
   private readonly byte _format;
   private readonly byte _method;
   private readonly int _dictionarySize;
+  private readonly int _recoveryLevel;
 
   /// <summary>Creates a writer.</summary>
   /// <param name="method">1 (fast) to 4 (best): longer match searches, lazy matching from 2.</param>
   /// <param name="dictionarySize">Dictionary size: a power of two from 32 KiB to 4 MiB.</param>
   /// <param name="format"><see cref="SqxTables.Format20"/> (default) or <see cref="SqxTables.Format11"/>.</param>
-  public SqxWriter(byte method = 2, int dictionarySize = 256 * 1024, byte format = SqxTables.Format20) {
+  /// <param name="recoveryLevel">Percent of internal recovery data (1-100), 0 for none: the record replaces the end block, as Squeez's <c>-rr</c> writes it.</param>
+  public SqxWriter(byte method = 2, int dictionarySize = 256 * 1024, byte format = SqxTables.Format20, int recoveryLevel = 0) {
     ArgumentOutOfRangeException.ThrowIfLessThan(method, 1);
     ArgumentOutOfRangeException.ThrowIfGreaterThan(method, 4);
     if (dictionarySize is < 32 * 1024 or > 4 << 20 || (dictionarySize & (dictionarySize - 1)) != 0)
@@ -29,6 +31,9 @@ public sealed class SqxWriter {
     this._method = method;
     this._dictionarySize = dictionarySize;
     this._format = format;
+    if (recoveryLevel is < 0 or > 100)
+      throw new ArgumentOutOfRangeException(nameof(recoveryLevel), "SQX: recovery data is 0 to 100 percent.");
+    this._recoveryLevel = recoveryLevel;
   }
 
   /// <summary>Adds a file; <paramref name="name"/> may contain <c>/</c> separators.</summary>
@@ -82,6 +87,11 @@ public sealed class SqxWriter {
       Seal(header);
       ms.Write(header);
       ms.Write(stream);
+    }
+
+    if (this._recoveryLevel > 0) {
+      ms.Write(SqxRecovery.CreateInternal(ms.ToArray(), this._recoveryLevel));
+      return ms.ToArray();
     }
 
     var end = new byte[SqxContainer.HeaderSize];

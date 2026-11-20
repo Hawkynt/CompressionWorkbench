@@ -42,3 +42,13 @@ filter) and deflate chunks.
 `piso-split-110.sh` makes a split 0x110 set on the spot (2.6 MB in 1 MiB
 volumes, too large to commit). It is read from its first volume in an
 ExternalInterop test.
+
+## gBurner GBI images
+
+`gbi-normal.gbi`, `gbi-best.gbi`, `gbi-password.gbi` (password `Gbi-Secret_1`) and the
+split set `gbi-split.part01.gbi` … `part03.gbi` (128 KiB volumes, gBurner's smallest) were
+written by gBurner 5.9 Free edition (official installer, run under wine 9.0) with Tools >
+Convert Image from ISOs that `xorrisofs -no-pad -J -r` built from generated files. gBurner
+writes GBI only from that dialog, so `make-gbi.sh` drives it with xdotool on a virtual X display.
+`gbi-iso.sha256` records the SHA-256 and size of the ISO each image was made from; the split set
+holds a larger ISO with 200 000 more random bytes.

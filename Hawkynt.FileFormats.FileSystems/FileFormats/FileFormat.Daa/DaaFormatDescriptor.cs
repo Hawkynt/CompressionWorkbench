@@ -11,8 +11,8 @@ namespace FileFormat.Daa;
 /// <c>image.iso</c> plus a synthetic <c>metadata.ini</c>; reads format versions 0x100 and 0x110
 /// (deflate, LZMA with its x86 filter, stored chunks), split images (from their first volume's path)
 /// and password-protected ones (with the password); creates and rewrites unsplit, unprotected
-/// version 0x100 images PowerISO reads. gBurner GBI images and 0x110 options no sample uses are
-/// refused.
+/// version 0x100 images PowerISO reads. 0x110 options no sample uses are refused; gBurner's GBI
+/// variant is <see cref="GbiFormatDescriptor"/>.
 /// </summary>
 /// <remarks>Specification: <c>docs/DAA-ON-DISK.md</c>.</remarks>
 public sealed class DaaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
@@ -67,7 +67,7 @@ public sealed class DaaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>Opens volume n of the split image whose first volume is <paramref name="firstPath"/>, or null.</summary>
   internal static Func<int, Stream?>? VolumeOpener(string firstPath) {
     var name = Path.GetFileName(firstPath);
-    var match = System.Text.RegularExpressions.Regex.Match(name, @"^(?<stem>.*?)(?<number>\d+)(?<ext>\.daa)$",
+    var match = System.Text.RegularExpressions.Regex.Match(name, @"^(?<stem>.*?)(?<number>\d+)(?<ext>\.daa|\.gbi)$",
       System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
     if (!match.Success)
       return null;

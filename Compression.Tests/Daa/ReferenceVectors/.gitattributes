@@ -1,3 +1,4 @@
 # Fixture bytes are the test: never let a checkout rewrite line endings.
 *.daa -text
+*.gbi -text
 *.sh text eol=lf

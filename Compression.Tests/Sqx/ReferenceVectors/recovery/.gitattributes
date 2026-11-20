@@ -1,0 +1,3 @@
+*.sqx -text
+*.sqr -text
+*.sh text eol=lf
