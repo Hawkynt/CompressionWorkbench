@@ -70,7 +70,7 @@ format,Avr,AVR (Audio Visual Research),Audio,,.avr,Y,Y,Y,
 format,Avro,Apache Avro OCF,Archive,,.avro,Y,Y,,
 format,Awb,CRI Audio Wave Bank,Archive,,.awb;.acb,Y,Y,Y,
 format,Axe,AXE (DOS exe),Archive,,,Y,Y,,
-format,Axfs,AXFS (Advanced XIP File System),Archive,Y,.axfs,Y,Y,,
+format,Axfs,AXFS (Advanced XIP File System),Archive,Y,.axfs,Y,Y,Y,
 format,Ay,ZX Spectrum AY,Audio,,.ay,Y,Y,,
 format,B1,B1,Archive,,.b1,Y,Y,Y,Y
 format,B64Encoding,Base64 (uuencode wrapper),Wrapper,,.b64;.base64,,Y,Y,

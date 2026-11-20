@@ -7912,7 +7912,7 @@ Builds a fresh Atari 8-bit AtariDOS 2.x `.atr` disk image from scratch (WORM).
 
 ### Namespace `FileSystem.Axfs`
 
-[`AxfsEntry`](#axfsentry) · [`AxfsFormatDescriptor`](#axfsformatdescriptor) · [`AxfsReader`](#axfsreader)
+[`AxfsEntry`](#axfsentry) · [`AxfsFormatDescriptor`](#axfsformatdescriptor) · [`AxfsReader`](#axfsreader) · [`AxfsWriteNode`](#axfswritenode) · [`AxfsWriter`](#axfswriter)
 
 #### `AxfsEntry`
 
@@ -7937,7 +7937,7 @@ Implements `IEquatable<AxfsEntry>`.
 
 AXFS — the "Advanced XIP File System" for embedded Linux (Numonyx, 2008): a read-only, compressed, execute-in-place image. Magic `0x48A0E4CD` and the signature "Advanced XIP FS" at offset 0.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7954,6 +7954,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes an image of the inputs: directories 0755 and files 0644 unless the input's metadata carries a Unix mode, owner and group from the metadata or root. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
@@ -7976,6 +7977,32 @@ Reads an AXFS ("Advanced XIP File System") image as `mkfs.axfs` writes it: a big
 | `Version` | `ValueTuple<byte, byte, byte> Version { get; }` | Version as major.minor.sub. |
 | `CountNodes` | `ValueTuple<ulong, ulong, ulong> CountNodes()` | Distinct nodes the files and symlinks use, by kind (XIP, byte-aligned, compressed). |
 | `Extract` | `byte[] Extract(AxfsEntry entry)` | Returns a regular file's bytes, or a symlink's target bytes. |
+
+#### `AxfsWriteNode`
+
+A file (`Data`), symbolic link (`LinkTarget`) or directory (`Children`) to write into an AXFS image.
+
+Implements `IEquatable<AxfsWriteNode>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AxfsWriteNode` | `AxfsWriteNode(string Name, byte[] Data = null, IReadOnlyList<AxfsWriteNode> Children = null, string LinkTarget = null)` | A file (`Data`), symbolic link (`LinkTarget`) or directory (`Children`) to write into an AXFS image. |
+| `Children` | `IReadOnlyList<AxfsWriteNode> Children { get; init; }` | Directory contents. |
+| `Data` | `byte[] Data { get; init; }` | File contents. |
+| `Gid` | `uint Gid { get; init; }` | Group. |
+| `IsDirectory` | `bool IsDirectory { get; }` | True for a directory. |
+| `LinkTarget` | `string LinkTarget { get; init; }` | Symbolic-link target. |
+| `Name` | `string Name { get; init; }` | Entry name (UTF-8, no '/' or NUL); ignored for the root. |
+| `Permissions` | `int? Permissions { get; init; }` | Permission bits (`07777`); defaults to 0644 for files, 0755 for directories, 0777 for links. |
+| `Uid` | `uint Uid { get; init; }` | Owner. |
+
+#### `AxfsWriter`
+
+Writes AXFS 2.2 images the AXFS kernel driver mounts, laid out as `mkfs.axfs` lays them out (see `docs/AXFS-ON-DISK.md`, "Writing"): the superblock, then the 18 region descriptors from offset 264, then the byte tables packed back to back;an empty XIP region at the next page boundary, then the byte-aligned region, the compressed region and the strings, and the magic once more as the last four bytes the superblock's size covers; the file is padded to whole pages. Inodes are numbered breadth-first from the root (inode 0), each directory's children consecutive and sorted by name, and every file's pages take consecutive nodes in inode order. A page that zlib shrinks is its own cblock; any other is stored byte-aligned. Each byte table uses the fewest bytes per entry that hold its largest value.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Write` | `static void Write(Stream output, AxfsWriteNode root, ulong timestamp = 0)` | Writes `root` as a complete image. |
 
 ### Namespace `FileSystem.Bbc`
 
