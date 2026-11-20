@@ -14973,13 +14973,13 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 ### Namespace `FileFormat.DvdisasterEcc`
 
-[`DvdisasterEccFormatDescriptor`](#dvdisastereccformatdescriptor) · [`DvdisasterEccHeader`](#dvdisastereccheader)
+[`DvdisasterEccFormatDescriptor`](#dvdisastereccformatdescriptor) · [`DvdisasterEccHeader`](#dvdisastereccheader) · [`DvdisasterEccWriter`](#dvdisastereccwriter)
 
 #### `DvdisasterEccFormatDescriptor`
 
-dvdisaster error-correction file (`.ecc`), read-only: the parity a disc image is repaired from. It holds no files, so the view is its header as `metadata.ini` and, for the RS01 method, the per-sector CRC table and the Reed-Solomon parity layers; RS03 files list their header and raw data. Test checks the ecc MD5 the header records. References: `https://dvdisaster.jcea.es/` — dvdisaster documentation, RS01/RS03 methods and the ecc header
+dvdisaster error-correction file (`.ecc`): the parity a disc image is repaired from; RS01 files are created by `DvdisasterEccWriter`. It holds no files, so the view is its header as `metadata.ini` and, for the RS01 method, the per-sector CRC table and the Reed-Solomon parity layers; RS03 files list their header and raw data. Test checks the ecc MD5 the header records. References: `https://dvdisaster.jcea.es/` — dvdisaster documentation, RS01/RS03 methods and the ecc header
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14996,6 +14996,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates the RS01 ecc file of the one input image. Option `Roots` (8-100, default 32) sets the parity bytes per codeword; RS03 is not written. |
 | `EccDataIntact` | `static bool EccDataIntact(ReadOnlySpan<byte> file)` | Whether the data after the header still has the MD5 the header records. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
@@ -15023,6 +15024,15 @@ Implements `IEquatable<DvdisasterEccHeader>`.
 | `Sectors` | `long Sectors { get; init; }` |  |
 | `Read` | `static DvdisasterEccHeader Read(ReadOnlySpan<byte> file)` |  |
 | `Version` | `static string Version(int v)` | Formats a dvdisaster version number (7910 = 0.79.10). |
+
+#### `DvdisasterEccWriter`
+
+Writes dvdisaster RS01 error-correction files as `docs/DVDISASTER-ECC-ON-DISK.md` describes them: the 4 KiB header, one CRC per 2048-byte image sector, and Reed-Solomon parity over GF(2^8) (polynomial 0x187, first root 112, primitive element 11) computed across ndata = 255 − nroots layers of the image.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultRoots` | `const int DefaultRoots` | Parity bytes per codeword when none are asked for (dvdisaster's "normal" redundancy). |
+| `CreateRs01` | `static byte[] CreateRs01(ReadOnlySpan<byte> image, int roots = 32, int? creatorVersion = null)` | Creates the RS01 ecc file of the image `image`. |
 
 ### Namespace `FileFormat.DxArchive`
 
