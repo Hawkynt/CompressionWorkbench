@@ -5,8 +5,8 @@ using Compression.Registry;
 namespace FileSystem.DoubleSpace;
 
 /// <summary>
-/// Microsoft DoubleSpace compressed volume file (MS-DOS 6.0 / 6.2): the real <c>MSDBL6.0</c>
-/// container — MDBPB, MDFAT, BitFAT and an inner FAT12 volume whose clusters are stored or
+/// Microsoft DoubleSpace compressed volume file (MS-DOS 6.0 / 6.2): the real <c>MSDSP6.0</c>
+/// container (version 0) — MDBPB, MDFAT, BitFAT and an inner FAT12 volume whose clusters are stored or
 /// compressed per cluster. Volumes are created with DoubleSpace's own DS-0-x clusters, in the layout the
 /// independent dmsdos driver mounts ("drivespace CVF version 2"); DS and JM clusters are read (a
 /// DoubleSpace volume later used by DriveSpace may hold both); edits rebuild the volume, keeping its codec.
@@ -45,7 +45,9 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
   public IReadOnlyList<string> CompoundExtensions => [];
   /// <inheritdoc />
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // OEM name of the MDBPB; DriveSpace 3's 64-sector clusters are claimed by a longer signature.
+    // OEM name of the MDBPB — MSDSP6.0 as DoubleSpace writes it, MSDBL6.0 as DriveSpace does; DriveSpace
+    // 3's 64-sector clusters are claimed by a longer signature.
+    new("MSDSP6"u8.ToArray(), Offset: 3, Confidence: 0.85),
     new("MSDBL6"u8.ToArray(), Offset: 3, Confidence: 0.85),
   ];
   /// <inheritdoc />
@@ -56,8 +58,8 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <inheritdoc />
   public string Description =>
-    "Microsoft DoubleSpace compressed volume file, MS-DOS 6.0/6.2 (MSDBL6.0 container, inner FAT12; stored or DS-0-x clusters written, DS and JM read). "
-    + "Created volumes are mounted by the dmsdos driver.";
+    "Microsoft DoubleSpace compressed volume file, MS-DOS 6.0/6.2 (MSDSP6.0 container, inner FAT12; stored or DS-0-x clusters written, DS and JM read). "
+    + "Created volumes are mounted by MS-DOS 6.0's DBLSPACE and the dmsdos driver.";
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = GenuineCvfVolume.Options(CvfV2Product.DoubleSpace);

@@ -7,12 +7,12 @@ namespace FileSystem.DoubleSpace;
 
 /// <summary>
 /// Reads a real MS-DOS 6.x DoubleSpace / DriveSpace compressed volume file (OEM name
-/// <c>MSDBL6.0</c> or <c>MSDBL6.2</c>) — the general reader behind <see cref="GenuineCvfReader"/>,
+/// <c>MSDSP6.0</c>, as DoubleSpace writes it, or <c>MSDBL6.0</c> / <c>MSDBL6.2</c>) — the general reader behind <see cref="GenuineCvfReader"/>,
 /// used for real volumes whose geometry or directory tree the latter does not cover
 /// (subdirectories, long file names, other cluster sizes).
 /// <para>
 /// The MDBPB at sector 0 points (word at 0x27) to the embedded inner FAT12 volume, whose boot
-/// sector carries the same <c>MSDBL</c> name; the MDFAT (sector word at 0x24 plus one, index base
+/// sector carries the same <c>MSDSP</c> / <c>MSDBL</c> name; the MDFAT (sector word at 0x24 plus one, index base
 /// word at 0x2D) maps each inner cluster to its physical run. A stored run is read verbatim, a
 /// compressed one is decoded by <see cref="CvfLzCodec"/> from its method header.
 /// </para>
@@ -33,7 +33,7 @@ public sealed class DoubleSpaceReader : IDisposable {
   private int _innerBaseSector;  // base sector of the embedded inner FAT volume
   private int _mdfatBaseOffset;  // byte offset of MDFAT[0]
 
-  /// <summary>OEM name in the MDBPB: <c>MSDBL6.0</c> or <c>MSDBL6.2</c>.</summary>
+  /// <summary>OEM name in the MDBPB: <c>MSDSP6.0</c>, <c>MSDBL6.0</c> or <c>MSDBL6.2</c>.</summary>
   public string Signature { get; private set; } = "";
 
   /// <summary>
@@ -58,8 +58,8 @@ public sealed class DoubleSpaceReader : IDisposable {
       throw new InvalidDataException("DoubleSpace: image too small.");
 
     this.Signature = Encoding.ASCII.GetString(this._data, 3, 8);
-    if (this.Signature is not ("MSDBL6.0" or "MSDBL6.2"))
-      throw new InvalidDataException($"DoubleSpace: '{this.Signature}' is not a DoubleSpace/DriveSpace OEM name (MSDBL6.0/MSDBL6.2).");
+    if (this.Signature is not ("MSDSP6.0" or "MSDBL6.0" or "MSDBL6.2"))
+      throw new InvalidDataException($"DoubleSpace: '{this.Signature}' is not a DoubleSpace/DriveSpace OEM name (MSDSP6.0/MSDBL6.0/MSDBL6.2).");
 
     this._bytesPerSector = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(11));
     if (this._bytesPerSector is 0 or > 4096) this._bytesPerSector = 512;
@@ -79,7 +79,7 @@ public sealed class DoubleSpaceReader : IDisposable {
     var candidate = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(0x27));
     var candOff = candidate * this._bytesPerSector;
     if (candidate == 0 || candidate >= this._totalSectors || candOff + 11 > this._data.Length
-        || Encoding.ASCII.GetString(this._data, candOff + 3, 5) != "MSDBL")
+        || Encoding.ASCII.GetString(this._data, candOff + 3, 5) is not ("MSDBL" or "MSDSP"))
       throw new InvalidDataException("DoubleSpace: no inner volume at the base sector the MDBPB records.");
     this._innerBaseSector = candidate;
 
