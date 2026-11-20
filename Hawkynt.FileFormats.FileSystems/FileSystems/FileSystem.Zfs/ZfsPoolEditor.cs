@@ -56,7 +56,16 @@ internal static partial class ZfsPoolEditor {
   /// Applies the edit to a pool spread over <paramref name="devices"/>: a single device, every
   /// device of a mirror, or every device of a RAID-Z (in any order; none may be missing).
   /// </summary>
-  public static void Edit(IReadOnlyList<Stream> devices, IReadOnlyList<Addition> additions, IReadOnlyList<string> removals) {
+  public static void Edit(IReadOnlyList<Stream> devices, IReadOnlyList<Addition> additions, IReadOnlyList<string> removals) =>
+    Edit(devices, additions, removals, null, null);
+
+  /// <summary>
+  /// As <see cref="Edit(IReadOnlyList{Stream}, IReadOnlyList{Addition}, IReadOnlyList{string})"/>, with key
+  /// material for natively encrypted datasets (<paramref name="keys"/> by encryption root, else
+  /// <paramref name="anyKey"/>): their new blocks are encrypted and authenticated as OpenZFS does.
+  /// </summary>
+  public static void Edit(IReadOnlyList<Stream> devices, IReadOnlyList<Addition> additions, IReadOnlyList<string> removals,
+      ZfsKeyMaterial? anyKey, IReadOnlyDictionary<string, ZfsKeyMaterial>? keys) {
     ArgumentNullException.ThrowIfNull(devices);
     ArgumentNullException.ThrowIfNull(additions);
     ArgumentNullException.ThrowIfNull(removals);
@@ -79,12 +88,13 @@ internal static partial class ZfsPoolEditor {
     foreach (var device in devices) device.Position = 0;
     using (var pool = new ZfsPool(devices, leaveOpen: true)) {
       var state = new PoolState(pool, devices);
+      var keyring = new ZfsKeyring(pool.Mos, pool.Name ?? "pool", anyKey, keys);
       children = state.Devices;
       var guess = new Dictionary<int, int>();
       for (var attempt = 0; ; ++attempt) {
         if (attempt == MaxAttempts)
           throw new InvalidOperationException("ZFS: the space maps of the edit did not settle.");
-        var plan = new Plan(state, guess, now);
+        var plan = new Plan(state, guess, now, keyring);
         plan.Apply(adds, removes);
         if (!plan.HasChanges) return;
         if (!plan.Settle(guess)) continue;
@@ -105,7 +115,12 @@ internal static partial class ZfsPoolEditor {
 
   private static bool IsEmbedded(ReadOnlySpan<byte> bp) => ((U64(bp, 0x30) >> 39) & 1) != 0;
   private static bool IsHole(ReadOnlySpan<byte> bp) => !IsEmbedded(bp) && U64(bp, 0) == 0 && U64(bp, 8) == 0;
-  private static ulong FillOf(ReadOnlySpan<byte> bp) => IsHole(bp) ? 0 : IsEmbedded(bp) ? 1 : U64(bp, 0x58);
+  private static ulong FillOf(ReadOnlySpan<byte> bp) => IsHole(bp) ? 0 : IsEmbedded(bp) ? 1
+    : IsEncryptedBlock(bp) ? U64(bp, 0x58) & 0xFFFFFFFF : U64(bp, 0x58);
+
+  /// <summary>An encrypted block's fill count keeps the IV's last 4 bytes in its upper half.</summary>
+  private static bool IsEncryptedBlock(ReadOnlySpan<byte> bp) =>
+    (U64(bp, 0x30) >> 61 & 1) != 0 && (U64(bp, 0x30) >> 56 & 0x1F) == 0 && ZfsCryptoBlocks.IsEncryptedType(bp[0x36]);
 
   private static bool IsMetadata(ZfsBlockPointer bp) {
     if (bp.Level > 0) return true;
@@ -501,6 +516,9 @@ internal static partial class ZfsPoolEditor {
     public byte[]? Data;
     public TreeNode[]? Children;
     public byte[]? Pointer;
+    /// <summary>The dataset key when the block belongs to an encrypted object set.</summary>
+    public ZfsDatasetKey? Key;
+    public byte[]? Salt;
   }
 
   /// <summary>A block-pointer slot: kept as it was, a block of this edit, or an indirect block still to be placed.</summary>
@@ -575,6 +593,9 @@ internal static partial class ZfsPoolEditor {
     public required byte[] Block;
     public required byte[] OldRoot;
     public ulong PrevSnapTxg;
+    /// <summary>The dataset key of an encrypted object set, and the salt this edit encrypts with.</summary>
+    public ZfsDatasetKey? Key;
+    public byte[]? Salt;
     /// <summary>Blocks the previous snapshot still holds that the edit no longer references: they go to the deadlist.</summary>
     public readonly List<byte[]> Held = [];
     public long HeldUsed, HeldCompressed, HeldUncompressed;
@@ -670,7 +691,10 @@ internal static partial class ZfsPoolEditor {
     private readonly Dictionary<int, ulong[]> _newArrays = [];
     private readonly Dictionary<int, NewBlock[]> _arrayBlocks = [];
 
-    public Plan(PoolState state, Dictionary<int, int> guess, DateTime now) {
+    private readonly ZfsKeyring _keyring;
+
+    public Plan(PoolState state, Dictionary<int, int> guess, DateTime now, ZfsKeyring keyring) {
+      this._keyring = keyring;
       this._s = state;
       this._guess = guess;
       this._now = now;
@@ -726,7 +750,7 @@ internal static partial class ZfsPoolEditor {
       var logical = logicalSize == 0 ? size : logicalSize;
       var block = new NewBlock {
         Vdev = vdev, Offset = offset, Size = size, LogicalSize = logical, Compression = compression,
-        Allocated = allocated, Type = type, Level = level,
+        Allocated = allocated, Type = type, Level = level, Key = os.Key, Salt = os.Salt,
       };
       this._blocks.Add(block);
       var metadata = level > 0 || type != OtPlainFile;
@@ -824,7 +848,7 @@ internal static partial class ZfsPoolEditor {
       if (IsHole(raw)) return;
       var bp = ZfsBlockPointer.Read(raw);
       if (!bp.IsEmbedded && bp.Level > 0) {
-        var data = this._s.Pool.ReadBlock(bp, cache: false);
+        var data = this._s.Pool.ReadBlock(bp, false, os.Key);
         for (var at = 0; at + Bp <= data.Length; at += Bp)
           this.FreeSubtree(os, d, new TreeNode { Raw = data.AsSpan(at, Bp).ToArray() });
       }
@@ -882,7 +906,7 @@ internal static partial class ZfsPoolEditor {
         throw new InvalidOperationException("ZFS: an indirect block was rewritten twice in one edit.");
       } else if (!IsHole(node.Raw)) {
         var bp = ZfsBlockPointer.Read(node.Raw);
-        var data = this._s.Pool.ReadBlock(bp, cache: false);
+        var data = this._s.Pool.ReadBlock(bp, false, os.Key);
         if (data.Length != 1 << d.IndShift)
           throw new InvalidDataException("ZFS: an indirect block's size does not match its dnode.");
         children = new TreeNode[data.Length / Bp];
@@ -928,17 +952,18 @@ internal static partial class ZfsPoolEditor {
 
     // ── object sets ────────────────────────────────────────────────────────
 
-    private Os OpenObjset(byte[] rootRaw, ulong prevSnapTxg) {
+    private Os OpenObjset(byte[] rootRaw, ulong prevSnapTxg, ZfsDatasetKey? key = null) {
       var bp = ZfsBlockPointer.Read(rootRaw);
-      if (bp.IsEncrypted) throw new NotSupportedException("ZFS: encrypted datasets are not edited.");
-      var block = this._s.Pool.ReadBlock(bp, cache: false).ToArray();
+      if (bp.IsEncrypted && key == null) throw new NotSupportedException("ZFS: encrypted datasets are not edited without their key.");
+      var block = this._s.Pool.ReadBlock(bp, false, key).ToArray();
       if (block.Length < 1024) throw new InvalidDataException("ZFS: object set block too small.");
-      var old = this._s.Pool.ReadObjectSet(bp);
+      var old = this._s.Pool.ReadObjectSet(bp, key);
       var oldMeta = ZfsDnode.Read(block) ?? throw new InvalidDataException("ZFS: object set has no meta-dnode.");
       if (oldMeta.DataBlockSize < Slot) throw new InvalidDataException("ZFS: meta-dnode block size invalid.");
       return new Os {
         Old = old, OldMeta = oldMeta, Block = block, OldRoot = rootRaw, PrevSnapTxg = prevSnapTxg,
         Meta = Dnode.From(block.AsSpan(0, Slot).ToArray()),
+        Key = key, Salt = key == null ? null : System.Security.Cryptography.RandomNumberGenerator.GetBytes(ZfsDatasetKey.SaltLength),
       };
     }
 
@@ -1054,7 +1079,6 @@ internal static partial class ZfsPoolEditor {
         var content = b.Data ?? throw new InvalidOperationException("ZFS: a block was never given its contents.");
         content.AsSpan(0, Math.Min(content.Length, data.Length)).CopyTo(data);
       }
-      b.Data = data;
       var p = new byte[Bp];
       var sectors = (ulong)(b.Size >> ZfsConstants.SectorShift);
       var logical = (ulong)(b.LogicalSize >> ZfsConstants.SectorShift);
@@ -1066,8 +1090,45 @@ internal static partial class ZfsPoolEditor {
       W64(p, 0x48, this.Txg);
       W64(p, 0x50, this.Txg);
       W64(p, 0x58, b.Fill);
+      byte[]? mac = null;
+      if (b.Key is { } key) (data, mac) = Protect(b, key, data, p);
+      b.Data = data;
       ZfsChecksum.Fletcher4(data, p.AsSpan(0x60, 32));
+      if (mac != null) {
+        // a protected block keeps two checksum words (Fletcher folds the other two in) and its MAC
+        ZfsChecksum.Truncate(ZfsConstants.ChecksumFletcher4, p.AsSpan(0x60, 32));
+        mac.CopyTo(p, 0x70);
+      }
       return b.Pointer = p;
+    }
+
+    /// <summary>
+    /// Native encryption of a block of an encrypted object set (<c>docs/ZFS-ON-DISK.md</c>, "Native
+    /// encryption"): sets the crypt bit and returns the bytes to store with their MAC — none for an
+    /// object set block, whose two MACs go into the block itself.
+    /// </summary>
+    private static (byte[] Stored, byte[]? Mac) Protect(NewBlock b, ZfsDatasetKey key, byte[] data, byte[] p) {
+      W64(p, 0x30, U64(p, 0x30) | 1UL << 61);
+      if (b.Level > 0) return (data, ZfsCryptoBlocks.IndirectMac(data, key.Version));
+      if (b.Type == ZfsCryptoBlocks.TypeObjset) {
+        var (portable, local) = ZfsCryptoBlocks.ObjsetMacs(key, data);
+        portable.CopyTo(data, 0x2D0);
+        local.CopyTo(data, 0x2F0);
+        return (data, null);
+      }
+      if (b.Type != ZfsCryptoBlocks.TypeDnode && !ZfsCryptoBlocks.IsEncryptedType(b.Type))
+        return (data, key.Hmac(data)[..ZfsDatasetKey.MacLength]);
+      var salt = b.Salt ?? throw new InvalidOperationException("ZFS: an encrypted block without a salt.");
+      var iv = System.Security.Cryptography.RandomNumberGenerator.GetBytes(ZfsDatasetKey.IvLength);
+      // salt and IV: DVA[2], and the IV's last four bytes in the fill count's upper half
+      salt.CopyTo(p, 0x20);
+      iv.AsSpan(0, 8).CopyTo(p.AsSpan(0x28));
+      W64(p, 0x58, U64(p, 0x58) & 0xFFFFFFFF | (ulong)BinaryPrimitives.ReadUInt32LittleEndian(iv.AsSpan(8)) << 32);
+      if (b.Type == ZfsCryptoBlocks.TypeDnode) return ZfsCryptoBlocks.EncryptDnodeBlock(key, data, salt, iv);
+      var cipher = new byte[data.Length];
+      var tag = new byte[ZfsDatasetKey.MacLength];
+      ZfsDatasetKey.Encrypt(key.Crypt, key.BlockKey(salt), iv, data, cipher, tag, []);
+      return (cipher, tag);
     }
 
     private void SealDnode(Dnode d) {
@@ -1183,7 +1244,12 @@ internal static partial class ZfsPoolEditor {
         throw new NotSupportedException("ZFS: datasets with a refreservation are not edited.");
       var root = head.Bonus.AsSpan(128, Bp).ToArray();
       if (IsHole(root)) throw new NotSupportedException($"ZFS: dataset '{path}' has no object set.");
-      var os = this.OpenObjset(root, U64(head.Bonus, 16));
+      ZfsDatasetKey? key = null;
+      if (ZfsBlockPointer.Read(root).IsEncrypted) {
+        var (found, refusal) = this._keyring.For(dirObject);
+        key = found ?? throw new NotSupportedException($"ZFS: dataset '{path}' is not edited: {refusal}.");
+      }
+      var os = this.OpenObjset(root, U64(head.Bonus, 16), key);
       if (os.Old.Type != ZfsConstants.OstZfs) throw new NotSupportedException($"ZFS: dataset '{path}' is not a filesystem.");
       // A clean export leaves the next log block allocated but unwritten; a written one holds records still to replay.
       if (U64(os.Block, 0x200) != 0 || this.LogBlockWritten(os.Block.AsSpan(0x210, Bp).ToArray()))
@@ -1250,7 +1316,10 @@ internal static partial class ZfsPoolEditor {
       var actual = new byte[32];
       if (bp.Checksum == ZfsConstants.ChecksumZilog2) ZfsChecksum.Fletcher4(data.AsSpan(0, size), actual);
       else ZfsChecksum.Fletcher2(data.AsSpan(0, size), actual);
-      return actual.AsSpan().SequenceEqual(stored);
+      if (!bp.IsEncrypted) return actual.AsSpan().SequenceEqual(stored);
+      // an encrypted log block's checksum keeps two words, its MAC the other two
+      ZfsChecksum.Truncate(ZfsConstants.ChecksumFletcher4, actual);
+      return actual.AsSpan(0, 16).SequenceEqual(stored.AsSpan(0, 16));
     }
 
     // ── ZPL ────────────────────────────────────────────────────────────────
@@ -1273,7 +1342,7 @@ internal static partial class ZfsPoolEditor {
         var values = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         fs.Sa.Parse(d.Bonus, values);
         if ((d.Flags & FlagSpill) != 0)
-          fs.Sa.Parse(this._s.Pool.ReadBlock(ZfsBlockPointer.Read(d.Raw.AsSpan(d.Raw.Length - Bp))), values);
+          fs.Sa.Parse(this._s.Pool.ReadBlock(ZfsBlockPointer.Read(d.Raw.AsSpan(d.Raw.Length - Bp)), true, fs.Os.Key), values);
         ulong Value(string name) => values.TryGetValue(name, out var v) && v.Length >= 8 ? U64(v, 0) : 0;
         mode = Value("ZPL_MODE");
         z.Links = Value("ZPL_LINKS");

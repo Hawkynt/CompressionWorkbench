@@ -225,6 +225,47 @@ internal static class ZfsCryptoBlocks {
     var (salt, iv) = Parameters(bp);
     var mac = Mac(bp);
     var plain = block.ToArray();
+    var (aad, spans) = DnodeLayout(block, key.Version);
+    // (with no encrypted bonus the cipher text is empty and the MAC covers the associated data alone)
+    var cipher = new byte[spans.Sum(s => s.Length)];
+    var taken = 0;
+    foreach (var (offset, length) in spans) {
+      block.AsSpan(offset, length).CopyTo(cipher.AsSpan(taken));
+      taken += length;
+    }
+    var decrypted = new byte[cipher.Length];
+    ZfsDatasetKey.Decrypt(key.Crypt, key.BlockKey(salt), iv, cipher, mac, decrypted, aad);
+    taken = 0;
+    foreach (var (offset, length) in spans) {
+      decrypted.AsSpan(taken, length).CopyTo(plain.AsSpan(offset));
+      taken += length;
+    }
+    return plain;
+  }
+
+  /// <summary>Encrypts a block of dnodes as <see cref="DecryptDnodeBlock"/> reads it; returns the stored block and its MAC.</summary>
+  public static (byte[] Stored, byte[] Mac) EncryptDnodeBlock(ZfsDatasetKey key, byte[] block, byte[] salt, byte[] iv) {
+    var (aad, spans) = DnodeLayout(block, key.Version);
+    var plain = new byte[spans.Sum(s => s.Length)];
+    var taken = 0;
+    foreach (var (offset, length) in spans) {
+      block.AsSpan(offset, length).CopyTo(plain.AsSpan(taken));
+      taken += length;
+    }
+    var cipher = new byte[plain.Length];
+    var mac = new byte[ZfsDatasetKey.MacLength];
+    ZfsDatasetKey.Encrypt(key.Crypt, key.BlockKey(salt), iv, plain, cipher, mac, aad);
+    var stored = block.ToArray();
+    taken = 0;
+    foreach (var (offset, length) in spans) {
+      cipher.AsSpan(taken, length).CopyTo(stored.AsSpan(offset));
+      taken += length;
+    }
+    return (stored, mac);
+  }
+
+  /// <summary>Which parts of a dnode block are ciphertext (the encrypted bonus buffers) and the associated data of the rest.</summary>
+  private static (byte[] Aad, List<(int Offset, int Length)> Spans) DnodeLayout(byte[] block, ulong version) {
     var aad = new MemoryStream();
     var spans = new List<(int Offset, int Length)>();
     Span<byte> bab = stackalloc byte[32];
@@ -244,12 +285,12 @@ internal static class ZfsCryptoBlocks {
       core.AsSpan(0x18, 8).Clear();
       aad.Write(core);
       for (var b = 0; b < nblkptr; ++b) {
-        AuthBuffer(block.AsSpan(at + 64 + b * 128, 128), key.Version, bab, out var length);
+        AuthBuffer(block.AsSpan(at + 64 + b * 128, 128), version, bab, out var length);
         aad.Write(bab[..length]);
       }
       var spill = (flags & DnodeSpillFlag) != 0;
       if (spill) {
-        AuthBuffer(block.AsSpan(end - 128, 128), key.Version, bab, out var length);
+        AuthBuffer(block.AsSpan(end - 128, 128), version, bab, out var length);
         aad.Write(bab[..length]);
       }
       var bonusAt = at + 64 + nblkptr * 128;
@@ -261,21 +302,7 @@ internal static class ZfsCryptoBlocks {
         aad.Write(block, bonusAt, bonusMax);
       i += extra + 1;
     }
-    // (with no encrypted bonus the cipher text is empty and the MAC covers the associated data alone)
-    var cipher = new byte[spans.Sum(s => s.Length)];
-    var taken = 0;
-    foreach (var (offset, length) in spans) {
-      block.AsSpan(offset, length).CopyTo(cipher.AsSpan(taken));
-      taken += length;
-    }
-    var decrypted = new byte[cipher.Length];
-    ZfsDatasetKey.Decrypt(key.Crypt, key.BlockKey(salt), iv, cipher, mac, decrypted, aad.ToArray());
-    taken = 0;
-    foreach (var (offset, length) in spans) {
-      decrypted.AsSpan(taken, length).CopyTo(plain.AsSpan(offset));
-      taken += length;
-    }
-    return plain;
+    return (aad.ToArray(), spans);
   }
 
   /// <summary>
@@ -322,5 +349,74 @@ internal static class ZfsCryptoBlocks {
       AuthBuffer(dnode.Slice(dnode.Length - 128, 128), version, bab, out var length);
       hash.AppendData(bab[..length]);
     }
+  }
+}
+
+/// <summary>
+/// Opens the keys of encrypted datasets: a directory's DSL crypto key (suite, guid, version,
+/// sealed master and HMAC keys, IV, MAC) with the wrapping key its encryption root's key
+/// format, PBKDF2 salt and iterations make of the key material given for that root (by name,
+/// <c>pool/fs</c>) or for every root.
+/// </summary>
+internal sealed class ZfsKeyring(ZfsObjectSet mos, string poolName, ZfsKeyMaterial? anyKey, IReadOnlyDictionary<string, ZfsKeyMaterial>? keys) {
+  private const byte ZapMetadata = 0xC4;
+  private readonly Dictionary<ulong, (ZfsDatasetKey? Key, string? Refusal)> _opened = [];
+
+  /// <summary>The key of a DSL directory's datasets, or why there is none.</summary>
+  public (ZfsDatasetKey? Key, string? Refusal) For(ulong dir) {
+    if (this._opened.TryGetValue(dir, out var known)) return known;
+    return this._opened[dir] = this.Open(dir);
+  }
+
+  /// <summary>The dataset name of a DSL directory, from the child maps up to the root.</summary>
+  public string NameOf(ulong dir) {
+    var parts = new List<string>();
+    for (var guard = 0; guard < 256; ++guard) {
+      var bonus = mos.RequireDnode(dir, "DSL directory").Bonus;
+      var parent = BinaryPrimitives.ReadUInt64LittleEndian(bonus.AsSpan(16));
+      if (parent == 0) break;
+      var children = BinaryPrimitives.ReadUInt64LittleEndian(mos.RequireDnode(parent, "DSL directory").Bonus.AsSpan(32));
+      var name = mos.Zap(children, "child map").FirstOrDefault(e => e.Value == dir)?.Name
+        ?? throw new InvalidDataException($"ZFS: DSL directory {dir} is not among its parent's children.");
+      parts.Add(name);
+      dir = parent;
+    }
+    parts.Add(poolName);
+    parts.Reverse();
+    return string.Join('/', parts);
+  }
+
+  private (ZfsDatasetKey? Key, string? Refusal) Open(ulong dir) {
+    var keyObject = DirField(dir, "com.datto:crypto_key_obj");
+    if (keyObject == 0) return (null, "native encryption: the dataset's directory names no DSL crypto key");
+    var fields = mos.Zap(keyObject, "DSL crypto key").ToDictionary(e => e.Name, StringComparer.Ordinal);
+    static ulong Int(Dictionary<string, ZfsZapEntry> f, string field) =>
+      f.TryGetValue(field, out var e) ? e.Value : throw new InvalidDataException($"ZFS: a DSL crypto key has no {field}.");
+    byte[] Bytes(string field) =>
+      fields.TryGetValue(field, out var e) ? e.Values.Select(v => (byte)v).ToArray() : throw new InvalidDataException($"ZFS: a DSL crypto key has no {field}.");
+
+    var rootDir = Int(fields, "DSL_CRYPTO_ROOT_DDOBJ");
+    var rootName = this.NameOf(rootDir);
+    var material = keys != null && keys.TryGetValue(rootName, out var given) ? given : anyKey;
+    if (material == null) return (null, $"native encryption: no key given for encryption root {rootName}");
+    var rootFields = rootDir == dir ? fields
+      : mos.Zap(DirField(rootDir, "com.datto:crypto_key_obj"), "DSL crypto key").ToDictionary(e => e.Name, StringComparer.Ordinal);
+    try {
+      var wrapping = ZfsDatasetKey.WrappingKey(Int(rootFields, "keyformat"), material,
+        rootFields.TryGetValue("pbkdf2salt", out var salt) ? salt.Value : 0,
+        rootFields.TryGetValue("pbkdf2iters", out var iters) ? iters.Value : 0);
+      var key = ZfsDatasetKey.Unwrap(wrapping, Int(fields, "DSL_CRYPTO_SUITE"),
+        fields.TryGetValue("DSL_CRYPTO_VERSION", out var version) ? version.Value : 0, Int(fields, "DSL_CRYPTO_GUID"),
+        Bytes("DSL_CRYPTO_MASTER_KEY_1"), Bytes("DSL_CRYPTO_HMAC_KEY_1"), Bytes("DSL_CRYPTO_IV"), Bytes("DSL_CRYPTO_MAC"));
+      return (key, null);
+    } catch (ZfsWrongKeyException e) {
+      return (null, $"native encryption: {e.Message} (encryption root {rootName})");
+    }
+  }
+
+  /// <summary>A field of a DSL directory that is a ZAP (0 when it is none or lacks the field).</summary>
+  private ulong DirField(ulong dir, string field) {
+    var dnode = mos.RequireDnode(dir, "DSL directory");
+    return dnode.Type != ZapMetadata ? 0 : mos.Zap(dnode).FirstOrDefault(e => e.Name == field)?.Value ?? 0;
   }
 }
