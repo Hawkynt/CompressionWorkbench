@@ -79,6 +79,80 @@ public class LzipFecTests {
     Assert.Throws<InvalidDataException>(() => LzipFecFormatDescriptor.Read(bytes));
   }
 
+  private static byte[] Sample() => [.. Enumerable.Range(0, 5000).Select(i => (byte)((i * 13 + (i >> 8)) % 256))];
+
+  // the README's commands: lziprecover -Fc -b 512 (8 blocks, GF(2^8)) and -Fc3 --gf16
+  [TestCase("sample-gf8.fec", 8, false)]
+  [TestCase("sample-gf16.fec", 3, true)]
+  [Category("ThirdPartyVector")]
+  public void Given_TheSampleFile_When_OurFecIsCreated_Then_ItIsByteForByteLziprecovers(string vector, int blocks, bool gf16)
+    => Assert.That(LzipFecWriter.Create(Sample(), blocks, 512, gf16), Is.EqualTo(Vector(vector)));
+
+  [TestCase(1, 1, 0, null), TestCase(511, 2, 0, null), TestCase(512, 1, 0, null), TestCase(513, 3, 0, null),
+   TestCase(100_000, 9, 0, null), TestCase(100_000, 9, 0, true), TestCase(70_000, 200, 512, null), TestCase(1_000_000, 4, 8192, false)]
+  [Category("RoundTrip")]
+  public void Given_AFile_When_ItsFecIsCreated_Then_ItReadsBackDescribingIt(int size, int blocks, long blockSize, bool? gf16) {
+    var data = new byte[size];
+    new Random(size).NextBytes(data);
+    var f = LzipFecFormatDescriptor.Read(LzipFecWriter.Create(data, blocks, blockSize, gf16));
+    Assert.That(f.ProtectedSize, Is.EqualTo(size));
+    Assert.That(f.Blocks.Select(b => b.Number), Is.EqualTo(Enumerable.Range(0, blocks)));
+    Assert.That(f.ProtectedMd5, Is.EqualTo(System.Security.Cryptography.MD5.HashData(data)));
+    Assert.That(f.Crc32Cs, Is.Not.Null);
+    if (gf16 != null) Assert.That(f.Gf16, Is.EqualTo(gf16.Value));
+    if (blocks > 128) Assert.That(f.Gf16, Is.True);
+  }
+
+  [TestCase(512L, (ushort)0x0001), TestCase(4096L, (ushort)0x0008), TestCase(2047L * 512, (ushort)2047), TestCase(2048L * 512, (ushort)(1 << 11 | 1024))]
+  [Category("Boundary")]
+  public void Given_ABlockSize_When_Encoded_Then_LargestMantissaSmallestExponent(long size, ushort coded) {
+    Assert.That(LzipFecWriter.Encode(size), Is.EqualTo(coded));
+    Assert.That(LzipFecFormatDescriptor.DecodeFbs(coded), Is.EqualTo(size));
+  }
+
+  [Test, Category("Boundary")]
+  public void Given_AnUnrepresentableBlockSize_When_Rounded_Then_TheNextStorableOne()
+    => Assert.That(LzipFecWriter.Representable(2049L * 512), Is.EqualTo(2050L * 512));
+
+  [Test, Category("Exception")]
+  public void Given_BadParameters_When_Created_Then_Refused() {
+    Assert.Throws<ArgumentException>(() => LzipFecWriter.Create([]));
+    Assert.Throws<ArgumentOutOfRangeException>(() => LzipFecWriter.Create([1], 0));
+    Assert.Throws<ArgumentOutOfRangeException>(() => LzipFecWriter.Create([1], 2049));
+    Assert.Throws<ArgumentOutOfRangeException>(() => LzipFecWriter.Create([1], 1, 1000));
+    Assert.Throws<ArgumentException>(() => LzipFecWriter.Create(new byte[200 * 512], 1, 512, gf16: false));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Given_TwoFiles_When_Created_Then_Refused()
+    => Assert.Throws<NotSupportedException>(() => new LzipFecFormatDescriptor().Create(new MemoryStream(),
+      [Compression.Registry.ArchiveInputInfo.InMemory("a", [1]), Compression.Registry.ArchiveInputInfo.InMemory("b", [2])], new Compression.Registry.FormatCreateOptions()));
+
+  [Test, Category("EndToEnd")]
+  public void Given_OurFec_When_LziprecoverTestsAndRepairs_Then_TheFileComesBack() {
+    var tool = Environment.GetEnvironmentVariable("CWB_LZIPRECOVER");
+    if (string.IsNullOrEmpty(tool)) Assert.Ignore("Set CWB_LZIPRECOVER to lziprecover 1.25 or later (1.24 has no fec support).");
+    var dir = Path.Combine(Path.GetTempPath(), $"cwb_fec_{Guid.NewGuid():N}");
+    Directory.CreateDirectory(dir);
+    try {
+      var data = new byte[300_000];
+      new Random(8).NextBytes(data);
+      File.WriteAllBytes(Path.Combine(dir, "d.bin"), data);
+      using (var fec = File.Create(Path.Combine(dir, "d.bin.fec")))
+        new LzipFecFormatDescriptor().Create(fec, [Compression.Registry.ArchiveInputInfo.InMemory("d.bin", data)],
+          new Compression.Registry.FormatCreateOptions("gf16") { FormatSpecific = { ["FecBlocks"] = "6", ["BlockSize"] = "4096" } });
+      var damaged = data.ToArray();
+      Array.Clear(damaged, 5000, 9000);     // three data blocks
+      damaged[250_000] ^= 0x40;              // and a fourth
+      File.WriteAllBytes(Path.Combine(dir, "bad.bin"), damaged);
+      var w = FsInteropToolbox.WinToWsl(dir);
+      var bin = tool.StartsWith('/') ? tool : FsInteropToolbox.WinToWsl(tool);
+      var run = FsInteropToolbox.RunWsl($"cd {w} && {bin} -Ft d.bin && echo TESTED && {bin} -Fr --fec-file=d.bin.fec bad.bin && echo REPAIRED");
+      Assert.That(run.StdOut, Does.Contain("TESTED").And.Contain("REPAIRED"), run.StdOut + run.StdErr);
+      Assert.That(File.ReadAllBytes(Path.Combine(dir, "bad.bin_fixed")), Is.EqualTo(data));
+    } finally { Directory.Delete(dir, true); }
+  }
+
   [Test, Category("EndToEnd")]
   public void Given_FreshFecFromLziprecover_When_Read_Then_SameSizeMd5AndBlockCount() {
     var tool = Environment.GetEnvironmentVariable("CWB_LZIPRECOVER");

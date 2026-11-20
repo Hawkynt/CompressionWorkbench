@@ -22115,7 +22115,7 @@ Provides static methods for reading and writing Lzip (.lz) format members.
 
 ### Namespace `FileFormat.LzipFec`
 
-[`LzipFecBlock`](#lzipfecblock) · [`LzipFecFile`](#lzipfecfile) · [`LzipFecFormatDescriptor`](#lzipfecformatdescriptor)
+[`LzipFecBlock`](#lzipfecblock) · [`LzipFecFile`](#lzipfecfile) · [`LzipFecFormatDescriptor`](#lzipfecformatdescriptor) · [`LzipFecWriter`](#lzipfecwriter)
 
 #### `LzipFecBlock`
 
@@ -22149,9 +22149,9 @@ Implements `IEquatable<LzipFecFile>`.
 
 #### `LzipFecFormatDescriptor`
 
-lziprecover forward-error-correction file (`.fec`), read-only: the parity lziprecover repairs a file from. It holds no files, so the view is `metadata.ini`, the CRC arrays of the chksum packets and one entry per FEC block (`fec_NNNNN.bin`); every packet's header and payload CRC is checked. References: lziprecover manual, "Fec file format" (`https://www.nongnu.org/lzip/manual/lziprecover_manual.html`)
+lziprecover forward-error-correction file (`.fec`): the parity lziprecover repairs a file from. Creating one (`LzipFecWriter`) protects a single file. It holds no files, so the view is `metadata.ini`, the CRC arrays of the chksum packets and one entry per FEC block (`fec_NNNNN.bin`); every packet's header and payload CRC is checked. References: lziprecover manual, "Fec file format" (`https://www.nongnu.org/lzip/manual/lziprecover_manual.html`)
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -22168,10 +22168,22 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates the fec file of the one input file. Method `gf8` or `gf16` picks the field (default: GF(2^8) when it suffices); options `FecBlocks` (default 9) and `BlockSize` (bytes, a multiple of 512). |
 | `DecodeFbs` | `static long DecodeFbs(ushort coded)` | Decodes the 16-bit floating-point block size. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `Read` | `static LzipFecFile Read(ReadOnlySpan<byte> file)` | Parses and checks a fec file. |
+
+#### `LzipFecWriter`
+
+Writes lziprecover fec files as the lziprecover manual specifies them ("Fec files", "Fec file format"): the protected file in N data blocks of the FEC block size (the last one zero-padded for the arithmetic), FEC block i = Σ_j A[i][j]·D_j with the Hilbert-type matrix A[i][j] = 1/(i ⊕ j ⊕ r0), r0 = half the field size, over GF(2^8) (polynomial 0x11D, byte by byte) or GF(2^16) (polynomial 0x1100B, little-endian 16-bit words). The file is a chksum packet with the CRC32s of the data blocks (the last one over its real bytes only), the fec packets in order, and a second chksum packet with CRC32-Cs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultFecBlocks` | `const int DefaultFecBlocks` | FEC blocks written when none are asked for (lziprecover's default). |
+| `Create` | `static byte[] Create(ReadOnlySpan<byte> data, int fecBlocks = 9, long blockSize = 0, bool? gf16 = null)` | Creates a fec file for `data`. |
+| `Encode` | `static ushort Encode(long size)` | The fbs field for a representable block size: the largest mantissa, the smallest exponent. |
+| `Representable` | `static long Representable(long size)` | The block size rounded up to one the 16-bit fbs field stores exactly (11-bit mantissa × 2^(exponent+9)). |
 
 ### Namespace `FileFormat.Lzop`
 
