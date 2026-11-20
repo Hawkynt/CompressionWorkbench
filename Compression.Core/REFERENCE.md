@@ -182,7 +182,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesBlockCipher`](#aesblockcipher) · [`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`BlockEncryptor128`](#blockencryptor128) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`Eax`](#eax) · [`Eax.SpanAction`](#eaxspanaction) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`ManagedAes`](#managedaes) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Serpent`](#serpent) · [`Twofish`](#twofish)
+[`AesBlockCipher`](#aesblockcipher) · [`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`BlockEncryptor128`](#blockencryptor128) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`Eax`](#eax) · [`Eax.SpanAction`](#eaxspanaction) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`ManagedAes`](#managedaes) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Serpent`](#serpent) · [`TripleDes`](#tripledes) · [`Twofish`](#twofish)
 
 #### `AesBlockCipher`
 
@@ -451,6 +451,17 @@ The Serpent block cipher (Ross Anderson, Eli Biham, Lars Knudsen), 128-bit block
 | `BlockSize` | `const int BlockSize` | The block size in bytes. |
 | `Decrypt` | `void Decrypt(Span<byte> block)` | Decrypts one 16-byte block in place. |
 | `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 16-byte block in place. |
+
+#### `TripleDes`
+
+Triple DES in the encrypt-decrypt-encrypt order of NIST SP 800-67 (the DES rounds of FIPS 46-3), 64-bit blocks under a three-key (24-byte) or two-key (16-byte, third key the first) bundle, in this library's own code, so that no format's Triple DES depends on what the operating system offers.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TripleDes` | `TripleDes(ReadOnlySpan<byte> key)` | Expands a 24-byte (three-key) or 16-byte (two-key) bundle for both directions. |
+| `BlockSize` | `const int BlockSize` | The block size in bytes. |
+| `Decrypt` | `void Decrypt(Span<byte> block)` | Decrypts one 8-byte block in place. |
+| `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 8-byte block in place. |
 
 #### `Twofish`
 
