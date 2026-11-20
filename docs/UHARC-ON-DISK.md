@@ -13,8 +13,9 @@ stubs are established and verified, and so are UHARC 0.2 and the UHARC 0.4 conta
 store, RLE, LZW, LZP and ALZ modes, and the UHARC 0.3 container with its store, RLE, LZW, LZP and
 ALZ modes (see their sections). 0.4's and 0.3's PPM streams are not, and are refused. The writer
 produces 0.6 archives in every method — store, RLE, LZ78, LZP, PPM and ALZ — with or without a
-password and a self-extractor stub (see Writing), and 0.4 and 0.3 archives in store, RLE, LZW, LZP
-and ALZ (see Writing UHARC 0.4 and Writing UHARC 0.3).
+password and a self-extractor stub (see Writing), 0.4 and 0.3 archives in store, RLE, LZW, LZP
+and ALZ (see Writing UHARC 0.4 and Writing UHARC 0.3), and 0.2 archives in store, LZW and its main
+coder (see Writing UHARC 0.2).
 
 ## Evidence
 
@@ -682,6 +683,27 @@ exactly as well.
 *Refuted:* times before dates in the date/time table (the dates then fall in 2019..2048 for the
 dexvert samples), directory indices as two byte planes (subdirectories then point outside the
 name table), and the executable filter on stored archives (fails `v02-exe-m0`'s CRC).
+
+### Writing UHARC 0.2
+
+The writer produces 0.2 archives (format option `version` 2) stored, as LZW method 7, or with the
+main coder's `-m2` band (methods 20..31, 1 KiB to 2 MiB): the 48-byte header with its full
+CRC-32 check, the stream, the stored CRC table, the name table (LZW 7), the dates-then-times
+table (LZW 2) and the size table (32-bit size deltas, 16-bit directory indices, attributes; LZW
+7), each with the 0.2 table cipher, and the CRC-32 of the four unpacked tables in the header.
+Names must be DOS 8.3 names and are stored in upper case; 0.2 has no password. Because 0.2's
+extractor undoes the executable filter on every packed MZ/ZM file of at least 1 KiB, the writer
+applies its inverse first: walking the file as the restore will, an operand `o` at position `i`
+is stored as `o + i` when `0 < o + i < size` (and `o ≠ 0`), `−i` as `i`, one in
+`[size − i, size)` as `o − size`, and every other operand as it is, so the restore takes the same
+branches and lands on the same positions. The main coder's encoder is the decoder's model
+(generic over the coder direction; decoding takes as long as before) with a mirror range
+encoder: a 16-bit low over the bits written, a carry out of it added into them, the top bit
+shifted out as the range doubles, and the low's sixteen bits at the end. It never switches
+models or codes byte runs, and takes the best of a recent distance, distance 1, a new distance
+whose class is open at the current history length, or a literal. UHARC 0.2 under DOSBox extracts
+our archives of every fixture input set and of the 39 MB mixed set (with `cp.html` renamed to
+8.3) byte for byte in all three modes and at a 1 KiB window.
 
 ## UHARC 0.4
 

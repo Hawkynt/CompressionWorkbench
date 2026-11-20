@@ -274,6 +274,53 @@ public class UharcExternalConformanceTests {
     AssertExtracted(output, inputs);
   }
 
+  /// <summary>
+  /// UHARC 0.2 (21 Dec 1997, a DOS program; <c>CWB_TOOL_UHARC02</c> names its <c>UHARC.EXE</c>)
+  /// under DOSBox (<c>CWB_DOSBOX</c>, a dosbox-x or dosbox executable) extracts the 0.2 archives
+  /// we write; the files are compared. The executable exercises the 0.2 executable filter.
+  /// </summary>
+  [TestCase("store", 0L)]
+  [TestCase("lz78", 0L)]
+  [TestCase("alz", 0L)]
+  [TestCase("alz", 1024L)]
+  public void GivenOurVersion02Archive_WhenUharc02ExtractsItInDosbox_ThenEveryFileIsByteIdentical(string method, long dictionary) {
+    var dosbox = Environment.GetEnvironmentVariable("CWB_DOSBOX");
+    var tool = Environment.GetEnvironmentVariable("CWB_TOOL_UHARC02");
+    if (string.IsNullOrEmpty(dosbox) || !File.Exists(dosbox))
+      Assert.Ignore("Set CWB_DOSBOX to a dosbox-x or dosbox executable.");
+    if (string.IsNullOrEmpty(tool) || !File.Exists(tool))
+      Assert.Ignore("Set CWB_TOOL_UHARC02 to UHARC 0.2's UHARC.EXE.");
+
+    var random = new Random(1997);
+    var noise = new byte[60000];
+    random.NextBytes(noise);
+    var program = UharcTests.MinimalPe(0x200, 0x2000);
+    for (var i = 0x200; i < program.Length - 5; i += 7) {
+      program[i] = 0xE8;
+      BitConverter.TryWriteBytes(program.AsSpan(i + 1), i % 3 == 0 ? -i : i * 3 % 9000 - 4000);
+    }
+
+    var inputs = new List<ArchiveInputInfo> {
+      ArchiveInputInfo.InMemory("README.TXT", System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 3000).Select(i => $"line {i % 37} of the 0.2 sample\r\n")))),
+      ArchiveInputInfo.InMemory("NOISE.BIN", noise),
+      ArchiveInputInfo.InMemory("EMPTY.DAT", []),
+      ArchiveInputInfo.InMemory("SUB/PROGRAM.EXE", program),
+      ArchiveInputInfo.InMemory("SUB/ZEROS.BIN", new byte[40000]),
+    };
+    File.WriteAllBytes(Path.Combine(this._tmp, "OURS.UHA"), UharcWriterTests.CreateWith(new FormatCreateOptions(method) {
+      DictSize = dictionary,
+      FormatSpecific = { [UharcFormatDescriptor.VersionOption] = "2" },
+    }, inputs));
+    File.Copy(tool!, Path.Combine(this._tmp, "UHARC.EXE"));
+    Directory.CreateDirectory(Path.Combine(this._tmp, "OUT"));
+    File.WriteAllText(Path.Combine(this._tmp, "GO.BAT"), "@echo off\r\ncd OUT\r\n..\\UHARC x -y ..\\OURS.UHA > ..\\X.LOG\r\ncd ..\r\n", System.Text.Encoding.ASCII);
+    Run(dosbox!, this._tmp, "-silent", "-nolog", "-fastlaunch", "-c", $"mount c \"{this._tmp}\"", "-c", "c:", "-c", "call GO.BAT", "-c", "exit");
+
+    foreach (var input in inputs)
+      Assert.That(File.ReadAllBytes(Path.Combine(this._tmp, "OUT", input.ArchiveName.Replace('/', Path.DirectorySeparatorChar))),
+        Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+  }
+
   /// <summary>Enough varied data to fill LZ78's 32768 phrases several times over.</summary>
   [TestCase("rle", 0)]
   [TestCase("lz78", 0)]

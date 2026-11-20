@@ -198,6 +198,93 @@ public class UharcWriterTests {
     Assert.That(Uharc03LzpDecoder.Decode(packed, 0, packed.Length, 8, data.Length, []), Is.EqualTo(data));
   }
 
+  // ── UHARC 0.2 archives ─────────────────────────────────────────────────
+
+  private static FormatCreateOptions Version2(string? method, long dictionary = 0) => new(method) {
+    DictSize = dictionary,
+    FormatSpecific = { [UharcFormatDescriptor.VersionOption] = "2" },
+  };
+
+  [TestCase("store", "Store", 0L)]
+  [TestCase("lz78", "LZW", 0L)]
+  [TestCase("alz", "m2", 0L)]
+  [TestCase("alz", "m2", 1024L)]
+  [Category("HappyPath"), Category("RoundTrip")]
+  public void GivenFilesAndDirectories_WhenWrittenAsVersion02AndRead_ThenEverythingComesBackInUpperCase(string method, string mode, long dictionary) {
+    var inputs = SampleInputs();
+    var archive = CreateWith(Version2(method, dictionary), inputs);
+    Assert.That(archive[3], Is.EqualTo(2));
+    var reader = new UharcReader(new MemoryStream(archive));
+    Assert.That(reader.MethodName, Is.EqualTo(mode));
+    foreach (var input in inputs.Where(i => !i.IsDirectory))
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == input.ArchiveName.ToUpperInvariant())), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+    Assert.That(reader.Entries.Where(e => e.IsDirectory).Select(e => e.FileName).Order(), Is.EqualTo(new[] { "EMPTYDIR", "SUB", "SUB/DEEPER" }));
+  }
+
+  [TestCase("rle")]
+  [TestCase("lzp")]
+  [TestCase("ppm")]
+  [Category("ErrorHandling")]
+  public void GivenAMethodVersion02CannotWrite_WhenWritten_ThenItIsRefused(string method)
+    => Assert.That(() => CreateWith(Version2(method)), Throws.TypeOf<NotSupportedException>());
+
+  [TestCase("LONGFILENAME.TXT")]
+  [TestCase("NAME.HTML")]
+  [TestCase("TWO.DOTS.TXT")]
+  [TestCase("SPACE NAME.TXT")]
+  [TestCase("LONGDIRECTORY/A.TXT")]
+  [Category("ErrorHandling")]
+  public void GivenANameThatIsNoDos83Name_WhenWrittenAsVersion02_ThenItIsRefused(string name)
+    => Assert.That(() => CreateWith(Version2("alz"), [ArchiveInputInfo.InMemory(name, [1, 2, 3])]), Throws.TypeOf<NotSupportedException>());
+
+  [Test, Category("ErrorHandling")]
+  public void GivenAPassword_WhenWrittenAsVersion02_ThenItIsRefused()
+    => Assert.That(() => CreateWith(new FormatCreateOptions("alz") { Password = "secret", FormatSpecific = { [UharcFormatDescriptor.VersionOption] = "2" } }),
+      Throws.TypeOf<NotSupportedException>());
+
+  private static IEnumerable<TestCaseData> LegacyExecutables() {
+    var random = new Random(97);
+    for (var size = 0x3FF; size <= 0x4400; size += 0x1001) {
+      var image = new byte[size];
+      random.NextBytes(image);
+      image[0] = (byte)'M';
+      image[1] = (byte)'Z';
+      for (var i = 2; i < size - 5; i += random.Next(2, 9)) {
+        image[i] = random.Next(2) == 0 ? (byte)0xE8 : (byte)0xE9;
+        var operand = random.Next(6) switch {
+          0 => -i,
+          1 => 0,
+          2 => size - i + random.Next(0, Math.Max(1, i)),
+          3 => random.Next(-i, size - i),
+          4 => int.MinValue + random.Next(1000),
+          _ => random.Next(),
+        };
+        BitConverter.TryWriteBytes(image.AsSpan(i + 1), operand);
+      }
+
+      yield return new TestCaseData(image).SetName($"Legacy_{size:X}");
+    }
+  }
+
+  [TestCaseSource(nameof(LegacyExecutables))]
+  [Category("RoundTrip")]
+  public void GivenAnExecutable_WhenTheVersion02FilterIsAppliedAndRestored_ThenItIsUnchanged(byte[] image) {
+    var filtered = image.ToArray();
+    UharcExecutableFilter.ApplyLegacy(filtered);
+    UharcExecutableFilter.RestoreLegacy(filtered);
+    Assert.That(filtered, Is.EqualTo(image));
+  }
+
+  [TestCase(8)]
+  [TestCase(23)]
+  [TestCase(43)]
+  [Category("RoundTrip")]
+  public void GivenData_WhenVersion02MainCoderEncodedAndDecoded_ThenItIsUnchanged(int method) {
+    var data = MixedData(method);
+    var packed = Uharc02Encoder.Encode(data, method);
+    Assert.That(Uharc02Decoder.Decode(packed, 0, packed.Length, method, data.Length), Is.EqualTo(data));
+  }
+
   private static byte[] MixedData(int seed) {
     var random = new Random(seed);
     var noise = new byte[30000];
@@ -207,7 +294,7 @@ public class UharcWriterTests {
     return text.Concat(noise).Concat(runs).Concat(new byte[20000]).Concat(text).ToArray();
   }
 
-  [TestCase("2")]
+  [TestCase("1")]
   [TestCase("5")]
   [Category("ErrorHandling")]
   public void GivenAnUnwrittenVersion_WhenWritten_ThenItIsRefused(string version)
