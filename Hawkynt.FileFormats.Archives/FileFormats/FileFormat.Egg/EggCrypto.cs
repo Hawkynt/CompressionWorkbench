@@ -6,6 +6,7 @@ using System.Buffers.Binary;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
+using Compression.Core.Crypto;
 
 namespace FileFormat.Egg;
 
@@ -47,6 +48,54 @@ internal sealed record EggEncryption(byte Method, byte[] Header, byte[] Footer) 
     Lea128 or Lea256 => DecryptWinZipStyle(data, password, this.Method == Lea256 ? 256 : 128, lea: true),
     _ => throw new NotSupportedException($"EGG encryption method {this.Method} is unknown."),
   };
+
+  /// <summary>
+  /// Encrypts a member's packed bytes with method <paramref name="method"/>; returns the encryption
+  /// field (method, header, footer) and the ciphertext, the inverse of <see cref="Decrypt"/>.
+  /// </summary>
+  public static (byte[] Field, byte[] Data) Encrypt(byte method, byte[] packed, string password, uint crc) {
+    ArgumentNullException.ThrowIfNull(packed);
+    ArgumentException.ThrowIfNullOrEmpty(password);
+    byte[] header, footer, data;
+    switch (method) {
+      case Standard: {
+        var keys = new ZipKeys();
+        foreach (var c in password) keys.Update((byte)c);
+        footer = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(footer, crc);
+        var plainHeader = RandomNumberGenerator.GetBytes(12);
+        plainHeader[11] = footer[^1];
+        header = new byte[12];
+        for (var i = 0; i < 12; ++i) {
+          header[i] = (byte)(plainHeader[i] ^ keys.Stream());
+          keys.Update(plainHeader[i]);
+        }
+        data = new byte[packed.Length];
+        for (var i = 0; i < data.Length; ++i) {
+          data[i] = (byte)(packed[i] ^ keys.Stream());
+          keys.Update(packed[i]);
+        }
+        break;
+      }
+      case Aes128 or Aes256 or Lea128 or Lea256: {
+        var bits = method is Aes256 or Lea256 ? 256 : 128;
+        var lea = method is Lea128 or Lea256;
+        var saltLength = bits == 256 ? 16 : 8;
+        var keyLength = bits / 8;
+        var macLength = lea ? (bits == 256 ? 32 : 16) : keyLength;
+        var salt = RandomNumberGenerator.GetBytes(saltLength);
+        var derived = Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(password), salt, 1000, HashAlgorithmName.SHA1, keyLength + macLength + 2);
+        header = [.. salt, .. derived.AsSpan(keyLength + macLength, 2)];
+        var key = derived.AsSpan(0, keyLength).ToArray();
+        data = lea ? LeaCtr(packed, key) : AesCtrLittleEndian(packed, key);
+        footer = HMACSHA1.HashData(derived.AsSpan(keyLength, macLength), data).AsSpan(0, 10).ToArray();
+        break;
+      }
+      default:
+        throw new NotSupportedException($"EGG encryption method {method} is unknown.");
+    }
+    return ([method, .. header, .. footer], data);
+  }
 
   // ── ZIP 2.0 ───────────────────────────────────────────────────────────
 
@@ -119,7 +168,7 @@ internal sealed record EggEncryption(byte Method, byte[] Header, byte[] Footer) 
 
   /// <summary>AES in CTR mode with WinZip's counter: a little-endian block number starting at 1.</summary>
   private static byte[] AesCtrLittleEndian(byte[] data, byte[] key) {
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key;
     var output = new byte[data.Length];
     var counter = new byte[16];

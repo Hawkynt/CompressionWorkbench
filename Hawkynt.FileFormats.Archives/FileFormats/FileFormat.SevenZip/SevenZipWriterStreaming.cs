@@ -5,6 +5,7 @@ using Compression.Core.Dictionary.Lzma;
 using Compression.Core.Entropy.Ppmd;
 using Compression.Core.Streams;
 using Compression.Core.Transforms;
+using Compression.Core.Crypto;
 
 namespace FileFormat.SevenZip;
 
@@ -311,7 +312,7 @@ internal sealed class SevenZipAesEncryptStream : Stream {
   public SevenZipAesEncryptStream(Stream output, byte[] key, byte[] iv, SevenZipCoder coder) {
     this._output = output;
     this.Coder = coder;
-    this._aes = Aes.Create();
+    this._aes = ManagedAes.Create();
     this._aes.Mode = CipherMode.CBC;
     this._aes.Padding = PaddingMode.None;
     this._aes.Key = key;

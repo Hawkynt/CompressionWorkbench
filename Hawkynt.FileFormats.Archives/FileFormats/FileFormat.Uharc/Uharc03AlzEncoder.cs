@@ -10,12 +10,12 @@ namespace FileFormat.Uharc;
 /// </summary>
 internal static class Uharc03AlzEncoder {
 
-  /// <summary>Packs <paramref name="data"/> as 0.3 ALZ stream <paramref name="method"/> (36..77).</summary>
+  /// <summary>Packs <paramref name="data"/> as 0.3 ALZ stream <paramref name="method"/> (36..79; 78 and 79 are 1 KiB windows).</summary>
   /// <param name="data">The stream.</param>
   /// <param name="method">The 0.3 ALZ method.</param>
   /// <param name="fileEnds">Where each file ends in the stream; each file starts in the literal group of its class.</param>
   public static byte[] Encode(byte[] data, int method, IReadOnlyList<long> fileEnds) {
-    if (method is < UharcMethods.Alz03First or > 77)
+    if (method is < UharcMethods.Alz03First or > UharcMethods.Alz03Last)
       throw new ArgumentOutOfRangeException(nameof(method));
     if (data.Length == 0)
       return [];

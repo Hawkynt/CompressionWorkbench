@@ -40,14 +40,18 @@ internal static class Uharc04PpmDecoder {
 internal static class Uharc04PpmEncoder {
 
   /// <summary>Packs <paramref name="data"/> as 0.4 PPM stream <paramref name="method"/> (24..39).</summary>
-  public static byte[] Encode(byte[] data, int method, IReadOnlyList<long> fileEnds) {
+  public static byte[] Encode(byte[] data, int method, IReadOnlyList<long> fileEnds)
+    => UharcPpmSymbols.EncodeSmaller(data, fileEnds, (d, ends, plan) => Encode(d, method, ends, plan));
+
+  /// <summary>Packs <paramref name="data"/> from the given symbols (a text or a binary stream).</summary>
+  internal static byte[] Encode(byte[] data, int method, IReadOnlyList<long> fileEnds, UharcPpmSymbols plan) {
     if (method is < UharcMethods.PpmFirst or > UharcMethods.PpmLast)
       throw new ArgumentOutOfRangeException(nameof(method));
     if (data.Length == 0)
       return [];
 
     var coder = new UharcRangeEncoder();
-    var model = new Uharc04PpmModel<UharcEncoding>(new(coder), method) { Source = data, Plan = UharcPpmSymbols.Plan(data, fileEnds) };
+    var model = new Uharc04PpmModel<UharcEncoding>(new(coder), method) { Source = data, Plan = plan };
     var output = new byte[data.Length];
     model.Run(output, fileEnds);
     if (!output.AsSpan().SequenceEqual(data))

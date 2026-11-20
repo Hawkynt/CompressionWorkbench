@@ -5,6 +5,7 @@ using Compression.Core.Dictionary.Lzma;
 using Compression.Core.Entropy.Ppmd;
 using Compression.Core.Streams;
 using Compression.Core.Transforms;
+using Compression.Core.Crypto;
 
 namespace FileFormat.SevenZip;
 
@@ -641,7 +642,7 @@ public sealed partial class SevenZipWriter : IDisposable {
 
     var padded = new byte[(data.Length + 15) & ~15];
     data.CopyTo(padded, 0);
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key;
     var encrypted = aes.EncryptCbc(padded, iv, PaddingMode.None);
 

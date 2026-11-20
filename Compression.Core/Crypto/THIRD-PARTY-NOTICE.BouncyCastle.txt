@@ -1,0 +1,48 @@
+Bouncy Castle C# (AES and DES engines) - converted to C#
+
+Source:   https://github.com/bcgit/bc-csharp
+          crypto/src/crypto/engines/AesEngine.cs
+          crypto/src/crypto/engines/AesEngine_X86.cs
+          crypto/src/crypto/engines/DesEngine.cs
+          crypto/src/crypto/engines/DesEdeEngine.cs
+Revision: 4814a10bc95da8757d8390c59b0b62d4cc00cb0d (master, 2026-11-18)
+Author:   The Legion of the Bouncy Castle Inc.; AesEngine follows Brian Gladman's
+          table layout for FIPS-197; DesEngine follows Richard Outerbridge's D3DES,
+          its key schedule credited there to James Gillogly and Phil Karn.
+Licence:  MIT, reproduced below. It permits redistribution in this
+          LGPL-3.0-or-later repository.
+
+Converted parts, into Compression.Core/Crypto/AesBlockCipher.cs:
+- AesEngine: the S, Si, T0 and Tinv0 tables (byte for byte), the round function
+  over one rotated table per direction, the final rounds from S and Si, and the
+  InvMixColumns of the decryption round keys (FFmulX, FFmulX2, Inv_Mcol).
+- AesEngine_X86: the AESKEYGENASSIST key schedules for 128-, 192- and 256-bit
+  keys and the inverse round keys through AESIMC.
+The FIPS-197 key expansion is written as one loop over the key length instead
+of the engine's three unrolled ones, and the eight-block pipeline over the AES
+instructions is written as one loop over the rounds.
+
+Converted parts, into Compression.Core/Crypto/TripleDes.cs:
+- DesEngine: the bytebit, bigbyte, pc1, totrot, pc2 and SP1-SP8 tables (value
+  for value), GenerateWorkingKey and DesFunc, its two half-rounds per loop
+  written as one round function.
+- DesEdeEngine: the encrypt-decrypt-encrypt order, the third key of a 16-byte
+  bundle being the first.
+
+Upstream licence (bc-csharp's LICENSE.md, verbatim):
+
+MIT License (https://opensource.org/licenses/MIT)
+
+Copyright (c) 2000-2026 The Legion of the Bouncy Castle Inc. (https://www.bouncycastle.org).
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sub license, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions: The above copyright notice and this
+permission notice shall be included in all copies or substantial portions of the Software.
+
+**THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.**

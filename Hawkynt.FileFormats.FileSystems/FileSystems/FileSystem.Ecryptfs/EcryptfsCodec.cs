@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using Compression.Core.Crypto;
 
 namespace FileSystem.Ecryptfs;
 
@@ -131,7 +132,7 @@ internal static class EcryptfsCodec {
         var extentIndex = 0L;
         input.Position = header.MetadataSize;
 
-        using var aes = Aes.Create();
+        using var aes = ManagedAes.Create();
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.None;
         aes.Key = fileKey;
@@ -193,7 +194,7 @@ internal static class EcryptfsCodec {
 
         if (!plaintext.IsEmpty) {
           var rootIv = MD5.HashData(fileKey);
-          using var aes = Aes.Create();
+          using var aes = ManagedAes.Create();
           aes.Mode = CipherMode.CBC;
           aes.Padding = PaddingMode.None;
           aes.Key = fileKey;
@@ -468,7 +469,7 @@ internal static class EcryptfsCodec {
     var padded = new byte[keySize == 24 ? 32 : keySize];
     fileKey.CopyTo(padded);
     try {
-      using var aes = Aes.Create();
+      using var aes = ManagedAes.Create();
       aes.Mode = CipherMode.ECB;
       aes.Padding = PaddingMode.None;
       aes.Key = fekek[..keySize].ToArray();
@@ -482,7 +483,7 @@ internal static class EcryptfsCodec {
   private static byte[] DecryptFileKey(PassphrasePacket packet, ReadOnlySpan<byte> fekek) {
     if (packet.KeySize == 0)
       throw new NotSupportedException($"Unsupported eCryptfs cipher code 0x{packet.CipherCode:X2}.");
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Mode = CipherMode.ECB;
     aes.Padding = PaddingMode.None;
     aes.Key = fekek[..packet.KeySize].ToArray();

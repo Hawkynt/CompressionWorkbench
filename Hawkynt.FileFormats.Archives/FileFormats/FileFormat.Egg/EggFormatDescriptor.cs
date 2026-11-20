@@ -8,9 +8,9 @@ namespace FileFormat.Egg;
 /// <summary>
 /// EGG (ALZip) archive — ESTsoft's native container for newer ALZip versions,
 /// with Unicode filenames, per-file algorithm selection, solid/split modes, and
-/// optional encryption. The native implementation reads Store/Deflate and creates
-/// non-solid, single-volume Store/Deflate archives; unsupported methods are listed
-/// honestly and rejected on extraction rather than returning incorrect data.
+/// optional encryption. The native implementation reads every method, cipher, solid and
+/// split archive, and creates non-solid store/deflate/bzip2/LZMA archives, optionally
+/// encrypted and split, which ALZip 12.38 extracts; AZO and solid are read only.
 ///
 /// References:
 /// <list type="bullet">
@@ -24,7 +24,19 @@ public sealed class EggFormatDescriptor :
   IArchiveFormatOperations,
   IArchiveCreatable,
   IArchiveModifiable,
-  IArchiveDefragmentable {
+  IArchiveDefragmentable,
+  IFormatOptionsSchema {
+
+  /// <inheritdoc />
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: FormatOptionKeys.VolumeSize,
+      DisplayName: "Volume size",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Split into volumes of at most this size (bytes, or with k/m/g). The target must be named name.vol1.egg; name.vol2.egg, ... follow beside it. Empty writes one file.",
+      IsOptimizationAxis: false),
+  ];
 
   /// <summary>
   /// Gets the id.
@@ -67,6 +79,8 @@ public sealed class EggFormatDescriptor :
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("store", "Store"),
     new("deflate", "Deflate", SupportsOptimize: true),
+    new("bzip2", "Bzip2"),
+    new("lzma", "LZMA"),
   ];
   /// <summary>
   /// Gets the tar compression format id.
@@ -79,13 +93,13 @@ public sealed class EggFormatDescriptor :
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "ESTsoft ALZip EGG archive (reads stored/deflate/bzip2/AZO/LZMA, ZIP 2.0/AES/LEA encryption, solid; writes stored/deflate)";
+  public string Description => "ESTsoft ALZip EGG archive (reads stored/deflate/bzip2/AZO/LZMA, ZIP 2.0/AES/LEA encryption, solid, split sets; writes stored/deflate/bzip2/LZMA, encrypted and split)";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    using var r = new EggReader(stream, leaveOpen: true);
+    using var r = EggReader.Open(stream, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.UncompressedSize, e.CompressedSize,
       e.MethodName, e.IsDirectory, e.IsEncrypted, e.LastModified)).ToList();
   }
@@ -94,7 +108,7 @@ public sealed class EggFormatDescriptor :
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    using var r = new EggReader(stream, leaveOpen: true);
+    using var r = EggReader.Open(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.Name, files))
         continue;
@@ -114,7 +128,7 @@ public sealed class EggFormatDescriptor :
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
-    using var r = new EggReader(archive, leaveOpen: true);
+    using var r = EggReader.Open(archive, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
@@ -134,17 +148,34 @@ public sealed class EggFormatDescriptor :
     return memoryStream.ToArray();
   }
 
-  /// <summary>Creates a single-volume, non-solid EGG archive using Store/Deflate.</summary>
+  /// <summary>Creates a non-solid EGG archive (store, deflate, bzip2 or LZMA; optionally encrypted; split with VolumeSize).</summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     ArgumentNullException.ThrowIfNull(options);
-    if (!string.IsNullOrEmpty(options.Password) || !string.IsNullOrEmpty(options.EncryptionMethod))
-      throw new NotSupportedException("Native EGG creation does not yet implement encryption.");
+    if (string.IsNullOrEmpty(options.Password) && !string.IsNullOrEmpty(options.EncryptionMethod))
+      throw new ArgumentException("An EGG encryption method needs a password.");
 
+    var volumeSize = ParseVolumeSize(options.GetString(FormatOptionKeys.VolumeSize));
+    if (volumeSize > 0) {
+      var path = OutputFilePath(output) ?? throw new ArgumentException("An EGG split set must be written to a file, so its other volumes can go beside it.");
+      var setBase = EggVolumes.SetBase(path);
+      if (setBase is null || !Path.GetFileName(path).Equals(Path.GetFileName(EggVolumes.VolumePath(setBase, 1)), StringComparison.OrdinalIgnoreCase))
+        throw new ArgumentException($"The first volume of an EGG split set is named name.vol1.egg; '{Path.GetFileName(path)}' is not.");
+      using var whole = new MemoryStream();
+      this.WriteArchive(whole, inputs, options);
+      var volumes = EggVolumes.Split(whole.ToArray(), volumeSize);
+      output.Write(volumes[0]);
+      for (var i = 1; i < volumes.Count; ++i) File.WriteAllBytes(EggVolumes.VolumePath(setBase, i + 1), volumes[i]);
+      return;
+    }
+    this.WriteArchive(output, inputs, options);
+  }
+
+  private void WriteArchive(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var requestedMethod = ResolveMethod(options.MethodName);
     var level = ResolveLevel(options);
-    using var writer = new EggWriter(output, leaveOpen: true);
+    using var writer = new EggWriter(output, leaveOpen: true, password: options.Password, encryption: ResolveEncryption(options.EncryptionMethod));
     foreach (var input in inputs) {
       if (input.IsDirectory) {
         writer.AddDirectory(input.ArchiveName);
@@ -170,8 +201,21 @@ public sealed class EggFormatDescriptor :
       return EggCompressionMethod.Store;
     if (methodName.Equals("deflate", StringComparison.OrdinalIgnoreCase))
       return EggCompressionMethod.Deflate;
-    throw new NotSupportedException($"Native EGG creation supports Store and Deflate, not '{methodName}'.");
+    if (methodName.Equals("bzip2", StringComparison.OrdinalIgnoreCase))
+      return EggCompressionMethod.Bzip2;
+    if (methodName.Equals("lzma", StringComparison.OrdinalIgnoreCase))
+      return EggCompressionMethod.Lzma;
+    throw new NotSupportedException($"Native EGG creation supports Store, Deflate, Bzip2 and LZMA, not '{methodName}'.");
   }
+
+  private static EggEncryptionMethod ResolveEncryption(string? name) => (name ?? "").Trim().ToLowerInvariant().Replace("-", "") switch {
+    "" or "aes256" => EggEncryptionMethod.Aes256,
+    "aes128" or "aes" => EggEncryptionMethod.Aes128,
+    "zip20" or "zip2.0" or "zipcrypto" or "standard" => EggEncryptionMethod.Zip20,
+    "lea128" or "lea" => EggEncryptionMethod.Lea128,
+    "lea256" => EggEncryptionMethod.Lea256,
+    var m => throw new NotSupportedException($"EGG encryption '{m}' is not supported (zip20, aes128, aes256, lea128, lea256)."),
+  };
 
   private static DeflateCompressionLevel ResolveLevel(FormatCreateOptions options) {
     if (options.Optimize)

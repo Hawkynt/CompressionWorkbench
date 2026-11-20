@@ -29,7 +29,11 @@ internal static class UharcWriter {
   }
 
   /// <summary>One archive member; <see cref="Data"/> is null for a directory.</summary>
-  public sealed record Item(string Name, byte[]? Data, DateTime? LastModified);
+  /// <param name="Name">Path with '/' separators.</param>
+  /// <param name="Data">The file's bytes; null for a directory.</param>
+  /// <param name="LastModified">The time stamp; null for the archive time.</param>
+  /// <param name="Attributes">The DOS attribute byte stored for a file (<c>0x20</c>, archive, by default).</param>
+  public sealed record Item(string Name, byte[]? Data, DateTime? LastModified, byte Attributes = FileAttribute);
 
   private const byte FileAttribute = 0x20;
 
@@ -55,12 +59,19 @@ internal static class UharcWriter {
   /// for <see cref="Mode.Lz78"/>; 0.3's windows reach 8 MiB), or 2 (UHARC 0.2: store, LZW, and its main coder for <see cref="Mode.Alz"/>; DOS 8.3 names,
   /// upper-cased, no password).
   /// </param>
+  /// <param name="forcedMethod">
+  /// The exact stream method byte to write (an edit keeps the archive's own), which then decides
+  /// the mode and the window instead of <paramref name="mode"/> and
+  /// <paramref name="dictionaryLimit"/>; null to choose it from those. An empty stream is stored.
+  /// </param>
   public static void Write(Stream output, IReadOnlyList<Item> items, Mode mode, DateTime now, string? password = null, byte[]? sfxStub = null,
-    long dictionaryLimit = 0, int version = 6) {
+    long dictionaryLimit = 0, int version = 6, int? forcedMethod = null) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(items);
     if (version is not (2 or 3 or 4 or 6))
       throw new NotSupportedException($"UHARC: the writer writes versions 0.2, 0.3, 0.4 and 0.6, not {version}.");
+    if (forcedMethod is { } fixedMethod)
+      mode = ModeOf(version, fixedMethod);
     if (version == 2 && mode is not (Mode.Store or Mode.Rle or Mode.Lz78 or Mode.Alz))
       throw new NotSupportedException($"UHARC: the 0.2 writer writes store, RLE, LZW and its main coder, not {mode}.");
     if (version == 2 && !string.IsNullOrEmpty(password))
@@ -83,7 +94,7 @@ internal static class UharcWriter {
       directories.Add(directory);
     }
 
-    var files = new List<(string Name, int Directory, byte[] Data, DateTime? Modified)>();
+    var files = new List<(string Name, int Directory, byte[] Data, DateTime? Modified, byte Attributes)>();
     foreach (var item in items) {
       var path = Normalize(item.Name);
       if (version == 2)
@@ -98,7 +109,7 @@ internal static class UharcWriter {
       var slash = path.LastIndexOf('/');
       var directory = slash > 0 ? path[..slash] : string.Empty;
       AddDirectory(directory);
-      files.Add((path[(slash + 1)..], directoryIndex[directory], item.Data, item.LastModified));
+      files.Add((path[(slash + 1)..], directoryIndex[directory], item.Data, item.LastModified, item.Attributes));
     }
 
     // PPM codes only the leading text files as a text stream, so text files go first (the file
@@ -107,6 +118,8 @@ internal static class UharcWriter {
       files = [.. files.Where(f => UharcPpmSymbols.IsText(f.Data)), .. files.Where(f => !UharcPpmSymbols.IsText(f.Data))];
 
     var n = files.Count;
+    if (n == 0)
+      throw new NotSupportedException("UHARC: an archive needs at least one file; UHARC.EXE, UHARC04.EXE and uharc_u.exe refuse an archive of none.");
     long total = 0;
     foreach (var f in files)
       total += f.Data.LongLength;
@@ -159,7 +172,7 @@ internal static class UharcWriter {
       fileEnds.Add(offset);
     }
 
-    var method = total == 0 ? UharcMethods.Store : version == 2 ? mode switch {
+    var streamMethod = total == 0 ? UharcMethods.Store : forcedMethod ?? (version == 2 ? mode switch {
       Mode.Store => UharcMethods.Store,
       Mode.Rle => UharcMethods.Rle,
       Mode.Lz78 => UharcMethods.Lz78Last,
@@ -180,7 +193,8 @@ internal static class UharcWriter {
       Mode.Alz => AlzMethodFor(total, dictionaryLimit),
       Mode.Ppm => LzpMethodFor(total, dictionaryLimit) - UharcMethods.LzpFirst + UharcMethods.PpmFirst,
       _ => throw new ArgumentOutOfRangeException(nameof(mode)),
-    };
+    });
+    var method = streamMethod;
     var packed = version == 2 ? method switch {
       UharcMethods.Store => stream,
       UharcMethods.Rle => UharcRleEncoder.Encode(stream, byteFirst: true),
@@ -233,7 +247,7 @@ internal static class UharcWriter {
       var delta = previous - size;
       for (var plane = 0; plane < 4; ++plane)
         fileTable[(6 + plane) * n + i] = (byte)(delta >> (8 * plane));
-      fileTable[10 * n + i] = FileAttribute;
+      fileTable[10 * n + i] = files[i].Attributes;
       previous = size;
     }
 
@@ -310,6 +324,19 @@ internal static class UharcWriter {
       ++shift;
     return UharcMethods.LzpFirst + shift - 10;
   }
+
+  /// <summary>The mode a stream method byte of <paramref name="version"/> belongs to.</summary>
+  /// <exception cref="NotSupportedException">The version has no such method.</exception>
+  internal static Mode ModeOf(int version, int method) => (version, method) switch {
+    (_, UharcMethods.Store) => Mode.Store,
+    (_, UharcMethods.Rle) => Mode.Rle,
+    (_, >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last) => Mode.Lz78,
+    (2, >= 8 and <= 43) => Mode.Alz,
+    (3, >= UharcMethods.LzpFirst and < UharcMethods.Ppm03First) or (4 or 6, >= UharcMethods.LzpFirst and <= UharcMethods.LzpLast) => Mode.Lzp,
+    (3, >= UharcMethods.Ppm03First and < UharcMethods.Alz03First) or (4 or 6, >= UharcMethods.PpmFirst and <= UharcMethods.PpmLast) => Mode.Ppm,
+    (3, >= UharcMethods.Alz03First and <= UharcMethods.Alz03Last) or (4 or 6, >= UharcMethods.AlzFirst and <= UharcMethods.AlzLast) => Mode.Alz,
+    _ => throw new NotSupportedException($"UHARC: version 0.{version} has no stream method {method}."),
+  };
 
   /// <summary>The ALZ:2 method for the same window as <see cref="LzpMethodFor"/>.</summary>
   internal static int AlzMethodFor(long size, long limit = 0) => LzpMethodFor(size, limit) - UharcMethods.LzpFirst + UharcMethods.AlzFirst + 16;

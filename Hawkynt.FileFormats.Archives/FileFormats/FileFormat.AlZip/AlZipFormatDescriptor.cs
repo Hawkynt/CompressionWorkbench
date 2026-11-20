@@ -13,7 +13,7 @@ namespace FileFormat.AlZip;
 ///   <item><description><c>https://github.com/MacPaw/XADMaster</c> — XADALZipParser (LGPL-2.1)</description></item>
 /// </list>
 /// </summary>
-public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap {
+public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
@@ -37,19 +37,19 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<string> Extensions => [".alz"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [new("ALZ\x01"u8.ToArray(), Confidence: 0.95)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate"), new("store", "Store")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate"), new("store", "Store"), new("bzip2", "ALZ bzip2")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description => "Korean ALZip archive (stored, deflate and ALZ-bzip2 members; ZipCrypto)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    using var r = new AlZipReader(stream, leaveOpen: true);
+    using var r = AlZipReader.Open(stream, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.OriginalSize, e.CompressedSize,
       e.IsDirectory ? "dir" : e.MethodName, e.IsDirectory, e.IsEncrypted, e.LastModified)).ToList();
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    using var r = new AlZipReader(stream, leaveOpen: true);
+    using var r = AlZipReader.Open(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
       if (e.IsDirectory) {
@@ -63,14 +63,46 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     archive.Position = 0;
-    using var r = new AlZipReader(archive, leaveOpen: true);
+    using var r = AlZipReader.Open(archive, leaveOpen: true);
     var e = r.Entries.FirstOrDefault(x => !x.IsDirectory && string.Equals(x.FileName, entryName, StringComparison.OrdinalIgnoreCase))
       ?? throw new FileNotFoundException($"No entry '{entryName}' in the ALZip archive.");
     return r.Extract(e, password);
   }
 
+  /// <inheritdoc />
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: FormatOptionKeys.VolumeSize,
+      DisplayName: "Volume size",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Split into volumes of at most this size (bytes, or with k/m/g). The target must be named name.alz; name.a00, name.a01, ... follow beside it. Empty writes one file.",
+      IsOptimizationAxis: false),
+  ];
+
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    using var w = new AlZipWriter(output, leaveOpen: true, password: options.Password, store: options.MethodName == "store");
+    var volumeSize = ParseVolumeSize(options.GetString(FormatOptionKeys.VolumeSize));
+    if (volumeSize > 0) {
+      // ALZip writes no ALZ bzip2 itself (its -m1 and -m2 both give deflate), and its console
+      // (12.38) cut short the member that followed an ALZ bzip2 member across a volume boundary,
+      // so such a set is not known to be readable by ALZip.
+      if (options.MethodName == "bzip2")
+        throw new NotSupportedException("ALZip cannot read ALZ bzip2 members in split sets; write bzip2 single-volume or split with deflate.");
+      var path = OutputFilePath(output) ?? throw new ArgumentException("An ALZip split set must be written to a file, so its other volumes can go beside it.");
+      if (!Path.GetExtension(path).Equals(".alz", StringComparison.OrdinalIgnoreCase))
+        throw new ArgumentException($"The first volume of an ALZip split set is named name.alz; '{Path.GetFileName(path)}' is not.");
+      using var whole = new MemoryStream();
+      WriteArchive(whole, inputs, options);
+      var volumes = AlZipVolumes.Split(whole.ToArray(), volumeSize);
+      output.Write(volumes[0]);
+      for (var i = 1; i < volumes.Count; ++i) File.WriteAllBytes(AlZipVolumes.VolumePath(path, i), volumes[i]);
+      return;
+    }
+    WriteArchive(output, inputs, options);
+  }
+
+  private static void WriteArchive(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    using var w = new AlZipWriter(output, leaveOpen: true, password: options.Password, store: options.MethodName == "store", bzip2: options.MethodName == "bzip2");
     foreach (var input in inputs) {
       if (string.IsNullOrEmpty(input.ArchiveName)) continue;
       var modified = input.Metadata?.LastWriteTimeUtc?.LocalDateTime

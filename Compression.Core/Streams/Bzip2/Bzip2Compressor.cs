@@ -15,6 +15,11 @@ internal sealed class Bzip2Compressor {
   private int _blockLength;
   private uint _combinedCrc;
   private readonly bool _nsisVariant;
+  private readonly bool _alzVariant;
+
+  // ALZip's dialect (ALZ method 1): "DLZ\x01" before each block, "DLZ\x02" to end, no CRCs.
+  private const uint AlzBlockMarker = 0x444C5A01;
+  private const uint AlzEndMarker = 0x444C5A02;
 
   // NSIS's bzip2 dialect frames a block with one byte and ends the stream with another.
   private const uint NsisBlockMarker = 0x31;
@@ -40,9 +45,11 @@ internal sealed class Bzip2Compressor {
   /// <param name="bitWriter">The bit writer for output.</param>
   /// <param name="blockSize100k">Block size multiplier (1-9).</param>
   /// <param name="nsisVariant">Write NSIS's framing: no block magic, CRCs or randomised bit.</param>
-  public Bzip2Compressor(BitWriter<MsbBitOrder> bitWriter, int blockSize100k = 9, bool nsisVariant = false) {
+  /// <param name="alzVariant">Write ALZip's framing: "DLZ" block and end markers, no CRCs or randomised bit.</param>
+  public Bzip2Compressor(BitWriter<MsbBitOrder> bitWriter, int blockSize100k = 9, bool nsisVariant = false, bool alzVariant = false) {
     this._bitWriter = bitWriter;
     this._nsisVariant = nsisVariant;
+    this._alzVariant = alzVariant;
     this._blockSize = blockSize100k * 100_000;
     this._blockBuffer = new byte[Math.Min(this._blockSize, 1 << 16)];
     this._blockLength = 0;
@@ -98,6 +105,11 @@ internal sealed class Bzip2Compressor {
 
     if (this._nsisVariant) {
       this._bitWriter.WriteBits(NsisEndMarker, 8);
+      this._bitWriter.FlushBits();
+      return;
+    }
+    if (this._alzVariant) {
+      this._bitWriter.WriteBits(AlzEndMarker, 32);
       this._bitWriter.FlushBits();
       return;
     }
@@ -158,6 +170,8 @@ internal sealed class Bzip2Compressor {
     int alphaSize, int[] symbols) {
     if (this._nsisVariant)
       this._bitWriter.WriteBits(NsisBlockMarker, 8);
+    else if (this._alzVariant)
+      this._bitWriter.WriteBits(AlzBlockMarker, 32);
     else {
       // Block header magic (48 bits)
       WriteBits48(Bzip2Constants.BlockHeaderMagic);

@@ -350,7 +350,7 @@ public sealed class RarWriter : IDisposable {
     var iv = RandomNumberGenerator.GetBytes(16);
     var padded = new byte[(frame.Length + 15) & ~15];
     frame.CopyTo(padded, 0);
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = this._key!;
     this.Raw(iv);
     this.Raw(aes.EncryptCbc(padded, iv, PaddingMode.None));
@@ -558,7 +558,7 @@ internal sealed class RarCbcEncryptStream : Stream {
 
   public RarCbcEncryptStream(Stream sink, byte[] key, byte[] iv) {
     this._sink = sink;
-    this._aes = Aes.Create();
+    this._aes = ManagedAes.Create();
     this._aes.Mode = CipherMode.CBC;
     this._aes.Padding = PaddingMode.None;
     this._enc = this._aes.CreateEncryptor(key, iv);

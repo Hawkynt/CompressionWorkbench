@@ -161,7 +161,7 @@ internal static class ZipAesEncryption {
       return [];
 
     var result = new byte[data.Length];
-    using var aes = System.Security.Cryptography.Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key;
     aes.Mode = System.Security.Cryptography.CipherMode.ECB;
     aes.Padding = System.Security.Cryptography.PaddingMode.None;

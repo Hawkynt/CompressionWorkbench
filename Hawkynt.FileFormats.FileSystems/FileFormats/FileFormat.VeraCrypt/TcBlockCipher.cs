@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Security.Cryptography;
 using Compression.Core.Crypto;
 
 namespace FileFormat.VeraCrypt;
@@ -40,51 +39,21 @@ public abstract class TcBlockCipher : IDisposable {
     _ => throw new NotSupportedException($"TrueCrypt/VeraCrypt cipher '{name}' is not supported."),
   };
 
-  /// <summary>
-  /// A framework cipher driven through cached ECB transforms: creating a transform per call costs
-  /// far more than the blocks themselves, so one encryptor and one decryptor are reused.
-  /// </summary>
-  private abstract class FrameworkCipher : TcBlockCipher {
-    private readonly SymmetricAlgorithm _algorithm;
-    private readonly ICryptoTransform _encryptor, _decryptor;
-    private byte[] _buffer = [];
-
-    protected FrameworkCipher(SymmetricAlgorithm algorithm, ReadOnlySpan<byte> key) {
-      this._algorithm = algorithm;
-      algorithm.Mode = CipherMode.ECB;
-      algorithm.Padding = PaddingMode.None;
-      algorithm.Key = key.ToArray();
-      this._encryptor = algorithm.CreateEncryptor();
-      this._decryptor = algorithm.CreateDecryptor();
-    }
-
-    public override void Encrypt(Span<byte> block) => this.Transform(this._encryptor, block);
-    public override void Decrypt(Span<byte> block) => this.Transform(this._decryptor, block);
-    public override void EncryptBlocks(Span<byte> blocks) => this.Transform(this._encryptor, blocks);
-    public override void DecryptBlocks(Span<byte> blocks) => this.Transform(this._decryptor, blocks);
-
-    private void Transform(ICryptoTransform transform, Span<byte> data) {
-      if (this._buffer.Length < data.Length) this._buffer = new byte[data.Length];
-      data.CopyTo(this._buffer);
-      transform.TransformBlock(this._buffer, 0, data.Length, this._buffer, 0);
-      this._buffer.AsSpan(0, data.Length).CopyTo(data);
-    }
-
-    public override void Dispose() {
-      this._encryptor.Dispose();
-      this._decryptor.Dispose();
-      this._algorithm.Dispose();
-      CryptographicOperations.ZeroMemory(this._buffer);
-      base.Dispose();
-    }
+  /// <summary>AES on the library's own cipher; whole runs of blocks go through it at once.</summary>
+  private sealed class AesCipher(ReadOnlySpan<byte> key) : TcBlockCipher {
+    private readonly AesBlockCipher _c = new(key);
+    public override int BlockSize => AesBlockCipher.BlockSize;
+    public override void Encrypt(Span<byte> block) => this._c.Encrypt(block[..AesBlockCipher.BlockSize]);
+    public override void Decrypt(Span<byte> block) => this._c.Decrypt(block[..AesBlockCipher.BlockSize]);
+    public override void EncryptBlocks(Span<byte> blocks) => this._c.Encrypt(blocks);
+    public override void DecryptBlocks(Span<byte> blocks) => this._c.Decrypt(blocks);
   }
 
-  private sealed class AesCipher(ReadOnlySpan<byte> key) : FrameworkCipher(Aes.Create(), key) {
-    public override int BlockSize => 16;
-  }
-
-  private sealed class TripleDesCipher(ReadOnlySpan<byte> key) : FrameworkCipher(TripleDES.Create(), key) {
-    public override int BlockSize => 8;
+  private sealed class TripleDesCipher(ReadOnlySpan<byte> key) : TcBlockCipher {
+    private readonly TripleDes _c = new(key);
+    public override int BlockSize => TripleDes.BlockSize;
+    public override void Encrypt(Span<byte> block) => this._c.Encrypt(block);
+    public override void Decrypt(Span<byte> block) => this._c.Decrypt(block);
   }
 
   /// <summary>TrueCrypt's Blowfish reads its two 32-bit halves little-endian; the cipher itself is big-endian.</summary>

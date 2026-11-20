@@ -8725,7 +8725,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.AlZip`
 
-[`AlZipEntry`](#alzipentry) · [`AlZipFormatDescriptor`](#alzipformatdescriptor) · [`AlZipReader`](#alzipreader) · [`AlZipWriter`](#alzipwriter)
+[`AlZipEntry`](#alzipentry) · [`AlZipFormatDescriptor`](#alzipformatdescriptor) · [`AlZipReader`](#alzipreader) · [`AlZipVolumes`](#alzipvolumes) · [`AlZipWriter`](#alzipwriter)
 
 #### `AlZipEntry`
 
@@ -8750,7 +8750,7 @@ One local file header of an ALZip archive.
 
 ALZip (ESTsoft), the Korean archiver: stored, deflate and ALZ-bzip2 members, ZipCrypto encryption. References: `https://github.com/alkegi/unalz` — unalz (MIT), its CC0 test archives, and the reader the layout follows`https://github.com/MacPaw/XADMaster` — XADALZipParser (LGPL-2.1)
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8766,6 +8766,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
@@ -8775,7 +8776,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 
 #### `AlZipReader`
 
-Reads single-volume ALZip archives: "ALZ\x01" + 4 bytes, local file headers ("BLZ\x01"), then the central-directory and end records ("CLZ\x01", "CLZ\x02"). Members are stored, deflated or ALZ-bzip2'd, optionally ZipCrypto-encrypted. Names are CP949.
+Reads ALZip archives (split sets through `Open` or `Join`): "ALZ\x01" + 4 bytes, local file headers ("BLZ\x01"), then the central-directory and end records ("CLZ\x01", "CLZ\x02"). Members are stored, deflated or ALZ-bzip2'd, optionally ZipCrypto-encrypted. Names are CP949.
 
 Implements `IDisposable`.
 
@@ -8786,16 +8787,28 @@ Implements `IDisposable`.
 | `IsSplit` | `bool IsSplit { get; }` | Whether the archive is one volume of a split set (only whole entries of it are readable). |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(AlZipEntry entry, string password = null)` | Decompresses (and if needed decrypts) a member, verifying its CRC-32. |
+| `Open` | `static AlZipReader Open(Stream stream, bool leaveOpen = false)` | Opens an archive; a file stream that is a volume of a split set (`name.alz`, `name.aNN`) is read together with the volumes beside it. |
+
+#### `AlZipVolumes`
+
+ALZip split sets: `name.alz`, `name.a00`, `name.a01`, …. Every volume starts with the 8-byte archive header, whose bytes 6–7 hold the volume number (0 for `.alz`). Every volume but the last ends with the 16-byte record `CLZ\x01`, eight zero bytes, `CLZ\x03`; the last ends with the ordinary end records. The archive is the first volume up to its trailer followed by each later volume without its header (and without its trailer, except the last), so members may run across volumes. Measured on split sets ALZip 12.38 wrote.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ContinuesInNextVolume` | `static bool ContinuesInNextVolume(ReadOnlySpan<byte> volume)` | Whether `volume` is a volume that continues in another one. |
+| `Join` | `static byte[] Join(IReadOnlyList<byte[]> volumes)` | Joins the volumes of a set, in order, into the one archive they hold. |
+| `Split` | `static List<byte[]> Split(byte[] archive, long volumeSize)` | Cuts a complete archive into a split set of volumes of at most `volumeSize` bytes, laid out as `Join` reads them back; the last volume keeps the whole end record. An archive that fits one volume stays one. |
+| `VolumePath` | `static string VolumePath(string firstVolume, int number)` | The path of volume `number` of the set whose first volume is `firstVolume`. |
 
 #### `AlZipWriter`
 
-Writes single-volume ALZip archives as ALZip 8 lays them out: the "ALZ\x01" header with version 0x0A, one "BLZ\x01" local header per member (stored or deflated, size fields as narrow as the sizes allow, CP949 names, optional ZipCrypto), then the "CLZ\x01" and "CLZ\x02" end records.
+Writes single-volume ALZip archives as ALZip 8 lays them out: the "ALZ\x01" header with version 0x0A, one "BLZ\x01" local header per member (stored, deflated or ALZ-bzip2'd, size fields as narrow as the sizes allow, CP949 names, optional ZipCrypto), then the "CLZ\x01" and "CLZ\x02" end records.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AlZipWriter` | `AlZipWriter(Stream stream, bool leaveOpen = false, string password = null, bool store = false)` |  |
+| `AlZipWriter` | `AlZipWriter(Stream stream, bool leaveOpen = false, string password = null, bool store = false, bool bzip2 = false)` |  |
 | `AddDirectory` | `void AddDirectory(string dirName, DateTime? modified = null)` |  |
 | `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? modified = null)` |  |
 | `Dispose` | `void Dispose()` |  |
@@ -15537,7 +15550,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 ### Namespace `FileFormat.Egg`
 
-[`EggCompressionMethod`](#eggcompressionmethod) · [`EggEntry`](#eggentry) · [`EggFormatDescriptor`](#eggformatdescriptor) · [`EggReader`](#eggreader) · [`EggWriter`](#eggwriter)
+[`EggCompressionMethod`](#eggcompressionmethod) · [`EggEncryptionMethod`](#eggencryptionmethod) · [`EggEntry`](#eggentry) · [`EggFormatDescriptor`](#eggformatdescriptor) · [`EggReader`](#eggreader) · [`EggVolumes`](#eggvolumes) · [`EggWriter`](#eggwriter)
 
 #### `EggCompressionMethod`
 
@@ -15548,6 +15561,20 @@ Compression methods that the native EGG writer can emit.
 | `Auto` | `-1` | Try raw DEFLATE and keep it only when it beats Store. |
 | `Store` | `0` | Store payload bytes verbatim. |
 | `Deflate` | `1` | Compress with raw RFC 1951 DEFLATE. |
+| `Bzip2` | `2` | Compress with bzip2 (a complete .bz2 stream), as ALZip's "-m4" does. |
+| `Lzma` | `4` | Compress with LZMA behind EGG's 9-byte header, as ALZip's "-m3" does. |
+
+#### `EggEncryptionMethod`
+
+Member encryption the EGG writer can apply.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Zip20` | `0` | ZIP 2.0 ("standard") encryption. |
+| `Aes128` | `1` | AES-128, WinZip-style key derivation, CTR and HMAC-SHA1. |
+| `Aes256` | `2` | AES-256, WinZip-style key derivation, CTR and HMAC-SHA1. |
+| `Lea128` | `5` | LEA-128 in CTR mode with the same key derivation. |
+| `Lea256` | `6` | LEA-256 in CTR mode with the same key derivation. |
 
 #### `EggEntry`
 
@@ -15567,9 +15594,9 @@ A file entry parsed from an EGG (ALZip) archive.
 
 #### `EggFormatDescriptor`
 
-EGG (ALZip) archive — ESTsoft's native container for newer ALZip versions, with Unicode filenames, per-file algorithm selection, solid/split modes, and optional encryption. The native implementation reads Store/Deflate and creates non-solid, single-volume Store/Deflate archives; unsupported methods are listed honestly and rejected on extraction rather than returning incorrect data. References: `https://github.com/alkegi/docs/blob/master/egg.md` — CC0 EGG Archive Format Specification`http://justsolve.archiveteam.org/wiki/EGG_(ALZip)` — ArchiveTeam format summary and historical references`EGG Format Specification, Version 1.0` (ESTsoft Corp.) — original published layout
+EGG (ALZip) archive — ESTsoft's native container for newer ALZip versions, with Unicode filenames, per-file algorithm selection, solid/split modes, and optional encryption. The native implementation reads every method, cipher, solid and split archive, and creates non-solid store/deflate/bzip2/LZMA archives, optionally encrypted and split, which ALZip 12.38 extracts; AZO and solid are read only. References: `https://github.com/alkegi/docs/blob/master/egg.md` — CC0 EGG Archive Format Specification`http://justsolve.archiveteam.org/wiki/EGG_(ALZip)` — ArchiveTeam format summary and historical references`EGG Format Specification, Version 1.0` (ESTsoft Corp.) — original published layout
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15585,8 +15612,9 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a single-volume, non-solid EGG archive using Store/Deflate. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a non-solid EGG archive (store, deflate, bzip2 or LZMA; optionally encrypted; split with VolumeSize). |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -15607,16 +15635,28 @@ Implements `IDisposable`.
 | `IsSplit` | `bool IsSplit { get; }` | True when the archive is a member of a split (multi-volume) set. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(EggEntry entry, string password = null)` | Extracts and decompresses an entry: stored, deflate, bzip2, AZO and LZMA blocks, ZIP 2.0 / AES / LEA encryption, solid archives. Split (multi-volume) members raise `NotSupportedException` rather than returning wrong bytes. Every decoded block is checked against its declared size and CRC-32. |
+| `FromJoinedVolumes` | `static EggReader FromJoinedVolumes(byte[] joined)` | Reads an archive `Join` assembled from a whole split set. |
+| `Open` | `static EggReader Open(Stream stream, bool leaveOpen = false)` | Opens an archive; a file stream named `name.volN.egg` is read together with the other volumes of its split set. |
+
+#### `EggVolumes`
+
+EGG split sets: `name.vol1.egg`, `name.vol2.egg`, …. Each volume has its own EGG header (magic, version, header id, reserved) whose split field names the previous and next volume's header id (0 at either end). The archive is the first volume whole, followed by each later volume after its header's end marker, so members and blocks run across volumes. Measured on split sets ALZip 12.38 wrote.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Join` | `static byte[] Join(IReadOnlyList<byte[]> volumes)` | Joins the volumes of a set, in order, into the one archive they hold. |
+| `Split` | `static List<byte[]> Split(byte[] archive, long volumeSize)` | Cuts a complete single-volume archive (as `EggWriter` writes it: header, end marker, members) into a split set of volumes of at most `volumeSize` bytes. Volume 1 keeps the archive's header id; later ids follow from it. Each volume gets a header with the split field naming its neighbours, as `Join` reads them back. |
+| `VolumePath` | `static string VolumePath(string setBase, int number)` | Path of volume `number` (from 1) of the set based at `setBase`. |
 
 #### `EggWriter`
 
-Creates EGG 1.0 archives using the published tagged-record layout. The writer deliberately limits itself to the two methods that the native reader can also decode: Store and raw DEFLATE. AZO, Bzip2, LZMA, encryption, solid mode, and split volumes are not advertised or synthesized.
+Creates EGG 1.0 archives using the published tagged-record layout. Writes stored, deflate, bzip2 and LZMA blocks, optionally encrypted (ZIP 2.0, AES or LEA); split sets come from `Split`. AZO and solid mode are not written.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EggWriter` | `EggWriter(Stream stream, bool leaveOpen = false, uint headerId = 1)` | Creates a writer over a writable stream. |
+| `EggWriter` | `EggWriter(Stream stream, bool leaveOpen = false, uint headerId = 1, string password = null, EggEncryptionMethod encryption = 2)` | Creates a writer over a writable stream. |
 | `AddDirectory` | `void AddDirectory(string path, DateTime? lastModifiedUtc = null)` | Adds an explicit directory entry. Parent directories are inferred for conflict checking. |
 | `AddEntry` | `void AddEntry(string path, byte[] data, EggCompressionMethod method = -1, DeflateCompressionLevel level = 6, DateTime? lastModifiedUtc = null)` | Adds a regular file. |
 | `Dispose` | `void Dispose()` |  |
@@ -33801,15 +33841,16 @@ One file or directory of a UHARC archive.
 
 #### `UharcFormatDescriptor`
 
-UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP, PPM and ALZ modes, with passwords and the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP, PPM and ALZ modes; and UHARC 0.2 archives. Creates 0.6, 0.4 and 0.3 archives in every method and 0.2 archives (store, RLE, LZW, main coder), optionally password-protected or behind a self-extractor stub, with fax pages, BMP/WAV/VOC files and executables run through UHARC's filters, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
+UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP, PPM and ALZ modes, with passwords and the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP, PPM and ALZ modes; and UHARC 0.2 archives. Creates 0.6, 0.4 and 0.3 archives in every method and 0.2 archives (store, RLE, LZW, main coder), optionally password-protected or behind a self-extractor stub, with fax pages, BMP/WAV/VOC files and executables run through UHARC's filters, that `uharc.exe` extracts. Adds, replaces and removes files of an archive of any of these versions by rebuilding it with its own version, method, password and stub. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UharcFormatDescriptor` | `UharcFormatDescriptor()` |  |
 | `SfxStubOption` | `const string SfxStubOption` | Format-specific option naming a self-extractor stub file (UHARC's `UHARCSFX.EXE`). |
 | `VersionOption` | `const string VersionOption` | Format-specific option choosing the archive version: 6 (the default), 4, 3 or 2. |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | False: the original tools refuse an archive that holds no file, so an edit always keeps at least one and refuses to remove the last. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
@@ -33822,10 +33863,14 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, ArchiveMutationOptions options)` | Adds files, replacing those of the same name, by rebuilding the archive as its own version, method, password and self-extractor stub; kept files keep their time stamps and attributes. A password archive needs `Password`. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a UHARC 0.6 archive: method `lzp` (the default), `ppm`, `alz`, `lz78`, `rle` or `store`; a password enciphers the stream and the tables as `-pw` does; the `SfxStubOption` option puts the named Win32 stub in front, as `-sfx` does; `DictSize` caps the LZP and ALZ window, as `-md` does; the `VersionOption` option 4 or 3 writes a UHARC 0.4 or 0.3 archive (store, RLE, LZW as `lz78`, LZP, PPM, ALZ), and 2 a UHARC 0.2 archive (store, LZW as `lz78`, the main coder as `alz`, RLE; DOS 8.3 names). PPM stores text files first and codes them as a text stream with UHARC's word transform. |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames, ArchiveMutationOptions options)` | Removes files and directories (with everything beneath them) by rebuilding the archive, as `Add` does. |
 
 #### `UharcReader`
 

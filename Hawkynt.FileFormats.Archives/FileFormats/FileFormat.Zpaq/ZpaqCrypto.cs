@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using Compression.Core.Crypto;
 
 namespace FileFormat.Zpaq;
 
@@ -36,7 +37,7 @@ internal static class ZpaqCrypto {
   /// bytes: encryption and decryption are the same operation.
   /// </summary>
   public static void Transform(byte[] key, ReadOnlySpan<byte> salt, long fileOffset, Span<byte> data) {
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key;
     Span<byte> counter = stackalloc byte[16];
     Span<byte> stream = stackalloc byte[16];
@@ -157,7 +158,7 @@ internal sealed class ZpaqDecryptingStream : Stream {
     if (inner.ReadAtLeast(salt, salt.Length, throwOnEndOfStream: false) < salt.Length)
       throw new InvalidDataException("ZPAQ: an encrypted archive is shorter than its salt.");
     salt.AsSpan(0, 8).CopyTo(this._iv);
-    this._aes = Aes.Create();
+    this._aes = ManagedAes.Create();
     this._aes.Key = ZpaqCrypto.DeriveKey(password, salt);
   }
 

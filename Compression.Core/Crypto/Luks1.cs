@@ -320,7 +320,7 @@ public sealed class Luks1SectorCipher : IDisposable {
   }
 
   private static Aes NewAes(byte[] key) {
-    var aes = Aes.Create();
+    var aes = ManagedAes.Create();
     aes.Key = key;
     return aes;
   }
