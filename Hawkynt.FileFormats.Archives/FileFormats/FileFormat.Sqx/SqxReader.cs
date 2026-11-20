@@ -7,8 +7,9 @@ namespace FileFormat.Sqx;
 /// <summary>
 /// Reads SQX archives (formats 1.1 and 2.0) as Squeez-c (MIT) reads them: main, file and
 /// directory blocks with their header checksums, stored and LZ77 + Huffman (methods 1-4) files,
-/// solid chains and self-extracting archives whose stub precedes the main block. Audio (5),
-/// text (6) and ultra (7) files, encryption and split files are refused.
+/// solid chains and self-extracting archives whose stub precedes the main block, text (method 6:
+/// PPMd var. I) and ultra (method 7: LZ77 with a range coder) files. Audio (5) files, encryption
+/// and split files are refused.
 /// </summary>
 public sealed class SqxReader : IDisposable {
   private readonly Stream _stream;
@@ -48,14 +49,13 @@ public sealed class SqxReader : IDisposable {
     var start = index;
     while (start > 0 && (this._entries[start].IsDirectory || this._entries[start].IsSolid))
       --start;
-    SqxLzDecoder? decoder = null;
+    var chain = new SolidChain();
     byte[] result = [];
     for (var i = start; i <= index; ++i) {
       var e = this._entries[i];
       if (e.IsDirectory)
         continue;
-      decoder ??= new SqxLzDecoder(e.DictionarySize);
-      result = this.Decode(e, decoder);
+      result = this.Decode(e, chain);
       if (i < index)
         this._solidCache[e] = result;
     }
@@ -66,7 +66,14 @@ public sealed class SqxReader : IDisposable {
   /// <summary>Extracts every file in archive order (directories yield empty arrays).</summary>
   public byte[][] ExtractAll() => [.. this._entries.Select(this.ExtractEntry)];
 
-  private byte[] Decode(SqxEntry entry, SqxLzDecoder? solidDecoder) {
+  /// <summary>The decoders a solid chain carries from file to file, one per method family.</summary>
+  private sealed class SolidChain {
+    public SqxLzDecoder? Lz;
+    public SqxUltraDecoder? Ultra;
+    public SqxPpmdDecoder? Ppmd;
+  }
+
+  private byte[] Decode(SqxEntry entry, SolidChain? chain) {
     if (entry.IsEncrypted)
       throw new NotSupportedException($"SQX: '{entry.FileName}' is encrypted, which is not supported.");
     if (entry.IsSplit)
@@ -78,21 +85,40 @@ public sealed class SqxReader : IDisposable {
     var packed = new byte[entry.CompressedSize];
     this._stream.ReadExactly(packed);
 
+    // a solid file continues the chain's decoder; the chain's first file starts it afresh
     var data = entry.Method switch {
       0 => entry.CompressedSize == entry.OriginalSize ? packed : throw new InvalidDataException($"SQX: stored '{entry.FileName}' has mismatched sizes."),
-      >= 1 and <= 4 => entry.OriginalSize == 0
-        ? []
-        : (solidDecoder ?? new SqxLzDecoder(entry.DictionarySize)).Decode(packed, entry.OriginalSize, entry.IsSolid && solidDecoder != null, (entry.CompFlags & 1) != 0, entry.ArchiveVersion),
+      >= 1 and <= 4 when entry.OriginalSize == 0 => [],
+      >= 1 and <= 4 => chain?.Lz is { } lz
+        ? lz.Decode(packed, entry.OriginalSize, entry.IsSolid, (entry.CompFlags & 1) != 0, entry.ArchiveVersion)
+        : Started(chain, new SqxLzDecoder(entry.DictionarySize)).Decode(packed, entry.OriginalSize, false, (entry.CompFlags & 1) != 0, entry.ArchiveVersion),
+      7 when entry.ArchiveVersion >= 20 => chain?.Ultra is { } ultra
+        ? ultra.Decode(packed, entry.OriginalSize, entry.IsSolid, entry.DictionarySize)
+        : Started(chain, new SqxUltraDecoder()).Decode(packed, entry.OriginalSize, false, entry.DictionarySize),
       5 => throw new NotSupportedException($"SQX: '{entry.FileName}' uses method 5 (audio), which is not supported."),
-      6 => throw new NotSupportedException($"SQX: '{entry.FileName}' uses method 6 (text, PPMd), which is not supported."),
-      7 => throw new NotSupportedException($"SQX: '{entry.FileName}' uses method 7 (ultra), which is not supported."),
+      // the stream itself says whether it continues the model of the file before
+      6 when entry.ArchiveVersion >= 20 => (chain == null ? new SqxPpmdDecoder() : chain.Ppmd ??= new SqxPpmdDecoder()).Decode(packed, entry.OriginalSize),
+      6 => throw new InvalidDataException($"SQX: '{entry.FileName}' uses method 6, which format {entry.ArchiveVersion / 10}.{entry.ArchiveVersion % 10} does not have."),
+      7 => throw new InvalidDataException($"SQX: '{entry.FileName}' uses method 7, which format {entry.ArchiveVersion / 10}.{entry.ArchiveVersion % 10} does not have."),
       _ => throw new InvalidDataException($"SQX: '{entry.FileName}' uses unknown method {entry.Method}."),
     };
 
+    if (data.Length != entry.OriginalSize)
+      throw new InvalidDataException($"SQX: '{entry.FileName}' decodes to {data.Length} bytes, not {entry.OriginalSize}.");
     var crc = SqxContainer.RawCrc32(data);
     if (crc != entry.Crc32)
       throw new InvalidDataException($"SQX: CRC-32 mismatch for '{entry.FileName}': expected 0x{entry.Crc32:X8}, computed 0x{crc:X8}.");
     return data;
+  }
+
+  private static SqxLzDecoder Started(SolidChain? chain, SqxLzDecoder decoder) {
+    if (chain != null) chain.Lz = decoder;
+    return decoder;
+  }
+
+  private static SqxUltraDecoder Started(SolidChain? chain, SqxUltraDecoder decoder) {
+    if (chain != null) chain.Ultra = decoder;
+    return decoder;
   }
 
   private void ReadArchive() {

@@ -31724,7 +31724,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `SqxReader`
 
-Reads SQX archives (formats 1.1 and 2.0) as Squeez-c (MIT) reads them: main, file and directory blocks with their header checksums, stored and LZ77 + Huffman (methods 1-4) files, solid chains and self-extracting archives whose stub precedes the main block. Audio (5), text (6) and ultra (7) files, encryption and split files are refused.
+Reads SQX archives (formats 1.1 and 2.0) as Squeez-c (MIT) reads them: main, file and directory blocks with their header checksums, stored and LZ77 + Huffman (methods 1-4) files, solid chains and self-extracting archives whose stub precedes the main block, text (method 6: PPMd var. I) and ultra (method 7: LZ77 with a range coder) files. Audio (5) files, encryption and split files are refused.
 
 Implements `IDisposable`.
 
