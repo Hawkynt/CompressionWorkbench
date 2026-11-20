@@ -6,14 +6,16 @@ using FileFormat.InnoSetup;
 namespace Compression.Tests.InnoSetup;
 
 /// <summary>
-/// Real installers compiled by ISCC 5.6.1 and 6.0.5 (see ReferenceVectors/README.md), checked
-/// against what innoextract 1.9 extracts from them (oracle.tsv).
+/// Real installers compiled by ISCC 5.6.1, 6.0.5 and 7.1.1 (see ReferenceVectors/README.md), checked
+/// against what innoextract 1.9 extracts from them or, for 7.1.1, which no innoextract reads, the
+/// payload compiled in (oracle.tsv).
 /// </summary>
 [TestFixture]
 public class InnoSetupReferenceVectorTests {
 
   private static readonly string[] Fixtures = [
     "inno561a-zip.exe", "inno561a-lzma2-solid.exe", "inno561u-lzma-solid.exe", "inno605-bzip.exe",
+    "inno711-lzma2-solid.exe",
   ];
 
   private static byte[] Load(string name) {
@@ -74,6 +76,7 @@ public class InnoSetupReferenceVectorTests {
   [TestCase("inno561a-lzma2-solid.exe", InnoCompression.Lzma2, false)]
   [TestCase("inno561u-lzma-solid.exe", InnoCompression.Lzma1, true)]
   [TestCase("inno605-bzip.exe", InnoCompression.BZip2, true)]
+  [TestCase("inno711-lzma2-solid.exe", InnoCompression.Lzma2, true)]
   public void GivenRealInstaller_WhenOpened_ThenVersionAndCompressorAreRecognised(string fixture, InnoCompression method, bool unicode) {
     var reader = new InnoSetupReader(new MemoryStream(Load(fixture)));
     Assert.Multiple(() => {

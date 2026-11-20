@@ -8,16 +8,19 @@ CompressionWorkbench):
 | `ISCC.exe` 5.6.1 (ANSI) | `innosetup-5.6.1.exe` from https://files.jrsoftware.org/is/5/ |
 | `ISCC.exe` 5.6.1 (Unicode) | `innosetup-5.6.1-unicode.exe` from https://files.jrsoftware.org/is/5/ |
 | `ISCC.exe` 6.0.5 | `innosetup-6.0.5.exe` from https://github.com/jrsoftware/issrc/releases/tag/is-6_0_5 |
+| `ISCC.exe` 7.1.1 | `innosetup-7.1.1-x64.exe` (SHA-256 `8a5a6711c3766a6e5fb74f280ba0e3551e719ce94538d901fdbd1f8f9920b3f0`) from https://github.com/jrsoftware/issrc/releases/tag/is-7_1_1 |
 
-The compilers were taken out of those distributions with innoextract 1.9, never by running the
-installers. `make-fixtures.py` writes the payload (two copies of a short text, 3000 seeded random
+The compilers were taken out of those distributions without running the installers: up to 6.0.5
+with innoextract 1.9; 7.1.1, which no innoextract reads, with this repository's reader, every one
+of its 136 files matching the SHA-256 the installer stores. `make-fixtures.py` writes the payload (two copies of a short text, 3000 seeded random
 bytes, 32000 bytes of a repeated pattern) and one script per variant, then runs the compiler:
 `python make-fixtures.py <workdir> <tag> <ISCC.exe> zip lzma2:solid ...`. File names say compiler
 version (`a` ANSI, `u` Unicode), `Compression=` and `SolidCompression=yes`. Each installer is stored
 gzip-compressed and otherwise unchanged.
 
 `oracle.tsv` is what innoextract 1.9 extracts from each installer (`innoextract -e`): path, size
-and SHA-256 per file. The tests require our reader to produce exactly that set.
+and SHA-256 per file. The tests require our reader to produce exactly that set. For
+`inno711-lzma2-solid.exe` (7.1.1, beyond any innoextract) the rows are the payload compiled in.
 
 **Encrypted installers** (`*-enc*`), compiled by `make-encrypted.py` from the same payload with
 `Password=` and `Encryption=yes` (`Encryption=full` for `inno654-encfull-zip.exe`, which encrypts
@@ -29,11 +32,13 @@ the setup headers too):
 | `inno561u-enc-lzma2-solid.exe` | `ISCC.exe` 5.6.1 (Unicode) | ARC4, SHA-1 key | `Pässwört-€1` |
 | `inno643-enc-zip.exe` | `ISCC.exe` 6.4.3, `innosetup-6.4.3.exe` from https://github.com/jrsoftware/issrc/releases/tag/is-6_4_3 | XChaCha20, PBKDF2-SHA256 key | `Pässwört-€1` |
 | `inno654-encfull-zip.exe` | `ISCC.exe` 6.5.4, `innosetup-6.5.4.exe` from https://github.com/jrsoftware/issrc/releases/tag/is-6_5_4 | XChaCha20, headers too | `Pässwört-€1` |
+| `inno711-enc-zip.exe` | `ISCC.exe` 7.1.1 | XChaCha20, PBKDF2-SHA256 key | `Pässwört-€1` |
+| `inno711-encfull-lzma2-solid.exe` | `ISCC.exe` 7.1.1 | XChaCha20, headers too | `Pässwört-€1` |
 
 Compilers before 6.4 encrypt through `ISCrypt.dll` (2560 bytes, SHA-256
 `2f6294f9aa09f59a574b5dcd33be54e16b39377984f3d5658cda44950fa0f8fc`, from
 https://jrsoftware.org/download.php/iscrypt.dll), placed beside `ISCC.exe`. The 5.3.8 compiler was
-taken out of its distribution with innoextract 1.9; the 6.4.3 and 6.5.4 compilers, newer than any
+taken out of its distribution with innoextract 1.9; the 6.4.3, 6.5.4 and 7.1.1 compilers, newer than any
 innoextract, with this repository's reader, every file matching the SHA-256 its installer stores.
 The oracle rows for the 5.x fixtures are innoextract 1.9 with `--password`, which also refuses a
 wrong password; no innoextract reads 6.4 or later, so their rows are the payload compiled in.
