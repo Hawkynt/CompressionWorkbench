@@ -10,8 +10,8 @@ is not covered is listed at the end.
 **Status: read, write-once.** Container, ciphers, every 0.6 mode — store, RLE, LZ78, LZP, PPM and ALZ
 with its nine multimedia predictors —, the executable and multimedia filters, passwords and SFX
 stubs are established and verified, and so are UHARC 0.2 and the UHARC 0.4 container with its
-store, RLE, LZW, LZP and ALZ modes (see their sections). Archives of 0.3, and 0.4's PPM streams,
-are not, and are refused. The writer produces 0.6 archives in every method — store, RLE, LZ78, LZP, PPM and ALZ —
+store, RLE, LZW, LZP and ALZ modes, and the UHARC 0.3 container with its store, RLE, LZW, LZP and
+ALZ modes (see their sections). 0.4's and 0.3's PPM streams are not, and are refused. The writer produces 0.6 archives in every method — store, RLE, LZ78, LZP, PPM and ALZ —
 with or without a password and a self-extractor stub (see Writing).
 
 ## Evidence
