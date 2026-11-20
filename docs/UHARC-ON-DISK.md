@@ -10,9 +10,9 @@ is not covered is listed at the end.
 **Status: read, write-once.** Container, ciphers, every 0.6 mode — store, RLE, LZ78, LZP, PPM and ALZ
 with its nine multimedia predictors —, the executable and multimedia filters, passwords and SFX
 stubs are established and verified, and so are UHARC 0.2 and the UHARC 0.4 container with its
-store, RLE, LZW, LZP and ALZ modes, and the UHARC 0.3 container with its store, RLE, LZW, LZP and
-ALZ modes (see their sections). 0.4's and 0.3's PPM streams are not, and are refused. The writer produces stored and LZP-packed 0.6 archives (see
-Writing).
+store, RLE, LZW, LZP and ALZ modes (see their sections). Archives of 0.3, and 0.4's PPM streams,
+are not, and are refused. The writer produces stored, RLE-, LZ78- and LZP-packed 0.6 archives
+(see Writing).
 
 ## Evidence
 
@@ -508,8 +508,9 @@ transposed. Fixtures `fax-m2`, `fax-mx` and `v04-fax-mz`.
 
 ## Writing
 
-The writer produces 0.6 archives in the layout above: the stream stored (method 0) or packed
-with LZP at the smallest window that holds it (methods 8..23, 1 KiB to 32 MiB), the three tables
+The writer produces 0.6 archives in the layout above: the stream stored (method 0), packed with
+RLE (method 1), with LZ78 (method 7, 32768 phrases) or with LZP at the smallest window that holds
+it (methods 8..23, 1 KiB to 32 MiB), the three tables
 — the name table lists the root as an empty name and every directory with a trailing `\` —
 packed with LZP method 17 and enciphered with the default password, the header scrambled with
 the low byte of its own check. The filters byte is 0: no executable or multimedia filter runs,
@@ -522,6 +523,15 @@ tree covers 2..254), so a single matching byte is a miss followed by that byte a
 which the decoder expects: the byte after it is then excluded like the byte after a copy. The
 range encoder is the decoder's mirror with a carrying 64-bit low, which makes the first stream
 byte 0.
+
+The RLE encoder writes runs of four or more as *R* `n` `x` (from 255 as *R* `FF lo hi x`, at
+most 65535 per run), runs of three as *T* `x`, shorter runs as literals, and one or two literal
+marker bytes as the *R* `c` escape, which moves the markers; it reproduces UHARC's own stream for
+the measured input above. The LZ78 encoder keeps the decoder's dictionary step for step, codes
+at each position the longest phrase the decoder already knows (never the not-yet-defined code
+*n*), writes no runs or resets, and lets a full dictionary be pruned as the decoder prunes it.
+`UHARC.EXE x` extracts both byte for byte, including 1.4 MB of text, noise and marker-byte runs
+that fill the 32768-phrase dictionary many times over.
 
 Every archive written from the fixture inputs, 17 MB of text, 13 MB of DLLs, fonts and media,
 this repository's sources and the mixed text/binary set — stored and packed, up to 400 files and

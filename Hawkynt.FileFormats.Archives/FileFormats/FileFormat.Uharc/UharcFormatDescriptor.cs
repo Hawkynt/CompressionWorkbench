@@ -10,9 +10,8 @@ namespace FileFormat.Uharc;
 /// UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (<c>-mr</c>), LZ78 (<c>-mw</c>), LZP (<c>-mz</c>), PPM (<c>-mx</c>) and ALZ
 /// (<c>-m1</c>..<c>-m3</c>, including the multimedia predictors) modes, password-protected archives
 /// and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP and ALZ modes, with passwords and
-/// the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP and ALZ modes; and UHARC 0.2 archives.
-/// 0.4 and 0.3 PPM streams are refused. Creates 0.6
-/// archives, stored or LZP-packed, that <c>uharc.exe</c> extracts; it cannot modify them.
+/// the multimedia predictors; and UHARC 0.2 archives. Archives of 0.3, and 0.4 PPM streams, are refused. Creates 0.6
+/// archives, stored or packed with RLE, LZ78 or LZP, that <c>uharc.exe</c> extracts; it cannot modify them.
 ///
 /// References:
 /// <list type="bullet">
@@ -43,8 +42,8 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public string Description =>
     "UHARC 0.6 archive. Lists and extracts the store, RLE, LZ78, LZP, PPM and ALZ modes (with multimedia " +
     "and executable filters, passwords and SFX stubs), UHARC 0.4 store, RLE, LZW, LZP and ALZ archives, and UHARC 0.2 " +
-    "archives, UHARC 0.3 store, RLE, LZW, LZP and ALZ archives. 0.4 and 0.3 PPM streams are refused. " +
-    "Creates 0.6 archives, stored or packed with LZP.";
+    "archives. 0.3 archives and 0.4 PPM streams are refused. " +
+    "Creates 0.6 archives, stored or packed with RLE, LZ78 or LZP.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (TryOpen(stream, password, out var reader, out var image) is { } failure)
@@ -75,7 +74,7 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     }
   }
 
-  /// <summary>Writes a UHARC 0.6 archive: method <c>lzp</c> (the default) or <c>store</c>.</summary>
+  /// <summary>Writes a UHARC 0.6 archive: method <c>lzp</c> (the default), <c>lz78</c>, <c>rle</c> or <c>store</c>.</summary>
   /// <exception cref="NotSupportedException">Another method, a password, a name longer than 255 bytes or more than 4 GiB of data.</exception>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
@@ -84,17 +83,19 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       throw new NotSupportedException("UHARC: the writer does not encipher archives.");
 
     var method = options?.MethodName?.Trim().ToLowerInvariant();
-    var compress = method switch {
-      null or "" or "lzp" => true,
-      "store" or "stored" => false,
-      _ => throw new NotSupportedException($"UHARC: the writer packs with 'lzp' or 'store', not '{options!.MethodName}'."),
+    var mode = method switch {
+      null or "" or "lzp" => UharcWriter.Mode.Lzp,
+      "lz78" or "lzw" => UharcWriter.Mode.Lz78,
+      "rle" => UharcWriter.Mode.Rle,
+      "store" or "stored" => UharcWriter.Mode.Store,
+      _ => throw new NotSupportedException($"UHARC: the writer packs with 'lzp', 'lz78', 'rle' or 'store', not '{options!.MethodName}'."),
     };
 
     var items = inputs.Select(i => new UharcWriter.Item(
       i.ArchiveName,
       i.IsDirectory ? null : i.ReadContent(),
       i.SourceLastModifiedUtc)).ToList();
-    UharcWriter.Write(output, items, compress, DateTime.Now);
+    UharcWriter.Write(output, items, mode, DateTime.Now);
   }
 
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {

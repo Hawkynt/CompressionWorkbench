@@ -36,6 +36,8 @@ public class UharcWriterTests {
   [TestCase(null, "LZP")]
   [TestCase("lzp", "LZP")]
   [TestCase("store", "Store")]
+  [TestCase("rle", "RLE")]
+  [TestCase("lz78", "LZ78")]
   [Category("HappyPath"), Category("RoundTrip")]
   public void GivenFilesAndDirectories_WhenWrittenAndRead_ThenEverythingComesBack(string? method, string mode) {
     var inputs = SampleInputs();
@@ -109,6 +111,60 @@ public class UharcWriterTests {
     var packed = UharcLzpEncoder.Encode(data, 20, ends);
     Assert.That(UharcLzpDecoder.Decode(packed, 0, packed.Length, 20, data.Length, ends), Is.EqualTo(data));
   }
+
+  // ── The RLE and LZ78 encoders against the decoders ─────────────────────
+
+  private static IEnumerable<TestCaseData> RleInputs() {
+    var random = new Random(7);
+    var noise = new byte[3000];
+    random.NextBytes(noise);
+    yield return new TestCaseData(Array.Empty<byte>()).SetName("Rle_Empty");
+    yield return new TestCaseData(new byte[] { 0xED }).SetName("Rle_TripleMarker");
+    yield return new TestCaseData(new byte[] { 0xEE, 0xEE }).SetName("Rle_TwoRunMarkers");
+    yield return new TestCaseData(new byte[] { 0xEE, 0xEE, 0xEE }).SetName("Rle_RunMarkerTriple");
+    yield return new TestCaseData(Enumerable.Repeat((byte)0xED, 4).ToArray()).SetName("Rle_TripleMarkerRun");
+    yield return new TestCaseData(Enumerable.Range(0, 64).SelectMany(i => new byte[] { 0xED, 0xEE, 0xAD, 0xAE, 0x6D, 0x6E, 0x2D, 0x2E, (byte)i }).ToArray()).SetName("Rle_EveryMarkerGeneration");
+    foreach (var length in new[] { 2, 3, 4, 254, 255, 256, 65535, 65536, 140000 })
+      yield return new TestCaseData(Enumerable.Repeat((byte)'A', length).ToArray()).SetName($"Rle_Run{length}");
+    yield return new TestCaseData(noise).SetName("Rle_Noise");
+  }
+
+  [TestCaseSource(nameof(RleInputs))]
+  [Category("RoundTrip")]
+  public void GivenData_WhenRleEncodedAndDecoded_ThenItIsUnchanged(byte[] data) {
+    var packed = UharcRleEncoder.Encode(data);
+    Assert.That(UharcRleDecoder.Decode(packed, 0, packed.Length, data.Length), Is.EqualTo(data));
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenTheMeasuredMarkerInput_WhenRleEncoded_ThenTheStreamIsUharcs()
+    => Assert.That(UharcRleEncoder.Encode([0x78, 0xEE, 0xAE, 0xAD, 0x41, 0x41, 0x41, 0x79]),
+      Is.EqualTo(new byte[] { 0x78, 0xEE, 0x01, 0xAE, 0x01, 0xAD, 0x6D, 0x41, 0x79 }));
+
+  private static IEnumerable<TestCaseData> Lz78Inputs() {
+    var random = new Random(8);
+    var noise = new byte[60000];
+    random.NextBytes(noise);
+    var text = System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 6000).Select(i => $"the {i % 13} quick brown fox {i * 7 % 101}\r\n")));
+    yield return new TestCaseData(Array.Empty<byte>(), 7).SetName("Lz78_Empty");
+    yield return new TestCaseData(new byte[] { 0x41 }, 7).SetName("Lz78_OneByte");
+    yield return new TestCaseData("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"u8.ToArray(), 7).SetName("Lz78_RepeatedByte");
+    yield return new TestCaseData(text, 7).SetName("Lz78_Text");
+    yield return new TestCaseData(text, 2).SetName("Lz78_TextPrunedOften");
+    yield return new TestCaseData(noise, 2).SetName("Lz78_NoisePrunedOften");
+    yield return new TestCaseData(noise.Concat(text).Concat(new byte[50000]).ToArray(), 3).SetName("Lz78_Mixed");
+  }
+
+  [TestCaseSource(nameof(Lz78Inputs))]
+  [Category("RoundTrip")]
+  public void GivenData_WhenLz78EncodedAndDecoded_ThenItIsUnchanged(byte[] data, int method) {
+    var packed = UharcLz78Encoder.Encode(data, method);
+    Assert.That(UharcLz78Decoder.Decode(packed, 0, packed.Length, method, data.Length), Is.EqualTo(data));
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenDistinctBytes_WhenLz78Encoded_ThenEachTakesItsOwnByte()
+    => Assert.That(UharcLz78Encoder.Encode("ABCDEFGH"u8, 7), Is.EqualTo("ABCDEFGH"u8.ToArray()));
 
   [TestCase(0, 8)]
   [TestCase(1024, 8)]

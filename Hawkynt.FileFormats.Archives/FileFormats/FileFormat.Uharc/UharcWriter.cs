@@ -6,11 +6,23 @@ namespace FileFormat.Uharc;
 
 /// <summary>
 /// Writes UHARC 0.6 archives (docs/UHARC-ON-DISK.md, "Writing"): the stream stored or packed
-/// with LZP, the directory tables packed with LZP method 17 and enciphered with the default
+/// with RLE, LZ78 or LZP, the directory tables packed with LZP method 17 and enciphered with the default
 /// password, the header scrambled — the layout <c>uharc.exe</c> itself writes, without the
 /// executable and multimedia filters.
 /// </summary>
 internal static class UharcWriter {
+
+  /// <summary>Stream packing the writer offers.</summary>
+  public enum Mode {
+    /// <summary>Method 0.</summary>
+    Store,
+    /// <summary>Method 1.</summary>
+    Rle,
+    /// <summary>Method 7: 32768 phrases, UHARC's default.</summary>
+    Lz78,
+    /// <summary>Methods 8..23, the smallest window that holds the stream.</summary>
+    Lzp,
+  }
 
   /// <summary>One archive member; <see cref="Data"/> is null for a directory.</summary>
   public sealed record Item(string Name, byte[]? Data, DateTime? LastModified);
@@ -20,9 +32,9 @@ internal static class UharcWriter {
   /// <summary>Writes <paramref name="items"/> as one archive.</summary>
   /// <param name="output">Receives the archive.</param>
   /// <param name="items">Files and directories, names with '/' separators.</param>
-  /// <param name="compress">LZP-pack the stream (the dictionary fitted to its size) rather than store it.</param>
+  /// <param name="mode">How the stream is packed; LZP fits its dictionary to the stream.</param>
   /// <param name="now">Archive time stamp.</param>
-  public static void Write(Stream output, IReadOnlyList<Item> items, bool compress, DateTime now) {
+  public static void Write(Stream output, IReadOnlyList<Item> items, Mode mode, DateTime now) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(items);
 
@@ -72,8 +84,19 @@ internal static class UharcWriter {
       fileEnds.Add(offset);
     }
 
-    var method = compress && total > 0 ? LzpMethodFor(total) : UharcMethods.Store;
-    var packed = method == UharcMethods.Store ? stream : UharcLzpEncoder.Encode(stream, method, fileEnds);
+    var method = total == 0 ? UharcMethods.Store : mode switch {
+      Mode.Store => UharcMethods.Store,
+      Mode.Rle => UharcMethods.Rle,
+      Mode.Lz78 => UharcMethods.Lz78Last,
+      Mode.Lzp => LzpMethodFor(total),
+      _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+    };
+    var packed = method switch {
+      UharcMethods.Store => stream,
+      UharcMethods.Rle => UharcRleEncoder.Encode(stream),
+      >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => UharcLz78Encoder.Encode(stream, method),
+      _ => UharcLzpEncoder.Encode(stream, method, fileEnds),
+    };
 
     // CRC table, name table, file table.
     var crcs = new byte[4 * n];
