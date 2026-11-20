@@ -7,5 +7,7 @@
 | `alzip-split-sets.tar.gz` | split sets written by ALZip 12.38 (the official installer `ALZip1238.exe` from aldn.altools.co.kr, SHA-256 `3c1a44ad5e0a3c00304f34fbf56b8fa126dd5c84855164abaa590b81dab5f6fc`, installed under wine in a throwaway prefix), with `ALZipCon.exe -a -m<N> -v64KB "text.txt;sub;small.txt" <set>`. The inputs come from `make-split-inputs.py` and ship in the same tarball. ALZ at methods 0-2 (`.alz`, `.a00`, …) and EGG at methods 0-4 (`.vol1.egg`, …) give 2-4 volumes each. ALZip 12.38 writes nothing for an ALZ at method 3 (`-m3`), so no obfuscated-deflate sample can be made with it. |
 | `unalz-listing.txt` | unalz 0.2.1 (built from that revision with cargo, Windows) extracting every archive above with `-P test1234`: path, size and SHA-256 of each file. |
 
+`../alzipcon-extract.sh` runs that same ALZip console under wine, from a wine prefix of its own. `AlZipOracleWriteTests` uses it to extract the ALZ and EGG archives and split sets our writers produce, encrypted ALZ included.
+
 ALZip stores a CRC-32 for every member, so the reader's own CRC check also ties each decoded member to
 what ALZip wrote.
