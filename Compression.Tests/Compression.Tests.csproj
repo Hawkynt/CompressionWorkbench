@@ -72,7 +72,7 @@
     </EmbeddedResource>
 
     <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
-    <EmbeddedResource Include="AlZip\ReferenceVectors\*.alz;AlZip\ReferenceVectors\unalz-listing.txt">
+    <EmbeddedResource Include="AlZip\ReferenceVectors\*.alz;AlZip\ReferenceVectors\unalz-listing.txt;AlZip\ReferenceVectors\alzip-split-sets.tar.gz">
       <LogicalName>AlZipVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
 

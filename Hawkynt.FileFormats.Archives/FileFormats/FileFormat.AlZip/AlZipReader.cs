@@ -9,7 +9,7 @@ using FileFormat.Bzip2;
 namespace FileFormat.AlZip;
 
 /// <summary>
-/// Reads single-volume ALZip archives: "ALZ\x01" + 4 bytes, local file headers ("BLZ\x01"), then the
+/// Reads ALZip archives (split sets through <see cref="Open"/> or <see cref="AlZipVolumes.Join"/>): "ALZ\x01" + 4 bytes, local file headers ("BLZ\x01"), then the
 /// central-directory and end records ("CLZ\x01", "CLZ\x02"). Members are stored, deflated or
 /// ALZ-bzip2'd, optionally ZipCrypto-encrypted. Names are CP949.
 /// </summary>
@@ -42,6 +42,18 @@ public sealed class AlZipReader : IDisposable {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
     this.ReadArchive();
+  }
+
+  /// <summary>
+  /// Opens an archive; a file stream that is a volume of a split set (<c>name.alz</c>, <c>name.aNN</c>)
+  /// is read together with the volumes beside it.
+  /// </summary>
+  public static AlZipReader Open(Stream stream, bool leaveOpen = false) {
+    ArgumentNullException.ThrowIfNull(stream);
+    var joined = AlZipVolumes.JoinSiblings(stream);
+    if (joined == null) return new AlZipReader(stream, leaveOpen);
+    if (!leaveOpen) stream.Dispose();
+    return new AlZipReader(new MemoryStream(joined, writable: false));
   }
 
   public void Dispose() {
