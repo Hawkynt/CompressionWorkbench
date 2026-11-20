@@ -370,6 +370,22 @@ public class PeaTests {
     => AssertPeaExtractsOurs(peaName + strength, f => PeaArchive.Write(f, Inputs(), 2, streamCheck: cascade, password: "s3cret pass", cascadeStrength: strength));
 
   /// <summary>
+  /// The three PBKDF2 key derivations of a TRIATS archive at strength 0 (Whirlpool 25,000, SHA-512
+  /// 50,000, SHA3-512 75,000 iterations). PeaZip 11.4's pea writes such an archive, its start-up
+  /// and all three derivations included, in 1.35 s (vectors README); ours must derive in less.
+  /// </summary>
+  [Test, Category("Performance")]
+  public void GivenTriatsStrength0_WhenKeysAreDerived_ThenFasterThanPeaWritesTheWholeArchive() {
+    var material = System.Text.Encoding.UTF8.GetBytes("password").Concat(new byte[22]).ToArray();
+    byte[] salt = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    var watch = System.Diagnostics.Stopwatch.StartNew();
+    foreach (var cipher in "ATS") PeaStreamCipher.DeriveCascade(cipher, "pbkdf2", 0, material, salt);
+    watch.Stop();
+    TestContext.Out.WriteLine($"TRI strength 0 key derivation: {watch.ElapsedMilliseconds} ms (pea, whole archive: 1350 ms)");
+    Assert.That(watch.ElapsedMilliseconds, Is.LessThan(1350));
+  }
+
+  /// <summary>
   /// The heaviest settings, strength 7: scrypt with N = 1 Mi, r = 8, p = 8 (1 GiB per pass) for every
   /// cipher of SRIATS7, and for HRISAT7 PBKDF2-SHA3-512 over 25,075,000 iterations plus scrypt with
   /// N = 512 Ki, r = 16, p = 8. Explicit: run by hand, see the vectors README for the recorded run.

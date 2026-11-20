@@ -148,7 +148,7 @@ Provides supported hash-output size metadata for `XxHash64`.
 
 ### Namespace `Hawkynt.Algorithms.Hashing`
 
-[`AsconHash`](#asconhash) · [`AsconHashSizeExtensions`](#asconhashsizeextensions) · [`AsconXof`](#asconxof) · [`Blake`](#blake) · [`Blake2s`](#blake2s) · [`Blake2sHashSizeExtensions`](#blake2shashsizeextensions) · [`Blake2xs`](#blake2xs) · [`Blake3`](#blake3) · [`Blake3Enhanced`](#blake3enhanced) · [`BlakeHashSizeExtensions`](#blakehashsizeextensions) · [`CShake`](#cshake) · [`ChcHash`](#chchash) · [`ChcHashSizeExtensions`](#chchashsizeextensions) · [`CityHash`](#cityhash) · [`CityHashSizeExtensions`](#cityhashsizeextensions) · [`Comb4PMd4Md5`](#comb4pmd4md5) · [`Comb4PMd4Md5HashSizeExtensions`](#comb4pmd4md5hashsizeextensions) · [`Comb4PSha1Ripemd160`](#comb4psha1ripemd160) · [`Comb4PSha1Ripemd160HashSizeExtensions`](#comb4psha1ripemd160hashsizeextensions) · [`CubeHash256`](#cubehash256) · [`CubeHash256HashSizeExtensions`](#cubehash256hashsizeextensions) · [`CubeHash512`](#cubehash512) · [`CubeHash512HashSizeExtensions`](#cubehash512hashsizeextensions) · [`DarkCryptKeccak`](#darkcryptkeccak) · [`DarkCryptKeccakHashSizeExtensions`](#darkcryptkeccakhashsizeextensions) · [`DarkCryptMd6`](#darkcryptmd6) · [`DarkCryptMd6HashSizeExtensions`](#darkcryptmd6hashsizeextensions) · [`DarkCryptSkein`](#darkcryptskein) · [`DarkCryptSkeinHashSizeExtensions`](#darkcryptskeinhashsizeextensions) · [`DryGasconHash`](#drygasconhash) · [`Echo`](#echo) · [`Echo224`](#echo224) · [`Echo224HashSizeExtensions`](#echo224hashsizeextensions) · [`Echo256`](#echo256) · [`Echo256HashSizeExtensions`](#echo256hashsizeextensions) · [`Echo384`](#echo384) · [`Echo384HashSizeExtensions`](#echo384hashsizeextensions) · [`Echo512`](#echo512) · [`Echo512HashSizeExtensions`](#echo512hashsizeextensions) · [`Esch256`](#esch256) · [`Esch256HashSizeExtensions`](#esch256hashsizeextensions) · [`Esch384`](#esch384) · [`Esch384HashSizeExtensions`](#esch384hashsizeextensions) · [`Fnv`](#fnv) · [`FnvHashSizeExtensions`](#fnvhashsizeextensions) · [`Fugue`](#fugue) · [`Gimli24Hash`](#gimli24hash) · [`Gimli24HashSizeExtensions`](#gimli24hashsizeextensions) · [`Gost3411HashSizeExtensions`](#gost3411hashsizeextensions) · [`Gost3411_94`](#gost3411_94) · [`Groestl`](#groestl) · [`Groestl224`](#groestl224) · [`Groestl224HashSizeExtensions`](#groestl224hashsizeextensions) · [`Groestl256`](#groestl256) · [`Groestl256HashSizeExtensions`](#groestl256hashsizeextensions) · [`Groestl384`](#groestl384) · [`Groestl384HashSizeExtensions`](#groestl384hashsizeextensions) · [`Groestl512`](#groestl512) · [`Groestl512HashSizeExtensions`](#groestl512hashsizeextensions) · [`Hamsi`](#hamsi) · [`HamsiFamily`](#hamsifamily) · [`Haraka256`](#haraka256) · [`Haraka256HashSizeExtensions`](#haraka256hashsizeextensions) · [`Haraka512`](#haraka512) · [`Haraka512HashSizeExtensions`](#haraka512hashsizeextensions) · [`HashSizeRange`](#hashsizerange) · [`HashSizeRange.Enumerator`](#hashsizerangeenumerator) · [`HashSizeRangeExtensions`](#hashsizerangeextensions) · [`Haval`](#haval) · [`HavalHashSizeExtensions`](#havalhashsizeextensions) · [`HighwayHash`](#highwayhash) · [`IsapHash`](#isaphash) · [`IsapHashSizeExtensions`](#isaphashsizeextensions) · [`Jh`](#jh) · [`KangarooTwelve`](#kangarootwelve) · [`Keccak`](#keccak) · [`KnotHash`](#knothash) · [`KnotHashVariant`](#knothashvariant) · [`Kupyna`](#kupyna) · [`Lsh224`](#lsh224) · [`Lsh224HashSizeExtensions`](#lsh224hashsizeextensions) · [`Lsh256`](#lsh256) · [`Lsh256Family`](#lsh256family) · [`Lsh256HashSizeExtensions`](#lsh256hashsizeextensions) · [`Lsh384`](#lsh384) · [`Lsh384HashSizeExtensions`](#lsh384hashsizeextensions) · [`Lsh512`](#lsh512) · [`Lsh512Family`](#lsh512family) · [`Lsh512HashSizeExtensions`](#lsh512hashsizeextensions) · [`Lsh512_256`](#lsh512_256) · [`Lsh512_256HashSizeExtensions`](#lsh512_256hashsizeextensions) · [`Luffa`](#luffa) · [`Luffa224`](#luffa224) · [`Luffa224HashSizeExtensions`](#luffa224hashsizeextensions) · [`Luffa256`](#luffa256) · [`Luffa256HashSizeExtensions`](#luffa256hashsizeextensions) · [`Luffa384`](#luffa384) · [`Luffa384HashSizeExtensions`](#luffa384hashsizeextensions) · [`Luffa512`](#luffa512) · [`Luffa512HashSizeExtensions`](#luffa512hashsizeextensions) · [`Md2`](#md2) · [`Md2HashSizeExtensions`](#md2hashsizeextensions) · [`Md4`](#md4) · [`Md4HashSizeExtensions`](#md4hashsizeextensions) · [`Mdc2`](#mdc2) · [`Mdc2HashSizeExtensions`](#mdc2hashsizeextensions) · [`MurmurHash3`](#murmurhash3) · [`MurmurHash3HashSizeExtensions`](#murmurhash3hashsizeextensions) · [`PanamaBE`](#panamabe) · [`PanamaBEHashSizeExtensions`](#panamabehashsizeextensions) · [`PanamaBEMac`](#panamabemac) · [`PanamaLE`](#panamale) · [`PanamaLEHashSizeExtensions`](#panamalehashsizeextensions) · [`PanamaLEMac`](#panamalemac) · [`ParallelHash`](#parallelhash) · [`PhotonBeetleHash`](#photonbeetlehash) · [`PhotonBeetleHashSizeExtensions`](#photonbeetlehashsizeextensions) · [`RadioGatun32`](#radiogatun32) · [`Ripemd`](#ripemd) · [`Ripemd128`](#ripemd128) · [`Ripemd128HashSizeExtensions`](#ripemd128hashsizeextensions) · [`Ripemd160`](#ripemd160) · [`Ripemd160HashSizeExtensions`](#ripemd160hashsizeextensions) · [`Ripemd256`](#ripemd256) · [`Ripemd256HashSizeExtensions`](#ripemd256hashsizeextensions) · [`Ripemd320`](#ripemd320) · [`Ripemd320HashSizeExtensions`](#ripemd320hashsizeextensions) · [`Sha3`](#sha3) · [`Sha3HashSizeExtensions`](#sha3hashsizeextensions) · [`Sha512Family`](#sha512family) · [`Shabal192`](#shabal192) · [`Shabal192HashSizeExtensions`](#shabal192hashsizeextensions) · [`Shabal224`](#shabal224) · [`Shabal224HashSizeExtensions`](#shabal224hashsizeextensions) · [`Shabal256`](#shabal256) · [`Shabal256HashSizeExtensions`](#shabal256hashsizeextensions) · [`Shabal384`](#shabal384) · [`Shabal384HashSizeExtensions`](#shabal384hashsizeextensions) · [`Shabal512`](#shabal512) · [`Shabal512HashSizeExtensions`](#shabal512hashsizeextensions) · [`Shake`](#shake) · [`SipHash24`](#siphash24) · [`SipHash24HashSizeExtensions`](#siphash24hashsizeextensions) · [`Skein512`](#skein512) · [`Skein512HashSizeExtensions`](#skein512hashsizeextensions) · [`SkinnyHash`](#skinnyhash) · [`SkinnyHashVariant`](#skinnyhashvariant) · [`Sm3`](#sm3) · [`Sm3HashSizeExtensions`](#sm3hashsizeextensions) · [`SparkleHash`](#sparklehash) · [`SparkleHashSizeExtensions`](#sparklehashsizeextensions) · [`Streebog`](#streebog) · [`Streebog256`](#streebog256) · [`Streebog256HashSizeExtensions`](#streebog256hashsizeextensions) · [`Streebog512`](#streebog512) · [`Streebog512HashSizeExtensions`](#streebog512hashsizeextensions) · [`SubterraneanHash`](#subterraneanhash) · [`SubterraneanHashSizeExtensions`](#subterraneanhashsizeextensions) · [`Tiger`](#tiger) · [`TupleHash`](#tuplehash) · [`Whirlpool`](#whirlpool) · [`WhirlpoolHashSizeExtensions`](#whirlpoolhashsizeextensions) · [`XoodyakHash`](#xoodyakhash) · [`XoodyakHashSizeExtensions`](#xoodyakhashsizeextensions) · [`XxHash`](#xxhash) · [`XxHash3`](#xxhash3) · [`XxHash3HashSizeExtensions`](#xxhash3hashsizeextensions) · [`XxHashHashSizeExtensions`](#xxhashhashsizeextensions)
+[`AsconHash`](#asconhash) · [`AsconHashSizeExtensions`](#asconhashsizeextensions) · [`AsconXof`](#asconxof) · [`Blake`](#blake) · [`Blake2s`](#blake2s) · [`Blake2sHashSizeExtensions`](#blake2shashsizeextensions) · [`Blake2xs`](#blake2xs) · [`Blake3`](#blake3) · [`Blake3Enhanced`](#blake3enhanced) · [`BlakeHashSizeExtensions`](#blakehashsizeextensions) · [`CShake`](#cshake) · [`ChcHash`](#chchash) · [`ChcHashSizeExtensions`](#chchashsizeextensions) · [`CityHash`](#cityhash) · [`CityHashSizeExtensions`](#cityhashsizeextensions) · [`Comb4PMd4Md5`](#comb4pmd4md5) · [`Comb4PMd4Md5HashSizeExtensions`](#comb4pmd4md5hashsizeextensions) · [`Comb4PSha1Ripemd160`](#comb4psha1ripemd160) · [`Comb4PSha1Ripemd160HashSizeExtensions`](#comb4psha1ripemd160hashsizeextensions) · [`CubeHash256`](#cubehash256) · [`CubeHash256HashSizeExtensions`](#cubehash256hashsizeextensions) · [`CubeHash512`](#cubehash512) · [`CubeHash512HashSizeExtensions`](#cubehash512hashsizeextensions) · [`DarkCryptKeccak`](#darkcryptkeccak) · [`DarkCryptKeccakHashSizeExtensions`](#darkcryptkeccakhashsizeextensions) · [`DarkCryptMd6`](#darkcryptmd6) · [`DarkCryptMd6HashSizeExtensions`](#darkcryptmd6hashsizeextensions) · [`DarkCryptSkein`](#darkcryptskein) · [`DarkCryptSkeinHashSizeExtensions`](#darkcryptskeinhashsizeextensions) · [`DryGasconHash`](#drygasconhash) · [`Echo`](#echo) · [`Echo224`](#echo224) · [`Echo224HashSizeExtensions`](#echo224hashsizeextensions) · [`Echo256`](#echo256) · [`Echo256HashSizeExtensions`](#echo256hashsizeextensions) · [`Echo384`](#echo384) · [`Echo384HashSizeExtensions`](#echo384hashsizeextensions) · [`Echo512`](#echo512) · [`Echo512HashSizeExtensions`](#echo512hashsizeextensions) · [`Esch256`](#esch256) · [`Esch256HashSizeExtensions`](#esch256hashsizeextensions) · [`Esch384`](#esch384) · [`Esch384HashSizeExtensions`](#esch384hashsizeextensions) · [`Fnv`](#fnv) · [`FnvHashSizeExtensions`](#fnvhashsizeextensions) · [`Fugue`](#fugue) · [`Gimli24Hash`](#gimli24hash) · [`Gimli24HashSizeExtensions`](#gimli24hashsizeextensions) · [`Gost3411HashSizeExtensions`](#gost3411hashsizeextensions) · [`Gost3411_94`](#gost3411_94) · [`Groestl`](#groestl) · [`Groestl224`](#groestl224) · [`Groestl224HashSizeExtensions`](#groestl224hashsizeextensions) · [`Groestl256`](#groestl256) · [`Groestl256HashSizeExtensions`](#groestl256hashsizeextensions) · [`Groestl384`](#groestl384) · [`Groestl384HashSizeExtensions`](#groestl384hashsizeextensions) · [`Groestl512`](#groestl512) · [`Groestl512HashSizeExtensions`](#groestl512hashsizeextensions) · [`Hamsi`](#hamsi) · [`HamsiFamily`](#hamsifamily) · [`Haraka256`](#haraka256) · [`Haraka256HashSizeExtensions`](#haraka256hashsizeextensions) · [`Haraka512`](#haraka512) · [`Haraka512HashSizeExtensions`](#haraka512hashsizeextensions) · [`HashSizeRange`](#hashsizerange) · [`HashSizeRange.Enumerator`](#hashsizerangeenumerator) · [`HashSizeRangeExtensions`](#hashsizerangeextensions) · [`Haval`](#haval) · [`HavalHashSizeExtensions`](#havalhashsizeextensions) · [`HighwayHash`](#highwayhash) · [`Hmac`](#hmac) · [`IBlockHasher`](#iblockhasher) · [`IsapHash`](#isaphash) · [`IsapHashSizeExtensions`](#isaphashsizeextensions) · [`Jh`](#jh) · [`KangarooTwelve`](#kangarootwelve) · [`Keccak`](#keccak) · [`KeccakHasher`](#keccakhasher) · [`KnotHash`](#knothash) · [`KnotHashVariant`](#knothashvariant) · [`Kupyna`](#kupyna) · [`Lsh224`](#lsh224) · [`Lsh224HashSizeExtensions`](#lsh224hashsizeextensions) · [`Lsh256`](#lsh256) · [`Lsh256Family`](#lsh256family) · [`Lsh256HashSizeExtensions`](#lsh256hashsizeextensions) · [`Lsh384`](#lsh384) · [`Lsh384HashSizeExtensions`](#lsh384hashsizeextensions) · [`Lsh512`](#lsh512) · [`Lsh512Family`](#lsh512family) · [`Lsh512HashSizeExtensions`](#lsh512hashsizeextensions) · [`Lsh512_256`](#lsh512_256) · [`Lsh512_256HashSizeExtensions`](#lsh512_256hashsizeextensions) · [`Luffa`](#luffa) · [`Luffa224`](#luffa224) · [`Luffa224HashSizeExtensions`](#luffa224hashsizeextensions) · [`Luffa256`](#luffa256) · [`Luffa256HashSizeExtensions`](#luffa256hashsizeextensions) · [`Luffa384`](#luffa384) · [`Luffa384HashSizeExtensions`](#luffa384hashsizeextensions) · [`Luffa512`](#luffa512) · [`Luffa512HashSizeExtensions`](#luffa512hashsizeextensions) · [`Md2`](#md2) · [`Md2HashSizeExtensions`](#md2hashsizeextensions) · [`Md4`](#md4) · [`Md4HashSizeExtensions`](#md4hashsizeextensions) · [`Mdc2`](#mdc2) · [`Mdc2HashSizeExtensions`](#mdc2hashsizeextensions) · [`MurmurHash3`](#murmurhash3) · [`MurmurHash3HashSizeExtensions`](#murmurhash3hashsizeextensions) · [`PanamaBE`](#panamabe) · [`PanamaBEHashSizeExtensions`](#panamabehashsizeextensions) · [`PanamaBEMac`](#panamabemac) · [`PanamaLE`](#panamale) · [`PanamaLEHashSizeExtensions`](#panamalehashsizeextensions) · [`PanamaLEMac`](#panamalemac) · [`ParallelHash`](#parallelhash) · [`Pbkdf2`](#pbkdf2) · [`PhotonBeetleHash`](#photonbeetlehash) · [`PhotonBeetleHashSizeExtensions`](#photonbeetlehashsizeextensions) · [`RadioGatun32`](#radiogatun32) · [`Ripemd`](#ripemd) · [`Ripemd128`](#ripemd128) · [`Ripemd128HashSizeExtensions`](#ripemd128hashsizeextensions) · [`Ripemd160`](#ripemd160) · [`Ripemd160HashSizeExtensions`](#ripemd160hashsizeextensions) · [`Ripemd256`](#ripemd256) · [`Ripemd256HashSizeExtensions`](#ripemd256hashsizeextensions) · [`Ripemd320`](#ripemd320) · [`Ripemd320HashSizeExtensions`](#ripemd320hashsizeextensions) · [`Sha3`](#sha3) · [`Sha3HashSizeExtensions`](#sha3hashsizeextensions) · [`Sha512Family`](#sha512family) · [`Shabal192`](#shabal192) · [`Shabal192HashSizeExtensions`](#shabal192hashsizeextensions) · [`Shabal224`](#shabal224) · [`Shabal224HashSizeExtensions`](#shabal224hashsizeextensions) · [`Shabal256`](#shabal256) · [`Shabal256HashSizeExtensions`](#shabal256hashsizeextensions) · [`Shabal384`](#shabal384) · [`Shabal384HashSizeExtensions`](#shabal384hashsizeextensions) · [`Shabal512`](#shabal512) · [`Shabal512HashSizeExtensions`](#shabal512hashsizeextensions) · [`Shake`](#shake) · [`SipHash24`](#siphash24) · [`SipHash24HashSizeExtensions`](#siphash24hashsizeextensions) · [`Skein512`](#skein512) · [`Skein512HashSizeExtensions`](#skein512hashsizeextensions) · [`SkinnyHash`](#skinnyhash) · [`SkinnyHashVariant`](#skinnyhashvariant) · [`Sm3`](#sm3) · [`Sm3HashSizeExtensions`](#sm3hashsizeextensions) · [`SparkleHash`](#sparklehash) · [`SparkleHashSizeExtensions`](#sparklehashsizeextensions) · [`Streebog`](#streebog) · [`Streebog256`](#streebog256) · [`Streebog256HashSizeExtensions`](#streebog256hashsizeextensions) · [`Streebog512`](#streebog512) · [`Streebog512HashSizeExtensions`](#streebog512hashsizeextensions) · [`SubterraneanHash`](#subterraneanhash) · [`SubterraneanHashSizeExtensions`](#subterraneanhashsizeextensions) · [`Tiger`](#tiger) · [`TupleHash`](#tuplehash) · [`Whirlpool`](#whirlpool) · [`WhirlpoolHashSizeExtensions`](#whirlpoolhashsizeextensions) · [`WhirlpoolHasher`](#whirlpoolhasher) · [`XoodyakHash`](#xoodyakhash) · [`XoodyakHashSizeExtensions`](#xoodyakhashsizeextensions) · [`XxHash`](#xxhash) · [`XxHash3`](#xxhash3) · [`XxHash3HashSizeExtensions`](#xxhash3hashsizeextensions) · [`XxHashHashSizeExtensions`](#xxhashhashsizeextensions)
 
 #### `AsconHash`
 
@@ -753,6 +753,29 @@ Google HighwayHash portable 64-, 128-, and 256-bit keyed hash.
 | `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
 | `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, int hashSizeBits = 64)` | Computes the Highway Hash hash of the supplied data. |
 
+#### `Hmac`
+
+HMAC (RFC 2104) over a `IBlockHasher`, with the key pads hashed once: every message starts from copies of the two padded states.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Hmac` | `Hmac(IBlockHasher hasher, ReadOnlySpan<byte> key)` | Keys an HMAC over hashers like `hasher` (its state is not used). |
+| `HashSize` | `int HashSize { get; }` | The MAC size in bytes. |
+| `Compute` | `void Compute(ReadOnlySpan<byte> message, Span<byte> mac)` | Writes the MAC of `message` to `mac`. |
+
+#### `IBlockHasher`
+
+A block hash fed in pieces whose running state can be copied: what HMAC needs to hash its key pads once and start every message from that point (`Hmac`, `Pbkdf2`).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockSize` | `int BlockSize { get; }` | The block size in bytes (the HMAC key block). |
+| `HashSize` | `int HashSize { get; }` | The digest size in bytes. |
+| `Append` | `void Append(ReadOnlySpan<byte> data)` | Feeds more data. |
+| `CopyFrom` | `void CopyFrom(IBlockHasher other)` | Makes this hasher continue exactly where `other` (the same kind) stands. |
+| `CreateEmpty` | `IBlockHasher CreateEmpty()` | A new hasher of the same kind in its initial state. |
+| `Finish` | `void Finish(Span<byte> digest)` | Writes the digest of everything appended to `digest`; the state must then be reset or copied over. |
+
 #### `IsapHash`
 
 ISAP Hash. The registry's ISAP digest uses the same precomputed Ascon-Hash state, 64-bit rate, P12 absorption, padding, and squeezing as ASCON-HASH.
@@ -797,6 +820,24 @@ Keccak-f[1600] sponge primitives and standard Keccak/SHA-3/SHAKE variants.
 | `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data)` | Computes the 256-bit Keccak hash of the supplied data. |
 | `Compute384` | `static byte[] Compute384(ReadOnlySpan<byte> data)` | Computes the 384-bit Keccak hash of the supplied data. |
 | `Compute512` | `static byte[] Compute512(ReadOnlySpan<byte> data)` | Computes the 512-bit Keccak hash of the supplied data. |
+
+#### `KeccakHasher`
+
+A Keccak sponge (SHA-3, Keccak) fed in pieces.
+
+Implements `IBlockHasher`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockSize` | `int BlockSize { get; }` | The rate, which HMAC takes as the block size. |
+| `HashSize` | `int HashSize { get; }` | The digest size in bytes. |
+| `Append` | `void Append(ReadOnlySpan<byte> data)` | Feeds more data. |
+| `CopyFrom` | `void CopyFrom(IBlockHasher other)` | Makes this hasher continue exactly where `other` (the same kind) stands. |
+| `CreateEmpty` | `IBlockHasher CreateEmpty()` | A new hasher of the same kind in its initial state. |
+| `Finish` | `void Finish(Span<byte> digest)` | Writes the digest of everything appended to `digest`; the state must then be reset or copied over. |
+| `Sha3_256` | `static KeccakHasher Sha3_256()` | SHA3-256 (FIPS 202): rate 136 bytes, 32-byte digest. |
+| `Sha3_384` | `static KeccakHasher Sha3_384()` | SHA3-384 (FIPS 202): rate 104 bytes, 48-byte digest. |
+| `Sha3_512` | `static KeccakHasher Sha3_512()` | SHA3-512 (FIPS 202): rate 72 bytes, 64-byte digest. |
 
 #### `KnotHash`
 
@@ -1120,6 +1161,14 @@ ParallelHash from NIST SP 800-185.
 | --- | --- | --- |
 | `Compute128` | `static byte[] Compute128(ReadOnlySpan<byte> data, int blockBytes, int outputBytes, ReadOnlySpan<byte> customization = null)` | Computes the 128-bit Parallel Hash hash of the supplied data. |
 | `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data, int blockBytes, int outputBytes, ReadOnlySpan<byte> customization = null)` | Computes the 256-bit Parallel Hash hash of the supplied data. |
+
+#### `Pbkdf2`
+
+PBKDF2 (RFC 8018, section 5.2) over `Hmac`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Derive` | `static byte[] Derive(IBlockHasher hasher, ReadOnlySpan<byte> password, ReadOnlySpan<byte> salt, int iterations, int length)` | Derives `length` bytes from a password and salt. |
 
 #### `PhotonBeetleHash`
 
@@ -1511,6 +1560,22 @@ Provides supported hash-output size metadata for `Whirlpool`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
+
+#### `WhirlpoolHasher`
+
+Whirlpool (ISO/IEC 10118-3) fed in pieces.
+
+Implements `IBlockHasher`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WhirlpoolHasher` | `WhirlpoolHasher()` |  |
+| `BlockSize` | `int BlockSize { get; }` | The block size in bytes (the HMAC key block). |
+| `HashSize` | `int HashSize { get; }` | The digest size in bytes. |
+| `Append` | `void Append(ReadOnlySpan<byte> data)` | Feeds more data. |
+| `CopyFrom` | `void CopyFrom(IBlockHasher other)` | Makes this hasher continue exactly where `other` (the same kind) stands. |
+| `CreateEmpty` | `IBlockHasher CreateEmpty()` | A new hasher of the same kind in its initial state. |
+| `Finish` | `void Finish(Span<byte> digest)` | Writes the digest of everything appended to `digest`; the state must then be reset or copied over. |
 
 #### `XoodyakHash`
 
