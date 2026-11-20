@@ -76,7 +76,7 @@ public sealed record SqxRecoveryRecord(uint Level, long FileBlocks, long ParityB
 public sealed record SqxRecoveryReport(int Damaged, bool Repaired, string Message);
 
 /// <summary>
-/// SQX recovery records: creates the external one (<c>name.sqx.sqr</c>) for an archive and repairs
+/// SQX recovery records: creates the external one (<c>name.sqx.sqr</c>) or the internal one for an archive and repairs
 /// an archive from its internal record or an external one. A parity group (the blocks with the
 /// same index modulo the parity count) can lose one block.
 /// </summary>
@@ -93,6 +93,19 @@ public static class SqxRecovery {
     if (archive.IsEmpty)
       throw new ArgumentException("SQX: an empty archive has nothing to protect.", nameof(archive));
     return Build(archive, level, SqxContainer.RawCrc32(archive)).ToArray();
+  }
+
+  /// <summary>
+  /// The internal recovery record for <paramref name="archive"/>, the archive's bytes up to where
+  /// the record goes: in place of the end block, protecting everything in front of it, its
+  /// data-CRC field 0xFFFFFFFF. Squeez writes this for <c>-rr</c>.
+  /// </summary>
+  public static byte[] CreateInternal(ReadOnlySpan<byte> archive, int level = 2) {
+    if (level is < 1 or > 100)
+      throw new ArgumentOutOfRangeException(nameof(level), "SQX: recovery data is 1 to 100 percent.");
+    if (archive.IsEmpty)
+      throw new ArgumentException("SQX: an empty archive has nothing to protect.", nameof(archive));
+    return Build(archive, level, 0xFFFFFFFF).ToArray();
   }
 
   private static SqxRecoveryRecord Build(ReadOnlySpan<byte> data, int level, uint dataCrc) {
