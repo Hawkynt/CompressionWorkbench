@@ -43,6 +43,21 @@ public sealed class AlZipEggSplitWriteTests {
     Assert.That(AlZipVolumes.Join(volumes), Is.EqualTo(archive));
   }
 
+  [TestCase(0)]
+  [TestCase(1)]
+  [TestCase(5000)]
+  [TestCase(1_200_000)] // past one 900k block
+  public void GivenData_WhenWrittenAsAlzBzip2_ThenItReadsBack(int length) {
+    var text = new byte[length];
+    var r = new Random(length);
+    for (var i = 0; i < length; ++i) text[i] = (byte)"abcdefgh  \n"[r.Next(11)];
+    Assert.That(FileFormat.Bzip2.AlzBzip2.Decompress(FileFormat.Bzip2.AlzBzip2.Compress(text), length), Is.EqualTo(text));
+    using var ms = new MemoryStream();
+    using (var w = new AlZipWriter(ms, leaveOpen: true, bzip2: true)) w.AddFile("t.txt", text);
+    using var reader = new AlZipReader(new MemoryStream(ms.ToArray()));
+    Assert.That(reader.Extract(reader.Entries.Single()), Is.EqualTo(text));
+  }
+
   [Test]
   public void GivenAnAlzThatFitsOneVolume_WhenSplit_ThenItStaysOne() {
     var archive = Alz();

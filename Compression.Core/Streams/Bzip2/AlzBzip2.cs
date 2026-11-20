@@ -13,6 +13,16 @@ public static class AlzBzip2 {
   private const uint BlockMarker = 0x444C5A01; // "DLZ\x01" read MSB first
   private const uint EndMarker = 0x444C5A02;   // "DLZ\x02"
 
+  /// <summary>Encodes <paramref name="data"/> as an ALZ bzip2 stream (900k blocks), the inverse of <see cref="Decompress"/>.</summary>
+  public static byte[] Compress(ReadOnlySpan<byte> data) {
+    using var output = new MemoryStream();
+    var bits = new BitWriter<MsbBitOrder>(output);
+    var compressor = new Bzip2Compressor(bits, 9, alzVariant: true);
+    compressor.Write(data);
+    compressor.Finish();
+    return output.ToArray();
+  }
+
   /// <summary>Decodes an ALZ bzip2 stream; stops at the end marker or once <paramref name="expectedSize"/> bytes are out.</summary>
   public static byte[] Decompress(ReadOnlySpan<byte> data, long expectedSize) {
     if (expectedSize > int.MaxValue)
