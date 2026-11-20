@@ -84,5 +84,26 @@ internal sealed record UharcHeader(
       MetadataCrc: BinaryPrimitives.ReadUInt16LittleEndian(h[35..]));
   }
 
+  /// <summary>Where the last section of the PE image <paramref name="stub"/> ends, or -1 when it is not one.</summary>
+  internal static long PeImageEnd(ReadOnlySpan<byte> stub) {
+    if (stub.Length < 0x40 || stub[0] != 'M' || stub[1] != 'Z')
+      return -1;
+    var pe = BinaryPrimitives.ReadInt32LittleEndian(stub[0x3C..]);
+    if (pe <= 0 || pe > stub.Length - 24 || stub[pe] != 'P' || stub[pe + 1] != 'E')
+      return -1;
+
+    var sections = BinaryPrimitives.ReadUInt16LittleEndian(stub[(pe + 6)..]);
+    var table = pe + 24 + BinaryPrimitives.ReadUInt16LittleEndian(stub[(pe + 20)..]);
+    var end = -1L;
+    for (var i = 0; i < sections; ++i) {
+      var entry = table + i * 40;
+      if (entry + 40 > stub.Length)
+        return -1;
+      end = Math.Max(end, (long)BinaryPrimitives.ReadUInt32LittleEndian(stub[(entry + 20)..]) + BinaryPrimitives.ReadUInt32LittleEndian(stub[(entry + 16)..]));
+    }
+
+    return end;
+  }
+
   private static int ReadUInt24(ReadOnlySpan<byte> b) => b[0] | b[1] << 8 | b[2] << 16;
 }

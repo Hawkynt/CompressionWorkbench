@@ -11,7 +11,7 @@ namespace FileFormat.Uharc;
 /// (<c>-m1</c>..<c>-m3</c>, including the multimedia predictors) modes, password-protected archives
 /// and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP and ALZ modes, with passwords and
 /// the multimedia predictors; and UHARC 0.2 archives. Archives of 0.3, and 0.4 PPM streams, are refused. Creates 0.6
-/// archives, stored or packed with RLE, LZ78 or LZP, that <c>uharc.exe</c> extracts; it cannot modify them.
+/// archives, stored or packed with RLE, LZ78 or LZP, optionally password-protected or behind a self-extractor stub, that <c>uharc.exe</c> extracts; it cannot modify them.
 ///
 /// References:
 /// <list type="bullet">
@@ -43,7 +43,7 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     "UHARC 0.6 archive. Lists and extracts the store, RLE, LZ78, LZP, PPM and ALZ modes (with multimedia " +
     "and executable filters, passwords and SFX stubs), UHARC 0.4 store, RLE, LZW, LZP and ALZ archives, and UHARC 0.2 " +
     "archives. 0.3 archives and 0.4 PPM streams are refused. " +
-    "Creates 0.6 archives, stored or packed with RLE, LZ78 or LZP.";
+    "Creates 0.6 archives, stored or packed with RLE, LZ78 or LZP, with passwords and self-extractor stubs.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (TryOpen(stream, password, out var reader, out var image) is { } failure)
@@ -74,13 +74,24 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     }
   }
 
-  /// <summary>Writes a UHARC 0.6 archive: method <c>lzp</c> (the default), <c>lz78</c>, <c>rle</c> or <c>store</c>.</summary>
-  /// <exception cref="NotSupportedException">Another method, a password, a name longer than 255 bytes or more than 4 GiB of data.</exception>
+  /// <summary>Format-specific option naming a self-extractor stub file (UHARC's <c>UHARCSFX.EXE</c>).</summary>
+  public const string SfxStubOption = "sfx-stub";
+
+  /// <summary>
+  /// Writes a UHARC 0.6 archive: method <c>lzp</c> (the default), <c>lz78</c>, <c>rle</c> or
+  /// <c>store</c>; a password enciphers the stream and the tables as <c>-pw</c> does; the
+  /// <see cref="SfxStubOption"/> option puts the named Win32 stub in front, as <c>-sfx</c> does.
+  /// </summary>
+  /// <exception cref="NotSupportedException">
+  /// Another method, a password that is not printable ASCII or longer than 255 characters, a stub
+  /// that is not a PE image ending with its last section, a name longer than 255 bytes or more
+  /// than 4 GiB of data.
+  /// </exception>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
-    if (!string.IsNullOrEmpty(options?.Password))
-      throw new NotSupportedException("UHARC: the writer does not encipher archives.");
+    var stubPath = options?.GetString(SfxStubOption);
+    var stub = string.IsNullOrEmpty(stubPath) ? null : File.ReadAllBytes(stubPath);
 
     var method = options?.MethodName?.Trim().ToLowerInvariant();
     var mode = method switch {
@@ -95,7 +106,7 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       i.ArchiveName,
       i.IsDirectory ? null : i.ReadContent(),
       i.SourceLastModifiedUtc)).ToList();
-    UharcWriter.Write(output, items, mode, DateTime.Now);
+    UharcWriter.Write(output, items, mode, DateTime.Now, options?.Password, stub);
   }
 
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
