@@ -9,6 +9,7 @@ internal static class SqxContainer {
   public const byte BlockFile = 0x44;
   public const byte BlockDirectory = 0x56;
   public const byte BlockEnd = 0x53;
+  public const byte BlockRecovery = 0x58;
   public const int HeaderSize = 7;
   public const int MainBlockSize = 25;
 
