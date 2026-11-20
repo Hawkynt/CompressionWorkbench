@@ -11827,7 +11827,7 @@ Formats FLEX disks the way NEWDISK does and edits them the way the File Manageme
 
 ### Namespace `FileSystem.Fossil`
 
-[`FossilEntry`](#fossilentry) · [`FossilFormatDescriptor`](#fossilformatdescriptor) · [`FossilReader`](#fossilreader) · [`FossilSourceEntry`](#fossilsourceentry)
+[`FossilEntry`](#fossilentry) · [`FossilFormatDescriptor`](#fossilformatdescriptor) · [`FossilReader`](#fossilreader) · [`FossilSourceEntry`](#fossilsourceentry) · [`FossilWriteNode`](#fossilwritenode) · [`FossilWriter`](#fossilwriter)
 
 #### `FossilEntry`
 
@@ -11851,7 +11851,7 @@ Implements `IEquatable<FossilEntry>`.
 
 Fossil — the Plan 9 file server's on-disk format (Quinlan, McKie, Cox, 2002), as plan9port's `flfmt` and `fossil` write it. Header magic `0x3776ae89` at 128 KiB.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11868,6 +11868,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a volume (8 KiB blocks) whose `active` tree holds the inputs: directories 0775, files 0664, owner `adm`, each input's modification time. A leading `active/` in the names is taken as the tree's root, so a volume listed by this descriptor writes back alike. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
@@ -11922,6 +11923,32 @@ Implements `IEquatable<FossilSourceEntry>`.
 | `Size` | `long Size { get; init; }` |  |
 | `Snap` | `uint Snap { get; init; }` |  |
 | `Tag` | `uint Tag { get; init; }` |  |
+
+#### `FossilWriteNode`
+
+A file or directory to write into a Fossil volume's active tree.
+
+Implements `IEquatable<FossilWriteNode>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FossilWriteNode` | `FossilWriteNode(string Name, bool IsDirectory)` | A file or directory to write into a Fossil volume's active tree. |
+| `Children` | `IReadOnlyList<FossilWriteNode> Children { get; init; }` | Gets a directory's entries. |
+| `Data` | `byte[] Data { get; init; }` | Gets the file contents (ignored for a directory). |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this is a directory. |
+| `MTime` | `uint MTime { get; init; }` | Gets the modification time, also used as the change and access time (UNIX seconds). |
+| `Name` | `string Name { get; init; }` | The path element (UTF-8, 1 to 255 bytes, no '/'). |
+| `Owner` | `string Owner { get; init; }` | Gets the owner (and group and last modifier). |
+| `Permissions` | `uint Permissions { get; init; }` | Gets the permission bits (Plan 9 rwx for owner, group and other). |
+
+#### `FossilWriter`
+
+Writes a Fossil volume as plan9port's `flfmt` formats it and its `fossil` server lays out files: the 128 KiB gap, the header, the superblock, the label partition and the data partition. Every block lives locally (no Venti) in epoch 1. The Fossil root holds `active`, `archive` and `snapshot`; the given tree is `active`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultBlockSize` | `const int DefaultBlockSize` | The block size `flfmt` uses by default. |
+| `Write` | `static void Write(Stream output, IReadOnlyList<FossilWriteNode> active, int blockSize = 8192, uint time = 0, string label = "main")` | Writes a volume whose active tree holds `active`. |
 
 ### Namespace `FileSystem.Gemdos`
 

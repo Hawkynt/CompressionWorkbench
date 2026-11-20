@@ -450,7 +450,7 @@ ext3cow,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
 FAT8 (Disk BASIC),,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
 FATX (Xbox),fatx;xbox,filesystem,,,,,,,Y,,1,,Fatx,Y,Y,Y,OK,,
 "UFS / FFS (BSD), UFS2",ufs;ufs1,filesystem,,,,,,,Y,,1,,Ufs,Y,Y,Y,OK,newfs -O2 / makefs (BSD),UFS1 and UFS2 in both byte orders read; created; edited; defragmented; wiped and block-moved in place (little-endian UFS2 checked by FreeBSD fsck_ffs and the Linux ufstype=ufs2 mount; big-endian UFS1 and UFS2 by NetBSD fsck_ffs and a NetBSD mount)
-Fossil (Plan 9),,filesystem,,,,,,,Y,,1,https://github.com/9fans/plan9port/tree/master/src/cmd/fossil,Fossil,Y,,,READ-ONLY-BUT-SOURCES-WRITE,flfmt,writer not yet proven against the fossil server
+Fossil (Plan 9),,filesystem,,,,,,,Y,,1,https://github.com/9fans/plan9port/tree/master/src/cmd/fossil,Fossil,Y,Y,,OK,flfmt,written volumes served and extended by plan9port's fossil server
 Files-11 (ODS-1/2/5),ods2;ods5;ods-1;ods-2;ods-5;openvms,filesystem,,,,,,,Y,,1,,OpenVms;Ods1,Y,Y,Y,OK,,
 FLEX file system,,filesystem,,,,,,,Y,,1,http://www.flexusergroup.com/flexusergroup/pdfs/flexapg.pdf,Flex,Y,Y,Y,OK,flexfloppy,
 HAMMER,,filesystem,,,,,,,Y,,1,,Hammer,Y,Y,Y,OK,,

@@ -77,11 +77,44 @@ contains `snapshot/YYYY/MMDD/HHMM`, whose sources carry the snapshot epoch.
 It reads the whole local tree, files and directories with modes, owners and mtimes,
 snapshots included. Entries must be active and of the right generation, every block must
 lie in the data partition, and nesting is bounded. A Venti score is refused, because there
-is no Venti here. Read-only: a writer must keep labels, epochs and tags consistent and is
-not proven against `fossil` yet.
+is no Venti here. `FossilWriter` writes fresh volumes (see *Writing*).
 
 Checked against a volume formatted by `flfmt` from plan9port and filled by plan9port's
 `fossil` server over 9P. It holds a two-level pointer tree, nested and empty directories,
 and a snapshot taken before a rewrite. It reads back byte-identical to what that server
 returned. `flchk` was not usable as an oracle: without Venti it reports errors even on a
 freshly formatted volume.
+
+## Writing
+
+`FossilWriter` lays a volume out the way `flfmt` formats it and the `fossil` server adds files
+to it:
+
+* **Layout.** The 128 KiB gap, the header, then the partitions `flfmt` cuts from the file size:
+  the superblock at `(128 KiB + 2 blocks) / block size`, the label blocks after it, and the
+  data blocks. The data partition keeps 64 blocks spare for the server's own first writes.
+* **Labels.** Every data block written gets a label: state allocated, epoch 1, not closed, and
+  the type and tag of its source. The type is `BtData` or `BtDir`, plus the pointer level.
+  Every other label stays zero (free).
+* **Superblock.** Epochs 1 and 1, the next qid, the root block, no next or current block, the
+  empty score as the last archive, and the name.
+* **Root.** A `RootTag` block holds one entry, a directory source of three entries:
+  - the root directory's entries;
+  - its meta source;
+  - a meta block naming the root itself (`root`, entry 0, meta entry 1).
+
+  The root directory holds `active`, `archive` and `snapshot`. The given tree is `active`.
+* **Directories.** Each child takes an entry in its parent's entry source, a directory two
+  (entries, then meta). Every entry source holds `blockSize / 40` entries per block, and its
+  size counts whole blocks plus 40 bytes per entry of the last one. The meta source is meta
+  blocks of at most `blockSize / 100` DirEntries (version 9), each block's index sorted by name.
+* **Files.** A file is a source of data blocks (the last zero-filled) under as many pointer
+  levels as it needs: `psize / 20` scores per pointer block, with unused slots holding the
+  empty score. An empty file or directory is a source with no blocks.
+* **Fields.** Generations are 0; qids count from 1 (the root) in creation order. Owner, group
+  and last modifier are the input's owner (`adm` by default). The modification time is also the
+  change and access time.
+
+Checked by plan9port's `fossil` server (`Compression.Tests/Fossil/ReferenceVectors/serve-and-read.sh`).
+It serves our volumes, at 4 and 8 KiB blocks, with every file's size, contents and mode as
+written. It then creates and writes a file of its own, and we read the volume it leaves.
