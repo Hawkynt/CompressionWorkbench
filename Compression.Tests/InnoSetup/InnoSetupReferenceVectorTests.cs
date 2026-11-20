@@ -15,7 +15,7 @@ public class InnoSetupReferenceVectorTests {
 
   private static readonly string[] Fixtures = [
     "inno561a-zip.exe", "inno561a-lzma2-solid.exe", "inno561u-lzma-solid.exe", "inno605-bzip.exe",
-    "inno711-lzma2-solid.exe",
+    "inno711-lzma2-solid.exe", "inno1216-16bit.exe",
   ];
 
   private static byte[] Load(string name) {
@@ -85,6 +85,33 @@ public class InnoSetupReferenceVectorTests {
       Assert.That(reader.AppName, Is.EqualTo("Fixture"));
       Assert.That(reader.AppVersion, Is.EqualTo("1.0"));
     });
+  }
+
+  // inno1216-16bit.exe: COMPIL16.EXE 1.2.16, setup data tag "i1.2.10--16" (README.md).
+  [Test]
+  public void Given16BitInstaller_WhenOpened_ThenItsLegacyVersionAndFileTimesAreRead() {
+    var reader = new InnoSetupReader(new MemoryStream(Load("inno1216-16bit.exe")));
+    Assert.Multiple(() => {
+      Assert.That(reader.Version.Value, Is.EqualTo(InnoVersion.V(1, 2, 10)));
+      Assert.That((reader.Version.Is16Bit, reader.Version.IsLegacyTag, reader.Version.IsUnicode), Is.EqualTo((true, true, false)));
+      Assert.That(reader.Version.ToString(), Is.EqualTo("1.2.10 (16-bit)"));
+      Assert.That(reader.Compression, Is.EqualTo(InnoCompression.Zlib));
+      Assert.That(reader.AppName, Is.EqualTo("CWB Probe"));
+      // The inputs were dated 1999-12-31 23:59:58 CET. The compiler, run under wine, recorded the DOS
+      // time 22:59:58: the UTC time, without a zone.
+      Assert.That(reader.Entries.Select(e => e.LastModified), Is.All.EqualTo(new DateTime(1999, 12, 31, 22, 59, 58)));
+    });
+  }
+
+  [Test]
+  public void Given16BitInstallerOnDisk_WhenDetected_ThenInnoSetupIsChosen() {
+    var path = Path.Combine(Path.GetTempPath(), "cwb-inno-" + Guid.NewGuid().ToString("N") + ".exe");
+    try {
+      File.WriteAllBytes(path, Load("inno1216-16bit.exe"));
+      Assert.That(FormatDetector.Detect(path), Is.EqualTo(FormatDetector.Format.InnoSetup));
+    } finally {
+      File.Delete(path);
+    }
   }
 
   [Test]

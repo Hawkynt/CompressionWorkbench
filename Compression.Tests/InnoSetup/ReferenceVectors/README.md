@@ -52,3 +52,13 @@ the official `innosetup-5.6.1.exe`, `innosetup-5.6.1-unicode.exe` and `innosetup
 innoextract 1.9 file for file (`CWB_INNO_FIXTURES`); `innosetup-6.4.3.exe` (103 files) and
 `innosetup-7.1.0-x86.exe` (137 files), newer than any innoextract, extract with every file matching
 the SHA-256 the compiler stored for it (`CWB_INNO_SELFCHECK`).
+
+**16-bit installer** (`inno1216-16bit.exe`): Inno Setup 1.2.16 for Windows 3.x, whose setup data
+carries the 12-byte tag `i1.2.10--16`. The compiler, `COMPIL16.EXE`, was taken with innoextract
+out of `isetup16-1.2.16.exe` from https://files.jrsoftware.org/is/1.2/ (SHA-256
+`9f4fbab8039f40cd3ea6dcbe34de0d4d40ed4037bc1c9737027b20181e461dc5`) and run under wine 9.0 as
+`COMPIL16.EXE /cc PROBE.ISS`. The script is `make-16bit.sh`. It has `Bits=16` and one entry in
+each of [Dirs], [Files], [Icons], [INI], [Registry], [Run] and [UninstallDelete], so every 16-bit
+record layout is parsed. The payload is generated: 21643 bytes of seeded words, 3000 seeded random
+bytes, an empty file, and a 16-byte file in a subdirectory. The `oracle.tsv` rows are what
+innoextract 1.10-dev (`6e9e34e`) extracts. They equal the generated inputs.

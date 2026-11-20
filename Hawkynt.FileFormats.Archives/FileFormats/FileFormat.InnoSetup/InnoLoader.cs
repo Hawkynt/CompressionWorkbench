@@ -55,7 +55,8 @@ internal static class InnoLoader {
   }
 
   private static InnoOffsets? TryTable(Stream stream, long position) {
-    if (position < 0 || position + 64 > stream.Length)
+    // The table can end the file (1.2.x writes it last), so it may be shorter than the 64 bytes read.
+    if (position < 0 || position + 12 > stream.Length)
       return null;
     var raw = new byte[64];
     stream.Position = position;
@@ -72,11 +73,13 @@ internal static class InnoLoader {
     var p = 12;
     uint revision = 0;
     if (version >= InnoVersion.V(5, 1, 5)) {
+      if (n < p + 4) return null;
       revision = BinaryPrimitives.ReadUInt32LittleEndian(t[p..]);
       p += 4;
     }
 
     if (revision >= 2) {
+      if (n < p + 48) return null;
       // TSetupLdrOffsetTable v2: TotalSize i64, OffsetEXE i64, UncompressedSizeEXE u32, CRCEXE i32,
       // Offset0 i64, Offset1 i64, ReservedPadding u32, TableCRC i32.
       var offset0 = BinaryPrimitives.ReadInt64LittleEndian(t[(p + 24)..]);
@@ -93,6 +96,7 @@ internal static class InnoLoader {
     p += 4; // exe uncompressed size
     p += 4; // exe checksum
     if (version < InnoVersion.V(4, 0, 0)) p += 4; // message offset (not covered by the CRC)
+    if (n < p + 8) return null;
     var header = BinaryPrimitives.ReadUInt32LittleEndian(t[p..]);
     var data = BinaryPrimitives.ReadUInt32LittleEndian(t[(p + 4)..]);
     return new(header, data, true);
