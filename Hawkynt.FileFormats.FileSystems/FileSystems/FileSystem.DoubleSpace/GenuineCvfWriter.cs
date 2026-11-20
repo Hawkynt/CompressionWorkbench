@@ -12,7 +12,8 @@ namespace FileSystem.DoubleSpace;
 /// lists the inner directory, and reads every file back byte-exact
 /// (detected as "drivespace CVF version 2").
 /// <para>
-/// The writer reproduces the real <c>MSDBL6.0</c> container:
+/// The writer reproduces the real container — <c>MSDSP6.0</c> version 0 as DoubleSpace writes it,
+/// <c>MSDBL6.0</c> version 2 as DriveSpace does (<see cref="Container"/>):
 /// </para>
 /// <list type="bullet">
 ///   <item><b>Sector 0</b> — MDBPB: standard BPB (512 B/sector, 16 sec/cluster,
@@ -30,6 +31,9 @@ namespace FileSystem.DoubleSpace;
 /// Files must fit the inner FAT12 volume (at most 4080 clusters of 8 KB).
 /// </summary>
 public sealed class GenuineCvfWriter {
+
+  /// <summary>Which product's container is written: its OEM name and CVF version.</summary>
+  public CvfV2Container Container { get; init; } = CvfV2Container.DriveSpace;
 
   // Container geometry, as on volumes MS-DOS 6.22's DRVSPACE /CREATE writes.
   private const int Ss = 512;
@@ -239,7 +243,7 @@ public sealed class GenuineCvfWriter {
 
   private void WriteMdbpb(byte[] img, int declaredSectors) {
     img[0] = 0xEB; img[1] = 0x3C; img[2] = 0x90;
-    "MSDBL6.0"u8.CopyTo(img.AsSpan(3, 8));
+    this.OemName.CopyTo(img.AsSpan(3, 8));
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x0B), Ss);
     img[0x0D] = Spc;
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x0E), (ushort)this._resv);
@@ -259,7 +263,7 @@ public sealed class GenuineCvfWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x2D), (ushort)this._mdfatIdxOff);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x2F), TierWord2F);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x31), 1024);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x33), 2);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x33), (ushort)(this.Container == CvfV2Container.DoubleSpace ? 0 : 2));
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x35), TierWord35);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x37), TierWord37);
     "16  "u8.CopyTo(img.AsSpan(0x39, 4));
@@ -273,7 +277,7 @@ public sealed class GenuineCvfWriter {
   private void WriteInnerBoot(byte[] img, int declaredSectors) {
     var b = this._innerBase * Ss;
     img[b] = 0xEB; img[b + 1] = 0x3C; img[b + 2] = 0x90;
-    "MSDBL6.0"u8.CopyTo(img.AsSpan(b + 3, 8));
+    this.OemName.CopyTo(img.AsSpan(b + 3, 8));
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x0B), Ss);
     img[b + 0x0D] = Spc;
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x0E), (ushort)this._resv);
@@ -289,6 +293,8 @@ public sealed class GenuineCvfWriter {
     "FAT12   "u8.CopyTo(img.AsSpan(b + 0x36, 8));
     img[b + 0x1FE] = 0x55; img[b + 0x1FF] = 0xAA;
   }
+
+  private ReadOnlySpan<byte> OemName => this.Container == CvfV2Container.DoubleSpace ? "MSDSP6.0"u8 : "MSDBL6.0"u8;
 
   private static void WriteFat12(byte[] img, int fatOff, int cluster, int value) {
     var o = fatOff + cluster * 3 / 2;
