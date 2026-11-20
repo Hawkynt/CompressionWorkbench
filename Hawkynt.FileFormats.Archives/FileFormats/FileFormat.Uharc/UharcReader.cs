@@ -4,14 +4,14 @@ using Compression.Core.Checksums;
 namespace FileFormat.Uharc;
 
 /// <summary>
-/// Reads UHARC 0.6 archives (magic <c>UHA\x06</c>) as written by UHARC 0.6/0.6a/0.6b, UHARC 0.4
-/// archives (<c>UHA\x04</c>) and UHARC 0.2 archives (<c>UHA\x02</c>). Layout and codecs are
+/// Reads UHARC 0.6 archives (magic <c>UHA\x06</c>) as written by UHARC 0.6/0.6a/0.6b, UHARC 0.4 and
+/// 0.3 archives (<c>UHA\x04</c>, <c>UHA\x03</c>) and UHARC 0.2 archives (<c>UHA\x02</c>). Layout and codecs are
 /// described in docs/UHARC-ON-DISK.md.
 /// </summary>
 /// <remarks>
 /// The directory is always readable; file data decodes for every 0.6 method (store, RLE, LZ78,
-/// LZP, PPM and ALZ), every 0.4 mode but PPM and every 0.2 mode, and every extracted file is checked
-/// against its stored CRC-32.
+/// LZP, PPM and ALZ), every 0.4 mode but PPM, every 0.3 mode but PPM and every 0.2 mode,
+/// and every extracted file is checked against its stored CRC-32.
 /// </remarks>
 public sealed class UharcReader {
 
@@ -45,11 +45,13 @@ public sealed class UharcReader {
 
   /// <summary>Gets the name of the compression mode, as <c>uharc l</c> prints it (0.2: the mode switch).</summary>
   public string MethodName => this._legacy != null ? Uharc02Header.MethodName(this._legacy.Method)
+    : this._v04 is { Version: 3 } ? UharcMethods.Name03(this.Method)
     : this._v04 != null && this.Method is >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last ? "LZW"
     : UharcMethods.Name(this.Method);
 
   /// <summary>Gets the dictionary size in bytes (0.2 and 0.4 LZW: codes), 0 for the store method.</summary>
   public int DictionarySize => this._legacy != null ? Uharc02Header.DictionarySize(this._legacy.Method)
+    : this._v04 is { Version: 3 } ? UharcMethods.DictionarySize03(this.Method)
     : this._v04 != null && this.Method is >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last ? Uharc02Header.DictionarySize(this.Method)
     : UharcMethods.DictionarySize(this.Method);
 
@@ -64,6 +66,9 @@ public sealed class UharcReader {
   /// <summary>Gets whether the stream's method can be decoded by this reader.</summary>
   public bool CanDecodeMethod => this._legacy != null
     ? this._legacy.Method is 0 or >= 2 and <= 43
+    : this._v04 is { Version: 3 }
+    ? this._v04.Method is UharcMethods.Store or UharcMethods.Store03Alias or UharcMethods.Rle
+      or >= UharcMethods.Lz78First and < UharcMethods.Ppm03First or >= UharcMethods.Alz03First and <= UharcMethods.Alz03Last
     : this._v04 != null
     ? this._v04.Method is UharcMethods.Store or UharcMethods.Rle or >= UharcMethods.Lz78First and <= UharcMethods.LzpLast
       or >= UharcMethods.AlzFirst and <= UharcMethods.AlzLast
@@ -95,9 +100,6 @@ public sealed class UharcReader {
 
     this._password = string.IsNullOrEmpty(password) ? null : Encoding.Latin1.GetBytes(password);
     if (Uharc04Header.HasMagic(this._archive.AsSpan(this._base))) {
-      if (this._archive[this._base + 3] != 4)
-        throw new InvalidDataException($"UHARC: archive version {this._archive[this._base + 3]} is not supported.");
-
       this._v04 = Uharc04Header.Parse(this._archive.AsSpan(this._base));
       if ((this._v04.Flags & Uharc04Header.UsesPassword) != 0 && this._password == null)
         throw new InvalidOperationException("UHARC: the archive is password protected; a password is required.");
@@ -449,6 +451,7 @@ public sealed class UharcReader {
     UharcCipher.Apply(table, this.Password04);
     var plain = method switch {
       UharcMethods.Store => table,
+      UharcMethods.Table when this._v04!.Version == 3 => Uharc03LzpDecoder.Decode(table, 0, table.Length, method, unpackedSize, []),
       UharcMethods.Table => Uharc04LzpDecoder.Decode(table, 0, table.Length, method, unpackedSize, []),
       _ => Uharc02LzwDecoder.Decode(table, 0, table.Length, method, unpackedSize),
     };
@@ -527,7 +530,7 @@ public sealed class UharcReader {
   private byte[] DecodeStream04() {
     var h = this._v04!;
     if (!this.CanDecodeMethod)
-      throw new NotSupportedException($"UHARC: 0.{h.Version} {UharcMethods.Name(h.Method)} streams (method {h.Method}) are not supported.");
+      throw new NotSupportedException($"UHARC: 0.{h.Version} {this.MethodName} streams (method {h.Method}) are not supported.");
     if (h.UnpackedSize > Array.MaxLength)
       throw new NotSupportedException("UHARC: archive is too large to unpack in memory.");
 
@@ -543,10 +546,12 @@ public sealed class UharcReader {
     var size = (int)h.UnpackedSize;
     try {
       return h.Method switch {
-        UharcMethods.Store when length == size => packed.AsSpan(offset, size).ToArray(),
-        UharcMethods.Store => throw new InvalidDataException("UHARC: stored stream size does not match."),
+        UharcMethods.Store or UharcMethods.Store03Alias when length == size => packed.AsSpan(offset, size).ToArray(),
+        UharcMethods.Store or UharcMethods.Store03Alias => throw new InvalidDataException("UHARC: stored stream size does not match."),
         UharcMethods.Rle => UharcRleDecoder.Decode(packed, offset, length, size),
         <= UharcMethods.Lz78Last => Uharc02LzwDecoder.Decode(packed, offset, length, h.Method, size),
+        < UharcMethods.Ppm03First when h.Version == 3 => Uharc03LzpDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
+        >= UharcMethods.Alz03First when h.Version == 3 => Uharc03AlzDecoder.Decode(packed, offset, length, h.Method, size),
         <= UharcMethods.LzpLast => Uharc04LzpDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
         _ => Uharc04AlzDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
       };
