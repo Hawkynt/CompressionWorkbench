@@ -86,6 +86,25 @@ public sealed class EggReader : IDisposable {
     _ReadArchive();
   }
 
+  /// <summary>
+  /// Opens an archive; a file stream named <c>name.volN.egg</c> is read together with the other
+  /// volumes of its split set.
+  /// </summary>
+  public static EggReader Open(Stream stream, bool leaveOpen = false) {
+    ArgumentNullException.ThrowIfNull(stream);
+    var joined = EggVolumes.JoinSiblings(stream);
+    if (joined == null) return new EggReader(stream, leaveOpen);
+    if (!leaveOpen) stream.Dispose();
+    return FromJoinedVolumes(joined);
+  }
+
+  /// <summary>Reads an archive <see cref="EggVolumes.Join"/> assembled from a whole split set.</summary>
+  public static EggReader FromJoinedVolumes(byte[] joined) {
+    var reader = new EggReader(new MemoryStream(joined, writable: false));
+    reader.IsSplit = false; // every volume is present: members are whole again
+    return reader;
+  }
+
   /// <summary>File entries discovered in the archive.</summary>
   public IReadOnlyList<EggEntry> Entries => _entries;
 

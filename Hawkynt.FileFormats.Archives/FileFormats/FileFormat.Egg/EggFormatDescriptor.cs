@@ -85,7 +85,7 @@ public sealed class EggFormatDescriptor :
   /// Lists the entries in the supplied container.
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    using var r = new EggReader(stream, leaveOpen: true);
+    using var r = EggReader.Open(stream, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.UncompressedSize, e.CompressedSize,
       e.MethodName, e.IsDirectory, e.IsEncrypted, e.LastModified)).ToList();
   }
@@ -94,7 +94,7 @@ public sealed class EggFormatDescriptor :
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    using var r = new EggReader(stream, leaveOpen: true);
+    using var r = EggReader.Open(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.Name, files))
         continue;
@@ -114,7 +114,7 @@ public sealed class EggFormatDescriptor :
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
-    using var r = new EggReader(archive, leaveOpen: true);
+    using var r = EggReader.Open(archive, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;

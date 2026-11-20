@@ -8725,7 +8725,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.AlZip`
 
-[`AlZipEntry`](#alzipentry) · [`AlZipFormatDescriptor`](#alzipformatdescriptor) · [`AlZipReader`](#alzipreader) · [`AlZipWriter`](#alzipwriter)
+[`AlZipEntry`](#alzipentry) · [`AlZipFormatDescriptor`](#alzipformatdescriptor) · [`AlZipReader`](#alzipreader) · [`AlZipVolumes`](#alzipvolumes) · [`AlZipWriter`](#alzipwriter)
 
 #### `AlZipEntry`
 
@@ -8775,7 +8775,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 
 #### `AlZipReader`
 
-Reads single-volume ALZip archives: "ALZ\x01" + 4 bytes, local file headers ("BLZ\x01"), then the central-directory and end records ("CLZ\x01", "CLZ\x02"). Members are stored, deflated or ALZ-bzip2'd, optionally ZipCrypto-encrypted. Names are CP949.
+Reads ALZip archives (split sets through `Open` or `Join`): "ALZ\x01" + 4 bytes, local file headers ("BLZ\x01"), then the central-directory and end records ("CLZ\x01", "CLZ\x02"). Members are stored, deflated or ALZ-bzip2'd, optionally ZipCrypto-encrypted. Names are CP949.
 
 Implements `IDisposable`.
 
@@ -8786,6 +8786,17 @@ Implements `IDisposable`.
 | `IsSplit` | `bool IsSplit { get; }` | Whether the archive is one volume of a split set (only whole entries of it are readable). |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(AlZipEntry entry, string password = null)` | Decompresses (and if needed decrypts) a member, verifying its CRC-32. |
+| `Open` | `static AlZipReader Open(Stream stream, bool leaveOpen = false)` | Opens an archive; a file stream that is a volume of a split set (`name.alz`, `name.aNN`) is read together with the volumes beside it. |
+
+#### `AlZipVolumes`
+
+ALZip split sets: `name.alz`, `name.a00`, `name.a01`, …. Every volume starts with the 8-byte archive header, whose bytes 6–7 hold the volume number (0 for `.alz`). Every volume but the last ends with the 16-byte record `CLZ\x01`, eight zero bytes, `CLZ\x03`; the last ends with the ordinary end records. The archive is the first volume up to its trailer followed by each later volume without its header (and without its trailer, except the last), so members may run across volumes. Measured on split sets ALZip 12.38 wrote.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ContinuesInNextVolume` | `static bool ContinuesInNextVolume(ReadOnlySpan<byte> volume)` | Whether `volume` is a volume that continues in another one. |
+| `Join` | `static byte[] Join(IReadOnlyList<byte[]> volumes)` | Joins the volumes of a set, in order, into the one archive they hold. |
+| `VolumePath` | `static string VolumePath(string firstVolume, int number)` | The path of volume `number` of the set whose first volume is `firstVolume`. |
 
 #### `AlZipWriter`
 
@@ -15537,7 +15548,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 ### Namespace `FileFormat.Egg`
 
-[`EggCompressionMethod`](#eggcompressionmethod) · [`EggEntry`](#eggentry) · [`EggFormatDescriptor`](#eggformatdescriptor) · [`EggReader`](#eggreader) · [`EggWriter`](#eggwriter)
+[`EggCompressionMethod`](#eggcompressionmethod) · [`EggEntry`](#eggentry) · [`EggFormatDescriptor`](#eggformatdescriptor) · [`EggReader`](#eggreader) · [`EggVolumes`](#eggvolumes) · [`EggWriter`](#eggwriter)
 
 #### `EggCompressionMethod`
 
@@ -15607,6 +15618,16 @@ Implements `IDisposable`.
 | `IsSplit` | `bool IsSplit { get; }` | True when the archive is a member of a split (multi-volume) set. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(EggEntry entry, string password = null)` | Extracts and decompresses an entry: stored, deflate, bzip2, AZO and LZMA blocks, ZIP 2.0 / AES / LEA encryption, solid archives. Split (multi-volume) members raise `NotSupportedException` rather than returning wrong bytes. Every decoded block is checked against its declared size and CRC-32. |
+| `FromJoinedVolumes` | `static EggReader FromJoinedVolumes(byte[] joined)` | Reads an archive `Join` assembled from a whole split set. |
+| `Open` | `static EggReader Open(Stream stream, bool leaveOpen = false)` | Opens an archive; a file stream named `name.volN.egg` is read together with the other volumes of its split set. |
+
+#### `EggVolumes`
+
+EGG split sets: `name.vol1.egg`, `name.vol2.egg`, …. Each volume has its own EGG header (magic, version, header id, reserved) whose split field names the previous and next volume's header id (0 at either end). The archive is the first volume whole, followed by each later volume after its header's end marker, so members and blocks run across volumes. Measured on split sets ALZip 12.38 wrote.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Join` | `static byte[] Join(IReadOnlyList<byte[]> volumes)` | Joins the volumes of a set, in order, into the one archive they hold. |
 
 #### `EggWriter`
 

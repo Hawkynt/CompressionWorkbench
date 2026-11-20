@@ -43,13 +43,13 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public string Description => "Korean ALZip archive (stored, deflate and ALZ-bzip2 members; ZipCrypto)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    using var r = new AlZipReader(stream, leaveOpen: true);
+    using var r = AlZipReader.Open(stream, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.OriginalSize, e.CompressedSize,
       e.IsDirectory ? "dir" : e.MethodName, e.IsDirectory, e.IsEncrypted, e.LastModified)).ToList();
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    using var r = new AlZipReader(stream, leaveOpen: true);
+    using var r = AlZipReader.Open(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
       if (e.IsDirectory) {
@@ -63,7 +63,7 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     archive.Position = 0;
-    using var r = new AlZipReader(archive, leaveOpen: true);
+    using var r = AlZipReader.Open(archive, leaveOpen: true);
     var e = r.Entries.FirstOrDefault(x => !x.IsDirectory && string.Equals(x.FileName, entryName, StringComparison.OrdinalIgnoreCase))
       ?? throw new FileNotFoundException($"No entry '{entryName}' in the ALZip archive.");
     return r.Extract(e, password);
