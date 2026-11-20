@@ -31,6 +31,22 @@ public sealed class DeflateCompressor {
   private const int MaxBlockSize = 65535; // max for uncompressed blocks
   private const int DefaultBlockSize = 32768;
 
+  private readonly int _distanceCountBits = 5;
+
+  /// <summary>
+  /// Width of the HDIST field of dynamic blocks: 5 bits in RFC 1951 (the default), 6 in the
+  /// modified Deflate of StuffIt X.
+  /// </summary>
+  public int DistanceCountBits {
+    get => this._distanceCountBits;
+    init {
+      ArgumentOutOfRangeException.ThrowIfLessThan(value, 5);
+      ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 6);
+      this._distanceCountBits = value;
+      if (this._encoder != null) this._encoder.DistanceCountBits = value;
+    }
+  }
+
   /// <summary>
   /// Initializes a new <see cref="DeflateCompressor"/> for streaming compression.
   /// </summary>
@@ -293,7 +309,7 @@ public sealed class DeflateCompressor {
     this._bitWriter.WriteBits(DeflateConstants.BlockTypeDynamicHuffman, 2); // BTYPE=10
 
     this._bitWriter.WriteBits((uint)(hlit - 257), 5); // HLIT
-    this._bitWriter.WriteBits((uint)(hdist - 1), 5); // HDIST
+    this._bitWriter.WriteBits((uint)(hdist - 1), this._distanceCountBits); // HDIST
     this._bitWriter.WriteBits((uint)(hclen - 4), 4); // HCLEN
 
     // Write code-length code lengths in permuted order

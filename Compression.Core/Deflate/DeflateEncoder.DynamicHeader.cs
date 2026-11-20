@@ -45,7 +45,8 @@ internal sealed partial class DeflateEncoder {
     }
 
     public void Write(DeflateEncoder encoder) {
-      encoder.PutBits((uint)(this._hlit - 257) | ((uint)(this._hdist - 1) << 5) | ((uint)(this._hclen - 4) << 10), 14);
+      var distBits = encoder.DistanceCountBits;
+      encoder.PutBits((uint)(this._hlit - 257) | ((uint)(this._hdist - 1) << 5) | ((uint)(this._hclen - 4) << (5 + distBits)), 9 + distBits);
       var order = DeflateConstants.CodeLengthOrder;
       for (var i = 0; i < this._hclen; ++i)
         encoder.PutBits((uint)this._clLengths[order[i]], 3);

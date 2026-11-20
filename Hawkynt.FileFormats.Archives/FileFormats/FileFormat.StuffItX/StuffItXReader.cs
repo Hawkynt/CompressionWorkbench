@@ -17,10 +17,9 @@ namespace FileFormat.StuffItX;
 /// decoded stream; a Brimstone-compressed catalog element holds names, dates and Finder info.
 /// </para>
 /// <para>
-/// Supported stream codings are none, Brimstone (method 0), Cyanide (1), Darkhorse (2), the
-/// RC4-obscured stored method (5) and Iron (6), each optionally followed by the English
-/// preprocessor. Deflate (3), Blend (4), method 7, the x86 preprocessor and encrypted streams are
-/// listed but not extracted.
+/// Supported stream codings are none, Brimstone (method 0), Cyanide (1), Darkhorse (2), Deflate
+/// (3), Blend (4), the RC4-obscured stored method (5) and Iron (6), each optionally followed by the
+/// English or the x86 preprocessor. Method 7 and encrypted streams are listed but not extracted.
 /// </para>
 /// <para>Converted from XADMaster's <c>XADStuffItXParser.m</c>, <c>StuffItXUtilities.m</c>,
 /// <c>XADStuffItXBlockHandle.m</c> and <c>XADRC4Handle.m</c> (LGPL-2.1-or-later, see
@@ -83,6 +82,10 @@ public sealed class StuffItXReader : IDisposable {
 
   /// <summary>Ids of every data stream, including the ones only previews refer to.</summary>
   internal IEnumerable<long> StreamIds => this._streams.Keys;
+
+  /// <summary>One data stream's coded bytes (its blocks joined) and decoded length.</summary>
+  internal (byte[] Payload, long Length) StreamPayload(long id)
+    => this._streams.TryGetValue(id, out var s) ? (this.ReadBlocks(s.Element), s.Length) : throw new InvalidDataException($"StuffIt X data stream {id} is missing.");
 
   /// <summary>The coding of one data stream, as the entries name it (e.g. "Darkhorse+x86").</summary>
   internal string StreamMethod(long id) => this._streams.TryGetValue(id, out var s) ? MethodName(s.Element) : "?";
@@ -332,23 +335,46 @@ public sealed class StuffItXReader : IDisposable {
   private byte[] Decode(Element element, long length) {
     if (element.Algorithms[3] >= 0) throw new NotSupportedException("Encrypted StuffIt X streams are not supported.");
     var preprocess = element.Algorithms[2];
-    if (preprocess is >= 0 and not 0) throw new NotSupportedException($"StuffIt X stream preprocessing '{MethodName(element)}' is not supported.");
+    if (preprocess is >= 0 and not (0 or 2)) throw new NotSupportedException($"StuffIt X stream preprocessing '{MethodName(element)}' is not supported.");
     if (length < 0 || length > int.MaxValue) throw new InvalidDataException("StuffIt X stream length is out of range.");
 
     var payload = this.ReadBlocks(element);
     var input = new StuffItXInput(payload);
-    // A preprocessed stream's coded length is unknown: the coder runs to its own end.
-    var coded = preprocess >= 0 ? long.MaxValue : length;
+    // The English filter changes the length, so its coder runs to its own end; x86 keeps it.
+    var coded = preprocess == 0 ? long.MaxValue : length;
     var decoded = element.Algorithms[0] switch {
       -1 => payload,
       0 => StuffItXBrimstone.Decode(input, coded),
       1 => StuffItXCyanide.Decode(input, coded),
       2 => StuffItXDarkhorse.Decode(input, coded),
+      3 => Deflate(input, coded),
+      4 => StuffItXBlend.Decode(input, coded),
       5 => Rc4(payload),
       6 => StuffItXIron.Decode(input, coded),
       _ => throw new NotSupportedException($"StuffIt X compression method '{MethodName(element)}' is not supported."),
     };
-    return preprocess == 0 ? StuffItXEnglish.Decode(decoded, length) : decoded;
+    return preprocess switch {
+      0 => StuffItXEnglish.Decode(decoded, length),
+      2 => StuffItXX86.Decode(decoded, length),
+      _ => decoded,
+    };
+  }
+
+  /// <summary>Method 3: a window-size byte (always 15) and Deflate with a six-bit distance-code count.</summary>
+  private static byte[] Deflate(StuffItXInput input, long length) {
+    var windowBits = input.ReadByte();
+    if (windowBits != 15) throw new NotSupportedException($"StuffIt X Deflate with a 2^{windowBits} window is not supported.");
+    var start = input.Position;
+    using var source = new MemoryStream(input.Data, start, input.End - start, writable: false);
+    var inflater = new Compression.Core.Deflate.DeflateDecompressor(source) { DistanceCountBits = 6 };
+    var output = new MemoryStream();
+    var buffer = new byte[65536];
+    while (output.Length < length) {
+      var n = inflater.Decompress(buffer.AsSpan(0, (int)Math.Min(buffer.Length, length - output.Length)));
+      if (n <= 0) break;
+      output.Write(buffer, 0, n);
+    }
+    return output.ToArray();
   }
 
   /// <summary>Method 5: two skipped bytes, a one-byte RC4 key, then the RC4-obscured data.</summary>
