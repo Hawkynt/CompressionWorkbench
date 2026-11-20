@@ -21,3 +21,4 @@ format 1.1 or 2.0, at the level in the name (`none` stored, `fast` to `maximum` 
 | `biased_v2.0_normal.sqx` | 2.0 | 2 | `biased.bin` |
 | `empty_v2.0_none.sqx` | 2.0 | 0 | `empty.dat` |
 | `refused.hello_v2.0_normal.sqx` (`hello_v2.0_normal.sqx`) | 2.0 | 6 (PPMd) | `hello.txt`, which this reader refuses |
+| `words300_v1.1_sqc52_normal.sqx`, `words300_v2.0_sqc52_best.sqx` | 1.1, 2.0 | 2, 4 | `words300.txt` (300000 bytes of `word i%977 i*31%1013` lines), written by Squeez CommandLine 5.2 for Linux (`sqc a -ep -fmt SQX1 -m2`, `-fmt SQX2 -m4`; from `sqc_linux.tgz` of https://github.com/wesinator/sqx-compression): matches reach back further than 256 KiB, where the distance codes depend on the dictionary size |
