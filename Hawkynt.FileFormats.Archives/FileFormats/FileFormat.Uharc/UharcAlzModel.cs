@@ -289,36 +289,8 @@ internal sealed class UharcAlzModel<TCoder> where TCoder : struct, IUharcCoder {
     return result;
   }
 
-  /// <summary>The slot whose range holds <paramref name="distance"/>.</summary>
-  internal static int SlotOf(uint distance) {
-    var slot = UharcAlzDecoder.SlotBase.Length - 1;
-    while (UharcAlzDecoder.SlotBase[slot] > distance)
-      --slot;
-    return slot;
-  }
-
-  /// <summary>
-  /// Whether a new distance can be coded at <paramref name="position"/>: the decoder narrows a
-  /// slot at the start of the stream and halves it around a low bit, which leaves some odd
-  /// offsets out.
-  /// </summary>
-  internal static bool CanCodeDistance(uint distance, int position) {
-    if (distance == 0 || distance > (uint)position)
-      return false;
-    var k = SlotOf(distance);
-    if (k == 0)
-      return true;
-
-    var low = UharcAlzDecoder.SlotBase[k];
-    var span = UharcAlzDecoder.SlotSpan[k];
-    if (low + span - 1 > (uint)position)
-      span = (uint)position - low + 1;
-    var offset = distance - low;
-    return span >= 4 ? offset >> 1 < span >> 1 : offset < span;
-  }
-
   private uint CodeDistance(int position, uint target) {
-    var wanted = TCoder.Encoding ? SlotOf(target) + 1 : 0;
+    var wanted = TCoder.Encoding ? UharcAlzDecoder.SlotOf(target) + 1 : 0;
     var k = this.SearchTree(this._slotProbability, UharcAlzDecoder.SlotTree, 16, 44, wanted) - 1;
     var low = UharcAlzDecoder.SlotBase[k];
     if (k == 0)
