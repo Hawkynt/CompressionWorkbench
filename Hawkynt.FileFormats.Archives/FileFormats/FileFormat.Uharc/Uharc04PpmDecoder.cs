@@ -2,7 +2,7 @@ namespace FileFormat.Uharc;
 
 /// <summary>
 /// UHARC 0.4 PPM decoder (stream methods 24..39, the <c>-mx</c> mode), implemented from
-/// docs/UHARC-ON-DISK.md section "UHARC 0.4 PPM". The model is <see cref="Uharc04PpmModel"/>.
+/// docs/UHARC-ON-DISK.md section "UHARC 0.4 PPM". The model is <see cref="Uharc04PpmModel{TCoder}"/>.
 /// </summary>
 internal static class Uharc04PpmDecoder {
 
@@ -22,11 +22,36 @@ internal static class Uharc04PpmDecoder {
     if (unpackedSize == 0)
       return output;
 
-    var model = new Uharc04PpmModel(new UharcRangeDecoder(packed, offset, length), method);
+    var model = new Uharc04PpmModel<UharcDecoding>(new(new UharcRangeDecoder(packed, offset, length)), method);
     if (recordModel)
       model.UseRecordModel(fileEnds);
     model.Run(output, fileEnds);
     return output;
+  }
+}
+
+/// <summary>
+/// The encoder side of the 0.4 PPM stream (docs/UHARC-ON-DISK.md, "Writing UHARC 0.4"): it runs
+/// the decoder's <see cref="Uharc04PpmModel{TCoder}"/> over the input, which then answers every
+/// coding decision from the byte that comes next. It writes a binary stream (no word transform)
+/// with multimedia class 0.
+/// </summary>
+internal static class Uharc04PpmEncoder {
+
+  /// <summary>Packs <paramref name="data"/> as 0.4 PPM stream <paramref name="method"/> (24..39).</summary>
+  public static byte[] Encode(byte[] data, int method, IReadOnlyList<long> fileEnds) {
+    if (method is < UharcMethods.PpmFirst or > UharcMethods.PpmLast)
+      throw new ArgumentOutOfRangeException(nameof(method));
+    if (data.Length == 0)
+      return [];
+
+    var coder = new UharcRangeEncoder();
+    var model = new Uharc04PpmModel<UharcEncoding>(new(coder), method) { Source = data };
+    var output = new byte[data.Length];
+    model.Run(output, fileEnds);
+    if (!output.AsSpan().SequenceEqual(data))
+      throw new InvalidOperationException("UHARC: 0.4 PPM encoder lost track of its model.");
+    return coder.Finish();
   }
 }
 
@@ -37,14 +62,16 @@ internal static class Uharc04PpmDecoder {
 /// finally frequency rows. Compared with 0.6 every stage is simpler: records and the binary
 /// predictor are coded with plain counts (learned only through a few count-pair tables), the
 /// rows have no predicted-byte step, and copy lengths are symbols of four frequency rows.
+/// Generic over the coder direction: decoding reads every decision, encoding answers it from
+/// <see cref="Source"/>.
 /// </summary>
-internal sealed partial class Uharc04PpmModel {
+internal sealed partial class Uharc04PpmModel<TCoder> where TCoder : struct, IUharcCoder {
 
   private const uint NoPosition = uint.MaxValue;
   private const int HashSize = 0x40000;
   private const int RecordFileSize = 0xFB670;
 
-  private readonly UharcRangeDecoder _coder;
+  private readonly TCoder _coder;
   private readonly byte[] _window;
   private readonly uint _mask;
   private readonly uint _windowSize;
@@ -88,7 +115,22 @@ internal sealed partial class Uharc04PpmModel {
   private readonly UharcAlzSideModel _side = new();
   private int _selector;
 
-  public Uharc04PpmModel(UharcRangeDecoder coder, int method) {
+  // Encoding only: the input, the step's position in it, the model symbol of the literal being
+  // coded (and its form in the row being coded), and the copy decision.
+  private byte[] _source = [];
+  private int _written;
+  private long _copyLimit;
+  private int _target;
+  private int _rowTarget;
+  private int _copyClassWanted;
+  private int _copyLengthWanted;
+
+  /// <summary>The input the encoding instantiation codes; the model chooses copies from it.</summary>
+  public byte[] Source {
+    set => this._source = value;
+  }
+
+  public Uharc04PpmModel(TCoder coder, int method) {
     this._windowSize = (uint)UharcMethods.DictionarySize(method);
     this._window = new byte[this._windowSize + 0x100];
     this._mask = this._windowSize - 1;
@@ -120,16 +162,17 @@ internal sealed partial class Uharc04PpmModel {
   // ── Stream header and reset points ─────────────────────────────────────
 
   private void ReadStreamKind() {
-    this._kind = (int)this._coder.DecodeUniform(2);
+    // The encoder always writes a binary stream: no word transform to invert.
+    this._kind = (int)this._coder.Uniform(2, 1);
     if (this._kind != 0)
       return;
 
     long total = 0;
     var shift = 0;
     do {
-      total += (long)this._coder.DecodeUniform(0x800) << shift;
+      total += (long)this._coder.Uniform(0x800, 0) << shift;
       shift += 11;
-    } while (this._coder.DecodeUniform(2) != 0 && shift < 64);
+    } while (this._coder.Uniform(2, 0) != 0 && shift < 64);
 
     this._textEnd = total & 0xFFFFFFFF;
     this._transformEnd = this._textEnd;
@@ -148,6 +191,8 @@ internal sealed partial class Uharc04PpmModel {
       if (written >= reset.Next)
         this.ResetBlock(reset, written);
 
+      this._written = written;
+      this._copyLimit = Math.Min(reset.Next, output.Length);
       written = this.TryCopy(output, written, out var copied) ? copied : this.DecodeLiteral(output, written);
     }
   }
@@ -163,7 +208,7 @@ internal sealed partial class Uharc04PpmModel {
 
     public IReadOnlyList<long> Ends => ends;
 
-    public void Advance(Uharc04PpmModel model) {
+    public void Advance(Uharc04PpmModel<TCoder> model) {
       var span = 0x40000L >> (model._kind * 2);
       var target = total - this.Next > span ? this.Next + span : total;
       while (this.File < ends.Count && ends[this.File] < target) {
@@ -222,7 +267,7 @@ internal sealed partial class Uharc04PpmModel {
 
     reset.Advance(this);
     this.ApplyFileSizeRules(reset, written);
-    this.SelectClass((int)this._coder.DecodeUniform(10));
+    this.SelectClass((int)this._coder.Uniform(10, 0));
   }
 
   /// <summary>
@@ -452,13 +497,17 @@ internal sealed partial class Uharc04PpmModel {
       return false;
     }
 
+    var floor = this.CopyFloor(repeated);
+    if (TCoder.Encoding)
+      this.ChooseCopy(candidate, repeated, floor);
     if (this.DecodeCopyClass(kind) != 1) {
       this._hashLength[hash] = 0;
       this._runCount = 0;
       return false;
     }
 
-    var length = this.DecodeCopyLength(hash, repeated);    this._lastDistance = (position - candidate) & this._mask;
+    var length = this.DecodeCopyLength(hash, repeated, floor);
+    this._lastDistance = (position - candidate) & this._mask;
     this._hasExcluded = false;
     this._hashLength[hash] = (byte)length;
     if (length == 0xFF)
@@ -508,7 +557,7 @@ internal sealed partial class Uharc04PpmModel {
   /// <summary>Hit (1), miss (2), or — escape — a new multimedia class followed by a retry.</summary>
   private int DecodeCopyClass(int context) {
     while (true) {
-      var count = this._coder.GetCount(this._copyClass[context, 3]);
+      var count = this._coder.Count(this._copyClass[context, 3], TCoder.Encoding ? this._copyClass[context, this._copyClassWanted] : 0u);
       var symbol = 2;
       while (symbol > 0 && count < this._copyClass[context, symbol])
         --symbol;
@@ -518,7 +567,7 @@ internal sealed partial class Uharc04PpmModel {
         return symbol;
       }
 
-      this.SelectClass((int)this._coder.DecodeUniform(10));
+      this.SelectClass((int)this._coder.Uniform(10, 0));
     }
   }
 
@@ -544,23 +593,10 @@ internal sealed partial class Uharc04PpmModel {
   /// slot remembers) with the uniform row 0x30C behind them. The lengths from 7 up to the
   /// floor, and 3 outside runs and repeated distances, are excluded.
   /// </summary>
-  private int DecodeCopyLength(int hash, bool repeated) {
-    var quotient = (this._statRecordHits << 2) / this._statTotal;
+  private int DecodeCopyLength(int hash, bool repeated, int floor) {
     this._excludedCount = 0;
-    int floor;
-    if (repeated)
-      floor = UharcPpmTables.LengthFloorInRun[quotient];
-    else {
+    if (!repeated)
       this._excluded[this._excludedCount++] = 3;
-      if (this._statStrongHits > this._statTotal)
-        floor = 0x1D;
-      else {
-        floor = (UharcPpmTables.LengthFloorDefault[quotient] - this._kind) & 0xFF;
-        if (this._markerState != 0)
-          floor = (floor + floor) & 0xFF;
-      }
-    }
-
     for (var f = floor; f > 7; --f)
       this._excluded[this._excludedCount++] = (byte)(f - 1);
 
@@ -571,9 +607,60 @@ internal sealed partial class Uharc04PpmModel {
       row = 0x2FB + (!repeated && this._hashLength[hash] >= 0x10 ? 1 : 0);
 
     this._fallback = 0x30C;
+    this._rowTarget = this._copyLengthWanted;
     var length = this.DecodeRow(row);
     this.CountSymbol(length, row);
     return length;
+  }
+
+  /// <summary>The copy-length floor: lengths from 7 up to it are not coded.</summary>
+  private int CopyFloor(bool repeated) {
+    var quotient = (this._statRecordHits << 2) / this._statTotal;
+    if (repeated)
+      return UharcPpmTables.LengthFloorInRun[quotient];
+    if (this._statStrongHits > this._statTotal)
+      return 0x1D;
+
+    var floor = (UharcPpmTables.LengthFloorDefault[quotient] - this._kind) & 0xFF;
+    return this._markerState != 0 ? (floor + floor) & 0xFF : floor;
+  }
+
+  /// <summary>
+  /// The encoder's copy decision: the length the candidate reproduces of the input (at most 255,
+  /// never past the next reset point), cut to a length that can be coded — not 3 outside a
+  /// repeated distance, nothing from 7 below the floor — and taken from 4 bytes on. A copy of 7
+  /// to 254 excludes the byte after it from the next literal, so it must be whole: the match
+  /// ends there; shorter copies and 255 (a run goes on) exclude nothing.
+  /// </summary>
+  private void ChooseCopy(uint source, bool repeated, int floor) {
+    var position = this._position;
+    var available = (int)Math.Min(0xFF, this._copyLimit - this._written);
+    Span<byte> bytes = stackalloc byte[0x100];
+    var length = 0;
+    for (; length < available; ++length) {
+      var behind = (source - position) & this._mask;
+      var value = behind < (uint)length ? bytes[(int)behind] : this._window[source];
+      if ((byte)~value != this._source[this._written + length])
+        break;
+      bytes[length] = value;
+      source = (source + 1) & this._mask;
+    }
+
+    var whole = length < available || this._written + length >= this._source.Length;
+    if (!whole) {
+      var behind = (source - position) & this._mask;
+      var next = behind < (uint)length ? bytes[(int)behind] : this._window[source];
+      whole = (byte)~next != this._source[this._written + length];
+    }
+
+    if (length is >= 7 and < 0xFF && (!whole || length < floor))
+      length = 6;
+    if (length == 3 && !repeated)
+      length = 2;
+
+    var hit = length >= 4;
+    this._copyClassWanted = hit ? 1 : 2;
+    this._copyLengthWanted = hit ? length : 0;
   }
 
   // ── Emitting a symbol ──────────────────────────────────────────────────

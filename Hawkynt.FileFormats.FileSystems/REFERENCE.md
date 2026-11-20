@@ -3766,7 +3766,7 @@ Writes PSP CSO v1/v2 and ZSO compressed-ISO containers.
 
 #### `DaaFormatDescriptor`
 
-PowerISO DAA ("Direct Access Archive") compressed CD/DVD image, format version 0x100: exposes the ISO as `image.iso` plus a synthetic `metadata.ini`; creates and rewrites version 0x100 images PowerISO reads. Version 0x110, split, password-protected and gBurner GBI images are refused.
+PowerISO DAA ("Direct Access Archive") compressed CD/DVD image, format version 0x100: exposes the ISO as `image.iso` plus a synthetic `metadata.ini`; reads split images (from their first volume's path) and password-protected ones (with the password); creates and rewrites unsplit, unprotected version 0x100 images PowerISO reads. Version 0x110 and gBurner GBI images are refused.
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
 
@@ -3797,21 +3797,28 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`
 
 #### `DaaImage`
 
-PowerISO DAA image, format version 0x100 (single volume, unencrypted): a 76-byte header, a table of 3-byte compressed chunk lengths and raw-deflate chunks. Implemented from `docs/DAA-ON-DISK.md`.
+PowerISO DAA image, format version 0x100: a 76-byte header, descriptors, a table of 3-byte compressed chunk lengths and raw-deflate chunks, optionally split into volumes and protected by a password. Implemented from `docs/DAA-ON-DISK.md`.
+
+Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DaaImage` | `DaaImage()` |  |
 | `DefaultChunkSize` | `const int DefaultChunkSize` |  |
+| `DescriptorPassword` | `const uint DescriptorPassword` | Descriptor type of a password-protected image. |
+| `DescriptorVolumes` | `const uint DescriptorVolumes` | Descriptor type of a multi-volume image. |
 | `HeaderSize` | `const int HeaderSize` |  |
 | `Version100` | `const uint Version100` |  |
 | `Version110` | `const uint Version110` |  |
 | `ChunkSize` | `uint ChunkSize { get; }` |  |
 | `Chunks` | `IReadOnlyList<ValueTuple<long, int>> Chunks { get; }` |  |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether the image is password-protected. |
 | `IsoSize` | `long IsoSize { get; }` |  |
 | `Version` | `uint Version { get; }` |  |
-| `CopyIsoTo` | `void CopyIsoTo(Stream source, Stream output)` |  |
-| `Read` | `static DaaImage Read(Stream stream)` |  |
+| `VolumeCount` | `int VolumeCount { get; }` | Gets the number of volume files the image spans (1 for a single file). |
+| `CopyIsoTo` | `void CopyIsoTo(Stream source, Stream output)` | Decodes the ISO into `output`, every chunk checked against its CRC-32. |
+| `Dispose` | `void Dispose()` | Closes the later volumes of a split image; the first stream stays with its owner. |
+| `Read` | `static DaaImage Read(Stream stream, string password = null, Func<int, Stream> openVolume = null)` | Reads the image header and chunk table. A split image needs `openVolume`, which opens volume 2, 3, … (or returns null when it does not exist); a password-protected one needs the password before its chunks can be read (`CopyIsoTo`). |
 | `Write` | `static void Write(Stream output, ReadOnlySpan<byte> iso, int chunkSize = 65536, DeflateCompressionLevel level = 6)` | Writes a version 0x100 image: header, 3-byte length table, raw-deflate chunks each followed by its CRC-32. |
 
 ### Namespace `FileFormat.DiskCopy42`
@@ -13751,7 +13758,7 @@ An El Torito boot entry (the first one is the default entry).
 
 ### Namespace `FileSystem.Jffs1`
 
-[`Jffs1Entry`](#jffs1entry) · [`Jffs1FormatDescriptor`](#jffs1formatdescriptor) · [`Jffs1Reader`](#jffs1reader)
+[`Jffs1Entry`](#jffs1entry) · [`Jffs1FormatDescriptor`](#jffs1formatdescriptor) · [`Jffs1Reader`](#jffs1reader) · [`Jffs1WriteNode`](#jffs1writenode) · [`Jffs1Writer`](#jffs1writer)
 
 #### `Jffs1Entry`
 
@@ -13762,6 +13769,8 @@ Implements `IEquatable<Jffs1Entry>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Jffs1Entry` | `Jffs1Entry(string Path, uint Ino, uint Mode, ushort Uid, ushort Gid, uint MTime, byte[] Data)` | One inode of a JFFS (version 1) image, after replaying its nodes. |
+| `ATime` | `uint ATime { get; init; }` | Gets the access time (UNIX seconds). |
+| `CTime` | `uint CTime { get; init; }` | Gets the status-change time (UNIX seconds). |
 | `Data` | `byte[] Data { get; init; }` | File contents, symlink target, or (device nodes) the raw device number. |
 | `Gid` | `ushort Gid { get; init; }` | Group. |
 | `Ino` | `uint Ino { get; init; }` | Inode number. |
@@ -13777,7 +13786,7 @@ Implements `IEquatable<Jffs1Entry>`.
 
 JFFS version 1 — Axis Communications' Journalling Flash File System (Linux 2.4, removed in 2.6). Magic "1984" in either byte order at offset 0, followed by the root inode 1.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13794,6 +13803,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a little-endian image the way `mkfs.jffs` does: directories 0755, files 0644, owner root, each input's modification time as its access, modification and change time. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
@@ -13811,7 +13821,36 @@ Reads JFFS version 1 (Axis Communications' Journalling Flash File System, Linux 
 | `RootIno` | `const uint RootIno` |  |
 | `BigEndian` | `bool BigEndian { get; }` | True when the image is big-endian. |
 | `Entries` | `IReadOnlyList<Jffs1Entry> Entries { get; }` | Every inode below the root, parents before children. |
+| `Root` | `Jffs1Entry Root { get; }` | Gets the root directory (inode 1, an empty path): its mode, owner and times. |
 | `SkippedNodes` | `int SkippedNodes { get; }` | Raw nodes skipped because their header checksum failed or they were marked obsolete. |
+
+#### `Jffs1WriteNode`
+
+One inode to write: a directory (with children), a regular file or a symbolic link.
+
+Implements `IEquatable<Jffs1WriteNode>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Jffs1WriteNode` | `Jffs1WriteNode(string Name, uint Mode)` | One inode to write: a directory (with children), a regular file or a symbolic link. |
+| `ATime` | `uint ATime { get; init; }` | Gets the access time (UNIX seconds). |
+| `CTime` | `uint CTime { get; init; }` | Gets the status-change time (UNIX seconds). |
+| `Children` | `IReadOnlyList<Jffs1WriteNode> Children { get; init; }` | Gets a directory's entries, written in this order. |
+| `Data` | `byte[] Data { get; init; }` | Gets the file contents or the link target. |
+| `Gid` | `ushort Gid { get; init; }` | Gets the group. |
+| `MTime` | `uint MTime { get; init; }` | Gets the modification time (UNIX seconds). |
+| `Mode` | `uint Mode { get; init; }` | The Unix mode word, file type included (0x4000 directory, 0x8000 file, 0xA000 symlink). |
+| `Name` | `string Name { get; init; }` | The name in its parent directory (Latin-1, 1 to 255 bytes); ignored for the root. |
+| `Uid` | `ushort Uid { get; init; }` | Gets the owner. |
+
+#### `Jffs1Writer`
+
+Writes JFFS version 1 images as `mkfs.jffs` lays them out (docs/JFFS1-ON-DISK.md): the root inode 1, then every inode depth first, numbered in that order, each file's data in nodes of at most 32 KiB, names and data padded to four bytes with 0xFF.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultChunkSize` | `const int DefaultChunkSize` | The largest data node `mkfs.jffs` writes by default (half its default erase size). |
+| `Write` | `static void Write(Stream output, Jffs1WriteNode root, bool bigEndian = false, int chunkSize = 32768)` | Writes the image of the tree under `root`. |
 
 ### Namespace `FileSystem.Jffs2`
 

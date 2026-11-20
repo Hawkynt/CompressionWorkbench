@@ -52,4 +52,23 @@ its device number.
   left to check a replay against.
 * Inodes are joined to their parents through `pino`. The latest version's metadata and
   name win. An inode the root cannot reach is refused.
-* Read-only, in either byte order.
+* Either byte order is read.
+
+## Writing
+
+`Jffs1Writer` lays an image out as `mkfs.jffs` does:
+
+* The root inode 1 comes first. It has no name and no data, parent 0, owner root.
+* Every other inode follows depth first, numbered in the order it is met. A directory's
+  entries follow it, and their parent is its inode number.
+* Every node has version 1, except that a file's data nodes count up from 1. Each data node
+  holds at most 32 KiB at the next offset, `rsize` 0, `nlink` 1 and no flags.
+* An empty file or a directory is one node without data. A symbolic link's data is its
+  target, without a terminating NUL.
+* Names and data are padded to four bytes with `0xFF`. The header checksum is taken with
+  `accurate` and `chksum` zero, then `accurate` is set to `0xFF`.
+
+Given the tree `mkfs.jffs` was given, in the order it numbered the inodes, the writer
+reproduces both reference images byte for byte (`Jffs1WriterTests`). Device nodes are not
+written. The descriptor writes a little-endian image: directories 0755, files 0644, owner
+root, and each input's modification time as all three of its times.

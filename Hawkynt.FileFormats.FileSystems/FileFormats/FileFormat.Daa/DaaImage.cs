@@ -4,24 +4,48 @@ using Compression.Core.Deflate;
 namespace FileFormat.Daa;
 
 /// <summary>
-/// PowerISO DAA image, format version 0x100 (single volume, unencrypted): a 76-byte header,
-/// a table of 3-byte compressed chunk lengths and raw-deflate chunks. Implemented from
-/// <c>docs/DAA-ON-DISK.md</c>.
+/// PowerISO DAA image, format version 0x100: a 76-byte header, descriptors, a table of 3-byte
+/// compressed chunk lengths and raw-deflate chunks, optionally split into volumes and protected
+/// by a password. Implemented from <c>docs/DAA-ON-DISK.md</c>.
 /// </summary>
-public sealed class DaaImage {
+public sealed class DaaImage : IDisposable {
   public const int HeaderSize = 0x4C;
   public const uint Version100 = 0x100;
   public const uint Version110 = 0x110;
   public const int DefaultChunkSize = 0x10000;
+
+  /// <summary>Descriptor type of a multi-volume image.</summary>
+  public const uint DescriptorVolumes = 1;
+
+  /// <summary>Descriptor type of a password-protected image.</summary>
+  public const uint DescriptorPassword = 3;
 
   public uint Version { get; private init; }
   public uint ChunkSize { get; private init; }
   public long IsoSize { get; private init; }
   public IReadOnlyList<(long Offset, int Length)> Chunks { get; private init; } = [];
 
-  /// <exception cref="InvalidDataException">Not a DAA image, or inconsistent.</exception>
-  /// <exception cref="NotSupportedException">Version 0x110, split, encrypted or gBurner images.</exception>
-  public static DaaImage Read(Stream stream) {
+  /// <summary>Gets the number of volume files the image spans (1 for a single file).</summary>
+  public int VolumeCount { get; private init; } = 1;
+
+  /// <summary>Gets whether the image is password-protected.</summary>
+  public bool IsEncrypted { get; private init; }
+
+  private DaaVolumeStream? _volumes;
+  private DaaCipher? _cipher;
+
+  /// <summary>
+  /// Reads the image header and chunk table. A split image needs <paramref name="openVolume"/>, which
+  /// opens volume 2, 3, … (or returns null when it does not exist); a password-protected one needs the
+  /// password before its chunks can be read (<see cref="CopyIsoTo(Stream, Stream)"/>).
+  /// </summary>
+  /// <param name="stream">The image, or its first volume.</param>
+  /// <param name="password">The password of a protected image, or null.</param>
+  /// <param name="openVolume">Opens the later volumes of a split image by number (2, 3, …); null when the image is one file.</param>
+  /// <exception cref="InvalidDataException">Not a DAA image, inconsistent, or a volume is missing.</exception>
+  /// <exception cref="NotSupportedException">Version 0x110 or gBurner images, a later volume opened first, or a split image without <paramref name="openVolume"/>.</exception>
+  /// <exception cref="Compression.Registry.ArchivePasswordException">A password was given and is wrong.</exception>
+  public static DaaImage Read(Stream stream, string? password = null, Func<int, Stream?>? openVolume = null) {
     stream.Position = 0;
     var h = new byte[HeaderSize];
     if (stream.ReadAtLeast(h, HeaderSize, throwOnEndOfStream: false) != HeaderSize)
@@ -46,23 +70,47 @@ public sealed class DaaImage {
       throw new NotSupportedException("DAA: format version 0x110 (bit-packed, optionally LZMA chunk table) is not supported yet.");
     if (version != Version100)
       throw new InvalidDataException($"DAA: unknown format version 0x{version:X}.");
-    if (daaSize != stream.Length)
-      throw new NotSupportedException("DAA: the header size differs from the file size — a split (multi-volume) image.");
     if (sizeOffset < HeaderSize || dataOffset < sizeOffset || dataOffset > stream.Length || chunkSize == 0 || chunkSize > 1 << 24 || isoSize < 0)
       throw new InvalidDataException("DAA: header offsets or sizes are invalid.");
 
-    // Descriptors between the header and the chunk table: type 1 = multi-volume, 3 = password.
+    // Descriptors between the header and the chunk table; type 1 = multi-volume, 3 = password.
     var position = (long)HeaderSize;
+    var split = false;
+    byte[]? passwordRecord = null;
     Span<byte> d = stackalloc byte[8];
     while (position < sizeOffset) {
+      if (position + 8 > sizeOffset)
+        throw new InvalidDataException("DAA: a descriptor runs into the chunk table.");
       stream.Position = position;
       stream.ReadExactly(d);
       var type = BinaryPrimitives.ReadUInt32LittleEndian(d);
       var length = BinaryPrimitives.ReadUInt32LittleEndian(d[4..]);
-      if (type == 3) throw new NotSupportedException("DAA: password-protected images are not supported.");
-      if (type == 1) throw new NotSupportedException("DAA: multi-volume images are not supported.");
-      if (length < 8) throw new InvalidDataException("DAA: descriptor length is invalid.");
+      if (length < 8 || position + length > sizeOffset) throw new InvalidDataException("DAA: descriptor length is invalid.");
+      if (type == DescriptorVolumes)
+        split = true;
+      else if (type == DescriptorPassword) {
+        if (length < 8 + 8 + DaaCipher.BlockSize) throw new InvalidDataException("DAA: the password descriptor is too short.");
+        passwordRecord = new byte[8 + DaaCipher.BlockSize];
+        stream.ReadExactly(passwordRecord);
+      }
       position += length;
+    }
+
+    // A split image's chunk data runs on through the later volumes.
+    DaaVolumeStream? volumes = null;
+    if (split || daaSize != stream.Length) {
+      if (openVolume is null)
+        throw new NotSupportedException("DAA: this image is split into volumes; open its first volume by its path so the others can be found.");
+      volumes = DaaVolumeStream.Open(stream, daaSize, openVolume);
+    }
+
+    DaaCipher? cipher = null;
+    if (passwordRecord is not null && password is not null) {
+      cipher = new DaaCipher(password);
+      if (!cipher.Accepts(passwordRecord.AsSpan(8), BinaryPrimitives.ReadUInt32LittleEndian(passwordRecord.AsSpan(4)))) {
+        volumes?.Dispose();
+        throw new Compression.Registry.ArchivePasswordException("DAA: the password is wrong.", passwordWasSupplied: true);
+      }
     }
 
     var table = new byte[dataOffset - sizeOffset];
@@ -78,18 +126,36 @@ public sealed class DaaImage {
       chunks.Add((offset, length));
       offset += length;
     }
-    if (offset > stream.Length)
+    if (offset > (volumes?.Length ?? stream.Length)) {
+      volumes?.Dispose();
       throw new InvalidDataException("DAA: chunk data runs past the end of the file.");
-    return new DaaImage { Version = version, ChunkSize = chunkSize, IsoSize = isoSize, Chunks = chunks };
+    }
+    return new DaaImage {
+      Version = version, ChunkSize = chunkSize, IsoSize = isoSize, Chunks = chunks,
+      VolumeCount = volumes?.VolumeCount ?? 1, IsEncrypted = passwordRecord is not null,
+      _volumes = volumes, _cipher = cipher,
+    };
   }
 
+  /// <summary>Closes the later volumes of a split image; the first stream stays with its owner.</summary>
+  public void Dispose() => this._volumes?.Dispose();
+
+  /// <summary>Decodes the ISO into <paramref name="output"/>, every chunk checked against its CRC-32.</summary>
+  /// <param name="source">The stream the image was read from (for a split image, its first volume).</param>
+  /// <param name="output">Receives the ISO.</param>
+  /// <exception cref="InvalidDataException">A chunk is damaged.</exception>
+  /// <exception cref="Compression.Registry.ArchivePasswordException">The image is protected and was read without its password.</exception>
   public void CopyIsoTo(Stream source, Stream output) {
+    if (this.IsEncrypted && this._cipher is null)
+      throw new Compression.Registry.ArchivePasswordException("DAA: this image is protected by a password.", passwordWasSupplied: false);
+    var chunkSource = (Stream?)this._volumes ?? source;
     var written = 0L;
     for (var i = 0; i < this.Chunks.Count && written < this.IsoSize; ++i) {
       var (offset, length) = this.Chunks[i];
       var packed = new byte[length];
-      source.Position = offset;
-      source.ReadExactly(packed);
+      chunkSource.Position = offset;
+      chunkSource.ReadExactly(packed);
+      this._cipher?.Restore(packed);
       if (packed.Length < 4 || Crc32(packed.AsSpan(0, packed.Length - 4)) != BinaryPrimitives.ReadUInt32LittleEndian(packed.AsSpan(packed.Length - 4)))
         throw new InvalidDataException($"DAA: chunk {i} fails its CRC-32.");
       var data = DeflateDecompressor.Decompress(packed.AsSpan(0, packed.Length - 4));
@@ -143,7 +209,7 @@ public sealed class DaaImage {
     foreach (var c in packed) output.Write(c);
   }
 
-  private static uint Crc32(ReadOnlySpan<byte> data) {
+  internal static uint Crc32(ReadOnlySpan<byte> data) {
     var crc = 0xFFFFFFFFu;
     foreach (var b in data) {
       crc ^= b;

@@ -118,6 +118,8 @@ public class UharcWriterTests {
   [TestCase("lzp", "LZP", "secret")]
   [TestCase("alz", "ALZ:2", null)]
   [TestCase("alz", "ALZ:2", "secret")]
+  [TestCase("ppm", "PPM", null)]
+  [TestCase("ppm", "PPM", "secret")]
   [Category("HappyPath"), Category("RoundTrip")]
   public void GivenFilesAndDirectories_WhenWrittenAsVersion04AndRead_ThenEverythingComesBack(string? method, string mode, string? password) {
     var inputs = SampleInputs();
@@ -133,10 +135,26 @@ public class UharcWriterTests {
     Assert.That(reader.Entries.Where(e => e.IsDirectory).Select(e => e.FileName).Order(), Is.EqualTo(new[] { "emptydir", "sub", "sub/deeper" }));
   }
 
-  [TestCase("ppm")]
-  [Category("ErrorHandling")]
-  public void GivenAMethodVersion04CannotWriteYet_WhenWritten_ThenItIsRefused(string method)
-    => Assert.That(() => CreateWith(Version4(method)), Throws.TypeOf<NotSupportedException>());
+  [TestCase(24)]
+  [TestCase(33)]
+  [TestCase(39)]
+  [Category("RoundTrip")]
+  public void GivenData_WhenVersion04PpmEncodedAndDecoded_ThenItIsUnchanged(int method) {
+    var data = MixedData(method);
+    var ends = new long[] { data.Length / 3, data.Length };
+    var packed = Uharc04PpmEncoder.Encode(data, method, ends);
+    Assert.That(Uharc04PpmDecoder.Decode(packed, 0, packed.Length, method, data.Length, ends), Is.EqualTo(data));
+  }
+
+  [TestCase(new byte[0])]
+  [TestCase(new byte[] { 0x42 })]
+  [TestCase(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF })]
+  [Category("Boundary")]
+  public void GivenTinyInputs_WhenVersion04PpmEncodedAndDecoded_ThenTheyAreUnchanged(byte[] data) {
+    long[] ends = [data.Length];
+    var packed = Uharc04PpmEncoder.Encode(data, 24, ends);
+    Assert.That(Uharc04PpmDecoder.Decode(packed, 0, packed.Length, 24, data.Length, ends), Is.EqualTo(data));
+  }
 
   // ── UHARC 0.3 archives ─────────────────────────────────────────────────
 

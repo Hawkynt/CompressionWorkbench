@@ -51,9 +51,10 @@ internal static class UharcWriter {
   /// to 32 MiB); 0 fits the window to the stream.
   /// </param>
   /// <param name="version">
-  /// The archive version: 6 (UHARC 0.6, every mode), 4 or 3 (UHARC 0.4 and 0.3: store, RLE, LZW
-  /// for <see cref="Mode.Lz78"/>, LZP and ALZ; 0.3's windows reach 8 MiB), or 2 (UHARC 0.2: store,
-  /// LZW, and its main coder for <see cref="Mode.Alz"/>; DOS 8.3 names, upper-cased, no password).
+  /// The archive version: 6 (UHARC 0.6, every mode), 4 (UHARC 0.4: every mode, LZW for
+  /// <see cref="Mode.Lz78"/>), 3 (UHARC 0.3: store, RLE, LZW, LZP and ALZ; windows up to 8 MiB),
+  /// or 2 (UHARC 0.2: store, LZW, and its main coder for <see cref="Mode.Alz"/>; DOS 8.3 names,
+  /// upper-cased, no password).
   /// </param>
   public static void Write(Stream output, IReadOnlyList<Item> items, Mode mode, DateTime now, string? password = null, byte[]? sfxStub = null,
     long dictionaryLimit = 0, int version = 6) {
@@ -65,8 +66,8 @@ internal static class UharcWriter {
       throw new NotSupportedException($"UHARC: the 0.2 writer writes store, RLE, LZW and its main coder, not {mode}.");
     if (version == 2 && !string.IsNullOrEmpty(password))
       throw new NotSupportedException("UHARC: 0.2 archives have no password.");
-    if (version != 6 && mode is Mode.Ppm)
-      throw new NotSupportedException($"UHARC: the 0.{version} writer does not write PPM streams.");
+    if (version == 3 && mode is Mode.Ppm)
+      throw new NotSupportedException("UHARC: the 0.3 writer does not write PPM streams.");
     if (version != 6 && sfxStub != null)
       throw new NotSupportedException($"UHARC: 0.{version} has no self-extractor stub.");
     var key = PasswordBytes(password);
@@ -161,6 +162,7 @@ internal static class UharcWriter {
       UharcMethods.Rle => UharcRleEncoder.Encode(stream),
       >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => Uharc02LzwEncoder.Encode(stream, method),
       >= UharcMethods.AlzFirst and <= UharcMethods.AlzLast => Uharc04AlzEncoder.Encode(stream, method, fileEnds),
+      >= UharcMethods.PpmFirst and <= UharcMethods.PpmLast => Uharc04PpmEncoder.Encode(stream, method, fileEnds),
       _ => Uharc04LzpEncoder.Encode(stream, method, fileEnds),
     } : method switch {
       UharcMethods.Store => stream,

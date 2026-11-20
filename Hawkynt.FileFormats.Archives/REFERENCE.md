@@ -32335,6 +32335,8 @@ How `StuffItXWriter` codes the archive's data stream.
 | --- | --- | --- |
 | `Store` | `0` | Stored (no coding). |
 | `Deflate` | `1` | Method 3, StuffIt X's Deflate (a six-bit distance-code count in dynamic blocks). |
+| `Darkhorse` | `2` | Method 2, Darkhorse: LZ77 with adaptive binary range coding. |
+| `Brimstone` | `3` | Method 0, Brimstone: PPMd variant G (order 8, 16 MiB model). |
 
 #### `StuffItXEntry`
 
@@ -32357,7 +32359,7 @@ One file, directory or resource fork of a StuffIt X (.sitx) archive.
 
 #### `StuffItXFormatDescriptor`
 
-StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro): read, and written stored or Deflate-coded. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver), the reader this one is converted from`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt X
+StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro): read, and written stored, Deflate-, Brimstone- or Darkhorse-coded. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver), the reader this one is converted from`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt X
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
@@ -33745,7 +33747,7 @@ One file or directory of a UHARC archive.
 
 #### `UharcFormatDescriptor`
 
-UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP, PPM and ALZ modes, with passwords and the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP and ALZ modes; and UHARC 0.2 archives. 0.3 PPM streams are refused. Creates 0.6 archives in every 0.6 method, 0.4 and 0.3 archives in every method but PPM and 0.2 archives (store, RLE, LZW, main coder), optionally password-protected or behind a self-extractor stub, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
+UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP, PPM and ALZ modes, with passwords and the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP, PPM and ALZ modes; and UHARC 0.2 archives. Creates 0.6 and 0.4 archives in every method, 0.3 archives in every method but PPM and 0.2 archives (store, RLE, LZW, main coder), optionally password-protected or behind a self-extractor stub, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
 

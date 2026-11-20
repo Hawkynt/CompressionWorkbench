@@ -10,6 +10,10 @@ public enum StuffItXCompression {
   Store,
   /// <summary>Method 3, StuffIt X's Deflate (a six-bit distance-code count in dynamic blocks).</summary>
   Deflate,
+  /// <summary>Method 2, Darkhorse: LZ77 with adaptive binary range coding.</summary>
+  Darkhorse,
+  /// <summary>Method 0, Brimstone: PPMd variant G (order 8, 16 MiB model).</summary>
+  Brimstone,
 }
 
 /// <summary>
@@ -43,6 +47,8 @@ public static class StuffItXWriter {
     var (method, encode) = compression switch {
       StuffItXCompression.Store => (-1L, (Func<byte[], byte[]>)(static d => d)),
       StuffItXCompression.Deflate => (3L, EncodeDeflate),
+      StuffItXCompression.Darkhorse => (2L, static d => StuffItXDarkhorseEncoder.Encode(d)),
+      StuffItXCompression.Brimstone => (0L, static d => StuffItXBrimstone.Encode(d)),
       _ => throw new ArgumentOutOfRangeException(nameof(compression)),
     };
     WriteCoded(output, inputs, method, -1, encode);
