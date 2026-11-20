@@ -1,0 +1,9 @@
+DosTracer.cs recognises the end of a DOS decompression stub with the rule of
+
+  IUP 0.6.7 (Intelligent Executable Unpacker), Frank Zago, 1996-08-07
+
+which IUP's documentation places in the public domain ("IUP executable and source code is
+public domain. Feel free to use it or modify it as you wish."): a jump backwards by at least
+2000 bytes, or to offset 0x100, taken while DS and ES hold the PSP segment, ends the stub; a
+long forward jump starts a new phase. The 8086/80186 emulator (DosCpu.cs), the image-length
+rules and the relocation recovery by two runs are this repository's own.

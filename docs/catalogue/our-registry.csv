@@ -36,6 +36,7 @@ format,AndroidSparse,Android Sparse Image,Archive,,.simg;.sparse,Y,Y,Y,
 format,AndroidVbmeta,Android Verified Boot (vbmeta),Archive,,.avb,Y,Y,Y,Y
 format,Ani,ANI (animated cursor),Archive,,.ani,Y,Y,Y,
 format,Aomei,AOMEI Backupper Image (ADI/AFI),Archive,,.adi;.afi,Y,Y,Y,Y
+format,Apack,aPACK (DOS exe),Archive,,,Y,Y,,
 format,Apc,CRYO APC,Audio,,.apc,Y,Y,Y,
 format,Ape,Monkey's Audio (.ape),Audio,,.ape;.mac,Y,Y,Y,
 format,Apfs,APFS,Archive,Y,.apfs,Y,Y,Y,Y
@@ -68,6 +69,7 @@ format,Avif,AVIF,Image,,.avif;.avifs,Y,Y,,
 format,Avr,AVR (Audio Visual Research),Audio,,.avr,Y,Y,Y,
 format,Avro,Apache Avro OCF,Archive,,.avro,Y,Y,,
 format,Awb,CRI Audio Wave Bank,Archive,,.awb;.acb,Y,Y,Y,
+format,Axe,AXE (DOS exe),Archive,,,Y,Y,,
 format,Axfs,AXFS (Advanced XIP File System),Archive,Y,.axfs,Y,Y,,
 format,Ay,ZX Spectrum AY,Audio,,.ay,Y,Y,,
 format,B1,B1,Archive,,.b1,Y,Y,Y,Y
@@ -199,6 +201,7 @@ format,Esd,ESD,Archive,,.esd,Y,Y,Y,
 format,EspsSd,ESPS sampled data (.sd),Audio,,.sd,Y,Y,,
 format,Ewf,EnCase EWF (E01),Archive,,.e01;.ewf;.l01,Y,Y,Y,Y
 format,Ewf2,EnCase EWF2 (Ex01),Archive,,.ex01,Y,Y,Y,
+format,ExeLite,ExeLITE (DOS exe),Archive,,,Y,Y,,
 format,ExePack,EXEPACK (DOS exe),Archive,,,Y,Y,,
 format,ExFat,exFAT,Archive,Y,.img;.exfat,Y,Y,Y,Y
 format,Ext,ext2/3/4,Archive,Y,.ext2;.ext3;.ext4;.img,Y,Y,Y,Y
@@ -608,6 +611,7 @@ format,Thumbcache,Windows thumbnail cache (thumbcache_*.db),Archive,,,Y,Y,,
 format,ThumbsDb,Thumbs.db,Archive,,.db,Y,Y,Y,Y
 format,Ti99,TI-99/4A DSR,Archive,Y,.tifd;.tifiles,Y,Y,Y,Y
 format,Tiff,TIFF (multi-page),Archive,,.tif;.tiff,Y,Y,,
+format,TinyProg,TINYPROG (DOS exe),Archive,,,Y,Y,,
 format,TiTxt,TI-TXT (MSP430),Archive,,,Y,Y,Y,Y
 format,Tnef,MS-TNEF (winmail.dat),Archive,,.dat;.tnef,Y,Y,Y,Y
 format,TrDos,TR-DOS,Archive,Y,.trd,Y,Y,Y,Y

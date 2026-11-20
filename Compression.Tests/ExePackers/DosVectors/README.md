@@ -35,6 +35,26 @@ it (`UNP e -k- P<n> U<n>`), committed only where it differs from `T<n>`.
 
 UNP 4.11: `unp411.zip` (sha256 `45681a35…4fc342bf`), from the F1GP file archive.
 
+### Packers restored by emulating their stub
+
+`T6.EXE` (`t.asm`, `NREL=40 NTEXT=10 NRAND=30000 SEED=99 NFAR=5 CSV=3 ENTRYPAD=100`) starts
+in its fourth paragraph at a non-zero offset. These files are restored by running the stub in
+the 8086 emulator; the check is against the original program (image, relocation addresses,
+CS:IP, SS:SP). UNP 4.11 does not recognise aPACK, ExeLITE or WWPACK 3.05 files.
+
+| Files | Packer | Download (sha256 prefix…suffix) |
+|---|---|---|
+| `apack.P1/P2/P6.EXE` | aPACK 1.00, `APACK T<n>.EXE P<n>.EXE` | sac.sk `apack100.zip` (`b81b7de2…ac9f4054`) |
+| `apack-s.P1.EXE`, `apack-t.P1.EXE` | same, options `-s` and `-t` | same |
+| `exelite.P1/P2/P6.EXE` | ExeLITE (ELITE.EXE), `ELITE a P<n>.EXE` on a copy | sac.sk `elite.zip` (`07ccdaad…1434b344`) |
+| `tinyprog.P1/P2.EXE` | TINYPROG 3.9, `TINYPROG T<n>.EXE P<n>.EXE` | sac.sk `tinyp39.zip` (`eaf138cf…d268192f`) |
+| `axe.P1/P2.EXE` | AXE 2.2, `AXE P<n>.EXE B<n>.EXE -f` on a copy | sac.sk `axe.zip` (`aedc292c…ae2af466`) |
+| `axe.U1/U2.EXE` | UNP 4.11's restoration of `axe.P<n>.EXE` | |
+
+AXE starts the program with SP two below the original (UNP's restoration has the same SP).
+UNP 4.11 restores TINYPROG files with a different set of relocation addresses than the
+originals; the emulator's set is the original one.
+
 ### Where the unpackers and UNP differ
 
 - **LZEXE** keeps only the linear address of each relocation, so UNP and the unpacker both

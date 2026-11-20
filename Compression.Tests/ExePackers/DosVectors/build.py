@@ -1,9 +1,10 @@
 import subprocess, sys, struct
 # build.py <asm> <out> NREL NTEXT NRAND SEED NFAR
 asm, out, nrel, ntext, nrand, seed, nfar = sys.argv[1:8]
+extra = ['-D' + d for d in sys.argv[8:]]
 def nasm(csum):
     subprocess.check_call(['nasm', '-f', 'bin', f'-DNREL={nrel}', f'-DNTEXT={ntext}', f'-DNRAND={nrand}',
-                           f'-DSEED={seed}', f'-DNFAR={nfar}', f'-DCSUM={csum}', '-o', out, asm])
+                           f'-DSEED={seed}', f'-DNFAR={nfar}', f'-DCSUM={csum}', *extra, '-o', out, asm])
 nasm(0)
 b = open(out, 'rb').read()
 hdr = struct.unpack_from('<H', b, 8)[0] * 16
