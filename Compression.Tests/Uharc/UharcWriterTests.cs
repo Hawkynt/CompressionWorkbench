@@ -655,4 +655,97 @@ public class UharcWriterTests {
   [Category("Boundary")]
   public void GivenAStreamSize_WhenTheDictionaryIsChosen_ThenItIsTheSmallestThatHoldsIt(long size, int method)
     => Assert.That(UharcWriter.LzpMethodFor(size), Is.EqualTo(method));
+
+  // ── Filters ────────────────────────────────────────────────────────────
+
+  /// <summary>A one-bit page of the fax size with a drawn diagonal and frame.</summary>
+  internal static byte[] FaxPage() {
+    var page = new byte[UharcFaxFilter.PageSize];
+    for (var row = 0; row < 2376; ++row) {
+      page[row * 216] = 0x80;
+      page[row * 216 + (row % 1728) / 8] |= (byte)(0x80 >> (row % 8));
+    }
+
+    page.AsSpan(0, 216).Fill(0xFF);
+    return page;
+  }
+
+  /// <summary>A PCM WAV file (16-bit stereo) of a slow sine, header included.</summary>
+  internal static byte[] Wave(int samples) {
+    var data = new byte[44 + samples * 4];
+    "RIFF"u8.CopyTo(data);
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(4), data.Length - 8);
+    "WAVEfmt "u8.CopyTo(data.AsSpan(8));
+    data[16] = 16;
+    data[20] = 1;
+    data[22] = 2;
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(24), 22050);
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(28), 22050 * 4);
+    data[32] = 4;
+    data[34] = 16;
+    "data"u8.CopyTo(data.AsSpan(36));
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(40), samples * 4);
+    for (var i = 0; i < samples; ++i) {
+      var value = (short)(Math.Sin(i / 20.0) * 12000);
+      System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(44 + i * 4), value);
+      System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(46 + i * 4), (short)-value);
+    }
+
+    return data;
+  }
+
+  [Test, Category("RoundTrip")]
+  public void GivenAFaxPage_WhenTheFilterIsAppliedAndRestored_ThenItIsUnchanged() {
+    var page = FaxPage();
+    var filtered = page.ToArray();
+    UharcFaxFilter.Apply(filtered);
+    Assert.That(filtered, Is.Not.EqualTo(page));
+    UharcFaxFilter.Restore(filtered);
+    Assert.That(filtered, Is.EqualTo(page));
+  }
+
+  [TestCase(1023, false)]
+  [TestCase(1024, true)]
+  [TestCase(20000, true)]
+  [Category("RoundTrip"), Category("Boundary")]
+  public void GivenAWave_WhenTheMultimediaFilterIsAppliedAndRestored_ThenItIsUnchanged(int length, bool recognised) {
+    var wave = Wave(20000)[..length];
+    var filtered = wave.ToArray();
+    Assert.That(UharcMultimediaFilter.Apply(filtered), Is.EqualTo(recognised));
+    Assert.That(filtered.AsSpan().SequenceEqual(wave), Is.EqualTo(!recognised));
+    UharcMultimediaFilter.Restore(filtered);
+    Assert.That(filtered, Is.EqualTo(wave));
+  }
+
+  [TestCase("store", "6")]
+  [TestCase("lzp", "6")]
+  [TestCase("store", "4")]
+  [TestCase("lzp", "3")]
+  [Category("HappyPath")]
+  public void GivenAFaxPage_WhenWritten_ThenItIsStoredAsBandsAndExtractedAsAPage(string method, string version) {
+    var page = FaxPage();
+    var inputs = new[] { ArchiveInputInfo.InMemory("page.fax", page), ArchiveInputInfo.InMemory("note.txt", "a page\r\n"u8.ToArray()) };
+    var archive = CreateWith(new FormatCreateOptions(method) { FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version } }, inputs);
+    if (method == "store")
+      Assert.That(archive.AsSpan().IndexOf(page.AsSpan(0, 432)), Is.LessThan(0));
+    var reader = new UharcReader(new MemoryStream(archive));
+    Assert.Multiple(() => {
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == "page.fax")), Is.EqualTo(page));
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == "note.txt")), Is.EqualTo("a page\r\n"u8.ToArray()));
+    });
+  }
+
+  [TestCase("lzp", "6")]
+  [TestCase("lz78", "6")]
+  [TestCase("lzp", "4")]
+  [TestCase("lz78", "3")]
+  [TestCase("alz", "6")]
+  [Category("HappyPath"), Category("RoundTrip")]
+  public void GivenAWaveAmongOtherFiles_WhenWritten_ThenEveryFileComesBack(string method, string version) {
+    var wave = Wave(30000);
+    var inputs = SampleInputs().Append(ArchiveInputInfo.InMemory("tone.wav", wave)).ToList();
+    var reader = new UharcReader(new MemoryStream(CreateWith(new FormatCreateOptions(method) { FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version } }, inputs)));
+    foreach (var input in inputs.Where(i => !i.IsDirectory))
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == input.ArchiveName)), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+  }
 }

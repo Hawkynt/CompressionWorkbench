@@ -12,7 +12,8 @@ namespace FileFormat.Uharc;
 /// and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP, PPM and ALZ modes, with passwords and
 /// the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP, PPM and ALZ modes; and UHARC 0.2 archives.
 /// Creates 0.6, 0.4 and 0.3 archives in every method and 0.2 archives (store, RLE, LZW, main
-/// coder), optionally password-protected or behind a self-extractor stub, that <c>uharc.exe</c> extracts; it cannot modify them.
+/// coder), optionally password-protected or behind a self-extractor stub, with fax pages and BMP/WAV/VOC files run through
+/// UHARC's filters, that <c>uharc.exe</c> extracts; it cannot modify them.
 ///
 /// References:
 /// <list type="bullet">
