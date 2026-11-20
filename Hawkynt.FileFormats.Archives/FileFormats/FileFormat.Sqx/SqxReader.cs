@@ -9,13 +9,15 @@ namespace FileFormat.Sqx;
 /// directory blocks with their header checksums, stored and LZ77 + Huffman (methods 1-4) files,
 /// solid chains and self-extracting archives whose stub precedes the main block, audio (method 5:
 /// WAV samples behind predictors), text (method 6: PPMd var. I) and ultra (method 7: LZ77 with a
-/// range coder) files. Encryption and split files are refused.
+/// range coder) files, AES-encrypted files and Blowfish-encrypted headers given the password. Split
+/// files are refused.
 /// </summary>
 public sealed class SqxReader : IDisposable {
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
   private readonly List<SqxEntry> _entries = [];
   private readonly Dictionary<SqxEntry, byte[]> _solidCache = [];
+  private readonly string? _password;
   private bool _disposed;
 
   /// <summary>Gets the entries in the archive, in archive order.</summary>
@@ -24,11 +26,24 @@ public sealed class SqxReader : IDisposable {
   /// <summary>Whether the main block marks the archive solid.</summary>
   public bool IsSolid { get; private set; }
 
+  /// <summary>Whether the archive's headers are encrypted (they open only with the password).</summary>
+  public bool HeadersEncrypted { get; private set; }
+
   /// <summary>Opens an SQX archive.</summary>
   /// <exception cref="InvalidDataException">No main block, or a block whose checksum fails.</exception>
-  public SqxReader(Stream stream, bool leaveOpen = false) {
+  public SqxReader(Stream stream, bool leaveOpen = false) : this(stream, null, leaveOpen) { }
+
+  /// <summary>
+  /// Opens an SQX archive with the password its encrypted files (AES-128 in ECB mode, keyed with the
+  /// MD5 of the password) and, when the archive encrypts them, its headers (Blowfish, keyed the same
+  /// way) need.
+  /// </summary>
+  /// <exception cref="InvalidDataException">No main block, or a block whose checksum fails.</exception>
+  /// <exception cref="Compression.Registry.ArchivePasswordException">Encrypted headers without the right password.</exception>
+  public SqxReader(Stream stream, string? password, bool leaveOpen = false) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
+    this._password = password;
     this.ReadArchive();
   }
 
@@ -74,8 +89,6 @@ public sealed class SqxReader : IDisposable {
   }
 
   private byte[] Decode(SqxEntry entry, SolidChain? chain) {
-    if (entry.IsEncrypted)
-      throw new NotSupportedException($"SQX: '{entry.FileName}' is encrypted, which is not supported.");
     if (entry.IsSplit)
       throw new NotSupportedException($"SQX: '{entry.FileName}' is split across volumes, which is not supported.");
     if (entry.CompressedSize > int.MaxValue || entry.OriginalSize > int.MaxValue)
@@ -84,11 +97,37 @@ public sealed class SqxReader : IDisposable {
     this._stream.Position = entry.DataOffset;
     var packed = new byte[entry.CompressedSize];
     this._stream.ReadExactly(packed);
+    if (entry.IsEncrypted)
+      return this.DecodeEncrypted(entry, packed, chain);
+    return this.Finish(entry, packed, chain);
+  }
 
+  /// <summary>
+  /// An encrypted file: its stored bytes, padded to whole 16-byte blocks, are AES-128-ECB
+  /// encrypted with the MD5 of the password. A password whose result fails the file's CRC is
+  /// tried once more in the Windows ANSI encoding when it is not plain ASCII.
+  /// </summary>
+  private byte[] DecodeEncrypted(SqxEntry entry, byte[] packed, SolidChain? chain) {
+    if (string.IsNullOrEmpty(this._password))
+      throw new Compression.Registry.ArchivePasswordException($"SQX: '{entry.FileName}' is encrypted; a password is needed.", passwordWasSupplied: false);
+    if (packed.Length % 16 != 0)
+      throw new InvalidDataException($"SQX: encrypted '{entry.FileName}' is not a whole number of AES blocks.");
+    var keys = SqxCrypto.Keys(this._password);
+    for (var i = 0; ; ++i)
+      try {
+        return this.Finish(entry, SqxCrypto.DecryptData(packed, keys[i]), chain);
+      } catch (InvalidDataException e) {
+        if (i + 1 < keys.Count) continue;   // the other encoding of the password may be the right one
+        throw new Compression.Registry.ArchivePasswordException($"SQX: '{entry.FileName}' does not decrypt with this password (or is damaged): {e.Message}", passwordWasSupplied: true);
+      }
+  }
+
+  private byte[] Finish(SqxEntry entry, byte[] packed, SolidChain? chain) {
     // a solid file continues the chain's decoder; the chain's first file starts it afresh
     // an audio member's CRC also covers the audio header in front of its samples
     byte[] crcPrefix = [];
     var data = entry.Method switch {
+      0 when entry.IsEncrypted && packed.Length >= entry.OriginalSize => packed[..(int)entry.OriginalSize],
       0 => entry.CompressedSize == entry.OriginalSize ? packed : throw new InvalidDataException($"SQX: stored '{entry.FileName}' has mismatched sizes."),
       >= 1 and <= 4 when entry.OriginalSize == 0 => [],
       >= 1 and <= 4 => chain?.Lz is { } lz
@@ -138,42 +177,71 @@ public sealed class SqxReader : IDisposable {
     if (position < 0)
       throw new InvalidDataException("Not an SQX archive: no main block.");
 
+    byte[]? headerKey = null;
     while (position + SqxContainer.HeaderSize <= data.Length) {
-      var crc = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(position));
-      var type = data[position + 2];
-      var flags = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(position + 3));
-      var size = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(position + 5));
-      if (size < SqxContainer.HeaderSize || position + size > data.Length)
-        throw new InvalidDataException($"SQX block at {position} has an invalid size.");
-      var header = data.AsSpan(position, size);
-      if (SqxContainer.BlockCrc(header[2..]) != crc)
+      // behind an encrypting main block each header is a 16-bit length and that many Blowfish-encrypted bytes
+      byte[] header;
+      int next;
+      if (headerKey != null) {
+        if (position + 2 > data.Length)
+          throw new InvalidDataException("SQX archive ends inside an encrypted header.");
+        var stored = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(position));
+        if (stored < 8 || stored % 8 != 0 || position + 2 + stored > data.Length)
+          throw new InvalidDataException($"SQX encrypted header at {position} has an invalid size.");
+        header = SqxCrypto.DecryptHeader(data.AsSpan(position + 2, stored), headerKey);
+        next = position + 2 + stored;
+      } else {
+        var raw = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(position + 5));
+        if (raw < SqxContainer.HeaderSize || position + raw > data.Length)
+          throw new InvalidDataException($"SQX block at {position} has an invalid size.");
+        header = data.AsSpan(position, raw).ToArray();
+        next = position + raw;
+      }
+      var crc = BinaryPrimitives.ReadUInt16LittleEndian(header);
+      var type = header[2];
+      var flags = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(3));
+      var size = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(5));
+      if (size < SqxContainer.HeaderSize || size > header.Length || SqxContainer.BlockCrc(header.AsSpan(2, size - 2)) != crc) {
+        if (headerKey != null)
+          throw new Compression.Registry.ArchivePasswordException("SQX: the archive's headers do not decrypt with this password.", passwordWasSupplied: true);
         throw new InvalidDataException($"SQX block at {position} fails its header checksum.");
+      }
+      var block = header.AsSpan(0, size);
 
       switch (type) {
         case SqxContainer.BlockMain:
           this.IsSolid = (flags & 0x0004) != 0;
-          position += size;
+          if ((flags & 0x0002) != 0) {
+            this.HeadersEncrypted = true;
+            if (string.IsNullOrEmpty(this._password))
+              throw new Compression.Registry.ArchivePasswordException("SQX: the archive encrypts its headers; a password is needed.", passwordWasSupplied: false);
+            headerKey = SqxCrypto.Keys(this._password).First();
+          }
+          position = next;
           break;
         case SqxContainer.BlockFile:
-          position = this.ReadFile(data, position, flags, header);
+          position = this.ReadFile(data, next, flags, block);
           break;
         case SqxContainer.BlockDirectory:
-          this.ReadDirectory(header, flags);
-          position += size;
+          this.ReadDirectory(block, flags);
+          position = next;
           break;
         case SqxContainer.BlockEnd:
           return;
         default:
           // Comments, recovery and other records: header only, nothing extracted.
-          position += size;
+          position = next;
           break;
       }
     }
 
+    // some writers (the SQX SDK's own samples) stop right after the last file, without an end block
+    if (position == data.Length)
+      return;
     throw new InvalidDataException("SQX archive ends without an end block.");
   }
 
-  private int ReadFile(byte[] data, int position, ushort flags, ReadOnlySpan<byte> header) {
+  private int ReadFile(byte[] data, int dataOffset, ushort flags, ReadOnlySpan<byte> header) {
     var p = header[SqxContainer.HeaderSize..];
     if (p.Length < 28)
       throw new InvalidDataException("SQX file header is too short.");
@@ -192,7 +260,6 @@ public sealed class SqxReader : IDisposable {
     at += 2;
     if (p.Length < at + nameLength)
       throw new InvalidDataException("SQX file name runs past its header.");
-    var dataOffset = position + header.Length;
     if (dataOffset + compressedSize > data.Length)
       throw new InvalidDataException("SQX file data runs past the end of the archive.");
 

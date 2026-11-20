@@ -31885,7 +31885,7 @@ A file or directory recorded in an SQX archive.
 
 #### `SqxFormatDescriptor`
 
-SQX archives (Squeez, formats 1.1 and 2.0). Reads stored and LZ77 + Huffman files (methods 1-4, solid chains, multimedia blocks, delta and x86 filters); writes them; refuses audio, text and ultra methods, encryption and split files. See `SqxReader`.
+SQX archives (Squeez, formats 1.1 and 2.0). Reads stored and LZ77 + Huffman files (methods 1-4, solid chains, multimedia blocks, delta and x86 filters), audio, text and ultra files and, with the password, encrypted files and headers; writes methods 0-4; refuses split files. See `SqxReader`.
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
@@ -31913,14 +31913,16 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `SqxReader`
 
-Reads SQX archives (formats 1.1 and 2.0) as Squeez-c (MIT) reads them: main, file and directory blocks with their header checksums, stored and LZ77 + Huffman (methods 1-4) files, solid chains and self-extracting archives whose stub precedes the main block, audio (method 5: WAV samples behind predictors), text (method 6: PPMd var. I) and ultra (method 7: LZ77 with a range coder) files. Encryption and split files are refused.
+Reads SQX archives (formats 1.1 and 2.0) as Squeez-c (MIT) reads them: main, file and directory blocks with their header checksums, stored and LZ77 + Huffman (methods 1-4) files, solid chains and self-extracting archives whose stub precedes the main block, audio (method 5: WAV samples behind predictors), text (method 6: PPMd var. I) and ultra (method 7: LZ77 with a range coder) files, AES-encrypted files and Blowfish-encrypted headers given the password. Split files are refused.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SqxReader` | `SqxReader(Stream stream, bool leaveOpen = false)` | Opens an SQX archive. |
+| `SqxReader` | `SqxReader(Stream stream, string password, bool leaveOpen = false)` | Opens an SQX archive with the password its encrypted files (AES-128 in ECB mode, keyed with the MD5 of the password) and, when the archive encrypts them, its headers (Blowfish, keyed the same way) need. |
 | `Entries` | `IReadOnlyList<SqxEntry> Entries { get; }` | Gets the entries in the archive, in archive order. |
+| `HeadersEncrypted` | `bool HeadersEncrypted { get; }` | Whether the archive's headers are encrypted (they open only with the password). |
 | `IsSolid` | `bool IsSolid { get; }` | Whether the main block marks the archive solid. |
 | `Dispose` | `void Dispose()` |  |
 | `ExtractAll` | `byte[][] ExtractAll()` | Extracts every file in archive order (directories yield empty arrays). |

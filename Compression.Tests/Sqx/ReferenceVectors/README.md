@@ -34,5 +34,20 @@ The three `Noise_*`/`test_*` archives are from Squeez-c's `corpus` (archives the
 archiver wrote), with their WAV files; the other audio sources are in the same `corpus`, except
 `sine_st8.wav`, a generated 8-bit stereo sine pair (24044 bytes, SHA-256 `8ad1101a…2fa1`).
 
+Encrypted archives (`pw.*`, kept out of the password-less round of tests), written by Squeez
+CommandLine 5.2 for Linux (`sqc`, from the SQX SDK mirror https://github.com/wesinator/sqx-compression,
+`sqc_linux.tgz`) with `sqc a -ep -fmt SQX2|SQX1 [-m0|-s -mx] -p secret [-ph secret]` over five files
+(`a.bin` 0..255 four times, `b.txt` a repeated sentence, `c.bin` 5000 random bytes, `d.bin`
+`0123456789abcdef`, `e.bin` `x`):
+
+| File | Format | Contents |
+|---|---|---|
+| `pw.enc_v2.0_stored.sqx` | 2.0 | stored, AES |
+| `pw.enc_v2.0_normal.sqx`, `pw.enc_v1.1_normal.sqx` | 2.0, 1.1 | normal, AES |
+| `pw.enc_v2.0_solid_max.sqx` | 2.0 | solid maximum, AES |
+| `pw.enchdr_v2.0.sqx` | 2.0 | AES files and Blowfish headers (`-ph secret`) |
+| `pw.encutf8_v2.0.sqx` | 2.0 | `b.txt` and `c.bin` with the password `pässwort` (UTF-8) |
+| `pw.sdk_EncryptedArchive.sqx` | 1.1 | the SQX SDK 2.06's `Archives/EncryptedArchive.sqx` (password `test`), unchanged |
+
 The `*_ultra.sqx` archives come from the same `packed_corpus` at revision
 `03211cd1e86473da08bc675198f6902e15a28ca3`; `records.bin` (240000 bytes) is in its `corpus`.
