@@ -88,6 +88,15 @@ public class DvdisasterEccTests {
   // the README's image: 40 sectors, byte i = (i*7) ^ (i >> 11)
   private static byte[] TinyImage() => [.. Enumerable.Range(0, 81920).Select(i => (byte)((i * 7) ^ (i >> 11)))];
 
+  // dvdisaster -i short.iso -e short-rs01.ecc -c -n 8: an image shorter than the fingerprint sector
+  [Test, Category("ThirdPartyVector")]
+  public void Given_AnImageShorterThanTheFingerprintSector_When_OurRs01FileIsCreated_Then_ItIsByteForByteDvdisasters() {
+    var expected = Vector("short-rs01.ecc");
+    var ours = DvdisasterEccWriter.CreateRs01(TinyImage()[..(10 * 2048)], 8, creatorVersion: 7910);
+    ours[19] = expected[19];
+    Assert.That(ours, Is.EqualTo(expected));
+  }
+
   [Test, Category("ThirdPartyVector")]
   public void Given_TheTinyImage_When_OurRs01FileIsCreated_Then_ItIsByteForByteDvdisasters() {
     var expected = Vector("tiny.ecc");

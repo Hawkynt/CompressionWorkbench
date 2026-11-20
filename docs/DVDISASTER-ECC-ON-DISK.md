@@ -26,7 +26,7 @@ the CRCs the last sector is padded with zero bytes; sector numbers at or past `s
 | 0 | 12 | `*dvdisaster*` |
 | 12 | 4 | `RS01` |
 | 16 | 4 | method flags: byte 0 is 1; byte 3 is a release flag (0 for a release, 1 for a development build) |
-| 20 | 16 | MD5 of sector 16 (the fingerprint sector), padded as above |
+| 20 | 16 | MD5 of sector 16 (the fingerprint sector), padded as above; 16 zero bytes when the image has 16 sectors or fewer |
 | 36 | 16 | MD5 of the image (its real bytes) |
 | 52 | 16 | MD5 of everything after the header (CRCs and parity) |
 | 68 | 8 | sectors |
