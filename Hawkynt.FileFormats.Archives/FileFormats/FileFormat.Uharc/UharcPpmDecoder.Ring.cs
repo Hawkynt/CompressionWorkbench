@@ -5,7 +5,7 @@ namespace FileFormat.Uharc;
 /// contexts, each remembering one predicted byte with hit and miss counts; the most
 /// trustworthy one proposes a byte that a single binary decision accepts or rejects.
 /// </summary>
-internal sealed partial class UharcPpmDecoder {
+internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUharcCoder {
 
   private static readonly int[] LevelOffset = [0x000000, 0x040000, 0x0C0000, 0x140000, 0x180000, 0x1C0000, 0x200000, 0x3C0000];
 
@@ -165,7 +165,7 @@ internal sealed partial class UharcPpmDecoder {
     if (total == 0)
       return false;
 
-    var count = this._coder.GetCount(total);
+    var count = this._coder.Count(total, TCoder.Encoding && this._ringBest.Predicted == this._target ? m0 : 0u);
     if (count < m0) {
       this._coder.Consume(0, m0);
       return false;

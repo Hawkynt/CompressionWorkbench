@@ -11,7 +11,7 @@ is not covered is listed at the end.
 with its nine multimedia predictors —, the executable and multimedia filters, passwords and SFX
 stubs are established and verified, and so are UHARC 0.2 and the UHARC 0.4 container with its
 store, RLE, LZW, LZP and ALZ modes (see their sections). Archives of 0.3, and 0.4's PPM streams,
-are not, and are refused. The writer produces stored, RLE-, LZ78-, LZP- and ALZ-packed 0.6 archives,
+are not, and are refused. The writer produces 0.6 archives in every method — store, RLE, LZ78, LZP, PPM and ALZ —
 with or without a password and a self-extractor stub (see Writing).
 
 ## Evidence
@@ -520,12 +520,25 @@ transposed. Fixtures `fax-m2`, `fax-mx` and `v04-fax-mz`.
 ## Writing
 
 The writer produces 0.6 archives in the layout above: the stream stored (method 0), packed with
-RLE (method 1), with LZ78 (method 7, 32768 phrases), or with LZP or ALZ:2 at the smallest window
-that holds it (methods 8..23 and 56..71, 1 KiB to 32 MiB), the three tables
+RLE (method 1), with LZ78 (method 7, 32768 phrases), or with LZP, PPM or ALZ:2 at the smallest
+window that holds it (methods 8..23, 24..39 and 56..71, 1 KiB to 32 MiB), the three tables
 — the name table lists the root as an empty name and every directory with a trailing `\` —
 packed with LZP method 17 and enciphered with the default password, the header scrambled with
 the low byte of its own check. The filters byte is 0: no executable or multimedia filter runs,
-so none is undone. It writes no PPM stream.
+so none is undone.
+
+The PPM encoder is the decoder's model too, made generic over the coder direction like ALZ's
+(decoding the 39 MB set below takes as long as before: best 19.6 s against 20.0 s). Every
+coding decision names its outcome from the next input byte — a copy class hit or miss, a copy
+length, an order-4 or order-2 slot or its escape, a binary-predictor hit, the order-1 row's
+predicted byte, a row slot or escape, a uniform byte — so the decoder's own path through the
+cascade is replayed exactly. It writes a binary stream (the stream kind is a uniform choice, so
+no word transform has to be inverted) with multimedia class 0. A predicted copy is taken when
+the bytes it would produce match the input past the length floor, only whole (the full match,
+or 255 for a run) and never past a reset point, for the reason given for ALZ. On the 39 MB set
+the stream is 12.3 MB against UHARC's 10.9 MB; `UHARC.EXE x` and `UNUHARC.EXE x` extract it,
+every fixture input set, the minimal PPM inputs above and the Canterbury files byte for byte, at
+the fitted window and at 1 KiB.
 
 The ALZ encoder runs the decoder's model step for step (one model, generic over the coder
 direction, so the decoding instantiation stays as fast as before) with selector 0 — no

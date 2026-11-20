@@ -26,6 +26,12 @@ internal interface IUharcCoder {
 
   /// <summary>One bit against a 12-bit probability of zero, adapted by <paramref name="shift"/>.</summary>
   int Bit(ref ushort probability, int shift, int bit);
+
+  /// <summary>
+  /// A binary decision whose first outcome takes <paramref name="probability"/> of
+  /// <paramref name="total"/> slots; true for the first outcome.
+  /// </summary>
+  bool Scaled(uint probability, uint total, bool first);
 }
 
 /// <summary>The decoding side: forwards to <see cref="UharcRangeDecoder"/> and ignores the targets.</summary>
@@ -40,6 +46,8 @@ internal readonly struct UharcDecoding(UharcRangeDecoder coder) : IUharcCoder {
   public uint Uniform(uint total, uint value) => coder.DecodeUniform(total);
 
   public int Bit(ref ushort probability, int shift, int bit) => coder.DecodeBit(ref probability, shift);
+
+  public bool Scaled(uint probability, uint total, bool first) => coder.DecodeScaled(probability, total);
 }
 
 /// <summary>The encoding side: codes the targets with <see cref="UharcRangeEncoder"/>.</summary>
@@ -64,5 +72,13 @@ internal readonly struct UharcEncoding(UharcRangeEncoder coder) : IUharcCoder {
   public int Bit(ref ushort probability, int shift, int bit) {
     coder.EncodeBit(ref probability, shift, bit);
     return bit;
+  }
+
+  public bool Scaled(uint probability, uint total, bool first) {
+    if (first)
+      coder.Encode(0, probability, total);
+    else
+      coder.Encode(probability, total - probability, total);
+    return first;
   }
 }

@@ -10,7 +10,7 @@ namespace FileFormat.Uharc;
 /// order-2 record (20 bytes, indexed by the last two bytes) holds an escape count, eight counts
 /// and symbols, a novelty count, the total, and the last-hit slot with confidence.
 /// </remarks>
-internal sealed partial class UharcPpmDecoder {
+internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUharcCoder {
 
   private readonly byte[] _o4 = new byte[Order4Records * Order4Stride];
   private readonly byte[] _o2 = new byte[Order2Records * Order2Stride];
@@ -295,7 +295,7 @@ internal sealed partial class UharcPpmDecoder {
     var escaped = true;
     var hitSlot = -1;
     if (total != 0) {
-      var count = this._coder.GetCount(total) & 0xFFFF;
+      var count = this._coder.Count(total, TCoder.Encoding ? this.SlotInRecord(record, active, 12, 0xD) : 0u) & 0xFFFF;
       uint low = 0, high = total;
       var placed = false;
       for (var s = 0; s < 12; ++s) {
@@ -395,7 +395,7 @@ internal sealed partial class UharcPpmDecoder {
 
     var page = UharcPpmTables.PageOfCount[count] * 0x400u + cell;
     var probability = this._o4Hit[page] & 0xFFFF;
-    var hit = this._coder.DecodeScaled(probability, 0x2000);
+    var hit = this._coder.Scaled(probability, 0x2000, TCoder.Encoding && top == this._target);
     this._o4Hit[page] = Adapt(probability, hit);
     symbol = hit ? top : -1;
     return hit;
@@ -528,7 +528,7 @@ internal sealed partial class UharcPpmDecoder {
     var hitSlot = 8;
     var decoded = false;
     if (total != 0) {
-      var count = this._coder.GetCount(total) & 0xFFFF;
+      var count = this._coder.Count(total, TCoder.Encoding ? this.SlotInRecord(record, active, 8, 9) : 0u) & 0xFFFF;
       uint low = 0, high = total;
       for (var s = 0; s < 8; ++s) {
         if (!active[s])
@@ -588,9 +588,29 @@ internal sealed partial class UharcPpmDecoder {
 
     var page = UharcPpmTables.PageOfCount[count] * 0x20u + cell;
     probability = this._o2Hit[page] & 0xFFFF;
-    var hit = this._coder.DecodeScaled(probability, 0x2000);
+    var hit = this._coder.Scaled(probability, 0x2000, TCoder.Encoding && only == this._target);
     this._o2Hit[page] = Adapt(probability, hit);
     return hit;
+  }
+
+  /// <summary>
+  /// The encoder's slot in a record: what the active symbols before the target take, or all of
+  /// them (the escape) when the target is not among them.
+  /// </summary>
+  private uint SlotInRecord(ReadOnlySpan<byte> record, ReadOnlySpan<bool> active, int slots, int symbols) {
+    uint low = 0;
+    for (var s = 0; s < slots; ++s) {
+      if (!active[s])
+        continue;
+      uint f = record[s + 1];
+      if (f == 0)
+        break;
+      if (record[symbols + s] == this._target)
+        return low;
+      low += f;
+    }
+
+    return low;
   }
 
   // ── Updating the records ───────────────────────────────────────────────

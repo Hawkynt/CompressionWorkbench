@@ -39,6 +39,7 @@ public class UharcWriterTests {
   [TestCase("rle", "RLE")]
   [TestCase("lz78", "LZ78")]
   [TestCase("alz", "ALZ:2")]
+  [TestCase("ppm", "PPM")]
   [Category("HappyPath"), Category("RoundTrip")]
   public void GivenFilesAndDirectories_WhenWrittenAndRead_ThenEverythingComesBack(string? method, string mode) {
     var inputs = SampleInputs();
@@ -61,7 +62,7 @@ public class UharcWriterTests {
     Assert.That(reader.Entries, Is.Empty);
   }
 
-  [TestCase("ppm")]
+  [TestCase("deflate")]
   [TestCase("lzma")]
   [Category("ErrorHandling")]
   public void GivenAMethodTheWriterDoesNotProduce_WhenWritten_ThenItIsRefused(string method)
@@ -78,6 +79,7 @@ public class UharcWriterTests {
   [TestCase("rle")]
   [TestCase("lz78")]
   [TestCase("alz")]
+  [TestCase("ppm")]
   [Category("HappyPath"), Category("RoundTrip")]
   public void GivenAPassword_WhenWrittenAndReadWithIt_ThenEverythingComesBack(string? method) {
     var inputs = SampleInputs();
@@ -270,6 +272,44 @@ public class UharcWriterTests {
       ends.Add(end += f.Length);
     var packed = UharcAlzEncoder.Encode(data, 66, ends);
     Assert.That(UharcAlzDecoder.Decode(packed, 0, packed.Length, 66, data.Length, ends), Is.EqualTo(data));
+  }
+
+  // ── The PPM encoder against the decoder ───────────────────────────────
+
+  private static IEnumerable<TestCaseData> PpmInputs() {
+    var random = new Random(10);
+    var noise = new byte[40000];
+    random.NextBytes(noise);
+    var text = System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 4000).Select(i => $"the {i % 13} quick brown fox {i * 7 % 101}\r\n")));
+    var wave = Enumerable.Range(0, 20000).SelectMany(i => BitConverter.GetBytes((short)(Math.Sin(i * 0.02) * 12000))).ToArray();
+    var records = Enumerable.Range(0, 3000).SelectMany(i => new byte[] { 0x03, 0x02, (byte)i, 0, (byte)(i * 7), 0xFE, 0xFF, 0x45, 0, 0 }).ToArray();
+    yield return new TestCaseData(new byte[] { 0x41 }, 24).SetName("Ppm_OneByte");
+    yield return new TestCaseData(new byte[] { 0x03, 0x02, 0xFF, 0x03, 0xFF, 0x45 }, 24).SetName("Ppm_SlotRepeat");
+    yield return new TestCaseData(new byte[70000], 31).SetName("Ppm_LongRun");
+    yield return new TestCaseData(text, 31).SetName("Ppm_Text");
+    yield return new TestCaseData(text, 24).SetName("Ppm_TextIn1KiBWindow");
+    yield return new TestCaseData(noise, 30).SetName("Ppm_Noise");
+    yield return new TestCaseData(wave, 31).SetName("Ppm_Wave");
+    yield return new TestCaseData(records, 29).SetName("Ppm_Records");
+  }
+
+  [TestCaseSource(nameof(PpmInputs))]
+  [Category("RoundTrip")]
+  public void GivenData_WhenPpmEncodedAndDecoded_ThenItIsUnchanged(byte[] data, int method) {
+    var packed = UharcPpmEncoder.Encode(data, method, []);
+    Assert.That(UharcPpmDecoder.Decode(packed, 0, packed.Length, method, data.Length, []), Is.EqualTo(data));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void GivenManyFiles_WhenPpmEncodedAndDecoded_ThenTheModelResetsLineUp() {
+    var files = Enumerable.Range(0, 30).Select(i => System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat($"file {i} record {i * i}\n", 400 + i * 97)))).ToList();
+    var data = files.SelectMany(f => f).ToArray();
+    var ends = new List<long>();
+    long end = 0;
+    foreach (var f in files)
+      ends.Add(end += f.Length);
+    var packed = UharcPpmEncoder.Encode(data, 34, ends);
+    Assert.That(UharcPpmDecoder.Decode(packed, 0, packed.Length, 34, data.Length, ends), Is.EqualTo(data));
   }
 
   [TestCase(100000L, 0L, 15)]

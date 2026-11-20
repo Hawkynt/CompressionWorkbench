@@ -6,7 +6,7 @@ namespace FileFormat.Uharc;
 
 /// <summary>
 /// Writes UHARC 0.6 archives (docs/UHARC-ON-DISK.md, "Writing"): the stream stored or packed
-/// with RLE, LZ78, LZP or ALZ, the directory tables packed with LZP method 17 and enciphered with the default
+/// with RLE, LZ78, LZP, PPM or ALZ, the directory tables packed with LZP method 17 and enciphered with the default
 /// password, the header scrambled — the layout <c>uharc.exe</c> itself writes, without the
 /// executable and multimedia filters.
 /// </summary>
@@ -24,6 +24,8 @@ internal static class UharcWriter {
     Lzp,
     /// <summary>ALZ:2, methods 56..71, the smallest window that holds the stream.</summary>
     Alz,
+    /// <summary>PPM, methods 24..39, the smallest window that holds the stream.</summary>
+    Ppm,
   }
 
   /// <summary>One archive member; <see cref="Data"/> is null for a directory.</summary>
@@ -108,6 +110,7 @@ internal static class UharcWriter {
       Mode.Lz78 => UharcMethods.Lz78Last,
       Mode.Lzp => LzpMethodFor(total, dictionaryLimit),
       Mode.Alz => AlzMethodFor(total, dictionaryLimit),
+      Mode.Ppm => LzpMethodFor(total, dictionaryLimit) - UharcMethods.LzpFirst + UharcMethods.PpmFirst,
       _ => throw new ArgumentOutOfRangeException(nameof(mode)),
     };
     var packed = method switch {
@@ -115,6 +118,7 @@ internal static class UharcWriter {
       UharcMethods.Rle => UharcRleEncoder.Encode(stream),
       >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => UharcLz78Encoder.Encode(stream, method),
       >= UharcMethods.AlzFirst and <= UharcMethods.AlzLast => UharcAlzEncoder.Encode(stream, method, fileEnds),
+      >= UharcMethods.PpmFirst and <= UharcMethods.PpmLast => UharcPpmEncoder.Encode(stream, method, fileEnds),
       _ => UharcLzpEncoder.Encode(stream, method, fileEnds),
     };
 
