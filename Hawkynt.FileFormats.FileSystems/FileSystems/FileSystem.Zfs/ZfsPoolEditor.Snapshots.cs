@@ -485,7 +485,9 @@ internal static partial class ZfsPoolEditor {
         this._dedupFrees.Add(raw);
         return;
       }
-      this.FreeSpace(ZfsBlockPointer.Read(raw), 0);
+      var bp = ZfsBlockPointer.Read(raw);
+      if (this.BrtKeeps(bp)) return;
+      this.FreeSpace(bp, 0);
     }
 
     /// <summary>Queues block pointers (as bpobjs store them) for the end of a bpobj; <see cref="FlushBpobjAppends"/> writes them.</summary>

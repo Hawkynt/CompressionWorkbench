@@ -517,7 +517,7 @@ to the RAID-Z's devices; the space maps take the RAID-Z `asize`, the accounting 
 
 **Feature-flag pools (version 5000).** The enabled features and their reference counts are
 the entries of `features_for_read` and `features_for_write`. An edit is refused while one of
-these is active: block_cloning, device_removal, obsolete_counts, zpool_checkpoint, draid,
+these is active: device_removal, obsolete_counts, zpool_checkpoint, draid,
 async_destroy, allocation_classes, livelist, raidz_expansion, redacted_datasets — and while any
 feature not known to the editor is. What the active ones ask of an edit:
 
@@ -680,6 +680,25 @@ highest bit at `b`.
   hold entries; when all are empty, every table of that checksum and its statistics entry go.
 - **Accounting.** The dataset is charged per reference, so it loses the block's full charge
   whatever the table keeps.
+
+### Block cloning
+
+With `com.fudosecurity:block_cloning` active a block may be referenced by several block
+pointers; the block reference table (BRT) counts the extra references, one table per top-level
+vdev. The MOS object directory names it `com.fudosecurity:brt:vdev:<vdev id>`: an object (type
+`DMU_OTN_UINT64_METADATA`, 32 KiB blocks) whose 56-byte bonus (`brt_vdev_phys_t`) holds the
+entries ZAP, the number of counters, the byte order (0 little-endian), the total entry count,
+the range size (16 MiB), and the used and saved space; its data is one little-endian `u16` per
+range: how many entries have offsets in it. The entries ZAP (flags HASH64 and UINT64_KEY, keys
+not pre-hashed) maps a block's first-DVA byte offset to its count of extra references, stored
+as the 8 bytes of a little-endian `u64` (eight 1-byte integers).
+
+Freeing a block (not a dedup one, which the DDT counts instead): when its range counter is not 0
+and an entry with a count above 0 exists, the count drops by one and the block stays; saved
+space drops by the block's deflated size. A count reaching 0 removes the entry and also lowers
+used space, the total count and the range counter. Only a free with no (or a zero) entry
+returns the space. A table whose total count reaches 0 goes: its entries ZAP and object are
+freed, the directory entry removed and the feature's count lowered.
 
 ### Intent log
 

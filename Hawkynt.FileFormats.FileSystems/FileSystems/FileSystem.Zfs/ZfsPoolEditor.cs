@@ -197,7 +197,7 @@ internal static partial class ZfsPoolEditor {
 
     /// <summary>Features whose activity changes how blocks may be freed or space maps written; refused while active.</summary>
     private static readonly HashSet<string> RefusedWhenActive = new(StringComparer.Ordinal) {
-      "com.fudosecurity:block_cloning", "com.delphix:device_removal", "com.delphix:obsolete_counts",
+      "com.delphix:device_removal", "com.delphix:obsolete_counts",
       "com.delphix:zpool_checkpoint", "org.openzfs:draid", "com.delphix:async_destroy",
       "org.zfsonlinux:allocation_classes", "com.delphix:livelist", "org.openzfs:raidz_expansion",
       "com.delphix:redacted_datasets",
@@ -213,6 +213,7 @@ internal static partial class ZfsPoolEditor {
       "com.delphix:head_errlog", "com.delphix:bookmarks", "com.datto:bookmark_v2", "com.delphix:bookmark_written",
       "com.delphix:redaction_bookmarks", "org.openzfs:zilsaxattr", "com.joyent:filesystem_limits",
       "com.joyent:multi_vdev_crash_dump", "org.openzfs:device_rebuild", "com.datto:resilver_defer", "com.datto:encryption",
+      "com.fudosecurity:block_cloning",
     };
 
     private void LoadFeatures() {
@@ -796,6 +797,7 @@ internal static partial class ZfsPoolEditor {
         this._dedupFrees.Add(raw);
         return;
       }
+      if (this.BrtKeeps(bp)) return;                                // a clone still references it
       this.FreeSpace(bp, 0);
     }
 
@@ -1656,6 +1658,7 @@ internal static partial class ZfsPoolEditor {
         if (op.Create) this.PlanCreateSnapshot(op);
         else this.PlanDestroySnapshot(op);
       if (this._dedupFrees.Count > 0) this.PlanDedup();
+      this.PlanBrt();
       this.FlushBpobjAppends();
       if (this._emptyBpobjDelta != 0) this.AdjustEmptyBpobj();
       this.TouchDirChain(this.MosDirectory());
