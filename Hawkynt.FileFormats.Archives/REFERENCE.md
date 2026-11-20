@@ -31857,7 +31857,7 @@ Provides static methods for reading and writing the CP/M Squeeze (.sqz / .??q) f
 
 ### Namespace `FileFormat.Sqx`
 
-[`SqxEntry`](#sqxentry) · [`SqxFormatDescriptor`](#sqxformatdescriptor) · [`SqxReader`](#sqxreader) · [`SqxWriter`](#sqxwriter)
+[`SqxEntry`](#sqxentry) · [`SqxFormatDescriptor`](#sqxformatdescriptor) · [`SqxReader`](#sqxreader) · [`SqxRecovery`](#sqxrecovery) · [`SqxRecoveryRecord`](#sqxrecoveryrecord) · [`SqxRecoveryReport`](#sqxrecoveryreport) · [`SqxWriter`](#sqxwriter)
 
 #### `SqxEntry`
 
@@ -31922,12 +31922,59 @@ Implements `IDisposable`.
 | `SqxReader` | `SqxReader(Stream stream, bool leaveOpen = false)` | Opens an SQX archive. |
 | `SqxReader` | `SqxReader(Stream stream, string password, bool leaveOpen = false)` | Opens an SQX archive with the password its encrypted files (AES-128 in ECB mode, keyed with the MD5 of the password) and, when the archive encrypts them, its headers (Blowfish, keyed the same way) need. |
 | `Entries` | `IReadOnlyList<SqxEntry> Entries { get; }` | Gets the entries in the archive, in archive order. |
+| `HasRecoveryRecord` | `bool HasRecoveryRecord { get; }` | Whether the archive carries an internal recovery record (see `SqxRecovery`). |
 | `HeadersEncrypted` | `bool HeadersEncrypted { get; }` | Whether the archive's headers are encrypted (they open only with the password). |
 | `IsSolid` | `bool IsSolid { get; }` | Whether the main block marks the archive solid. |
 | `VolumeCount` | `int VolumeCount { get; }` | Volumes read: 1 for a single-volume archive. |
 | `Dispose` | `void Dispose()` |  |
 | `ExtractAll` | `byte[][] ExtractAll()` | Extracts every file in archive order (directories yield empty arrays). |
 | `ExtractEntry` | `byte[] ExtractEntry(SqxEntry entry)` | Extracts one file, decoding the files before it when it continues a solid chain. |
+
+#### `SqxRecovery`
+
+SQX recovery records: creates the external one (`name.sqx.sqr`) for an archive and repairs an archive from its internal record or an external one. A parity group (the blocks with the same index modulo the parity count) can lose one block.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CreateExternal` | `static byte[] CreateExternal(ReadOnlySpan<byte> archive, int level = 2)` | The external recovery record of `archive` with `level` percent of recovery data: ceil(blocks × level / 100) parity blocks, as Squeez writes them. |
+| `Repair` | `static SqxRecoveryReport Repair(byte[] archive, byte[] externalRecord = null)` | Repairs `archive` in place from `externalRecord` or, when that is null, from the archive's own recovery record. |
+
+#### `SqxRecoveryRecord`
+
+An SQX recovery record (block type 0x58, `SQ4RD`): the protected data in 512-byte blocks (the last zero-padded), one 16-bit CRC per block, and R parity blocks, parity k being the XOR of every block whose index is k modulo R. A 49-byte header precedes them: CRC-16, type, flags, size, `SQ4RD`, level (percent), block count, parity count, format, protected size, the raw CRC-32 of the CRCs and parity, and (external records only) the raw CRC-32 of the protected data.
+
+Implements `IEquatable<SqxRecoveryRecord>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SqxRecoveryRecord` | `SqxRecoveryRecord(uint Level, long FileBlocks, long ParityBlocks, byte Version, long DataSize, uint RecoveryCrc, uint DataCrc, ushort[] BlockCrcs, byte[] Parity)` | An SQX recovery record (block type 0x58, `SQ4RD`): the protected data in 512-byte blocks (the last zero-padded), one 16-bit CRC per block, and R parity blocks, parity k being the XOR of every block whose index is k modulo R. A 49-byte header precedes them: CRC-16, type, flags, size, `SQ4RD`, level (percent), block count, parity count, format, protected size, the raw CRC-32 of the CRCs and parity, and (external records only) the raw CRC-32 of the protected data. |
+| `BlockSize` | `const int BlockSize` | Bytes of one protected block and one parity block. |
+| `HeaderSize` | `const int HeaderSize` | Bytes of the record's header. |
+| `BlockCrcs` | `ushort[] BlockCrcs { get; init; }` |  |
+| `DataCrc` | `uint DataCrc { get; init; }` |  |
+| `DataSize` | `long DataSize { get; init; }` |  |
+| `FileBlocks` | `long FileBlocks { get; init; }` |  |
+| `Length` | `long Length { get; }` | The record's whole length: header, CRCs and parity. |
+| `Level` | `uint Level { get; init; }` |  |
+| `ParityBlocks` | `long ParityBlocks { get; init; }` |  |
+| `Parity` | `byte[] Parity { get; init; }` |  |
+| `RecoveryCrc` | `uint RecoveryCrc { get; init; }` |  |
+| `Version` | `byte Version { get; init; }` |  |
+| `ToArray` | `byte[] ToArray()` | Serializes the record (an external one carries the data's CRC in `DataCrc`, an internal one 0xFFFFFFFF). |
+| `TryRead` | `static bool TryRead(ReadOnlySpan<byte> data, out SqxRecoveryRecord record)` | Reads a record at the start of `data`; false when there is none, or it does not check out. |
+
+#### `SqxRecoveryReport`
+
+What `Repair` found and did.
+
+Implements `IEquatable<SqxRecoveryReport>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SqxRecoveryReport` | `SqxRecoveryReport(int Damaged, bool Repaired, string Message)` | What `Repair` found and did. |
+| `Damaged` | `int Damaged { get; init; }` | Protected blocks whose CRC failed. |
+| `Message` | `string Message { get; init; }` | A summary for the user. |
+| `Repaired` | `bool Repaired { get; init; }` | Whether every damaged block was rebuilt (or none was damaged). |
 
 #### `SqxWriter`
 
