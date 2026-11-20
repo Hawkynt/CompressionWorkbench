@@ -257,13 +257,130 @@ public class PeaTests {
     Assert.That(() => PeaArchive.Read(new MemoryStream(bytes)), Throws.InstanceOf<InvalidDataException>());
   }
 
-  [TestCase(0x44)] // TRIATS
-  [TestCase(0x4C)] // HRISAT
+  [TestCase(0x4D)]
+  [TestCase(0x2F)]
   [Category("Exception")]
-  public void GivenCascadeEncryptedStreamHeader_WhenRead_ThenRefusedAsUnsupported(int algo) {
+  public void GivenUnknownStreamControl_WhenRead_ThenRefused(int algo) {
     var bytes = LoadVector("deflate6.pea");
     bytes[18] = (byte)algo;
-    Assert.That(() => PeaArchive.Read(new MemoryStream(bytes), "password"), Throws.InstanceOf<NotSupportedException>());
+    Assert.That(() => PeaArchive.Read(new MemoryStream(bytes), "password"), Throws.InstanceOf<InvalidDataException>());
+  }
+
+  // ── triple cascades ─────────────────────────────────────────────────
+
+  [TestCase("triats.pea")]  // AES, Twofish, Serpent; PBKDF2; PCOMPRESS2
+  [TestCase("tritsa.pea")]  // Twofish, Serpent, AES; PCOMPRESS0
+  [TestCase("trisat.pea")]  // Serpent, AES, Twofish; PCOMPRESS1
+  [TestCase("sriats.pea")]  // scrypt
+  [TestCase("sritsa.pea")]
+  [TestCase("srisat.pea")]
+  [TestCase("hriats.pea")]  // scrypt and PBKDF2
+  [TestCase("hritsa.pea")]
+  [TestCase("hrisat.pea")]
+  [TestCase("triats1.pea")] // strength 1
+  [TestCase("hritsa1.pea")] // strength 1
+  [Category("ThemVsUs")]
+  public void GivenCascadeArchiveWrittenByPeaZip_WhenReadWithItsPassword_ThenEveryObjectDecrypts(string vector) {
+    var entries = PeaArchive.Read(new MemoryStream(LoadVector(vector)), "password");
+    AssertSmallTree(entries);
+  }
+
+  [TestCase("triats.pea")]
+  [TestCase("srisat.pea")]
+  [TestCase("hritsa.pea")]
+  [Category("Exception")]
+  public void GivenCascadeArchiveWrittenByPeaZip_WhenReadWithAWrongPassword_ThenRefused(string vector)
+    => Assert.That(() => PeaArchive.Read(new MemoryStream(LoadVector(vector)), "passworD"),
+      Throws.InstanceOf<ArchivePasswordException>().With.Property(nameof(ArchivePasswordException.PasswordWasSupplied)).True);
+
+  [Test, Category("Exception")]
+  public void GivenCascadeArchiveWithAFlippedCiphertextByte_WhenRead_ThenTheTagRefusesIt() {
+    var bytes = LoadVector("triats.pea");
+    bytes[100] ^= 0x40;
+    BitConverterLe(Compression.Core.Checksums.Crc32.Compute(bytes.AsSpan(0, bytes.Length - 4))).CopyTo(bytes, bytes.Length - 4);
+    Assert.That(() => PeaArchive.Read(new MemoryStream(bytes), "password"),
+      Throws.InstanceOf<InvalidDataException>().With.Message.Contains("authentication"));
+  }
+
+  // one per key-derivation family; every order and strength 1 are covered by pea's vectors and the pea interop
+  [TestCase(PeaArchive.Check.TriAts, 0, 2)]
+  [TestCase(PeaArchive.Check.SriTsa, 0, 1)]
+  [TestCase(PeaArchive.Check.HriSat, 0, 0)]
+  [Category("RoundTrip")]
+  public void GivenCascade_WhenWrittenAndRead_ThenEveryByteRoundTripsAndTheWrongPasswordIsRefused(PeaArchive.Check cascade, int strength, int compression) {
+    using var ms = new MemoryStream();
+    PeaArchive.Write(ms, SmallInputs(), compression, streamCheck: cascade, password: "pässwörd", cascadeStrength: strength);
+    var bytes = ms.ToArray();
+
+    var entries = PeaArchive.Read(new MemoryStream(bytes), "pässwörd");
+    foreach (var input in SmallInputs())
+      Assert.That(entries.Single(e => e.Path == input.Path).Data, Is.EqualTo(input.Data), input.Path);
+    Assert.That((bytes[9], bytes[18]), Is.EqualTo(((byte)strength, (byte)cascade)));
+    Assert.That(bytes.AsSpan(20 + 14, 2).ToArray().Concat(bytes.AsSpan(36 + 14, 2).ToArray()), Is.All.Zero, "only the last subheader carries the verifier");
+    Assert.That(() => PeaArchive.Read(new MemoryStream(bytes), "passwörd"), Throws.InstanceOf<ArchivePasswordException>());
+  }
+
+  [Test, Category("EdgeCase")]
+  public void GivenCascade_WhenWrittenTwice_ThenThePaddingHidesTheExactSize() {
+    var sizes = new HashSet<long>();
+    for (var i = 0; i < 3; ++i) { // 1-128 padding bytes: three equal sizes in a row are a 1-in-16384 chance
+      using var ms = new MemoryStream();
+      PeaArchive.Write(ms, [new("a", [1, 2, 3], SourceTime)], 0, streamCheck: PeaArchive.Check.SriAts, password: "p");
+      sizes.Add(ms.Length);
+    }
+    Assert.That(sizes, Has.Count.GreaterThan(1));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenCascadeStrengthWithoutACascade_WhenWritten_ThenRefused()
+    => Assert.That(() => PeaArchive.Write(new MemoryStream(), SmallInputs(), streamCheck: PeaArchive.Check.Aes256Eax, password: "p", cascadeStrength: 1),
+      Throws.ArgumentException);
+
+  [TestCase(8)]
+  [TestCase(-1)]
+  [Category("Exception")]
+  public void GivenCascadeStrengthOutOfRange_WhenWritten_ThenRefused(int strength)
+    => Assert.That(() => PeaArchive.Write(new MemoryStream(), SmallInputs(), streamCheck: PeaArchive.Check.TriAts, password: "p", cascadeStrength: strength),
+      Throws.InstanceOf<ArgumentOutOfRangeException>());
+
+  [TestCase("triats", PeaArchive.Check.TriAts, 0)]
+  [TestCase("SRISAT3", PeaArchive.Check.SriSat, 3)]
+  [TestCase("hritsa7", PeaArchive.Check.HriTsa, 7)]
+  [Category("HappyPath")]
+  public void GivenCascadeName_WhenParsedAsEncryptionMethod_ThenKindAndStrengthFollow(string name, PeaArchive.Check check, int strength)
+    => Assert.That(PeaFormatDescriptor.EncryptionOf(name), Is.EqualTo((check, strength)));
+
+  [TestCase("TRIATS8")]
+  [TestCase("TRIATSX")]
+  [Category("Exception")]
+  public void GivenCascadeNameWithABadStrength_WhenParsed_ThenRefused(string name)
+    => Assert.That(() => PeaFormatDescriptor.EncryptionOf(name), Throws.InstanceOf<NotSupportedException>());
+
+  [TestCase(PeaArchive.Check.TriAts, "TRIATS", 0)]
+  [TestCase(PeaArchive.Check.TriTsa, "TRITSA", 1)]
+  [TestCase(PeaArchive.Check.TriSat, "TRISAT", 0)]
+  [TestCase(PeaArchive.Check.SriAts, "SRIATS", 0)]
+  [TestCase(PeaArchive.Check.SriTsa, "SRITSA", 1)]
+  [TestCase(PeaArchive.Check.SriSat, "SRISAT", 0)]
+  [TestCase(PeaArchive.Check.HriAts, "HRIATS", 1)]
+  [TestCase(PeaArchive.Check.HriTsa, "HRITSA", 0)]
+  [TestCase(PeaArchive.Check.HriSat, "HRISAT", 0)]
+  [Category("ExternalInterop")]
+  public void GivenOurCascadeArchive_WhenPeaZipExtractsIt_ThenEveryFileMatchesAndAWrongPasswordFails(PeaArchive.Check cascade, string peaName, int strength)
+    => AssertPeaExtractsOurs(peaName + strength, f => PeaArchive.Write(f, Inputs(), 2, streamCheck: cascade, password: "s3cret pass", cascadeStrength: strength));
+
+  /// <summary>
+  /// The heaviest settings, strength 7: scrypt with N = 1 Mi, r = 8, p = 8 (1 GiB per pass) for every
+  /// cipher of SRIATS7, and for HRISAT7 PBKDF2-SHA3-512 over 25,075,000 iterations plus scrypt with
+  /// N = 512 Ki, r = 16, p = 8. Explicit: run by hand, see the vectors README for the recorded run.
+  /// </summary>
+  [TestCase("sriats7.pea")]
+  [TestCase("hrisat7.pea")]
+  [Explicit("Strength-7 cascades take minutes and a 1 GiB scrypt buffer; run by hand.")]
+  [Category("ThemVsUs")]
+  public void GivenStrength7CascadeWrittenByPeaZip_WhenRead_ThenItDecrypts(string vector) {
+    var entries = PeaArchive.Read(new MemoryStream(LoadVector(vector)), "password");
+    AssertSmallTree(entries);
   }
 
   // ── encryption ──────────────────────────────────────────────────────
@@ -381,11 +498,15 @@ public class PeaTests {
   [TestCase(PeaArchive.Check.SerpentEax, "SP")]
   [TestCase(PeaArchive.Check.AesHmac, "HMAC")]
   [Category("ExternalInterop")]
-  public void GivenOurEncryptedArchive_WhenPeaZipExtractsIt_ThenEveryFileMatchesAndAWrongPasswordFails(PeaArchive.Check encryption, string peaName) {
+  public void GivenOurEncryptedArchive_WhenPeaZipExtractsIt_ThenEveryFileMatchesAndAWrongPasswordFails(PeaArchive.Check encryption, string peaName)
+    => AssertPeaExtractsOurs(peaName, f => PeaArchive.Write(f, Inputs(), 2, streamCheck: encryption, password: "s3cret pass"));
+
+  /// <summary>pea refuses our archive under a wrong password and extracts it byte-exact under "s3cret pass".</summary>
+  private void AssertPeaExtractsOurs(string name, Action<Stream> write) {
     var pea = RequirePea();
-    var path = Path.Combine(this._tmpDir, $"enc_{peaName}.pea");
+    var path = Path.Combine(this._tmpDir, $"enc_{name}.pea");
     using (var f = File.Create(path))
-      PeaArchive.Write(f, Inputs(), 2, streamCheck: encryption, password: "s3cret pass");
+      write(f);
 
     var wrongDir = Path.Combine(this._tmpDir, "wrong");
     Directory.CreateDirectory(wrongDir);

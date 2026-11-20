@@ -27447,7 +27447,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 #### `PeaArchive`
 
-PEA (PeaZip's own format, version 1 revision 6): a 10-byte archive header, one stream with a 10-byte header naming the compression (stored or zlib at level 3/6/9 in independent 1 MiB blocks) and three integrity checks — per object, for the stream and for the volume — then objects (name, time, attributes, size, data) and an end-of-archive trigger. A volume set is that byte stream cut into `name.000001.pea`, `name.000002.pea`, …, each volume ending with the volume check over its own bytes. This covers single archives and volume sets with any of the hash or checksum controls, and streams encrypted with one cipher (AES, Twofish or Serpent in EAX mode, 128- or 256-bit, or AES-128 with HMAC), which encrypt everything after a 16-byte salt-and-verifier subheader and end the stream with a 16-byte tag; the triple cascades are refused.
+PEA (PeaZip's own format, version 1 revision 6): a 10-byte archive header, one stream with a 10-byte header naming the compression (stored or zlib at level 3/6/9 in independent 1 MiB blocks) and three integrity checks — per object, for the stream and for the volume — then objects (name, time, attributes, size, data) and an end-of-archive trigger. A volume set is that byte stream cut into `name.000001.pea`, `name.000002.pea`, …, each volume ending with the volume check over its own bytes. This covers single archives and volume sets with any of the hash or checksum controls, and streams encrypted with one cipher (AES, Twofish or Serpent in EAX mode, 128- or 256-bit, or AES-128 with HMAC) or with the triple cascades of the three 256-bit EAX ciphers, which encrypt everything after salt-and-verifier subheaders and end the stream with a tag in place of the stream check.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -27456,7 +27456,7 @@ PEA (PeaZip's own format, version 1 revision 6): a 10-byte archive header, one s
 | `VolumePath` | `static string VolumePath(string baseName, int number)` | The file name of volume `number` (1-based) of the set named `baseName`: `base.000001.pea`, `base.000002.pea`, … (at least six digits). |
 | `VolumePaths` | `static List<string> VolumePaths(string path)` | Every volume of the set `path` belongs to, in order from volume 1 while the next file exists; just `path` when it is not named like a volume. |
 | `VolumeSetBase` | `static string VolumeSetBase(string path)` | The set name of a volume path (`dir/base.000003.pea` gives `dir/base`), or null when `path` is not named like a volume. |
-| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, int compression = 2, Check objectCheck = 2, Check streamCheck = 19, Check volumeCheck = 2, long volumeSize = 0, Func<int, Stream> openVolume = null, string password = null)` | Writes a PEA 1.6 archive the way PeaZip does on Unix: names are stored as absolute paths under `/`, times as Unix seconds, zlib blocks of 1 MiB (a block that does not shrink is stored), with the given object, stream and volume checks. |
+| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, int compression = 2, Check objectCheck = 2, Check streamCheck = 19, Check volumeCheck = 2, long volumeSize = 0, Func<int, Stream> openVolume = null, string password = null, int cascadeStrength = 0)` | Writes a PEA 1.6 archive the way PeaZip does on Unix: names are stored as absolute paths under `/`, times as Unix seconds, zlib blocks of 1 MiB (a block that does not shrink is stored), with the given object, stream and volume checks. |
 
 #### `PeaArchive.Check`
 
@@ -27485,6 +27485,15 @@ A check algorithm by its PEA id.
 | `Aes256Eax` | `65` | Stream only: AES-256 EAX, keys by PBKDF2-HMAC-Whirlpool (pea's EAX256, PeaZip's default). |
 | `Twofish256Eax` | `66` | Stream only: Twofish-256 EAX, keys by PBKDF2-HMAC-Whirlpool (pea's TF256). |
 | `Serpent256Eax` | `67` | Stream only: Serpent-256 EAX, keys by PBKDF2-HMAC-Whirlpool (pea's SP256). |
+| `TriAts` | `68` | Stream only: AES, then Twofish, then Serpent (256-bit EAX each), keys by PBKDF2 (pea's TRIATS). |
+| `TriTsa` | `69` | Stream only: Twofish, Serpent, AES; keys by PBKDF2 (pea's TRITSA). |
+| `TriSat` | `70` | Stream only: Serpent, AES, Twofish; keys by PBKDF2 (pea's TRISAT). |
+| `SriAts` | `71` | Stream only: AES, Twofish, Serpent; keys by scrypt (pea's SRIATS). |
+| `SriTsa` | `72` | Stream only: Twofish, Serpent, AES; keys by scrypt (pea's SRITSA). |
+| `SriSat` | `73` | Stream only: Serpent, AES, Twofish; keys by scrypt (pea's SRISAT). |
+| `HriAts` | `74` | Stream only: AES, Twofish, Serpent; keys by scrypt and PBKDF2 (pea's HRIATS). |
+| `HriTsa` | `75` | Stream only: Twofish, Serpent, AES; keys by scrypt and PBKDF2 (pea's HRITSA). |
+| `HriSat` | `76` | Stream only: Serpent, AES, Twofish; keys by scrypt and PBKDF2 (pea's HRISAT). |
 
 #### `PeaArchive.Input`
 

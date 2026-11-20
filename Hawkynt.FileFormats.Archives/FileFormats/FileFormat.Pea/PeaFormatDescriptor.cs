@@ -54,9 +54,21 @@ public sealed class PeaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <summary>
   /// The stream encryption for <see cref="FormatCreateOptions.EncryptionMethod"/>: PeaZip's names
-  /// (EAX256 — the default —, TF256, SP256, EAX, TF, SP, HMAC) or aes256 / twofish256 / serpent256.
+  /// (EAX256 — the default —, TF256, SP256, EAX, TF, SP, HMAC, and the triple cascades TRIATS …
+  /// HRISAT with an optional strength digit 0-7, as in SRIATS3) or aes256 / twofish256 / serpent256.
   /// </summary>
-  internal static PeaArchive.Check EncryptionOf(string? method) => (method ?? "").Trim().ToUpperInvariant() switch {
+  internal static (PeaArchive.Check Check, int Strength) EncryptionOf(string? method) {
+    var name = (method ?? "").Trim().ToUpperInvariant();
+    string[] cascades = ["TRIATS", "TRITSA", "TRISAT", "SRIATS", "SRITSA", "SRISAT", "HRIATS", "HRITSA", "HRISAT"];
+    if (name.Length is 6 or 7 && Array.IndexOf(cascades, name[..6]) is var index and >= 0) {
+      var strength = name.Length == 7 ? name[6] - '0' : 0;
+      if (strength is < 0 or > 7) throw new NotSupportedException($"PEA cascade strength '{name[6..]}' is not 0-7.");
+      return ((PeaArchive.Check)(0x44 + index), strength);
+    }
+    return (SingleEncryptionOf(name), 0);
+  }
+
+  private static PeaArchive.Check SingleEncryptionOf(string name) => name switch {
     "" or "EAX256" or "AES256" or "AES" => PeaArchive.Check.Aes256Eax,
     "TF256" or "TWOFISH256" or "TWOFISH" => PeaArchive.Check.Twofish256Eax,
     "SP256" or "SERPENT256" or "SERPENT" => PeaArchive.Check.Serpent256Eax,
@@ -64,14 +76,14 @@ public sealed class PeaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     "TF" or "TWOFISH128" => PeaArchive.Check.TwofishEax,
     "SP" or "SERPENT128" => PeaArchive.Check.SerpentEax,
     "HMAC" => PeaArchive.Check.AesHmac,
-    var m => throw new NotSupportedException($"PEA encryption '{m}' is not supported (EAX256, TF256, SP256, EAX, TF, SP, HMAC)."),
+    var m => throw new NotSupportedException($"PEA encryption '{m}' is not supported (EAX256, TF256, SP256, EAX, TF, SP, HMAC, TRIATS … HRISAT)."),
   };
 
   /// <inheritdoc />
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(inputs);
     var encrypted = !string.IsNullOrEmpty(options.Password);
-    var streamCheck = encrypted ? EncryptionOf(options.EncryptionMethod) : PeaArchive.Check.Sha256;
+    var (streamCheck, strength) = encrypted ? EncryptionOf(options.EncryptionMethod) : (PeaArchive.Check.Sha256, 0);
     var compression = (options.MethodName ?? "normal").Trim().ToLowerInvariant() switch {
       "store" or "pcompress0" => 0,
       "fast" or "pcompress1" => 1,
@@ -90,7 +102,7 @@ public sealed class PeaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
     PeaArchive.Write(output, inputs.Select(i => new PeaArchive.Input(i.ArchiveName, i.IsDirectory ? null : i.ReadContent(),
       i.Metadata?.LastWriteTimeUtc?.UtcDateTime ?? DateTime.UtcNow)), compression, streamCheck: streamCheck,
-      volumeSize: volumeSize, openVolume: openVolume, password: encrypted ? options.Password : null);
+      volumeSize: volumeSize, openVolume: openVolume, password: encrypted ? options.Password : null, cascadeStrength: strength);
   }
 
   /// <inheritdoc />

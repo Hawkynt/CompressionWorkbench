@@ -26,8 +26,8 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | --- | ---: | --- |
 | `MISSING` | 175 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 35 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 49 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 327 | covered with no known gap against what the sources list |
+| `PARTIAL` | 48 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 328 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 438 | in our registry, listed by none of the eight sources |
 
 ### Per source
@@ -95,7 +95,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 | 6 | StuffIt | PARTIAL | 2 | Method 8 and segmented sets; method 14 is read and verified with unar; classic DES and StuffIt 5 RC4 reads and writes are proven. Rung 1: XADMaster (LGPL); oracle: unar. |
 | 7 | StuffIt X | PARTIAL | 2 | Darkhorse, Blend, Deflate, method 7, preprocessors, encryption; no writer. Rung 1: XADMaster (LGPL); oracle: unar. |
 | 8 | ALZip | PARTIAL | 2 | Split archives and method 3 need samples; ALZip is the oracle. |
-| 9 | PEA | PARTIAL | 2 | The triple cascades (TRI*/SRI*/HRI*: PBKDF2 at 125,000+ iterations or scrypt). Volume sets and single-cipher encryption are read and written and verified with pea. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
+| 9 | PEA | OK | 2 | Done: volume sets, every single-cipher encryption and the TRI*/SRI*/HRI* triple cascades are read and written and verified with pea. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
 | 10 | PAK (NoGate) | MISSING | 2 | Rung 1: XADMaster's Crushed method (BB_ArcDistill already covers Distilled). Needs a real sample; PAK 2.51 under DOSBox is the oracle. |
 | 11 | 7-Zip-zstd coders in 7z | PARTIAL | 2 | Write Zstandard, Brotli and LZ4 (the encoders exist); decode LZ5 and Lizard (BB_Lizard exists). Oracle: 7-Zip-zstd. |
 | 12 | ASPack | PARTIAL (read-only) | 2 | The read side is real; creating packed executables is not a goal. |
