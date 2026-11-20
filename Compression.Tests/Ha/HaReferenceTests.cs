@@ -96,4 +96,109 @@ public class HaReferenceTests {
     Assert.That(dir.MachineInfo, Is.EqualTo(new byte[] { 1, 0x10 }));
     Assert.That(r.Entries.Where(e => !e.IsDirectory).Select(e => e.MachineInfo[1]), Is.All.EqualTo(0x20));
   }
+
+  // ── Unix special files (special.ha, written by the Unix ha with the `s` switch) ─────────────
+
+  // `ha lf special.ha`: name, method, original and compressed size, CRC-32, and the mode it printed
+  // as crw-r--r--, -rw-r--r--, lrwxrwxrwx, brw-rw----, frw-r-----, srwxr-xr-x, drwxr-xr-x, crw-------, lrwxrwxrwx.
+  [Test, Category("ThirdPartyVector")]
+  public void Given_UnixHaArchive_When_Listed_Then_MatchesTheOracleListing() {
+    using var r = new HaReader(new MemoryStream(Vector("special.ha")));
+    var listing = r.Entries.Select(e => $"{e.FileName}|{e.MethodName}|{e.OriginalSize}|{e.CompressedSize}|{e.Crc32:X8}|{e.UnixMode:X4}");
+    Assert.That(listing, Is.EqualTo(new[] {
+      "bigdev|SPC|8|8|00000000|21A4",
+      "file.txt|CPY|14|14|C6D278BA|01A4", // a regular file carries no type bits
+      "link|SPC|9|9|00000000|A1FF",
+      "loopx|SPC|8|8|00000000|61B0",
+      "pipe|SPC|0|0|00000000|11A0",
+      "sock|SPC|0|0|00000000|C1ED",
+      "sub|DIR|0|0|00000000|41ED",
+      "tty0|SPC|8|8|00000000|2180",
+      "sub/uplink|SPC|12|12|00000000|A1FF",
+    }));
+    Assert.That(r.IsTruncated, Is.False);
+    Assert.That(r.DeclaredCount, Is.EqualTo(9));
+  }
+
+  // The Unix ha re-created bigdev (c 300,70000), loopx (b 7,200), tty0 (c 4,1) and pipe from this
+  // archive; the links are the targets the sources pointed at.
+  [TestCase("bigdev", HaSpecialKind.CharacterDevice, 300u, 70000u)]
+  [TestCase("loopx", HaSpecialKind.BlockDevice, 7u, 200u)]
+  [TestCase("tty0", HaSpecialKind.CharacterDevice, 4u, 1u)]
+  [Category("ThirdPartyVector")]
+  public void Given_UnixHaDevice_When_Read_Then_MajorAndMinor(string name, HaSpecialKind kind, uint major, uint minor) {
+    using var r = new HaReader(new MemoryStream(Vector("special.ha")));
+    var e = r.Entries.Single(x => x.FileName == name);
+    var special = r.ReadSpecial(e);
+    Assert.That(special.Kind, Is.EqualTo(kind));
+    Assert.That((special.DeviceMajor, special.DeviceMinor), Is.EqualTo(((uint?)major, (uint?)minor)));
+    Assert.That((e.UnixUserId, e.UnixGroupId), Is.EqualTo(((ushort?)0, (ushort?)0)));
+    Assert.That(special.LinkTarget, Is.Null);
+  }
+
+  [TestCase("link", "file.txt")]
+  [TestCase("sub/uplink", "../file.txt")]
+  [Category("ThirdPartyVector")]
+  public void Given_UnixHaLink_When_Read_Then_LinkText(string name, string target) {
+    using var r = new HaReader(new MemoryStream(Vector("special.ha")));
+    var e = r.Entries.Single(x => x.FileName == name);
+    var special = r.ReadSpecial(e);
+    Assert.That(special.Kind, Is.EqualTo(HaSpecialKind.SymbolicLink));
+    Assert.That(special.LinkTarget, Is.EqualTo(target));
+    Assert.That((e.UnixUserId, e.UnixGroupId), Is.EqualTo(((ushort?)1000, (ushort?)1000)));
+    Assert.Throws<NotSupportedException>(() => r.Extract(e));
+  }
+
+  [TestCase("pipe", HaSpecialKind.Fifo)]
+  [TestCase("sock", HaSpecialKind.Socket)]
+  [Category("ThirdPartyVector")]
+  public void Given_UnixHaFifoOrSocket_When_Read_Then_KindWithoutData(string name, HaSpecialKind kind) {
+    using var r = new HaReader(new MemoryStream(Vector("special.ha")));
+    var special = r.ReadSpecial(r.Entries.Single(x => x.FileName == name));
+    Assert.That(special.Kind, Is.EqualTo(kind));
+    Assert.That(special.Data, Is.Empty);
+    Assert.That(special.DeviceNumber, Is.Null);
+  }
+
+  [Test, Category("ThirdPartyVector")]
+  public void Given_UnixHaArchive_When_ListedByDescriptor_Then_LinksResolveAndKindsShown() {
+    var listing = new HaFormatDescriptor().List(new MemoryStream(Vector("special.ha")), null).ToDictionary(e => e.Name);
+    Assert.That(listing["link"], Has.Property("IsSymlink").True.And.Property("LinkTarget").EqualTo("file.txt").And.Property("TargetSize").EqualTo(14));
+    Assert.That(listing["link"].OriginalSize, Is.EqualTo(8));
+    Assert.That(listing["sub/uplink"], Has.Property("IsSymlink").True.And.Property("LinkTarget").EqualTo("../file.txt"));
+    Assert.That(new[] { "bigdev", "loopx", "pipe", "sock", "tty0" }.Select(n => listing[n].Kind),
+      Is.EqualTo(new[] { "char-device", "block-device", "fifo", "socket", "char-device" }));
+    Assert.That(listing["file.txt"], Has.Property("Kind").Null.And.Property("IsSymlink").False);
+  }
+
+  [Test, Category("ThirdPartyVector")]
+  public void Given_UnixHaArchive_When_ExtractedByDescriptor_Then_FilesAndDirectoriesOnly() {
+    var dir = Path.Combine(Path.GetTempPath(), "cwb-ha-special-" + Guid.NewGuid().ToString("N"));
+    try {
+      new HaFormatDescriptor().Extract(new MemoryStream(Vector("special.ha")), dir, null, null);
+      var written = Directory.EnumerateFileSystemEntries(dir, "*", SearchOption.AllDirectories)
+        .Select(p => Path.GetRelativePath(dir, p).Replace('\\', '/')).Order(StringComparer.Ordinal);
+      Assert.That(written, Is.EqualTo(new[] { "file.txt", "sub" }));
+      Assert.That(File.ReadAllText(Path.Combine(dir, "file.txt")), Is.EqualTo("hello special\n"));
+    } finally {
+      if (Directory.Exists(dir))
+        Directory.Delete(dir, recursive: true);
+    }
+  }
+
+  [Test, Category("ThirdPartyVector")]
+  public void Given_UnixHaArchive_When_FileRemoved_Then_SpecialRecordsCopiedByteForByte() {
+    var original = Vector("special.ha");
+    using var ms = new MemoryStream();
+    ms.Write(original);
+    Assert.That(HaModifier.Remove(ms, ["file.txt"]), Is.EqualTo(1));
+
+    using var before = new HaReader(new MemoryStream(original));
+    using var after = new HaReader(new MemoryStream(ms.ToArray()));
+    static byte[] Record(byte[] archive, HaEntry e) => archive.AsSpan((int)e.RecordOffset, e.HeaderLength + (int)e.CompressedSize).ToArray();
+    var edited = ms.ToArray();
+    foreach (var e in before.Entries.Where(x => x.IsSpecial))
+      Assert.That(Record(edited, after.Entries.Single(x => x.FileName == e.FileName)), Is.EqualTo(Record(original, e)), e.FileName);
+    Assert.That(after.ReadSpecial(after.Entries.Single(x => x.FileName == "link")).LinkTarget, Is.EqualTo("file.txt"));
+  }
 }
