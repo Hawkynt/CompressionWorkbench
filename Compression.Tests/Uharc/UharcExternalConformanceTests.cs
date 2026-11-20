@@ -201,6 +201,41 @@ public class UharcExternalConformanceTests {
     AssertExtracted(output, inputs);
   }
 
+  /// <summary>
+  /// UHARC 0.4 BETA's <c>UHARC04.EXE</c> (28 Dec 2001, Win32; <c>CWB_TOOL_UHARC04</c> names it)
+  /// extracts the 0.4 archives we write.
+  /// </summary>
+  [TestCase("store", 0L, null)]
+  [TestCase("rle", 0L, null)]
+  [TestCase("lz78", 0L, null)]
+  [TestCase("lzp", 0L, null)]
+  [TestCase("lzp", 1024L, "secret")]
+  [TestCase("lz78", 0L, "secret")]
+  public void GivenOurVersion04Archive_WhenUharc04Extracts_ThenEveryFileIsByteIdentical(string method, long dictionary, string? password) {
+    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+      Assert.Ignore("UHARC04.EXE is a Win32 console program.");
+    var tool = Environment.GetEnvironmentVariable("CWB_TOOL_UHARC04");
+    if (string.IsNullOrEmpty(tool) || !File.Exists(tool))
+      Assert.Ignore("Set CWB_TOOL_UHARC04 to UHARC 0.4 BETA's UHARC04.EXE.");
+
+    var random = new Random(2001);
+    var noise = new byte[150000];
+    random.NextBytes(noise);
+    var inputs = UharcWriterTests.SampleInputs().Append(ArchiveInputInfo.InMemory("noise.dat", noise))
+      .Append(ArchiveInputInfo.InMemory("fill.txt", System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 40000).Select(i => $"{i * 7919 % 100003:x} "))))).ToList();
+    var archive = Path.Combine(this._tmp, "ours.uha");
+    File.WriteAllBytes(archive, UharcWriterTests.CreateWith(new FormatCreateOptions(method) {
+      Password = password,
+      DictSize = dictionary,
+      FormatSpecific = { [UharcFormatDescriptor.VersionOption] = "4" },
+    }, inputs));
+    var output = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(output);
+    string[] arguments = password == null ? ["x", "-y", archive] : ["x", "-y", "-pw" + password, archive];
+    Run(tool!, output, arguments);
+    AssertExtracted(output, inputs);
+  }
+
   /// <summary>Enough varied data to fill LZ78's 32768 phrases several times over.</summary>
   [TestCase("rle", 0)]
   [TestCase("lz78", 0)]

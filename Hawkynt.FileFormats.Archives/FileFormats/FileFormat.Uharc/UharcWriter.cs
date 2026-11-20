@@ -50,10 +50,20 @@ internal static class UharcWriter {
   /// Largest LZP/ALZ window in bytes, as <c>-md</c> sets it (rounded up to a power of two, 1 KiB
   /// to 32 MiB); 0 fits the window to the stream.
   /// </param>
+  /// <param name="version">
+  /// The archive version: 6 (UHARC 0.6, every mode) or 4 (UHARC 0.4: store, RLE, LZW for
+  /// <see cref="Mode.Lz78"/>, and LZP).
+  /// </param>
   public static void Write(Stream output, IReadOnlyList<Item> items, Mode mode, DateTime now, string? password = null, byte[]? sfxStub = null,
-    long dictionaryLimit = 0) {
+    long dictionaryLimit = 0, int version = 6) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(items);
+    if (version is not (4 or 6))
+      throw new NotSupportedException($"UHARC: the writer writes versions 0.4 and 0.6, not {version}.");
+    if (version == 4 && mode is Mode.Alz or Mode.Ppm)
+      throw new NotSupportedException($"UHARC: the 0.4 writer does not write {mode} streams.");
+    if (version == 4 && sfxStub != null)
+      throw new NotSupportedException("UHARC: 0.4 has no self-extractor stub.");
     var key = PasswordBytes(password);
     if (sfxStub != null && UharcHeader.PeImageEnd(sfxStub) != sfxStub.Length)
       throw new NotSupportedException("UHARC: the self-extractor stub must be a PE image that ends with its last section.");
@@ -113,7 +123,12 @@ internal static class UharcWriter {
       Mode.Ppm => LzpMethodFor(total, dictionaryLimit) - UharcMethods.LzpFirst + UharcMethods.PpmFirst,
       _ => throw new ArgumentOutOfRangeException(nameof(mode)),
     };
-    var packed = method switch {
+    var packed = version == 4 ? method switch {
+      UharcMethods.Store => stream,
+      UharcMethods.Rle => UharcRleEncoder.Encode(stream),
+      >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => Uharc02LzwEncoder.Encode(stream, method),
+      _ => Uharc04LzpEncoder.Encode(stream, method, fileEnds),
+    } : method switch {
       UharcMethods.Store => stream,
       UharcMethods.Rle => UharcRleEncoder.Encode(stream),
       >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => UharcLz78Encoder.Encode(stream, method),
@@ -152,6 +167,11 @@ internal static class UharcWriter {
 
     if (directories.Count > ushort.MaxValue || nameTable.Length >= 1 << 24)
       throw new NotSupportedException("UHARC: directory is too large.");
+
+    if (version == 4) {
+      WriteVersion4(output, now, key, method, directories.Count, total, packed, crcs, nameTable, fileTable, n);
+      return;
+    }
 
     var packedNames = PackTable(nameTable);
     var packedFiles = PackTable(fileTable);
@@ -217,6 +237,68 @@ internal static class UharcWriter {
   internal static int AlzMethodFor(long size, long limit = 0) => LzpMethodFor(size, limit) - UharcMethods.LzpFirst + UharcMethods.AlzFirst + 16;
 
   private static byte[] PackTable(byte[] table) => UharcLzpEncoder.Encode(table, UharcMethods.Table, []);
+
+  /// <summary>
+  /// The UHARC 0.4 container (docs/UHARC-ON-DISK.md, "UHARC 0.4"): a 44-byte header, the stream,
+  /// the stored CRC table, the name table as 0.4 LZP method 17, the dates-then-times table as LZW
+  /// method 2 and the size table (directory planes, size-delta planes, attributes) as LZW method 7.
+  /// </summary>
+  private static void WriteVersion4(Stream output, DateTime now, byte[]? key, int method, int directoryCount, long total, byte[] packed,
+    byte[] crcs, byte[] nameTable, byte[] fileTable, int n) {
+    // The 0.6 file table holds the same planes: dates, times, directory, size delta, attribute.
+    var dates = fileTable.AsSpan(0, 4 * n).ToArray();
+    var sizes = fileTable.AsSpan(4 * n, 7 * n).ToArray();
+    var packedNames = Uharc04LzpEncoder.Encode(nameTable, UharcMethods.Table, []);
+    var packedDates = Uharc02LzwEncoder.Encode(dates, 2);
+    var packedSizes = Uharc02LzwEncoder.Encode(sizes, 7);
+    if (packedNames.Length >= 1 << 24 || packedDates.Length >= 1 << 24 || packedSizes.Length >= 1 << 24)
+      throw new NotSupportedException("UHARC: directory is too large.");
+
+    var namesCrc = new Crc32();
+    namesCrc.Update(crcs);
+    namesCrc.Update(nameTable);
+
+    var header = new byte[Uharc04Header.Size];
+    header[0] = (byte)'U';
+    header[1] = (byte)'H';
+    header[2] = (byte)'A';
+    header[3] = 4;
+    var (archiveDate, archiveTime) = ToDos(now);
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(4), archiveTime);
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(6), archiveDate);
+    if (key != null)
+      header[8] = Uharc04Header.UsesPassword;
+    header[10] = (byte)method;
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(11), (ushort)directoryCount);
+    BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(13), (uint)total);
+    BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(17), (uint)packed.Length);
+    WriteUInt24(header.AsSpan(21), n);
+    WriteUInt24(header.AsSpan(24), nameTable.Length);
+    WriteUInt24(header.AsSpan(27), packedNames.Length);
+    WriteUInt24(header.AsSpan(30), packedDates.Length);
+    WriteUInt24(header.AsSpan(33), packedSizes.Length);
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(36), (ushort)namesCrc.Value);
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(38), (ushort)Crc32.Compute(dates));
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(40), (ushort)Crc32.Compute(sizes));
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(42), (ushort)Crc32.Compute(header.AsSpan(4, 36)));
+    for (var i = 0; i < 36; ++i)
+      header[4 + i] ^= (byte)(header[42] + i * i);
+
+    var tableKey = key ?? UharcCipher.DefaultPassword.ToArray();
+    UharcCipher.Apply(crcs, tableKey);
+    UharcCipher.Apply(packedNames, tableKey);
+    UharcCipher.Apply(packedDates, tableKey);
+    UharcCipher.Apply(packedSizes, tableKey);
+    if (key != null)
+      UharcCipher.Apply(packed, key);
+
+    output.Write(header);
+    output.Write(packed);
+    output.Write(crcs);
+    output.Write(packedNames);
+    output.Write(packedDates);
+    output.Write(packedSizes);
+  }
 
   private static byte[]? PasswordBytes(string? password) {
     if (string.IsNullOrEmpty(password))

@@ -104,6 +104,79 @@ public class UharcWriterTests {
   public void GivenAPasswordOutsidePrintableAscii_WhenWritten_ThenItIsRefused(string password)
     => Assert.That(() => CreateWith(new FormatCreateOptions { Password = password }), Throws.TypeOf<NotSupportedException>());
 
+  // ── UHARC 0.4 archives ─────────────────────────────────────────────────
+
+  private static FormatCreateOptions Version4(string? method, string? password = null) => new(method) {
+    Password = password,
+    FormatSpecific = { [UharcFormatDescriptor.VersionOption] = "4" },
+  };
+
+  [TestCase("store", "Store", null)]
+  [TestCase("rle", "RLE", null)]
+  [TestCase("lz78", "LZW", null)]
+  [TestCase(null, "LZP", null)]
+  [TestCase("lzp", "LZP", "secret")]
+  [Category("HappyPath"), Category("RoundTrip")]
+  public void GivenFilesAndDirectories_WhenWrittenAsVersion04AndRead_ThenEverythingComesBack(string? method, string mode, string? password) {
+    var inputs = SampleInputs();
+    var archive = CreateWith(Version4(method, password), inputs);
+    Assert.That(archive[3], Is.EqualTo(4));
+    var reader = new UharcReader(new MemoryStream(archive), password);
+    Assert.Multiple(() => {
+      Assert.That(reader.MethodName, Is.EqualTo(mode));
+      Assert.That(reader.IsEncrypted, Is.EqualTo(password != null));
+    });
+    foreach (var input in inputs.Where(i => !i.IsDirectory))
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == input.ArchiveName)), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+    Assert.That(reader.Entries.Where(e => e.IsDirectory).Select(e => e.FileName).Order(), Is.EqualTo(new[] { "emptydir", "sub", "sub/deeper" }));
+  }
+
+  [TestCase("alz")]
+  [TestCase("ppm")]
+  [Category("ErrorHandling")]
+  public void GivenAMethodVersion04CannotWriteYet_WhenWritten_ThenItIsRefused(string method)
+    => Assert.That(() => CreateWith(Version4(method)), Throws.TypeOf<NotSupportedException>());
+
+  [TestCase("3")]
+  [TestCase("5")]
+  [Category("ErrorHandling")]
+  public void GivenAnUnwrittenVersion_WhenWritten_ThenItIsRefused(string version)
+    => Assert.That(() => CreateWith(new FormatCreateOptions { FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version } }),
+      Throws.TypeOf<NotSupportedException>());
+
+  private static IEnumerable<TestCaseData> LzwInputs() {
+    var random = new Random(11);
+    var noise = new byte[80000];
+    random.NextBytes(noise);
+    var text = System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 9000).Select(i => $"{i * 7919 % 100003:x} ")));
+    yield return new TestCaseData(new byte[] { 0x42 }, 7).SetName("Lzw_OneByte");
+    yield return new TestCaseData("ABABABABABABABABAB"u8.ToArray(), 2).SetName("Lzw_Repeats");
+    yield return new TestCaseData(new byte[200000], 2).SetName("Lzw_LongZeroRunRestarts");
+    yield return new TestCaseData(text, 2).SetName("Lzw_TextRestartsOften");
+    yield return new TestCaseData(text.Concat(noise).ToArray(), 7).SetName("Lzw_Mixed");
+  }
+
+  [TestCaseSource(nameof(LzwInputs))]
+  [Category("RoundTrip")]
+  public void GivenData_WhenLzwEncodedAndDecoded_ThenItIsUnchanged(byte[] data, int method) {
+    var packed = Uharc02LzwEncoder.Encode(data, method);
+    Assert.That(Uharc02LzwDecoder.Decode(packed, 0, packed.Length, method, data.Length), Is.EqualTo(data));
+  }
+
+  [TestCase(17)]
+  [TestCase(8)]
+  [TestCase(23)]
+  [Category("RoundTrip")]
+  public void GivenData_WhenVersion04LzpEncodedAndDecoded_ThenItIsUnchanged(int method) {
+    var random = new Random(method);
+    var noise = new byte[30000];
+    random.NextBytes(noise);
+    var text = System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 5000).Select(i => $"the {i % 13} quick brown fox {i * 7 % 101}\r\n")));
+    var data = text.Concat(noise).Concat(new byte[70000]).Concat(text).ToArray();
+    var packed = Uharc04LzpEncoder.Encode(data, method, []);
+    Assert.That(Uharc04LzpDecoder.Decode(packed, 0, packed.Length, method, data.Length, []), Is.EqualTo(data));
+  }
+
   [TestCase(255, false)]
   [TestCase(256, true)]
   [Category("Boundary")]
