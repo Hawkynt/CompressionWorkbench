@@ -12,6 +12,10 @@ namespace FileSystem.Jffs1;
 /// <param name="MTime">Modification time (UNIX seconds).</param>
 /// <param name="Data">File contents, symlink target, or (device nodes) the raw device number.</param>
 public sealed record Jffs1Entry(string Path, uint Ino, uint Mode, ushort Uid, ushort Gid, uint MTime, byte[] Data) {
+  /// <summary>Gets the access time (UNIX seconds).</summary>
+  public uint ATime { get; init; }
+  /// <summary>Gets the status-change time (UNIX seconds).</summary>
+  public uint CTime { get; init; }
   public bool IsDirectory => (this.Mode & 0xF000) == 0x4000;
   public bool IsFile => (this.Mode & 0xF000) == 0x8000;
   public bool IsSymlink => (this.Mode & 0xF000) == 0xA000;
@@ -35,7 +39,10 @@ public sealed class Jffs1Reader {
   public const uint RootIno = 1;
 
   private readonly record struct Node(uint Ino, uint Pino, uint Version, uint Mode, ushort Uid, ushort Gid, uint MTime,
-    uint Offset, uint DSize, uint RSize, string Name, byte[] Data);
+    uint Offset, uint DSize, uint RSize, string Name, byte[] Data, uint ATime, uint CTime);
+
+  /// <summary>Gets the root directory (inode 1, an empty path): its mode, owner and times.</summary>
+  public Jffs1Entry Root { get; private set; } = null!;
 
   /// <summary>True when the image is big-endian.</summary>
   public bool BigEndian { get; }
@@ -80,14 +87,15 @@ public sealed class Jffs1Reader {
       if (nsize > 0 && Sum16(name) != this.U16(h, 56)) throw new InvalidDataException($"JFFS node at {pos}: name checksum mismatch.");
       if (Sum32(data) != this.U32(h, 52)) throw new InvalidDataException($"JFFS node at {pos}: data checksum mismatch.");
       nodes.Add(new Node(this.U32(h, 4), this.U32(h, 8), this.U32(h, 12), this.U32(h, 16), this.U16(h, 20), this.U16(h, 22),
-        this.U32(h, 28), this.U32(h, 36), dsize, this.U32(h, 44), Encoding.Latin1.GetString(name), data.ToArray()));
+        this.U32(h, 28), this.U32(h, 36), dsize, this.U32(h, 44), Encoding.Latin1.GetString(name), data.ToArray(),
+        this.U32(h, 24), this.U32(h, 32)));
       pos += total;
     }
     this.SkippedNodes = skipped;
-    this.Entries = Build(nodes);
+    this.Entries = this.Build(nodes);
   }
 
-  private static List<Jffs1Entry> Build(List<Node> nodes) {
+  private List<Jffs1Entry> Build(List<Node> nodes) {
     var inodes = new Dictionary<uint, (Node Meta, string Name, uint Pino, byte[] Data)>();
     foreach (var group in nodes.GroupBy(n => n.Ino)) {
       var ordered = group.OrderBy(n => n.Version).ToList();
@@ -105,6 +113,9 @@ public sealed class Jffs1Reader {
     }
     if (!inodes.TryGetValue(RootIno, out var root) || (root.Meta.Mode & 0xF000) != 0x4000)
       throw new InvalidDataException("JFFS root inode 1 is missing or not a directory.");
+    this.Root = new Jffs1Entry("", RootIno, root.Meta.Mode, root.Meta.Uid, root.Meta.Gid, root.Meta.MTime, root.Data) {
+      ATime = root.Meta.ATime, CTime = root.Meta.CTime,
+    };
 
     var children = inodes.Where(kv => kv.Key != RootIno).GroupBy(kv => kv.Value.Pino).ToDictionary(g => g.Key, g => g.OrderBy(kv => kv.Value.Name, StringComparer.Ordinal).ToList());
     var result = new List<Jffs1Entry>();
@@ -116,7 +127,7 @@ public sealed class Jffs1Reader {
         if (!visited.Add(ino)) throw new InvalidDataException($"JFFS inode {ino} appears twice in the tree.");
         if (v.Name.Length == 0 || v.Name.Contains('/') || v.Name is "." or "..") throw new InvalidDataException($"JFFS inode {ino} has an unusable name '{v.Name}'.");
         var path = prefix.Length == 0 ? v.Name : prefix + "/" + v.Name;
-        var e = new Jffs1Entry(path, ino, v.Meta.Mode, v.Meta.Uid, v.Meta.Gid, v.Meta.MTime, v.Data);
+        var e = new Jffs1Entry(path, ino, v.Meta.Mode, v.Meta.Uid, v.Meta.Gid, v.Meta.MTime, v.Data) { ATime = v.Meta.ATime, CTime = v.Meta.CTime };
         result.Add(e);
         if (e.IsDirectory) Walk(ino, path, depth + 1);
       }
