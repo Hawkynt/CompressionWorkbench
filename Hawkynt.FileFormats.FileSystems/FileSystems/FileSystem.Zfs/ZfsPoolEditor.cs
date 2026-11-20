@@ -16,11 +16,12 @@ namespace FileSystem.Zfs;
 /// image untouched; new blocks are written first and the uberblocks last. Space freed by the edit
 /// is not reused by the same edit, so the previous uberblocks still name intact trees. A block a
 /// snapshot still holds goes to the deadlist, a gang block frees its whole tree and a deduplicated
-/// one gives up a reference in its dedup table. Refused: active features the editor does not keep
+/// one gives up a reference in its dedup table. Snapshots are created and destroyed through
+/// <c>&lt;dataset&gt;/.zfs/snapshot/&lt;name&gt;</c> (<c>ZfsPoolEditor.Snapshots.cs</c>). Refused: active features the editor does not keep
 /// consistent (block cloning, device removal, …), degraded pools, pool checkpoints, an unreplayed
 /// intent log, normalised or case-insensitive filesystems, and datasets with a refreservation.
 /// </remarks>
-internal static class ZfsPoolEditor {
+internal static partial class ZfsPoolEditor {
   /// <summary>One file (or, with <c>Data</c> null, one directory) to add or replace.</summary>
   internal sealed record Addition(string Path, byte[]? Data, DateTime? Modified);
 
@@ -650,7 +651,7 @@ internal static class ZfsPoolEditor {
 
   // ── one planning attempt ──────────────────────────────────────────────────────────────
 
-  private sealed class Plan {
+  private sealed partial class Plan {
     private readonly PoolState _s;
     private readonly Dictionary<int, int> _guess;
     private readonly DateTime _now;
@@ -1107,6 +1108,24 @@ internal static class ZfsPoolEditor {
     // ── the edit ───────────────────────────────────────────────────────────
 
     public void Apply(IReadOnlyList<Addition> additions, IReadOnlyList<string> removals) {
+      var snapshotOps = new List<SnapshotOp>();
+      var fileRemovals = new List<string>();
+      foreach (var path in removals) {
+        if (this.SnapshotTarget(path, create: false) is { } op) snapshotOps.Add(op);
+        else fileRemovals.Add(path);
+      }
+      var fileAdditions = new List<Addition>();
+      foreach (var addition in additions) {
+        if (this.SnapshotTarget(addition.Path, create: true) is not { } op) {
+          fileAdditions.Add(addition);
+          continue;
+        }
+        if (addition.Data != null) throw new NotSupportedException($"ZFS: '{addition.Path}' is in a snapshot; snapshots are read-only and created whole, as a directory.");
+        if (op.Name.Length > 0) snapshotOps.Add(op);
+      }
+      removals = fileRemovals;
+      additions = fileAdditions;
+
       foreach (var path in removals) {
         var (fs, rel) = this.Locate(path);
         if (rel.Length == 0) throw new NotSupportedException($"ZFS: '{path}' is a dataset, not a file or directory; datasets are not removed.");
@@ -1123,7 +1142,8 @@ internal static class ZfsPoolEditor {
       foreach (var fs in this._filesystems)
         this.Flush(fs);
       this._filesystems.RemoveAll(fs => fs.Os.Dirty.Count == 0 && fs.Os.Freed.Count == 0 && fs.Os.Special.Count == 0);
-      if (this._filesystems.Count == 0) return;
+      this.AcceptSnapshotOps(snapshotOps);
+      if (this._filesystems.Count == 0 && this._snapshotOps.Count == 0) return;
       this.HasChanges = true;
       this.PlanMos();
     }
@@ -1555,8 +1575,12 @@ internal static class ZfsPoolEditor {
         this.TouchDirChain(fs.DirObject);
         if (fs.Os.Held.Count > 0) this.PlanDeadlist(fs);
       }
+      foreach (var op in this._snapshotOps)
+        if (op.Create) this.PlanCreateSnapshot(op);
+        else this.PlanDestroySnapshot(op);
       if (this._dedupFrees.Count > 0) this.PlanDedup();
-      if (this._emptyBpobjReleased > 0) this.ReleaseEmptyBpobj();
+      this.FlushBpobjAppends();
+      if (this._emptyBpobjDelta != 0) this.AdjustEmptyBpobj();
       this.TouchDirChain(this.MosDirectory());
 
       // space maps: every metaslab the guess names is rewritten whole
@@ -1614,7 +1638,6 @@ internal static class ZfsPoolEditor {
     }
 
     private int _newMaps;
-    private int _emptyBpobjReleased;
     private const byte OtBpobj = 5, OtBpobjHeader = 6;
     private const int BpobjBlock = 128 * 1024;
 
@@ -1658,43 +1681,23 @@ internal static class ZfsPoolEditor {
           d = Dnode.Create(OtBpobj, OtBpobjHeader, 48, BpobjBlock, 17, 1, FlagUsedBytes);
           var fresh = this.NewObject(mos, d);
           replaced[entries[index].MinTxg] = fresh;
-          ++this._emptyBpobjReleased;
+          --this._emptyBpobjDelta;
           bpobj = fresh;
         } else {
           d = this.Load(mos, bpobj);
           mos.Dirty.Add(bpobj);
         }
-        var bonus = d.Bonus;
-        var count = U64(bonus, 0);
-        var blockSize = d.DataBlockSize;
-        var perBlock = (ulong)(blockSize / Bp);
-        var changes = new Dictionary<ulong, byte[]>();
+        long u = 0, c = 0, x = 0;
         foreach (var raw in list) {
-          var blockId = count / perBlock;
-          if (!changes.TryGetValue(blockId, out var data)) {
-            data = new byte[blockSize];
-            if (!d.IsNew && blockId <= mos.Old.RequireDnode(bpobj, "bpobj").MaxBlockId && count % perBlock != 0)
-              mos.Old.ReadBlock(mos.Old.RequireDnode(bpobj, "bpobj"), blockId).AsSpan(0, blockSize).CopyTo(data);
-            changes[blockId] = data;
-          }
-          StoredPointer(raw).CopyTo(data.AsSpan((int)(count % perBlock) * Bp));
-          ++count;
-          var (u, c, x) = this.ChargeOf(ZfsBlockPointer.Read(raw));
-          Add64(bonus, 8, u);
-          Add64(bonus, 16, c);
-          Add64(bonus, 24, x);
-          used += u;
-          compressed += c;
-          uncompressed += x;
+          var charge = this.ChargeOf(ZfsBlockPointer.Read(raw));
+          u += charge.Used;
+          c += charge.Compressed;
+          x += charge.Uncompressed;
         }
-        W64(bonus, 0, count);
-        var blocks = new Dictionary<ulong, NewBlock?>();
-        foreach (var (blockId, data) in changes) {
-          var block = this.AllocBlock(mos, d, blockSize, OtBpobj, 0);
-          block.Data = data;
-          blocks[blockId] = block;
-        }
-        this.SetBlocks(mos, d, blocks);
+        this.AppendToBpobj(bpobj, d, list.Select(StoredPointer).ToList(), u, c, x);
+        used += u;
+        compressed += c;
+        uncompressed += x;
       }
 
       // the deadlist's header totals, and entries moved off the empty bpobj
@@ -1722,22 +1725,6 @@ internal static class ZfsPoolEditor {
       if (((U64(raw, 0x30) >> 62) & 1) == 0) stored.AsSpan(0x60, 32).Clear();
       W64(stored, 0x58, 0);
       return stored;
-    }
-
-    /// <summary>empty_bpobj counts the deadlist entries sharing the empty bpobj; at 0 that object goes.</summary>
-    private void ReleaseEmptyBpobj() {
-      var mos = this._mos;
-      var count = mos.Old.Zap(this._s.FeaturesForWrite, "features_for_write").FirstOrDefault(e => e.Name == "com.delphix:empty_bpobj")
-        ?? throw new InvalidDataException("ZFS: empty_bpobj is not in the write list.");
-      var remaining = count.Value - (ulong)this._emptyBpobjReleased;
-      this.RewriteZap(mos, this._s.FeaturesForWrite, entries => {
-        var at = entries.FindIndex(e => e.Name == "com.delphix:empty_bpobj");
-        entries[at] = (entries[at].Name, remaining);
-      });
-      if (remaining != 0) return;
-      var emptyBpobj = mos.Old.Zap(1, "MOS object directory").First(e => e.Name == "empty_bpobj").Value;
-      this.RewriteZap(mos, 1, entries => entries.RemoveAll(e => e.Name == "empty_bpobj"));
-      this.FreeObject(mos, emptyBpobj);
     }
 
     // ── dedup tables ───────────────────────────────────────────────────────

@@ -526,6 +526,61 @@ snapshot's, so it is kept:
 
 When OpenZFS later destroys the snapshot it frees exactly the deadlist's blocks.
 
+A deadlist's keys are the creation txgs of the dataset's snapshots except the newest, plus 0
+(or the origin's txg): the entry under key `k` holds blocks born after `k` (and up to the next
+key) that died since the newest snapshot.
+
+### Creating and destroying snapshots
+
+The editor creates a snapshot when `<dataset>/.zfs/snapshot/<name>` is added as a directory and
+destroys it when that path is removed, each in an edit with no file changes in the same dataset.
+
+**Create** (snapshot S of head H in txg `t`):
+
+- S is a new DSL dataset object (type 16, bonus type 16 of 320 bytes; or a ZAP of type `0xC4`
+  when H is one): directory, previous snapshot and its txg copied from H; next snapshot H;
+  `num_children` 1; creation time and txg `t`; H's deadlist; H's referenced, compressed and
+  uncompressed bytes; unique 0; new random `fsid_guid` (56 bits) and `guid`; H's flags and
+  block pointer. Each per-dataset feature H's ZAP names (an entry named by the feature's guid)
+  is named in S's too and counted once more.
+- H's previous snapshot P: when P's next snapshot is H it becomes S; otherwise H is a clone of
+  P and P's next-clones ZAP (keys: object numbers in lower-case hex) names S instead of H.
+- H gets a new deadlist (type 50, bonus type 51 of 320 bytes): the old one's keys and H's old
+  previous-snapshot txg, each on an empty bpobj (the shared `empty_bpobj`, created with its MOS
+  directory entry if the pool has none, and counted per use; without that feature a new empty
+  bpobj each). H's previous snapshot becomes S at txg `t`, its unique bytes 0, flag 4
+  (unique accurate) set, and H's snapshot-name ZAP maps the name to S.
+- The directory's `com.joyent:snapshot_count` (where present, and its ancestors' as far as each
+  has one) grows by one; with extensible_dataset the directory (made a ZAP if it is none) gets
+  `com.ixsystems:snapshots_changed` = seconds and nanoseconds of the change.
+
+**Destroy** (snapshot S with previous snapshot P — creation txg `s0` = S's previous-snapshot
+txg — and next N, a snapshot or the head; `s1` = S's creation txg):
+
+- P's next snapshot becomes N; if P's next is not S (S is P's clone), P's next-clones ZAP names N
+  instead of S. N's previous snapshot becomes P at `s0`.
+- In N's deadlist, the entries with key `>= s0` hold what only S referenced: their blocks are
+  freed (dedup blocks give up a reference), their bpobjs (and sub-objects) freed or the empty
+  bpobj's count lowered, the keys removed, the header and the directory's SNAP usage reduced by
+  their space. Before that, P's unique bytes grow by the space of the entries with key in
+  `[P's previous-snapshot txg, s0)` (when P's next was S).
+- Every entry of S's deadlist goes into N's entry with the largest key at or below its own: it
+  replaces an entry on the empty bpobj, an empty one is dropped, else its block pointers join
+  that entry's bpobj (OpenZFS may link it as a sub-object instead; both read the same); N's
+  header grows by its space. S's deadlist object is freed.
+- N a snapshot: N's unique bytes grow by the space of N's next's deadlist entries with key in
+  `[s0, s1)`, and the head's deadlist loses key `s1`, that entry going into the one before.
+  N the head: its unique bytes become referenced − (P's referenced − its deadlist's used).
+- S's per-dataset features are counted once less; its name leaves the head's snapshot-name ZAP;
+  the snapshot count drops and the change time is set as for create; S's object and its
+  next-clones, properties and holds objects are freed.
+
+A bpobj's bonus may name a sub-object list (at 32, count at 40: an object of `u64` object
+numbers, each a bpobj whose block pointers and space belong to this one too).
+
+Refused: snapshots with clones, user holds, or datasets with bookmarks or clones; old-format
+(bpobj) deadlists; encrypted datasets and datasets with an unreplayed intent log (create).
+
 ### Dedup tables
 
 A block written with dedup has property bit 62 set; its space belongs to the pool's dedup
