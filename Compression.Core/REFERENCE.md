@@ -182,7 +182,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesBlockCipher`](#aesblockcipher) · [`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`BlockEncryptor128`](#blockencryptor128) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`Eax`](#eax) · [`Eax.SpanAction`](#eaxspanaction) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`ManagedAes`](#managedaes) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Serpent`](#serpent) · [`TripleDes`](#tripledes) · [`Twofish`](#twofish)
+[`AesBlockCipher`](#aesblockcipher) · [`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`BlockEncryptor128`](#blockencryptor128) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`Eax`](#eax) · [`Eax.SpanAction`](#eaxspanaction) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`ManagedAes`](#managedaes) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Scrypt`](#scrypt) · [`Serpent`](#serpent) · [`TripleDes`](#tripledes) · [`Twofish`](#twofish)
 
 #### `AesBlockCipher`
 
@@ -440,6 +440,14 @@ The RC4 (ARCFOUR) stream cipher: key-scheduling over a 256-byte permutation, the
 | `Rc4` | `Rc4(ReadOnlySpan<byte> key)` | Keys the cipher; `key` must be 1 to 256 bytes. |
 | `Apply` | `static byte[] Apply(ReadOnlySpan<byte> key, ReadOnlySpan<byte> data)` | Encrypts or decrypts `data` under `key` and returns a new array. |
 | `Transform` | `void Transform(Span<byte> data)` | XORs the next keystream bytes onto `data` in place. |
+
+#### `Scrypt`
+
+scrypt (RFC 7914): PBKDF2-HMAC-SHA256 with one iteration spreads the password over p blocks of 128·r bytes, ROMix runs each through N BlockMix-Salsa20/8 steps and as many data-dependent lookups into the N-entry table, and a second one-iteration PBKDF2 keyed with the password and salted with the mixed blocks gives the key.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Derive` | `static byte[] Derive(ReadOnlySpan<byte> password, ReadOnlySpan<byte> salt, int n, int r, int p, int length)` | Derives `length` bytes. |
 
 #### `Serpent`
 

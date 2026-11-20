@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Compression.Core.Crypto;
 using Compression.Registry;
-using FileFormat.Zpaq;
 using Hawkynt.Algorithms.Hashing;
 
 namespace FileFormat.Pea;
@@ -149,11 +148,11 @@ internal sealed class PeaStreamCipher {
     var iterations = strength * 100000 + cipher switch { 'A' => 25000, 'T' => 50000, _ => 75000 };
     return (cipher, kdf) switch {
       ('A', "pbkdf2") => WhirlpoolPbkdf2(material, salt, iterations, length),
-      ('A', _) => ZpaqCrypto.Scrypt(material, salt, memory, 8, parallel, length),
+      ('A', _) => Scrypt.Derive(material, salt, memory, 8, parallel, length),
       ('T', "pbkdf2") => Rfc2898DeriveBytes.Pbkdf2(material, salt, iterations, HashAlgorithmName.SHA512, length),
-      ('T', "scrypt") => ZpaqCrypto.Scrypt(material, salt, memory, 8, parallel, length),
-      ('T', _) => ZpaqCrypto.Scrypt(material, salt, memory / 2, 16, parallel, length),
-      ('S', "scrypt") => ZpaqCrypto.Scrypt(material, salt, memory, 8, parallel, length),
+      ('T', "scrypt") => Scrypt.Derive(material, salt, memory, 8, parallel, length),
+      ('T', _) => Scrypt.Derive(material, salt, memory / 2, 16, parallel, length),
+      ('S', "scrypt") => Scrypt.Derive(material, salt, memory, 8, parallel, length),
       ('S', "hybrid") => Sha3Pbkdf2(material, salt, strength switch {
         1 => 275000, 2 => 575000, 3 => 1075000, 4 => 2075000, 5 => 5075000, 6 => 10075000, 7 => 25075000, _ => 75000,
       }, length),
