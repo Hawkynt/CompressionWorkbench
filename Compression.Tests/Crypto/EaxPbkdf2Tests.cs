@@ -118,6 +118,17 @@ public class EaxPbkdf2Tests {
       Is.EqualTo(Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA256, length)));
   }
 
+  [TestCase(1, 66)]
+  [TestCase(50, 130)]
+  [Category("HappyPath")]
+  public void GivenSha3_512_WhenDerivedWithItsRateAsBlockSize_ThenItMatchesThePlatform(int iterations, int length) {
+    if (!SHA3_512.IsSupported) Assert.Ignore("The platform has no SHA3-512.");
+    var password = Enumerable.Range(0, 80).Select(i => (byte)(i * 3)).ToArray(); // longer than the 72-byte rate
+    byte[] salt = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2];
+    Assert.That(KeyDerivation.Pbkdf2(static d => Hawkynt.Algorithms.Hashing.Sha3.Compute512(d), 72, password, salt, iterations, length),
+      Is.EqualTo(Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA3_512, length)));
+  }
+
   [Test, Category("Exception")]
   public void GivenZeroIterations_WhenDerived_ThenRefused()
     => Assert.That(() => KeyDerivation.Pbkdf2(SHA1.HashData, 64, [1], [2], 0, 20), Throws.InstanceOf<ArgumentOutOfRangeException>());
