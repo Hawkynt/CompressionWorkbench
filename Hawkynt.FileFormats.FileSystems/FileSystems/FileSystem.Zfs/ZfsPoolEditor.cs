@@ -586,6 +586,8 @@ internal static partial class ZfsPoolEditor {
     public readonly Dictionary<ulong, NewBlock?> DnodeBlocks = [];
     public readonly Dictionary<ulong, bool[]> OldOccupancy = [];
     public long Used, Compressed, Uncompressed;
+    /// <summary>Every block the edit stops referencing (birth and charge), kept while a bookmark counts them.</summary>
+    public List<(ulong Birth, long Used, long Compressed, long Uncompressed)>? Kills;
     public NewBlock Root = null!;
     public ulong NextScan = 1;
     public int PerBlock => this.OldMeta.DataBlockSize / Slot;
@@ -605,6 +607,9 @@ internal static partial class ZfsPoolEditor {
     public bool ObjectAccounting;
     public bool ProjectAccounting;
     public int ZstdLevel = 3;
+    /// <summary>Bookmarks at or after the previous snapshot that count what the head frees (HAS_FBN).</summary>
+    public List<ZfsZapEntry> CountingBookmarks = [];
+    public ulong BookmarksObject;
     public byte Compression = ZfsConstants.CompressOff;
     public readonly Dictionary<ulong, Znode> Znodes = [];
   }
@@ -750,6 +755,7 @@ internal static partial class ZfsPoolEditor {
       var bp = ZfsBlockPointer.Read(raw);
       var (used, compressed, uncompressed) = this.ChargeOf(bp);
       if (d != null) d.Used -= used;
+      os.Kills?.Add((bp.LogicalBirth, used, compressed, uncompressed));
       if (bp.LogicalBirth <= os.PrevSnapTxg) {
         os.Held.Add(raw);
         os.HeldUsed += used;
@@ -1202,6 +1208,7 @@ internal static partial class ZfsPoolEditor {
       fs.Accounting = os.Block.Length >= 2048 && os.Block[UserUsedAt] != 0 && os.Block[GroupUsedAt] != 0;
       // userobj_accounting counts objects ("obj-<id>"), project_quota charges by project as well
       fs.ObjectAccounting = fs.Accounting && this._s.IsEnabled("org.zfsonlinux:userobj_accounting");
+      this.TrackBookmarks(fs, U64(head.Bonus, 16));
       fs.ProjectAccounting = fs.Accounting && this._s.IsEnabled("org.zfsonlinux:project_quota")
         && os.Block.Length >= ProjectUsedAt + Slot && os.Block[ProjectUsedAt] != 0;
       (fs.Compression, fs.ZstdLevel) = this.EffectiveCompression(dirObject, headObject);
@@ -1574,6 +1581,7 @@ internal static partial class ZfsPoolEditor {
         mos.Dirty.Add(fs.HeadObject);
         this.TouchDirChain(fs.DirObject);
         if (fs.Os.Held.Count > 0) this.PlanDeadlist(fs);
+        if (fs.Os.Kills is { Count: > 0 }) this.PlanBookmarkKills(fs);
       }
       foreach (var op in this._snapshotOps)
         if (op.Create) this.PlanCreateSnapshot(op);
