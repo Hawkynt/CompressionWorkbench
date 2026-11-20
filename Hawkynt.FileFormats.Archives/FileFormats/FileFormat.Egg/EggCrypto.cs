@@ -6,6 +6,7 @@ using System.Buffers.Binary;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
+using Compression.Core.Crypto;
 
 namespace FileFormat.Egg;
 
@@ -119,7 +120,7 @@ internal sealed record EggEncryption(byte Method, byte[] Header, byte[] Footer) 
 
   /// <summary>AES in CTR mode with WinZip's counter: a little-endian block number starting at 1.</summary>
   private static byte[] AesCtrLittleEndian(byte[] data, byte[] key) {
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key;
     var output = new byte[data.Length];
     var counter = new byte[16];

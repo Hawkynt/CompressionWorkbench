@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
+using Compression.Core.Crypto;
 
 namespace FileFormat.Luks;
 
@@ -27,19 +28,19 @@ public sealed class LuksCipher : IDisposable {
     this._xts = mode.StartsWith("xts", StringComparison.Ordinal);
     this._essiv = mode.EndsWith("essiv:sha256", StringComparison.Ordinal);
     this._plain32 = mode.EndsWith("-plain", StringComparison.Ordinal);
-    this._aes = Aes.Create();
+    this._aes = ManagedAes.Create();
     if (this._xts) {
       if (key.Length is not (32 or 64))
         throw new ArgumentException("AES-XTS needs a 256- or 512-bit key.", nameof(key));
       this._aes.Key = key[..(key.Length / 2)].ToArray();
-      this._tweakAes = Aes.Create();
+      this._tweakAes = ManagedAes.Create();
       this._tweakAes.Key = key[(key.Length / 2)..].ToArray();
     } else {
       if (key.Length is not (16 or 24 or 32))
         throw new ArgumentException("AES-CBC needs a 128-, 192- or 256-bit key.", nameof(key));
       this._aes.Key = key.ToArray();
       if (this._essiv) {
-        this._tweakAes = Aes.Create();
+        this._tweakAes = ManagedAes.Create();
         this._tweakAes.Key = SHA256.HashData(key);
       }
     }

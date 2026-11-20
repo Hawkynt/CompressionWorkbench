@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using Compression.Core.ExecutableUnpacking;
+using Compression.Core.Crypto;
 
 namespace FileFormat.ExePackers;
 
@@ -203,7 +204,7 @@ public sealed class EzuriExecutablePackerHandler : IExecutablePackerHandler {
   /// </summary>
   private static byte[] DecryptCfb(byte[] ciphertext, byte[] key, byte[] iv) {
     var result = new byte[ciphertext.Length];
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key;
     aes.Mode = CipherMode.ECB;
     aes.Padding = PaddingMode.None;

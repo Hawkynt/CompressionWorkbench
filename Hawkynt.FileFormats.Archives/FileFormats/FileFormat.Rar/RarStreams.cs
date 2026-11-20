@@ -1,5 +1,6 @@
 using Compression.Core.Checksums;
 using System.Security.Cryptography;
+using Compression.Core.Crypto;
 
 namespace FileFormat.Rar;
 
@@ -78,7 +79,7 @@ internal sealed class RarCbcDecryptStream : Stream {
   public RarCbcDecryptStream(Stream source, long length, byte[] key, byte[] iv) {
     this._source = source;
     this._remaining = length & ~15L;
-    this._aes = Aes.Create();
+    this._aes = ManagedAes.Create();
     this._aes.Mode = CipherMode.CBC;
     this._aes.Padding = PaddingMode.None;
     this._decryptor = this._aes.CreateDecryptor(key, iv);

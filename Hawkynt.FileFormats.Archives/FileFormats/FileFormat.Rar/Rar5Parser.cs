@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using Compression.Core.Checksums;
+using Compression.Core.Crypto;
 
 namespace FileFormat.Rar;
 
@@ -133,7 +134,7 @@ internal static class Rar5Parser {
     if (key != null) {
       var iv = ReadExact(s, 16);
       var first = ReadExact(s, 16);
-      using var aes = Aes.Create();
+      using var aes = ManagedAes.Create();
       aes.Key = key;
       var plain = aes.DecryptCbc(first, iv, PaddingMode.None);
       var (size, sizeLen) = ReadVintAt(plain, 4, 3);

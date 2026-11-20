@@ -120,7 +120,7 @@ public sealed partial class PdfStandardSecurity {
       return Rc4.Apply(key, data);
     if (data.Length < 16 || data.Length % 16 != 0)
       return data.Length == 0 ? [] : throw new InvalidDataException($"PDF object {objectNumber}: AES data is not a whole number of blocks.");
-    using var cipher = Aes.Create();
+    using var cipher = ManagedAes.Create();
     cipher.Key = key;
     return cipher.DecryptCbc(data[16..], data[..16], PaddingMode.PKCS7);
   }
@@ -211,7 +211,7 @@ public sealed partial class PdfStandardSecurity {
   }
 
   private static byte[] UnwrapKey(byte[] intermediate, byte[] wrapped) {
-    using var cipher = Aes.Create();
+    using var cipher = ManagedAes.Create();
     cipher.Key = intermediate;
     return cipher.DecryptCbc(wrapped.AsSpan(0, 32), new byte[16], PaddingMode.None);
   }
@@ -221,7 +221,7 @@ public sealed partial class PdfStandardSecurity {
     var k = SHA256.HashData([.. password, .. salt, .. userData]);
     if (r == 5)
       return k;
-    using var cipher = Aes.Create();
+    using var cipher = ManagedAes.Create();
     for (var round = 0; ; ++round) {
       var k1Unit = new byte[password.Length + k.Length + userData.Length];
       password.CopyTo(k1Unit, 0);

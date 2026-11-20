@@ -233,7 +233,7 @@ internal sealed class PeaStreamCipher {
     private int _used = 16;
 
     private static Aes CreateAes(ReadOnlySpan<byte> key) {
-      var aes = Aes.Create();
+      var aes = ManagedAes.Create();
       aes.Key = key.ToArray();
       return aes;
     }

@@ -33,7 +33,7 @@ internal static class FreeArcCrypto {
     if (!Stage.TryParse(stageText, out var stage))
       throw new NotSupportedException($"FreeArc: encryption \"{stageText}\" is not supported.");
     var key = stage.Key ?? DeriveKey(stage, password);
-    using var aes = stage.Cipher == "aes" ? Aes.Create() : null;
+    using var aes = stage.Cipher == "aes" ? ManagedAes.Create() : null;
     var cipher = CreateCipher(stage.Cipher, key, aes);
     var output = input.ToArray();
     if (stage.Feedback)

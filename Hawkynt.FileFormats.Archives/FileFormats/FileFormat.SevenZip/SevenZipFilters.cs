@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Compression.Core.Transforms;
+using Compression.Core.Crypto;
 
 namespace FileFormat.SevenZip;
 
@@ -60,7 +61,7 @@ internal sealed class SevenZipAesDecryptFilter : ISevenZipFilter, IDisposable {
   private readonly ICryptoTransform _transform;
 
   public SevenZipAesDecryptFilter(byte[] key, byte[] iv) {
-    this._aes = Aes.Create();
+    this._aes = ManagedAes.Create();
     this._aes.Mode = CipherMode.CBC;
     this._aes.Padding = PaddingMode.None;
     this._aes.Key = key;
