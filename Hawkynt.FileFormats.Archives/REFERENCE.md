@@ -15503,7 +15503,7 @@ Linear scanner that locates zlib substreams inside an EaseUS Todo Backup `.pbd` 
 
 ### Namespace `FileFormat.EcSbx`
 
-[`EcSbxContent`](#ecsbxcontent) · [`EcSbxFormatDescriptor`](#ecsbxformatdescriptor)
+[`EcSbxContent`](#ecsbxcontent) · [`EcSbxFormatDescriptor`](#ecsbxformatdescriptor) · [`EcSbxWriter`](#ecsbxwriter)
 
 #### `EcSbxContent`
 
@@ -15523,9 +15523,9 @@ Implements `IEquatable<EcSbxContent>`.
 
 #### `EcSbxFormatDescriptor`
 
-Error-correcting SeqBox (`.ecsbx`, blkar's SBX versions 17/18/19), read-only. Every block carries its sequence number, so the protected file is reassembled from the data blocks wherever the burst interleaving put them, and checked against the stored hash. A container whose data blocks are damaged or missing needs a Reed-Solomon repair, which is refused rather than guessed. References: `https://github.com/darrenldl/blockyarchive/blob/master/SBX_FORMAT.md` — blkar's SBX/EC-SBX specification (MIT)`https://github.com/MarcoPon/SeqBox` — the original SeqBox format
+Error-correcting SeqBox (`.ecsbx`, blkar's SBX versions 17/18/19); `EcSbxWriter` creates them. Every block carries its sequence number, so the protected file is reassembled from the data blocks wherever the burst interleaving put them, and checked against the stored hash. A container whose data blocks are damaged or missing needs a Reed-Solomon repair, which is refused rather than guessed. References: `https://github.com/darrenldl/blockyarchive/blob/master/SBX_FORMAT.md` — blkar's SBX/EC-SBX specification (MIT)`https://github.com/MarcoPon/SeqBox` — the original SeqBox format
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15544,9 +15544,20 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `BlockCrc` | `static ushort BlockCrc(ReadOnlySpan<byte> block)` | CRC-16-CCITT (polynomial 0x1021, MSB first) seeded with the block's version byte. |
 | `BlockSize` | `static int BlockSize(int version)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates the container of the one input file. Options: `Version` (17, 18, 19; default 17), `DataShards` (default 10), `ParityShards` (default 2), `Burst` (default 12), as blkar's defaults. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `Read` | `static EcSbxContent Read(ReadOnlySpan<byte> file)` |  |
+
+#### `EcSbxWriter`
+
+Writes error-correcting SeqBox containers as blkar lays them out (SBX_FORMAT.md, and blkar's encoder for what the specification leaves open; MIT): 1 + N copies of the metadata block, the file in data blocks grouped into Reed-Solomon sets of M data and N parity blocks (a short last set filled with padding blocks of 0x1A), all of it interleaved in super block sets of (M + N) · B blocks so that a burst of up to B consecutive lost blocks costs each set at most one block. Parity is a systematic Reed-Solomon code over GF(2^8) (polynomial 0x11D): the Vandermonde matrix V[r][c] = r^c of M + N rows, multiplied by the inverse of its top M rows.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Create` | `static byte[] Create(ReadOnlySpan<byte> data, string fileName, string containerName, DateTime? modified = null, int version = 17, int dataShards = 10, int parityShards = 2, int burst = 12, byte[] uid = null, DateTime? created = null)` | Creates a container for `data`. |
+| `DataIndex` | `static long DataIndex(uint seq, int dataShards, int parityShards, int burst)` | The block index of data sequence number `seq` (1-based): sets are transposed inside each super block set of (M + N)·B blocks, behind the metadata blocks in front of it. |
+| `MetaIndices` | `static IEnumerable<long> MetaIndices(int parity, int burst)` | Block indices of the metadata block and its copies: 0, then i·(1 + B) for i = 1..N. |
 
 ### Namespace `FileFormat.Egg`
 
