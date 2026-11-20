@@ -165,22 +165,65 @@ public class UharcPpmTextTests {
     var size = window == 0 ? data.Length : window;
     var method06 = UharcWriter.LzpMethodFor(size) - UharcMethods.LzpFirst + UharcMethods.PpmFirst;
     var method03 = UharcMethods.Ppm03First + (method06 - UharcMethods.PpmFirst);
+    var plan = UharcPpmSymbols.Plan(data, ends);
     Assert.Multiple(() => {
-      var packed = UharcPpmEncoder.Encode(data, method06, ends);
+      var packed = UharcPpmEncoder.Encode(data, method06, ends, plan);
       Assert.That(UharcPpmDecoder.Decode(packed, 0, packed.Length, method06, data.Length, ends), Is.EqualTo(data), "0.6");
-      packed = Uharc04PpmEncoder.Encode(data, method06, ends);
+      packed = Uharc04PpmEncoder.Encode(data, method06, ends, plan);
       Assert.That(Uharc04PpmDecoder.Decode(packed, 0, packed.Length, method06, data.Length, ends), Is.EqualTo(data), "0.4");
-      packed = Uharc03PpmEncoder.Encode(data, method03, ends);
+      packed = Uharc03PpmEncoder.Encode(data, method03, ends, plan);
       Assert.That(Uharc03PpmDecoder.Decode(packed, 0, packed.Length, method03, data.Length, ends), Is.EqualTo(data), "0.3");
     });
   }
 
   [Test, Category("RoundTrip")]
-  public void GivenOnlyText_WhenPpmEncoded_ThenTheWholeStreamIsTextAndComesBack() {
+  public void GivenOnlyText_WhenPpmEncodedAsText_ThenTheWholeStreamIsTextAndComesBack() {
     var (data, ends) = Stream(TextFiles(textOnly: true));
-    Assert.That(UharcPpmSymbols.Plan(data, ends).TextLength, Is.EqualTo(data.Length));
-    var packed = UharcPpmEncoder.Encode(data, 32, ends);
+    var plan = UharcPpmSymbols.Plan(data, ends);
+    Assert.That(plan.TextLength, Is.EqualTo(data.Length));
+    var packed = UharcPpmEncoder.Encode(data, 32, ends, plan);
     Assert.That(UharcPpmDecoder.Decode(packed, 0, packed.Length, 32, data.Length, ends), Is.EqualTo(data));
+  }
+
+  /// <summary>Prose, and records of the kind a text stream codes worse than a binary one.</summary>
+  private static IEnumerable<TestCaseData> TextKinds() {
+    yield return new TestCaseData(Stream(TextFiles(textOnly: true)).Data).SetName("TextOrBinary_Prose");
+    yield return new TestCaseData(System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 3000).Select(i => $"record {i:D6} status {(i % 13 == 0 ? "fail" : "ok")}\n"))))
+      .SetName("TextOrBinary_Records");
+  }
+
+  [TestCaseSource(nameof(TextKinds))]
+  [Category("HappyPath")]
+  public void GivenAllTextStream_WhenPpmEncoded_ThenTheSmallerOfTextAndBinaryIsKeptPerVersion(byte[] data) {
+    long[] ends = [data.Length];
+    var text = UharcPpmSymbols.Plan(data, ends);
+    var binary = UharcPpmSymbols.Binary(data);
+    Assert.Multiple(() => {
+      var packed = UharcPpmEncoder.Encode(data, 32, ends);
+      Assert.That(packed.Length, Is.EqualTo(Math.Min(UharcPpmEncoder.Encode(data, 32, ends, text).Length, UharcPpmEncoder.Encode(data, 32, ends, binary).Length)), "0.6");
+      Assert.That(UharcPpmDecoder.Decode(packed, 0, packed.Length, 32, data.Length, ends), Is.EqualTo(data), "0.6");
+      packed = Uharc04PpmEncoder.Encode(data, 32, ends);
+      Assert.That(packed.Length, Is.EqualTo(Math.Min(Uharc04PpmEncoder.Encode(data, 32, ends, text).Length, Uharc04PpmEncoder.Encode(data, 32, ends, binary).Length)), "0.4");
+      packed = Uharc03PpmEncoder.Encode(data, 30, ends);
+      Assert.That(packed.Length, Is.EqualTo(Math.Min(Uharc03PpmEncoder.Encode(data, 30, ends, text).Length, Uharc03PpmEncoder.Encode(data, 30, ends, binary).Length)), "0.3");
+    });
+  }
+
+  [TestCase(10, 20, true)]
+  [TestCase(20, 20, true)]
+  [TestCase(21, 20, false)]
+  [Category("Boundary")]
+  public void GivenTextBeforeBinary_WhenTheLeadingTextPacksSmallerOrEqualAsText_ThenTheTextStreamIsUsed(int textSize, int binarySize, bool text) {
+    byte[] data = [.. "some text"u8, 0, 1, 2];
+    long[] ends = [9, data.Length];
+    var chosen = new List<long>();
+    UharcPpmSymbols.EncodeSmaller(data, ends, (d, e, plan) => {
+      if (d.Length < data.Length)
+        return new byte[plan.TextLength > 0 ? textSize : binarySize];
+      chosen.Add(plan.TextLength);
+      return [];
+    });
+    Assert.That(chosen, Is.EqualTo(new[] { text ? 9L : 0L }));
   }
 
   [TestCase("6")]

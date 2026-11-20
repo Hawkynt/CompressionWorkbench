@@ -564,7 +564,11 @@ window and at 1 KiB.
 
 **Text streams.** The writer stores text files first in PPM archives (the file table's order is
 the stream's, and readers list whatever order it holds), and codes the leading run of text files
-as a text stream: *L* is where the last of them ends. A file is text when it holds no control
+as a text stream — *L* is where the last of them ends — when that comes out smaller: those files
+alone are packed both as text and as binary (an all-text stream is simply packed both ways) and
+the smaller kind is kept. Prose wins as text; record-like lines often do not (the `reset`
+fixture set packs to 7 200 bytes as text and 5 629 as binary, so it stays binary; UHARC 0.6b's
+own archive of it is 6 027). A file is text when it holds no control
 byte but tab, line feed, form feed, carriage return and 0x1A, and at most one byte in sixteen
 from 0x80; empty files pass; a stream that starts with any other file is binary throughout. Each
 text file becomes symbols on its own, so no symbol spans a file end:
