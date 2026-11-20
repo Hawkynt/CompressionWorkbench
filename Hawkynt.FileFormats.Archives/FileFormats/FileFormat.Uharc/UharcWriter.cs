@@ -51,19 +51,19 @@ internal static class UharcWriter {
   /// to 32 MiB); 0 fits the window to the stream.
   /// </param>
   /// <param name="version">
-  /// The archive version: 6 (UHARC 0.6, every mode) or 4 (UHARC 0.4: store, RLE, LZW for
-  /// <see cref="Mode.Lz78"/>, LZP and ALZ).
+  /// The archive version: 6 (UHARC 0.6, every mode), 4 or 3 (UHARC 0.4 and 0.3: store, RLE, LZW
+  /// for <see cref="Mode.Lz78"/>, LZP and ALZ; 0.3's windows reach 8 MiB).
   /// </param>
   public static void Write(Stream output, IReadOnlyList<Item> items, Mode mode, DateTime now, string? password = null, byte[]? sfxStub = null,
     long dictionaryLimit = 0, int version = 6) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(items);
-    if (version is not (4 or 6))
-      throw new NotSupportedException($"UHARC: the writer writes versions 0.4 and 0.6, not {version}.");
-    if (version == 4 && mode is Mode.Ppm)
-      throw new NotSupportedException("UHARC: the 0.4 writer does not write PPM streams.");
-    if (version == 4 && sfxStub != null)
-      throw new NotSupportedException("UHARC: 0.4 has no self-extractor stub.");
+    if (version is not (3 or 4 or 6))
+      throw new NotSupportedException($"UHARC: the writer writes versions 0.3, 0.4 and 0.6, not {version}.");
+    if (version != 6 && mode is Mode.Ppm)
+      throw new NotSupportedException($"UHARC: the 0.{version} writer does not write PPM streams.");
+    if (version != 6 && sfxStub != null)
+      throw new NotSupportedException($"UHARC: 0.{version} has no self-extractor stub.");
     var key = PasswordBytes(password);
     if (sfxStub != null && UharcHeader.PeImageEnd(sfxStub) != sfxStub.Length)
       throw new NotSupportedException("UHARC: the self-extractor stub must be a PE image that ends with its last section.");
@@ -114,7 +114,14 @@ internal static class UharcWriter {
       fileEnds.Add(offset);
     }
 
-    var method = total == 0 ? UharcMethods.Store : mode switch {
+    var method = total == 0 ? UharcMethods.Store : version == 3 ? mode switch {
+      Mode.Store => UharcMethods.Store,
+      Mode.Rle => UharcMethods.Rle,
+      Mode.Lz78 => UharcMethods.Lz78Last,
+      Mode.Lzp => UharcMethods.LzpFirst + Window03(total, dictionaryLimit),
+      Mode.Alz => UharcMethods.Alz03First + 14 + Window03(total, dictionaryLimit),
+      _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+    } : mode switch {
       Mode.Store => UharcMethods.Store,
       Mode.Rle => UharcMethods.Rle,
       Mode.Lz78 => UharcMethods.Lz78Last,
@@ -123,7 +130,13 @@ internal static class UharcWriter {
       Mode.Ppm => LzpMethodFor(total, dictionaryLimit) - UharcMethods.LzpFirst + UharcMethods.PpmFirst,
       _ => throw new ArgumentOutOfRangeException(nameof(mode)),
     };
-    var packed = version == 4 ? method switch {
+    var packed = version == 3 ? method switch {
+      UharcMethods.Store => stream,
+      UharcMethods.Rle => UharcRleEncoder.Encode(stream),
+      >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => Uharc02LzwEncoder.Encode(stream, method),
+      >= UharcMethods.Alz03First => Uharc03AlzEncoder.Encode(stream, method),
+      _ => Uharc03LzpEncoder.Encode(stream, method, fileEnds),
+    } : version == 4 ? method switch {
       UharcMethods.Store => stream,
       UharcMethods.Rle => UharcRleEncoder.Encode(stream),
       >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => Uharc02LzwEncoder.Encode(stream, method),
@@ -169,8 +182,8 @@ internal static class UharcWriter {
     if (directories.Count > ushort.MaxValue || nameTable.Length >= 1 << 24)
       throw new NotSupportedException("UHARC: directory is too large.");
 
-    if (version == 4) {
-      WriteVersion4(output, now, key, method, directories.Count, total, packed, crcs, nameTable, fileTable, n);
+    if (version != 6) {
+      WriteVersion4(output, version, now, key, method, directories.Count, total, packed, crcs, nameTable, fileTable, n);
       return;
     }
 
@@ -239,17 +252,23 @@ internal static class UharcWriter {
 
   private static byte[] PackTable(byte[] table) => UharcLzpEncoder.Encode(table, UharcMethods.Table, []);
 
+  /// <summary>The 0.3 window offset (0..13: 1 KiB to 8 MiB) that holds the stream, at most the limit.</summary>
+  private static int Window03(long size, long limit) => Math.Min(LzpMethodFor(size, limit) - UharcMethods.LzpFirst, 13);
+
   /// <summary>
-  /// The UHARC 0.4 container (docs/UHARC-ON-DISK.md, "UHARC 0.4"): a 44-byte header, the stream,
-  /// the stored CRC table, the name table as 0.4 LZP method 17, the dates-then-times table as LZW
-  /// method 2 and the size table (directory planes, size-delta planes, attributes) as LZW method 7.
+  /// The UHARC 0.4 container, which 0.3 shares byte for byte (docs/UHARC-ON-DISK.md, "UHARC 0.4"
+  /// and "UHARC 0.3"): a 44-byte header, the stream, the stored CRC table, the name table as the
+  /// version's LZP method 17, the dates-then-times table as LZW method 2 and the size table
+  /// (directory planes, size-delta planes, attributes) as LZW method 7.
   /// </summary>
-  private static void WriteVersion4(Stream output, DateTime now, byte[]? key, int method, int directoryCount, long total, byte[] packed,
+  private static void WriteVersion4(Stream output, int version, DateTime now, byte[]? key, int method, int directoryCount, long total, byte[] packed,
     byte[] crcs, byte[] nameTable, byte[] fileTable, int n) {
     // The 0.6 file table holds the same planes: dates, times, directory, size delta, attribute.
     var dates = fileTable.AsSpan(0, 4 * n).ToArray();
     var sizes = fileTable.AsSpan(4 * n, 7 * n).ToArray();
-    var packedNames = Uharc04LzpEncoder.Encode(nameTable, UharcMethods.Table, []);
+    var packedNames = version == 3
+      ? Uharc03LzpEncoder.Encode(nameTable, UharcMethods.Table, [])
+      : Uharc04LzpEncoder.Encode(nameTable, UharcMethods.Table, []);
     var packedDates = Uharc02LzwEncoder.Encode(dates, 2);
     var packedSizes = Uharc02LzwEncoder.Encode(sizes, 7);
     if (packedNames.Length >= 1 << 24 || packedDates.Length >= 1 << 24 || packedSizes.Length >= 1 << 24)
@@ -263,7 +282,7 @@ internal static class UharcWriter {
     header[0] = (byte)'U';
     header[1] = (byte)'H';
     header[2] = (byte)'A';
-    header[3] = 4;
+    header[3] = (byte)version;
     var (archiveDate, archiveTime) = ToDos(now);
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(4), archiveTime);
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(6), archiveDate);

@@ -13,8 +13,8 @@ stubs are established and verified, and so are UHARC 0.2 and the UHARC 0.4 conta
 store, RLE, LZW, LZP and ALZ modes, and the UHARC 0.3 container with its store, RLE, LZW, LZP and
 ALZ modes (see their sections). 0.4's and 0.3's PPM streams are not, and are refused. The writer
 produces 0.6 archives in every method — store, RLE, LZ78, LZP, PPM and ALZ — with or without a
-password and a self-extractor stub (see Writing), and 0.4 archives in store, RLE, LZW, LZP and ALZ
-(see Writing UHARC 0.4).
+password and a self-extractor stub (see Writing), and 0.4 and 0.3 archives in store, RLE, LZW, LZP
+and ALZ (see Writing UHARC 0.4 and Writing UHARC 0.3).
 
 ## Evidence
 
@@ -999,6 +999,23 @@ window and only five the predictor history; the rest are counted with the fifth 
 
 Fixtures `v03-basic-m1`, `v03-basic-m2`, `v03-basic-m3`, `v03-basic-m2-pw`, `v03-reset-m2`,
 `v03-reset-m21`, `v03-exe-m2`, `v03-mm-m1` and `v03-runs-m2` decode byte for byte.
+
+### Writing UHARC 0.3
+
+The writer produces 0.3 archives (format option `version` 3) in store, RLE, LZW, LZP and ALZ:2,
+in 0.4's container with version byte 3 and the 0.3 LZP name table, the window the smallest power
+of two that holds the stream (1 KiB to 8 MiB, capped by the dictionary size option). The 0.3
+range encoder is the decoder's mirror: a 31-bit low whose top bit is the carry, the top byte
+held back while it is 0xFF so a carry can still reach it, a leading byte the decoder skips, and
+the top symbol of each interval given the remainder. The LZP and ALZ models are the decoders'
+(generic over the coder direction; decoding the 39 MB set takes as long as before). The LZP
+encoder answers as 0.4's does. The ALZ encoder stays in literal group 0, never switches models
+or codes long runs, and takes the best of a recent distance, a new distance whose slot is open
+at the current history length and whose offset the narrowed slot holds, or a literal; 0.3
+excludes no byte after a copy, so its copies need not be whole. `uharc_u.exe` (0.3 BETA) `x`
+extracts our archives of every fixture input set and the 39 MB mixed set byte for byte in all
+five modes, with and without a password and at a 1 KiB window, and unuharc_recon's unpacker
+accepts them.
 
 ## What is not derived
 
