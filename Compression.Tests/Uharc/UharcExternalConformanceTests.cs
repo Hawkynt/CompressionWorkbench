@@ -279,7 +279,7 @@ public class UharcExternalConformanceTests {
     foreach (var path in Directory.EnumerateFiles(directory)) {
       var head = new byte[4];
       using (var probe = File.OpenRead(path))
-        if (probe.Read(head) < 4 || head is not [(byte)'U', (byte)'H', (byte)'A', 2 or 4 or 6])
+        if (probe.Read(head) < 4 || head is not [(byte)'U', (byte)'H', (byte)'A', 2 or 3 or 4 or 6])
           continue;
 
       using var stream = File.OpenRead(path);

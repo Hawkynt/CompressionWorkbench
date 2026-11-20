@@ -33411,7 +33411,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 #### `UharcReader`
 
-Reads UHARC 0.6 archives (magic `UHA\x06`) as written by UHARC 0.6/0.6a/0.6b, UHARC 0.4 archives (`UHA\x04`) and UHARC 0.2 archives (`UHA\x02`). Layout and codecs are described in docs/UHARC-ON-DISK.md.
+Reads UHARC 0.6 archives (magic `UHA\x06`) as written by UHARC 0.6/0.6a/0.6b, UHARC 0.4 and 0.3 archives (`UHA\x04`, `UHA\x03`) and UHARC 0.2 archives (`UHA\x02`). Layout and codecs are described in docs/UHARC-ON-DISK.md.
 
 | Member | Signature | Summary |
 | --- | --- | --- |

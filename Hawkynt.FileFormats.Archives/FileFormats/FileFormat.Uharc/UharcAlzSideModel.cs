@@ -21,7 +21,7 @@ internal sealed class UharcAlzSideModel {
   private static readonly int[] BaseShift = [0, 0, 8, 16, 24, 0, 0, 0, 0, 0];
 
   // Selector 1: which half of the context space follows a given delta class.
-  private static readonly byte[] PhaseOfClass = [
+  internal static readonly byte[] PhaseOfClass = [
     0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0,
   ];
 
@@ -111,7 +111,7 @@ internal sealed class UharcAlzSideModel {
   ];
 
   // Selectors 1, 2, 4: delta -> one of 16 classes (Fibonacci-spaced magnitude bands).
-  private static readonly byte[] DeltaClass = [
+  internal static readonly byte[] DeltaClass = [
     0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
     6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
     7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8,
