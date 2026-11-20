@@ -27859,6 +27859,7 @@ PEA (PeaZip's own format, version 1 revision 6): a 10-byte archive header, one s
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `Modify` | `static void Modify(Stream archive, IEnumerable<Input> add, IEnumerable<string> remove, string password = null)` | Edits a single-file PEA archive in place: drops the `remove` paths (a folder with everything beneath it), then adds `add`, replacing files of the same path. Everything else stays as it was: the archive's compression, object, stream and volume checks, encryption kind and strength (under a fresh salt), system bytes, and every kept object's stored name, time and attributes. New objects go under the archive's common folder, their times in its encoding. |
 | `ReadVolumes` | `static List<PeaEntry> ReadVolumes(IEnumerable<byte[]> volumes, string password = null)` | Reads and verifies a PEA archive from its volumes in order. Each volume ends with its own volume check over that volume's bytes; the archive is the volumes' contents, checks removed, joined. |
 | `Read` | `static List<PeaEntry> Read(Stream stream, string password = null)` | Reads and verifies a PEA archive. A file stream named like a volume (`name.000001.pea`) is read together with the volumes beside it, starting from volume 1. |
 | `VolumePath` | `static string VolumePath(string baseName, int number)` | The file name of volume `number` (1-based) of the set named `baseName`: `base.000001.pea`, `base.000002.pea`, … (at least six digits). |
@@ -27936,7 +27937,7 @@ One object of a PEA archive.
 
 PEA archive (.pea), PeaZip's native format.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -27954,10 +27955,14 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`,
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces objects, keeping the archive's settings; an encrypted archive needs `Add`. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, ArchiveMutationOptions options)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes objects (a folder with everything beneath it), keeping the archive's settings. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames, ArchiveMutationOptions options)` |  |
 
 ### Namespace `FileFormat.Phar`
 

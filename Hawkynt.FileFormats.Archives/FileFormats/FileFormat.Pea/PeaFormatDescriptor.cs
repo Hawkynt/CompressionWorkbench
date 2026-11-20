@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Pea;
 
 /// <summary>PEA archive (.pea), PeaZip's native format.</summary>
-public sealed class PeaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
+public sealed class PeaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IFormatOptionsSchema {
   /// <inheritdoc />
   public string Id => "Pea";
   /// <inheritdoc />
@@ -13,7 +13,7 @@ public sealed class PeaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   /// <inheritdoc />
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories | FormatCapabilities.SupportsPassword;
   /// <inheritdoc />
   public string DefaultExtension => ".pea";
@@ -78,6 +78,25 @@ public sealed class PeaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     "HMAC" => PeaArchive.Check.AesHmac,
     var m => throw new NotSupportedException($"PEA encryption '{m}' is not supported (EAX256, TF256, SP256, EAX, TF, SP, HMAC, TRIATS … HRISAT)."),
   };
+
+  /// <inheritdoc />
+  private static IEnumerable<PeaArchive.Input> ToInputs(IReadOnlyList<ArchiveInputInfo> inputs)
+    => inputs.Select(i => new PeaArchive.Input(i.ArchiveName, i.IsDirectory ? null : i.ReadContent(),
+      i.Metadata?.LastWriteTimeUtc?.UtcDateTime ?? DateTime.UtcNow));
+
+  /// <summary>Adds or replaces objects, keeping the archive's settings; an encrypted archive needs <see cref="Add(Stream, IReadOnlyList{ArchiveInputInfo}, ArchiveMutationOptions)"/>.</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) => PeaArchive.Modify(archive, ToInputs(inputs), []);
+
+  /// <inheritdoc />
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, ArchiveMutationOptions options)
+    => PeaArchive.Modify(archive, ToInputs(inputs), [], options.Password);
+
+  /// <summary>Removes objects (a folder with everything beneath it), keeping the archive's settings.</summary>
+  public void Remove(Stream archive, string[] entryNames) => PeaArchive.Modify(archive, [], entryNames ?? []);
+
+  /// <inheritdoc />
+  public void Remove(Stream archive, string[] entryNames, ArchiveMutationOptions options)
+    => PeaArchive.Modify(archive, [], entryNames ?? [], options.Password);
 
   /// <inheritdoc />
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
