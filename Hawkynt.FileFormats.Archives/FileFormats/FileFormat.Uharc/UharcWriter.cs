@@ -52,7 +52,7 @@ internal static class UharcWriter {
   /// </param>
   /// <param name="version">
   /// The archive version: 6 (UHARC 0.6, every mode) or 4 (UHARC 0.4: store, RLE, LZW for
-  /// <see cref="Mode.Lz78"/>, and LZP).
+  /// <see cref="Mode.Lz78"/>, LZP and ALZ).
   /// </param>
   public static void Write(Stream output, IReadOnlyList<Item> items, Mode mode, DateTime now, string? password = null, byte[]? sfxStub = null,
     long dictionaryLimit = 0, int version = 6) {
@@ -60,8 +60,8 @@ internal static class UharcWriter {
     ArgumentNullException.ThrowIfNull(items);
     if (version is not (4 or 6))
       throw new NotSupportedException($"UHARC: the writer writes versions 0.4 and 0.6, not {version}.");
-    if (version == 4 && mode is Mode.Alz or Mode.Ppm)
-      throw new NotSupportedException($"UHARC: the 0.4 writer does not write {mode} streams.");
+    if (version == 4 && mode is Mode.Ppm)
+      throw new NotSupportedException("UHARC: the 0.4 writer does not write PPM streams.");
     if (version == 4 && sfxStub != null)
       throw new NotSupportedException("UHARC: 0.4 has no self-extractor stub.");
     var key = PasswordBytes(password);
@@ -127,6 +127,7 @@ internal static class UharcWriter {
       UharcMethods.Store => stream,
       UharcMethods.Rle => UharcRleEncoder.Encode(stream),
       >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => Uharc02LzwEncoder.Encode(stream, method),
+      >= UharcMethods.AlzFirst and <= UharcMethods.AlzLast => Uharc04AlzEncoder.Encode(stream, method, fileEnds),
       _ => Uharc04LzpEncoder.Encode(stream, method, fileEnds),
     } : method switch {
       UharcMethods.Store => stream,

@@ -53,6 +53,34 @@ internal static class UharcAlzDecoder {
     262144, 262144, 524288, 524288, 1048576, 1048576, 2097152, 2097152, 4194304, 4194304, 8388608, 8388608,
   ];
 
+  /// <summary>The slot whose range holds <paramref name="distance"/>.</summary>
+  internal static int SlotOf(uint distance) {
+    var slot = SlotBase.Length - 1;
+    while (SlotBase[slot] > distance)
+      --slot;
+    return slot;
+  }
+
+  /// <summary>
+  /// Whether a new distance can be coded at <paramref name="position"/>: the decoder narrows a
+  /// slot at the start of the stream and halves it around a low bit, which leaves some odd
+  /// offsets out.
+  /// </summary>
+  internal static bool CanCodeDistance(uint distance, int position) {
+    if (distance == 0 || distance > (uint)position)
+      return false;
+    var k = SlotOf(distance);
+    if (k == 0)
+      return true;
+
+    var low = SlotBase[k];
+    var span = SlotSpan[k];
+    if (low + span - 1 > (uint)position)
+      span = (uint)position - low + 1;
+    var offset = distance - low;
+    return span >= 4 ? offset >> 1 < span >> 1 : offset < span;
+  }
+
   /// <summary>Decodes <paramref name="unpackedSize"/> bytes of an ALZ stream.</summary>
   public static byte[] Decode(byte[] packed, int offset, int length, int method, int unpackedSize, IReadOnlyList<long> fileEnds) {
     if (method is < UharcMethods.AlzFirst or > UharcMethods.AlzLast)

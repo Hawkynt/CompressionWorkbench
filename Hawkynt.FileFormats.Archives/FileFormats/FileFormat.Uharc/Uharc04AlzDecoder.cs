@@ -2,7 +2,30 @@ namespace FileFormat.Uharc;
 
 /// <summary>
 /// UHARC 0.4 ALZ decoder (stream methods 40..87, modes <c>-m1</c>..<c>-m3</c>), implemented from
-/// docs/UHARC-ON-DISK.md section "UHARC 0.4 ALZ".
+/// docs/UHARC-ON-DISK.md section "UHARC 0.4 ALZ". The model is <see cref="Uharc04AlzModel{TCoder}"/>,
+/// shared with <see cref="Uharc04AlzEncoder"/>.
+/// </summary>
+internal static class Uharc04AlzDecoder {
+
+  /// <summary>Decodes <paramref name="unpackedSize"/> bytes of a 0.4 ALZ stream.</summary>
+  public static byte[] Decode(byte[] packed, int offset, int length, int method, int unpackedSize, IReadOnlyList<long> fileEnds) {
+    if (method is < UharcMethods.AlzFirst or > UharcMethods.AlzLast)
+      throw new ArgumentOutOfRangeException(nameof(method));
+
+    var output = new byte[unpackedSize];
+    if (unpackedSize == 0)
+      return output;
+
+    var model = new Uharc04AlzModel<UharcDecoding>(new(new UharcRangeDecoder(packed, offset, length)), method, fileEnds, unpackedSize);
+    var position = 0;
+    while (position < unpackedSize)
+      position = model.Step(output, position, default);
+    return output;
+  }
+}
+
+/// <summary>
+/// The 0.4 ALZ model, written once for both directions (<see cref="IUharcCoder"/>).
 /// </summary>
 /// <remarks>
 /// The token table, the literal-mode state machine, the literal contexts and the multimedia
@@ -11,7 +34,7 @@ namespace FileFormat.Uharc;
 /// recent-distance indices and length classes are symbols of that frequency model, and a
 /// per-byte-pair length prediction can stand in for the length symbol.
 /// </remarks>
-internal sealed class Uharc04AlzDecoder {
+internal sealed class Uharc04AlzModel<TCoder> where TCoder : struct, IUharcCoder {
 
   private const int ContextCount = 1041;
   private const int WeightedContexts = 1027;
@@ -46,7 +69,11 @@ internal sealed class Uharc04AlzDecoder {
     0, 0, 0, 29, 0, 0, 0, 0, 0, 0, 35, 0, 0, 0, 0, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0, 0, 50, 59, 60, 61, 62,
   ];
 
-  private readonly UharcRangeDecoder _coder;
+  private TCoder _coder;
+  private readonly IReadOnlyList<long> _fileEnds;
+  private readonly long _size;
+  private long _blockEnd;
+  private int _nextFile;
   private readonly UharcAlzSideModel _side = new();
   private readonly byte[] _window;
   private readonly uint _mask;
@@ -84,11 +111,13 @@ internal sealed class Uharc04AlzDecoder {
   private int _group;
   private bool _alternativeText;
 
-  private Uharc04AlzDecoder(byte[] packed, int offset, int length, int method) {
+  public Uharc04AlzModel(TCoder coder, int method, IReadOnlyList<long> fileEnds, long size) {
     this._dictionarySize = (uint)UharcMethods.DictionarySize(method);
     this._window = new byte[this._dictionarySize];
     this._mask = this._dictionarySize - 1;
-    this._coder = new UharcRangeDecoder(packed, offset, length);
+    this._coder = coder;
+    this._fileEnds = fileEnds;
+    this._size = size;
 
     for (var c = WeightedContexts; c < ContextCount; ++c) {
       Array.Fill(this._frequency, (ushort)8, c * 256, 256);
@@ -108,34 +137,58 @@ internal sealed class Uharc04AlzDecoder {
     this._literalMode = 0;
   }
 
-  /// <summary>Decodes <paramref name="unpackedSize"/> bytes of a 0.4 ALZ stream.</summary>
-  public static byte[] Decode(byte[] packed, int offset, int length, int method, int unpackedSize, IReadOnlyList<long> fileEnds) {
-    if (method is < UharcMethods.AlzFirst or > UharcMethods.AlzLast)
-      throw new ArgumentOutOfRangeException(nameof(method));
+  /// <summary>The dictionary (window) size in bytes.</summary>
+  public uint DictionarySize => this._dictionarySize;
 
-    var output = new byte[unpackedSize];
-    if (unpackedSize == 0)
-      return output;
+  /// <summary>Distance <paramref name="slot"/> of the recent list; <see cref="uint.MaxValue"/> when no copy has filled it.</summary>
+  public uint Recent(int slot) => this._recent[slot];
 
-    var decoder = new Uharc04AlzDecoder(packed, offset, length, method);
-    long blockEnd = 0;
-    var nextFile = 0;
-    var position = 0;
-    while (position < unpackedSize) {
-      if (position >= blockEnd) {
-        // A block reaches 128 KiB past the previous block end, extended to the next file end.
-        var target = Math.Min(blockEnd + BlockSpan, unpackedSize);
-        while (nextFile < fileEnds.Count && fileEnds[nextFile] < target)
-          ++nextFile;
-        blockEnd = nextFile < fileEnds.Count ? fileEnds[nextFile] : unpackedSize;
-        decoder.StartBlock();
-      }
+  /// <summary>Where the current model block ends (valid after the first step).</summary>
+  public long BlockEnd => this._blockEnd;
 
-      position = decoder.DecodeStep(output, position);
-    }
+  /// <summary>The byte the next literal cannot be, or -1.</summary>
+  public int Excluded => this._excluding ? this._excluded : -1;
 
-    return output;
+  /// <summary>Starts a new model block when <paramref name="position"/> reached the end of the current one.</summary>
+  public void EnterBlock(int position) {
+    if (position < this._blockEnd)
+      return;
+
+    // A block reaches 128 KiB past the previous block end, extended to the next file end.
+    var target = Math.Min(this._blockEnd + BlockSpan, this._size);
+    while (this._nextFile < this._fileEnds.Count && this._fileEnds[this._nextFile] < target)
+      ++this._nextFile;
+    this._blockEnd = this._nextFile < this._fileEnds.Count ? this._fileEnds[this._nextFile] : this._size;
+    this.StartBlock();
   }
+
+  /// <summary>
+  /// The length symbol the decoder takes without coding one when a copy by
+  /// <paramref name="token"/> at <paramref name="distance"/> starts at <paramref name="position"/>
+  /// (a fully trusted per-byte-pair prediction), or -1.
+  /// </summary>
+  public int ForcedLengthSymbol(int position, int token, uint distance) {
+    this.EnterBlock(position);
+    if (distance <= 1 || (token != 1 && this._runCount != 0))
+      return -1;
+    var key = this._window[(this._writePosition - distance) & this._mask] << 8
+      | this._window[(this._writePosition - distance + 1) & this._mask];
+    if (token != 1)
+      key += 0x10000;
+    return this._lengthConfidence[key] == 0 ? this._predictedLength[key] : -1;
+  }
+
+  /// <summary>The length symbol for copy length <paramref name="length"/> (2..255).</summary>
+  public static int LengthSymbol(int length) {
+    var symbol = LengthBase.Length - 1;
+    while (LengthBase[symbol] > length)
+      --symbol;
+    return symbol;
+  }
+
+  /// <summary>Whether <paramref name="length"/> lies in the range of length symbol <paramref name="symbol"/>.</summary>
+  public static bool LengthInSymbol(int length, int symbol)
+    => length >= LengthBase[symbol] && length < LengthBase[symbol] + Math.Max(1, (int)LengthExtra[symbol]);
 
   private void StartBlock() {
     Array.Clear(this._frequency, 0, (OrderZero + 1) * 256);
@@ -151,7 +204,7 @@ internal sealed class Uharc04AlzDecoder {
     this._orderZeroCost = 0;
     this._contextCost = 0;
     this._costSlot = 255;
-    this.SwitchGroup((int)this._coder.DecodeUniform(11));
+    this.SwitchGroup((int)this._coder.Uniform(11, 0));
   }
 
   private void SwitchGroup(int group) {
@@ -171,7 +224,9 @@ internal sealed class Uharc04AlzDecoder {
     this._side.Select(group);
   }
 
-  private int DecodeStep(byte[] output, int position) {
+  /// <summary>Codes one token and what it carries; returns the position after the bytes it produced.</summary>
+  public int Step(byte[] output, int position, in UharcAlzChoice choice) {
+    this.EnterBlock(position);
     int row;
     if (this._runCount != 0)
       row = this._runCount > 2 ? 65 : 64;
@@ -186,14 +241,14 @@ internal sealed class Uharc04AlzDecoder {
       }
     }
 
-    var token = this.DecodeToken(row);
+    var token = this.DecodeToken(row, choice.Token);
     if (token == 4) {
       this._runCount = 0;
-      return this.DecodeLiteral(output, position);
+      return this.DecodeLiteral(output, position, choice.Literal);
     }
 
     this._excluding = false;
-    var (distance, count, recentSlot) = this.DecodeCopy(token, position);
+    var (distance, count, recentSlot) = this.DecodeCopy(token, position, choice);
     if (distance == 0 || distance > (uint)position || distance > this._dictionarySize)
       throw new InvalidDataException("UHARC: ALZ copy reaches before the start of the stream.");
 
@@ -228,16 +283,16 @@ internal sealed class Uharc04AlzDecoder {
 
   // ── Tokens ─────────────────────────────────────────────────────────────
 
-  private int DecodeToken(int row) {
+  private int DecodeToken(int row, int target) {
     for (var escapes = 0; escapes <= 64; ++escapes) {
-      var count = this._coder.GetCount(this._tokens[row, 5]);
+      var count = this._coder.Count(this._tokens[row, 5], TCoder.Encoding ? this._tokens[row, target] : 0u);
       var token = 4;
       while (token > 0 && count < this._tokens[row, token])
         --token;
 
       this._coder.Consume(this._tokens[row, token], (uint)(this._tokens[row, token + 1] - this._tokens[row, token]));
       if (token == 0) {
-        this.SwitchGroup((int)this._coder.DecodeUniform(11));
+        this.SwitchGroup((int)this._coder.Uniform(11, 0));
         continue;
       }
 
@@ -277,7 +332,7 @@ internal sealed class Uharc04AlzDecoder {
   // ── Copies ─────────────────────────────────────────────────────────────
 
   /// <summary>Decodes a copy: distance, length, and the recent-distance slot it came from (0xFF: a new distance).</summary>
-  private (uint Distance, int Count, int RecentSlot) DecodeCopy(int token, int position) {
+  private (uint Distance, int Count, int RecentSlot) DecodeCopy(int token, int position, in UharcAlzChoice choice) {
     uint distance;
     int recentSlot;
     if (token == 2) {
@@ -286,10 +341,10 @@ internal sealed class Uharc04AlzDecoder {
     } else {
       var context = token == 1 ? DistanceContext : RecentContext;
       this._escapeContext = DistanceEscape;
-      var symbol = this.DecodeSymbol(context);
+      var symbol = this.DecodeSymbol(context, !TCoder.Encoding ? 0 : token == 1 ? UharcAlzDecoder.SlotOf(choice.Distance) : choice.Slot);
       this.Update(symbol, context);
       if (token == 1) {
-        distance = this.DecodeDistance(symbol, position);
+        distance = this.DecodeDistance(symbol, position, choice.Distance);
         recentSlot = 0xFF;
       } else {
         if (symbol >= RecentCount)
@@ -299,10 +354,10 @@ internal sealed class Uharc04AlzDecoder {
       }
     }
 
-    return (distance, this.DecodeLength(token, distance), recentSlot);
+    return (distance, this.DecodeLength(token, distance, choice.Length), recentSlot);
   }
 
-  private uint DecodeDistance(int slot, int position) {
+  private uint DecodeDistance(int slot, int position, uint target) {
     if (slot >= UharcAlzDecoder.SlotBase.Length)
       throw new InvalidDataException("UHARC: ALZ distance slot out of range.");
 
@@ -316,29 +371,35 @@ internal sealed class Uharc04AlzDecoder {
     if (low + span - 1 > (uint)position)
       span = (uint)position - low + 1;
 
+    var offset = TCoder.Encoding ? target - low : 0;
     var lowBit = -1;
     if (span >= 4) {
-      lowBit = this._coder.DecodeBit(ref this._lowBitProbability, 6);
+      lowBit = this._coder.Bit(ref this._lowBitProbability, 6, (int)(offset & 1));
       span >>= 1;
+      offset >>= 1;
     }
 
     var extra = 0u;
     if (span > 0x800) {
       var blocks = ((span - 1) >> 11) + 1;
-      var block = this._coder.DecodeUniform(blocks);
+      var block = this._coder.Uniform(blocks, offset >> 11);
       extra = block << 11;
       span = block + 1 != blocks ? 0x800 : span - extra;
     }
 
     if (span >= 2)
-      extra += this._coder.DecodeUniform(span);
+      extra += this._coder.Uniform(span, offset - extra);
     if (lowBit >= 0)
       extra = extra * 2 + (uint)lowBit;
 
-    return low + extra;
+    var distance = low + extra;
+    if (TCoder.Encoding && distance != target)
+      throw new InvalidOperationException("UHARC: 0.4 ALZ distance cannot be coded here.");
+    return distance;
   }
 
-  private int DecodeLength(int token, uint distance) {
+  private int DecodeLength(int token, uint distance, int targetLength) {
+    var targetSymbol = TCoder.Encoding ? LengthSymbol(targetLength) : 0;
     int context;
     if (token == 1)
       context = distance switch {
@@ -362,7 +423,7 @@ internal sealed class Uharc04AlzDecoder {
 
       var confidence = (uint)this._lengthConfidence[key];
       if (confidence <= 50) {
-        if (this._coder.GetCount(256) < confidence) {
+        if (this._coder.Count(256, TCoder.Encoding && targetSymbol == this._predictedLength[key] ? confidence : 0u) < confidence) {
           this._coder.Consume(0, confidence);
           this._excluding = true;
           this._excluded = this._predictedLength[key];
@@ -376,7 +437,7 @@ internal sealed class Uharc04AlzDecoder {
 
     if (symbol < 0) {
       this._escapeContext = LengthEscape;
-      symbol = this.DecodeSymbol(context);
+      symbol = this.DecodeSymbol(context, targetSymbol);
       this.Update(symbol, context);
     }
 
@@ -391,18 +452,21 @@ internal sealed class Uharc04AlzDecoder {
 
     var length = (int)LengthBase[symbol];
     if (LengthExtra[symbol] != 0)
-      length += (int)this._coder.DecodeUniform(LengthExtra[symbol]);
+      length += (int)this._coder.Uniform(LengthExtra[symbol], (uint)(targetLength - length));
+    if (TCoder.Encoding && length != targetLength)
+      throw new InvalidOperationException("UHARC: 0.4 ALZ copy length cannot be coded.");
     return length;
   }
 
   // ── Literals ───────────────────────────────────────────────────────────
 
-  private int DecodeLiteral(byte[] output, int position) {
+  private int DecodeLiteral(byte[] output, int position, byte target) {
     byte value;
     if (this._group != 0) {
       if (this._excluding)
         this._excluded = this._side.ToDifference(this._excluded);
-      var difference = this.DecodeLiteralSymbol(this._side.Context, OrderZeroEscape + this._group, withPredictor: true);
+      var difference = this.DecodeLiteralSymbol(this._side.Context, OrderZeroEscape + this._group, withPredictor: true,
+        TCoder.Encoding ? this._side.ToDifference(target) : 0);
       value = this._side.ToByte(difference);
     } else {
       var context = (int)(this._history & 0xFF);
@@ -410,7 +474,7 @@ internal sealed class Uharc04AlzDecoder {
         context += 0x200;
       else if ((context & 0xC0) == ((this._history >> 8) & 0xC0))
         context += 0x100;
-      value = (byte)this.DecodeLiteralSymbol(context, TextEscape, withPredictor: false);
+      value = (byte)this.DecodeLiteralSymbol(context, TextEscape, withPredictor: false, target);
     }
 
     this.Put(output, position, value);
@@ -423,7 +487,7 @@ internal sealed class Uharc04AlzDecoder {
   /// its fallback). Depending on how well the last 256 literals compressed it is coded in the
   /// context, as a raw byte, or as an order-0 byte; the context learns it either way.
   /// </summary>
-  private int DecodeLiteralSymbol(int context, int escape, bool withPredictor) {
+  private int DecodeLiteralSymbol(int context, int escape, bool withPredictor, int target) {
     this._costSlot = (this._costSlot + 1) & 0xFF;
     this._costWindow -= this._recentCost[this._costSlot];
     this._cost = 0;
@@ -434,13 +498,13 @@ internal sealed class Uharc04AlzDecoder {
     var trackOrderZero = true;
 
     if (window is < ContextCostThreshold or >= CostWrapThreshold)
-      symbol = this.DecodeSymbol(context);
+      symbol = this.DecodeSymbol(context, target);
     else if (window >= RawCostThreshold) {
-      symbol = (int)this._coder.GetCount(256);
+      symbol = (int)this._coder.Count(256, (uint)target & 0xFF);
       this._coder.Consume((uint)symbol, 1);
       this.Estimate(context, symbol);
     } else if (this._orderZeroCost >= this._contextCost) {
-      symbol = this.DecodeSymbol(context);
+      symbol = this.DecodeSymbol(context, target);
       var contextCost = this._cost;
       this._cost = 0;
       this._escapeContext = OrderZeroEscape;
@@ -457,7 +521,7 @@ internal sealed class Uharc04AlzDecoder {
       var excluding = this._excluding;
       this._excluding = false;
       this._escapeContext = OrderZeroEscape;
-      var actual = this.DecodeSymbol(OrderZero);
+      var actual = this.DecodeSymbol(OrderZero, !TCoder.Encoding ? 0 : withPredictor ? this._side.ToByte(target) : target);
       var orderZeroCost = this._cost;
       this._costWindow += orderZeroCost;
       this._recentCost[this._costSlot] = orderZeroCost;
@@ -504,17 +568,18 @@ internal sealed class Uharc04AlzDecoder {
   /// downwards, the excluded one left out. An escape continues in the current fallback context
   /// among the symbols <paramref name="context"/> has not seen.
   /// </summary>
-  private int DecodeSymbol(int context) {
+  private int DecodeSymbol(int context, int target) {
     var excluded = this._excluding ? this._excluded : -1;
     var seen = (uint)(this._total[context] - (excluded >= 0 ? this.F(context, excluded) : 0)) & 0xFFFF;
     var fallback = this._escapeContext;
     if (seen == 0) {
       var all = (uint)(this._total[fallback] - (excluded >= 0 ? this.F(fallback, excluded) : 0)) & 0xFFFF;
-      return this.DecodeInside(fallback, this._coder.GetCount(all), all, excluded);
+      return this.DecodeInside(fallback, this._coder.Count(all, TCoder.Encoding ? this.SlotOf(fallback, target, excluded) : 0u), all, excluded);
     }
 
     var withEscape = (seen + this._escapeWeight[context]) & 0xFFFF;
-    var count = this._coder.GetCount(withEscape);
+    var present = TCoder.Encoding && target != excluded && this.F(context, target) != 0;
+    var count = this._coder.Count(withEscape, !TCoder.Encoding ? 0u : present ? this.SlotOf(context, target, excluded) : seen);
     if (count < seen)
       return this.DecodeInside(context, count, withEscape, excluded);
 
@@ -528,14 +593,23 @@ internal sealed class Uharc04AlzDecoder {
         ruledOut += this.F(fallback, s);
 
     var remaining = (this._total[fallback] - ruledOut) & 0xFFFF;
-    var target = this._coder.GetCount(remaining);
+    var slot = 0u;
+    if (TCoder.Encoding) {
+      if (target == excluded || this.F(context, target) != 0 || this.F(fallback, target) == 0)
+        throw new InvalidOperationException("UHARC: 0.4 ALZ symbol cannot be coded after the escape.");
+      for (var s = 255; s > target; --s)
+        if (this._frequency[basis + s] == 0 && s != excluded)
+          slot += this.F(fallback, s);
+    }
+
+    var wanted = this._coder.Count(remaining, slot);
     var low = 0u;
     for (var s = 255; s >= 0; --s) {
       if (this._frequency[basis + s] != 0 || s == excluded)
         continue;
 
       var f = (uint)this.F(fallback, s);
-      if (target < low + f) {
+      if (wanted < low + f) {
         this.Charge(f, remaining);
         this._coder.Consume(low, f);
         return s;
@@ -545,6 +619,18 @@ internal sealed class Uharc04AlzDecoder {
     }
 
     throw new InvalidDataException("UHARC: ALZ escape symbol not found.");
+  }
+
+  /// <summary>The encoder's slot for <paramref name="symbol"/> in <paramref name="context"/>: what the symbols above it take.</summary>
+  private uint SlotOf(int context, int symbol, int excluded) {
+    if (symbol == excluded || this.F(context, symbol) == 0)
+      throw new InvalidOperationException("UHARC: 0.4 ALZ symbol cannot be coded in its context.");
+    var basis = context * 256;
+    var low = 0u;
+    for (var s = 255; s > symbol; --s)
+      if (s != excluded)
+        low += this._frequency[basis + s];
+    return low;
   }
 
   private int DecodeInside(int context, uint count, uint total, int excluded) {

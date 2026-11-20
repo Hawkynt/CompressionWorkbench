@@ -211,6 +211,8 @@ public class UharcExternalConformanceTests {
   [TestCase("lzp", 0L, null)]
   [TestCase("lzp", 1024L, "secret")]
   [TestCase("lz78", 0L, "secret")]
+  [TestCase("alz", 0L, null)]
+  [TestCase("alz", 1024L, "secret")]
   public void GivenOurVersion04Archive_WhenUharc04Extracts_ThenEveryFileIsByteIdentical(string method, long dictionary, string? password) {
     if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
       Assert.Ignore("UHARC04.EXE is a Win32 console program.");

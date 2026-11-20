@@ -31885,7 +31885,7 @@ A file or directory recorded in an SQX archive.
 
 #### `SqxFormatDescriptor`
 
-SQX archives (Squeez, formats 1.1 and 2.0). Reads stored and LZ77 + Huffman files (methods 1-4, solid chains, multimedia blocks, delta and x86 filters); writes them; refuses audio, text and ultra methods, encryption and split files. See `SqxReader`.
+SQX archives (Squeez, formats 1.1 and 2.0). Reads stored and LZ77 + Huffman files (methods 1-4, solid chains, multimedia blocks, delta and x86 filters), audio, text and ultra files and, with the password, encrypted files and headers; writes methods 0-4; refuses split files. See `SqxReader`.
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
@@ -31913,15 +31913,18 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `SqxReader`
 
-Reads SQX archives (formats 1.1 and 2.0) as Squeez-c (MIT) reads them: main, file and directory blocks with their header checksums, stored and LZ77 + Huffman (methods 1-4) files, solid chains and self-extracting archives whose stub precedes the main block, audio (method 5: WAV samples behind predictors), text (method 6: PPMd var. I) and ultra (method 7: LZ77 with a range coder) files. Encryption and split files are refused.
+Reads SQX archives (formats 1.1 and 2.0) as Squeez-c (MIT) reads them: main, file and directory blocks with their header checksums, stored and LZ77 + Huffman (methods 1-4) files, solid chains and self-extracting archives whose stub precedes the main block, audio (method 5: WAV samples behind predictors), text (method 6: PPMd var. I) and ultra (method 7: LZ77 with a range coder) files, AES-encrypted files and Blowfish-encrypted headers given the password, and multi-volume sets opened at their first volume. A file split into a volume not given is refused.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SqxReader` | `SqxReader(Stream stream, bool leaveOpen = false)` | Opens an SQX archive. |
+| `SqxReader` | `SqxReader(Stream stream, string password, bool leaveOpen = false)` | Opens an SQX archive with the password its encrypted files (AES-128 in ECB mode, keyed with the MD5 of the password) and, when the archive encrypts them, its headers (Blowfish, keyed the same way) need. |
 | `Entries` | `IReadOnlyList<SqxEntry> Entries { get; }` | Gets the entries in the archive, in archive order. |
+| `HeadersEncrypted` | `bool HeadersEncrypted { get; }` | Whether the archive's headers are encrypted (they open only with the password). |
 | `IsSolid` | `bool IsSolid { get; }` | Whether the main block marks the archive solid. |
+| `VolumeCount` | `int VolumeCount { get; }` | Volumes read: 1 for a single-volume archive. |
 | `Dispose` | `void Dispose()` |  |
 | `ExtractAll` | `byte[][] ExtractAll()` | Extracts every file in archive order (directories yield empty arrays). |
 | `ExtractEntry` | `byte[] ExtractEntry(SqxEntry entry)` | Extracts one file, decoding the files before it when it continues a solid chain. |
@@ -33628,7 +33631,7 @@ One file or directory of a UHARC archive.
 
 #### `UharcFormatDescriptor`
 
-UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP and ALZ modes, with passwords and the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP and ALZ modes; and UHARC 0.2 archives. 0.4 and 0.3 PPM streams are refused. Creates 0.6 archives in every 0.6 method and 0.4 archives in store, RLE, LZW and LZP, optionally password-protected or behind a self-extractor stub, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
+UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP and ALZ modes, with passwords and the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP and ALZ modes; and UHARC 0.2 archives. 0.4 and 0.3 PPM streams are refused. Creates 0.6 archives in every 0.6 method and 0.4 archives in every method but PPM, optionally password-protected or behind a self-extractor stub, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
 
@@ -33649,7 +33652,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a UHARC 0.6 archive: method `lzp` (the default), `ppm`, `alz`, `lz78`, `rle` or `store`; a password enciphers the stream and the tables as `-pw` does; the `SfxStubOption` option puts the named Win32 stub in front, as `-sfx` does; `DictSize` caps the LZP and ALZ window, as `-md` does; the `VersionOption` option 4 writes a UHARC 0.4 archive (store, RLE, LZW as `lz78`, LZP). |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a UHARC 0.6 archive: method `lzp` (the default), `ppm`, `alz`, `lz78`, `rle` or `store`; a password enciphers the stream and the tables as `-pw` does; the `SfxStubOption` option puts the named Win32 stub in front, as `-sfx` does; `DictSize` caps the LZP and ALZ window, as `-md` does; the `VersionOption` option 4 writes a UHARC 0.4 archive (store, RLE, LZW as `lz78`, LZP, ALZ). |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |

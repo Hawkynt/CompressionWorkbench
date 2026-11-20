@@ -24,6 +24,7 @@ format 1.1 or 2.0, at the level in the name (`none` stored, `fast` to `maximum` 
 | `ppmd_v2.0_order2.sqx`, `ppmd_v2.0_order16.sqx` | 2.0 | 6 (PPMd) | `eng.txt`, written by Squeez-c's own `sqx create --fmt=20 --method=6 --ppm-order=2` (default 32 MiB) and `--ppm-order=16 --ppm-mem=4` |
 | `biased_v2.0_ultra.sqx`, `image_v2.0_ultra.sqx`, `image24_v2.0_ultra.sqx`, `mixed_v2.0_ultra.sqx` | 2.0 | 7 (ultra) | `biased.bin`, `image.raw`, `image24.raw`, `mixed.bin` |
 | `pattern_v2.0_ultra.sqx`, `records_v2.0_ultra.sqx`, `zeros_v2.0_ultra.sqx`, `empty_v2.0_ultra.sqx` | 2.0 | 7 (ultra) | `pattern.bin`, `records.bin`, `zeros.bin`, `empty.dat` |
+| `words300_v1.1_sqc52_normal.sqx`, `words300_v2.0_sqc52_best.sqx` | 1.1, 2.0 | 2, 4 | `words300.txt` (300000 bytes of `word i%977 i*31%1013` lines), written by Squeez CommandLine 5.2 for Linux (`sqc a -ep -fmt SQX1 -m2`, `-fmt SQX2 -m4`; from `sqc_linux.tgz` of https://github.com/wesinator/sqx-compression): matches reach back further than 256 KiB, where the distance codes depend on the dictionary size |
 
 | `Noise_v1.1_none.sqx`, `test_v1.1_normal.sqx` | 1.1 | 5 (audio) | `Noise.wav`, `test.wav` (16-bit mono) |
 | `Noise_v2.0_maximum.sqx` | 2.0 | 5 (audio) | `Noise.wav` (16-bit mono) |
@@ -33,6 +34,25 @@ format 1.1 or 2.0, at the level in the name (`none` stored, `fast` to `maximum` 
 The three `Noise_*`/`test_*` archives are from Squeez-c's `corpus` (archives the original SQX
 archiver wrote), with their WAV files; the other audio sources are in the same `corpus`, except
 `sine_st8.wav`, a generated 8-bit stereo sine pair (24044 bytes, SHA-256 `8ad1101a…2fa1`).
+
+Encrypted archives (`pw.*`, kept out of the password-less round of tests), written by Squeez
+CommandLine 5.2 for Linux (`sqc`, from the SQX SDK mirror https://github.com/wesinator/sqx-compression,
+`sqc_linux.tgz`) with `sqc a -ep -fmt SQX2|SQX1 [-m0|-s -mx] -p secret [-ph secret]` over five files
+(`a.bin` 0..255 four times, `b.txt` a repeated sentence, `c.bin` 5000 random bytes, `d.bin`
+`0123456789abcdef`, `e.bin` `x`):
+
+| File | Format | Contents |
+|---|---|---|
+| `pw.enc_v2.0_stored.sqx` | 2.0 | stored, AES |
+| `pw.enc_v2.0_normal.sqx`, `pw.enc_v1.1_normal.sqx` | 2.0, 1.1 | normal, AES |
+| `pw.enc_v2.0_solid_max.sqx` | 2.0 | solid maximum, AES |
+| `pw.enchdr_v2.0.sqx` | 2.0 | AES files and Blowfish headers (`-ph secret`) |
+| `pw.encutf8_v2.0.sqx` | 2.0 | `b.txt` and `c.bin` with the password `pässwort` (UTF-8) |
+| `pw.sdk_EncryptedArchive.sqx` | 1.1 | the SQX SDK 2.06's `Archives/EncryptedArchive.sqx` (password `test`), unchanged |
+
+`volumes/mvol.sqx`, `mvol.001`, `mvol.002`: a multi-volume set Squeez CommandLine 5.2 wrote with
+`sqc a -ep -fmt SQX2 -m0 -mv 140000` from `text.txt` (3000 lines `line i of the volume test`),
+`huge.bin` (200000 random bytes, split over all three volumes) and `small.bin` (`tiny file`).
 
 The `*_ultra.sqx` archives come from the same `packed_corpus` at revision
 `03211cd1e86473da08bc675198f6902e15a28ca3`; `records.bin` (240000 bytes) is in its `corpus`.

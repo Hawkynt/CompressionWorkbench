@@ -49,23 +49,33 @@ public static class SqxTables {
   internal static ReadOnlySpan<int> LenExtraBits => [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 5, 5, 0];
 
   /// <summary>
-  /// Distance base values. Squeez-c selects this table, the one for 8 MB dictionaries, for every
-  /// dictionary it handles (its selector compares the byte count against 8192), and every archive
-  /// in its corpus decodes with it; a 1.1 stream that used distance codes 54 or 55 cannot be read.
+  /// The distance codes of a dictionary size (SQX 1.1 format notes, table 3.3): codes 0-3 are the
+  /// distances themselves; from code 4 on the bases double every two codes with one more extra
+  /// bit each time, until the extra bits reach the dictionary's limit (16 up to 1 MB, 17 for 2 MB,
+  /// 18 for 4 MB, one more per doubling after that); from there every code adds a constant step
+  /// of 2^limit. Codes past the dictionary size are never written.
   /// </summary>
-  internal static ReadOnlySpan<uint> DistBase => [
-    0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768,
-    1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384, 24576, 32768, 49152,
-    65536, 98304, 131072, 196608, 262144, 393216, 524288, 786432, 1048576, 1572864,
-    2097152, 2621440, 3145728, 3670016, 4194304, 4718592, 5242880, 5767168,
-    6291456, 6815744, 7340032, 7864320,
-  ];
-
-  internal static ReadOnlySpan<int> DistExtraBits => [
-    0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8,
-    9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16, 16, 17, 17, 18, 18,
-    19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19,
-  ];
+  internal static (uint[] Base, int[] ExtraBits) DistanceCodes(int dictionarySize) {
+    var limit = Math.Max(16, System.Numerics.BitOperations.Log2((uint)dictionarySize) - 4);
+    var bases = new uint[DistCodes11];
+    var extras = new int[DistCodes11];
+    for (var c = 0; c < bases.Length; ++c) {
+      if (c < 4) {
+        bases[c] = (uint)c;
+        continue;
+      }
+      var extra = c / 2 - 1;
+      if (extra <= limit) {
+        extras[c] = extra;
+        bases[c] = (uint)(2 | (c & 1)) << extra;
+      } else {
+        extras[c] = limit;
+        var next = (ulong)bases[c - 1] + (1UL << extras[c - 1]);
+        bases[c] = next > uint.MaxValue ? uint.MaxValue : (uint)next;
+      }
+    }
+    return (bases, extras);
+  }
 
   /// <summary>Dictionary size from a file header's flags (bits 8-10, and bit 11 for 2.0's extended sizes).</summary>
   public static int DictionarySize(ushort flags, byte format) {

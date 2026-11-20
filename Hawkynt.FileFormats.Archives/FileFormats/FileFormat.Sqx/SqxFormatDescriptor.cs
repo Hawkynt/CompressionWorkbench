@@ -6,8 +6,9 @@ namespace FileFormat.Sqx;
 
 /// <summary>
 /// SQX archives (Squeez, formats 1.1 and 2.0). Reads stored and LZ77 + Huffman files (methods
-/// 1-4, solid chains, multimedia blocks, delta and x86 filters); writes them; refuses audio,
-/// text and ultra methods, encryption and split files. See <see cref="SqxReader"/>.
+/// 1-4, solid chains, multimedia blocks, delta and x86 filters), audio, text and ultra files and,
+/// with the password, encrypted files and headers; writes methods 0-4; refuses split files. See
+/// <see cref="SqxReader"/>.
 /// </summary>
 public sealed class SqxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
@@ -55,13 +56,13 @@ public sealed class SqxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Description => "SQX (Squeez) archive, formats 1.1 and 2.0, LZ77 + Huffman methods";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new SqxReader(stream, leaveOpen: true);
+    var r = new SqxReader(stream, password, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.OriginalSize, e.CompressedSize,
       $"SQX {e.Method}", e.IsDirectory, e.IsEncrypted, e.LastModified == DateTime.MinValue ? null : e.LastModified)).ToList();
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new SqxReader(stream, leaveOpen: true);
+    var r = new SqxReader(stream, password, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
