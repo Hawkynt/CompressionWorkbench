@@ -49,6 +49,17 @@ public sealed class WwpackFormatDescriptor : DosPackedExeDescriptor {
   protected override string MetadataSection => "wwpack";
 }
 
+/// <summary>PGMPAK-packed DOS executables (Todor Todorov): lists the restored program (8086 emulation of the stub).</summary>
+public sealed class PgmpakFormatDescriptor : DosPackedExeDescriptor {
+  public override string Id => "Pgmpak";
+  public override string DisplayName => "PGMPAK (DOS exe)";
+  public override string Description =>
+    "PGMPAK-packed DOS executable: lists the restored program, recovered by running the stub in " +
+    "an 8086 emulator.";
+  protected override IDosExeUnpacker Unpacker => PgmpakUnpacker.Instance;
+  protected override string MetadataSection => "pgmpak";
+}
+
 /// <summary>AXE-packed DOS executables (System Enhancement Associates): lists the restored program (8086 emulation of the stub).</summary>
 public sealed class AxeFormatDescriptor : DosPackedExeDescriptor {
   public override string Id => "Axe";

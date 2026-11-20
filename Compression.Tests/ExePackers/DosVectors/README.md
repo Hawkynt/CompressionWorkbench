@@ -52,6 +52,7 @@ CS:IP, SS:SP). UNP 4.11 does not recognise aPACK, ExeLITE or WWPACK 3.05 files.
 | `tinyprog.P1/P2.EXE` | TINYPROG 3.9, `TINYPROG T<n>.EXE P<n>.EXE` | sac.sk `tinyp39.zip` (`eaf138cf…d268192f`) |
 | `axe.P1/P2.EXE` | AXE 2.2, `AXE P<n>.EXE B<n>.EXE -f` on a copy | sac.sk `axe.zip` (`aedc292c…ae2af466`) |
 | `axe.U1/U2.EXE` | UNP 4.11's restoration of `axe.P<n>.EXE` | |
+| `pgmpak.P1/P2/P7.EXE` | PGMPAK 0.15, `PGMPAK P<n>.EXE` on a copy | sac.sk `pgmpak15.zip` (`f6048731…48e3d0fae2f027aa`) |
 
 `T7.EXE` (`NREL=10 NTEXT=77 NRAND=3333 SEED=5 NFAR=3 CSV=1 ENTRYPAD=37`) gives WWPACK a third
 image length. WWPACK 3.05's output for T6 and for one further measured program
@@ -59,6 +60,15 @@ image length. WWPACK 3.05's output for T6 and for one further measured program
 reaches the program in the emulator either; those files are not committed. Its stub unpacks a
 relocation routine right behind the image with one data byte in front of it, at image lengths
 of 8, 0 and another paragraph offset alike.
+
+PGMPAK files ask DOS to load them high (minimum and maximum allocation 0); the stub unpacks
+the program at the bottom of memory behind a child PSP. Its decompressor writes one zero byte
+past the image (image lengths at paragraph offsets 8, 0 and 12 alike), it keeps the program's
+allocation fields in front of SS, SP, IP and CS near the end of the packed image, and the file
+ends in `"\0PGMPAK 0.15"`. UNP 4.11 restores the same image and relocations but keeps that
+trailer as an overlay and writes its own minimum allocation. For the 176 KiB third test program
+PGMPAK keeps 62 of its 962 relocations (UNP's restoration and the emulator's agree that the
+others are gone from the packed file), so that file is not committed.
 
 AXE starts the program with SP two below the original (UNP's restoration has the same SP).
 UNP 4.11 restores TINYPROG files with a different set of relocation addresses than the

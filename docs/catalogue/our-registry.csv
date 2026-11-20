@@ -467,6 +467,7 @@ format,PeResources,PE Resources (Windows binary),Archive,,.dll;.exe;.ocx;.cpl;.s
 format,PeSections,PE sections (Windows binary),Archive,,,Y,Y,,
 format,Petite,Petite (Win32 PE),Archive,,,Y,Y,,
 format,Pfs0,Nintendo PartitionFS,Archive,,.nsp;.pfs0,Y,Y,Y,Y
+format,Pgmpak,PGMPAK (DOS exe),Archive,,,Y,Y,,
 format,Phar,PHAR,Archive,,.phar,Y,Y,Y,Y
 format,Pickle,Python pickle object graph,Archive,,.pkl;.pickle,Y,Y,Y,
 format,Pkcs12,PKCS#12 (PFX),Archive,,.p12;.pfx,Y,Y,,
