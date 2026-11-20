@@ -245,6 +245,73 @@ public class UharcExternalConformanceTests {
     AssertExtracted(output, inputs);
   }
 
+  /// <summary>
+  /// The tool of each version packs the inputs in one of its modes; we replace a file, add one in
+  /// a new directory and remove one (rebuilding the archive with its own method and password);
+  /// the same tool extracts the edited archive byte for byte.
+  /// </summary>
+  [TestCase("6", "-m0", null)]
+  [TestCase("6", "-mw -md1", null)]
+  [TestCase("6", "-mz", null)]
+  [TestCase("6", "-mx", null)]
+  [TestCase("6", "-m1", null)]
+  [TestCase("6", "-m3", null)]
+  [TestCase("6", "-m2", "secret")]
+  [TestCase("4", "-mr", null)]
+  [TestCase("4", "-mz -md1", null)]
+  [TestCase("4", "-mx", null)]
+  [TestCase("4", "-m3", null)]
+  [TestCase("4", "-mx", "secret")]
+  [TestCase("3", "-mw", null)]
+  [TestCase("3", "-mz", null)]
+  [TestCase("3", "-mx -md1", null)]
+  [TestCase("3", "-m1", null)]
+  [TestCase("3", "-m2", "secret")]
+  public void GivenAToolPackedArchive_WhenWeEditIt_ThenTheVersionsToolExtractsTheEdit(string version, string switches, string? password) {
+    var tool = version switch { "4" => RequireUharc04(), "3" => RequireUharc03(), _ => RequireUharc() };
+    var input = Path.Combine(this._tmp, "in");
+    Directory.CreateDirectory(input);
+    var expected = WriteInputs(input);
+    var archive = Path.Combine(this._tmp, "packed.uha");
+    List<string> pack = version == "3" ? ["a", "-y", "-r"] : ["a", "-y", "-d0", "-r"];
+    pack.AddRange(switches.Split(' '));
+    if (password != null)
+      pack.Add("-pw" + password);
+    pack.AddRange([archive, "*"]);
+    Run(tool, input, [.. pack]);
+    int MethodOf() {
+      using var packed = File.OpenRead(archive);
+      return new UharcReader(packed, password).Method;
+    }
+
+    var method = MethodOf();
+
+    var replacement = System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 900).Select(i => $"replaced line {i}\r\n")));
+    var added = "a new file in a new directory\r\n"u8.ToArray();
+    using (var stream = new FileStream(archive, FileMode.Open, FileAccess.ReadWrite)) {
+      var descriptor = new UharcFormatDescriptor();
+      var options = new ArchiveMutationOptions { Password = password };
+      descriptor.Add(stream, [ArchiveInputInfo.InMemory("text.txt", replacement), ArchiveInputInfo.InMemory("added/new.txt", added)], options);
+      descriptor.Remove(stream, ["noise.bin"], options);
+    }
+
+    Assert.That(MethodOf(), Is.EqualTo(method), "the method stays");
+    expected.Remove("noise.bin");
+    expected["text.txt"] = replacement;
+    expected["added/new.txt"] = added;
+    var output = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(output);
+    List<string> extract = ["x", "-y"];
+    if (password != null)
+      extract.Add("-pw" + password);
+    if (version == "6")
+      extract.Add("-t" + output);
+    extract.Add(archive);
+    Run(tool, output, [.. extract]);
+    AssertExtracted(output, expected.Select(e => ArchiveInputInfo.InMemory(e.Key, e.Value)));
+    Assert.That(File.Exists(Path.Combine(output, "noise.bin")), Is.False);
+  }
+
   private static void AssertExtracted(string output, IEnumerable<ArchiveInputInfo> inputs) {
     foreach (var input in inputs) {
       var path = Path.Combine(output, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));

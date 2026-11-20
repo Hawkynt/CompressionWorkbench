@@ -7,7 +7,7 @@ document is the specification `FileFormat.Uharc` is implemented from. It covers 
 version byte 6) and, in their own sections, the 0.4, 0.3 and 0.2 formats, as far as they were established; what
 is not covered is listed at the end.
 
-**Status: read, write-once.** Container, ciphers, every 0.6 mode — store, RLE, LZ78, LZP, PPM and ALZ
+**Status: read and write (create, and edit by rebuilding; see Editing).** Container, ciphers, every 0.6 mode — store, RLE, LZ78, LZP, PPM and ALZ
 with its nine multimedia predictors —, the executable and multimedia filters, passwords and SFX
 stubs are established and verified, and so are UHARC 0.2, and the UHARC 0.4 and 0.3 containers
 with their store, RLE, LZW, LZP, PPM and ALZ modes (see their sections). The writer
@@ -1308,6 +1308,33 @@ ending where the match does; 255 is a plain copy here and need not. `uharc_u.exe
 set byte for byte in all six modes, with and without a password and at a 1 KiB window, and
 unuharc_recon's unpacker accepts them. A text stream takes `alice29.txt` from 43 407 to 40 083
 bytes (`uharc_u.exe -mx`: 38 983).
+
+## Editing
+
+Adding, replacing and removing files rebuilds the archive. Every file is extracted (and checked
+against its CRC), the change is applied, and the archive is written again as the same version
+with the same stream method byte — so the same mode, window and ALZ band — the same password and
+the same self-extractor stub. Kept files keep their name, directory, DOS time stamp and attribute
+byte; a replaced file keeps its attribute byte; an added one gets `0x20`. The filters are applied
+as for a new archive, which gives the same files the same treatment. The rebuilt archive is read
+back and compared before it replaces the old bytes, so any failure leaves them as they were.
+
+- A password archive needs its password; without it, or with a wrong one, the edit is refused and
+  the bytes stay as they were.
+- An edit that would leave no file is refused: `UHARC.EXE`, `UHARC04.EXE` and `uharc_u.exe` all
+  stop on an archive of no files ("Not enough memory to allocate contents table").
+- 0.3's second store code 80 is rewritten as 0: `uharc_u.exe` extracts no file from a stream we
+  store under 80 (it does create the directories). 0.3 ALZ methods 78 and 79 (1 KiB windows, 79
+  with the larger step) are written as they are.
+
+Verified per version with its own tool: the tool packs a set (text, noise, an executable, a WAV
+file, an empty file, a read-only file, nested directories) in each of its modes — 0.6, 0.4 and 0.3
+in `-m0`, `-mr`, `-mw`, `-mw -md1`, `-mz`, `-mz -md1`, `-mx`, `-mx -md1`, `-m1`, `-m2`, `-m3` and
+`-m3 -md1`, and `-m2`, `-mx` and `-mz` with `-pw`; 0.2 under DOSBox in `-m0`, `-m1`, `-m2`, `-m3`
+and `-m3 -md-` — we replace one file, add two (one in a new directory) and remove one, and the same
+tool extracts the result byte for byte, with the method byte unchanged (and, for 0.6, 0.4 and 0.3,
+the read-only file extracted read-only). `UHARC.EXE -sfx` self-extractors (with and without a password) keep their stub, and the
+edited self-extractor extracts itself.
 
 ## What is not derived
 
