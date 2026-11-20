@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 79 | |
+| A | 80 | |
 | B | 32 | FFmpeg alone covers 38 codec folders |
 | C | 0 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 14 | |
@@ -117,6 +117,7 @@ None open: every class C claim site has been rewritten and is listed under R.
 | `Compression.Core/Dictionary/Zip/ShrinkDecoder.cs`, `Compression.Core/Dictionary/Zip/ShrinkEncoder.cs`, `Compression.Core/Dictionary/Zip/ReduceDecoder.cs`, `Compression.Core/Dictionary/Zip/ReduceEncoder.cs`, `Compression.Core/Dictionary/Zip/ImplodeDecoder.cs`, `Compression.Core/Dictionary/Zip/ImplodeEncoder.cs`, `Compression.Core/Dictionary/Zip/ZipLegacyBitStream.cs` | hwzip 2.4 `shrink.c`, `reduce.c`, `implode.c`, `bitstream.h` (Hans Wennborg) | public domain | `Compression.Core/Dictionary/Zip/THIRD-PARTY-NOTICE.hwzip.txt` |
 | `Compression.Core/Entropy/Ppmd/Ppmd8.cs`, `Compression.Core/Entropy/Ppmd/Ppmd8.Coder.cs` | 7-Zip 9.20 `C/Ppmd8.c`, `C/Ppmd8Dec.c`, `C/Ppmd8Enc.c` (Igor Pavlov, after Dmitry Shkarin's PPMd var.I and Dmitry Subbotin's range coder) | public domain | `Compression.Core/Entropy/Ppmd/THIRD-PARTY-NOTICE.Ppmd8.txt` |
 | `Compression.Core/Crypto/Serpent.cs` (S-box circuits) | Botan `src/lib/block/serpent/serpent_sbox.h` (Jack Lloyd; circuits by Dag Arne Osvik), revision `c8c5256a4f2a2cba66e8013e27278284fd0b15be` | BSD-2-Clause | `Compression.Core/Crypto/THIRD-PARTY-NOTICE.Botan.txt` |
+| `Compression.Core/Crypto/AesBlockCipher.cs` | Bouncy Castle C# `crypto/src/crypto/engines/AesEngine.cs`, `AesEngine_X86.cs` (The Legion of the Bouncy Castle), revision `4814a10bc95da8757d8390c59b0b62d4cc00cb0d` | MIT | `Compression.Core/Crypto/THIRD-PARTY-NOTICE.BouncyCastle.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.VeraCrypt/` | cryptsetup `lib/tcrypt/tcrypt.c`, `tcrypt.h` (Milan Broz, Red Hat), revision `086591ce183ef40b8ad6b75a67e7f298bc1767f2` | LGPL-2.1-or-later — taken under LGPL-3.0 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.VeraCrypt/THIRD-PARTY-NOTICE.cryptsetup.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.BitLocker/` | cryptsetup `lib/bitlk/bitlk.c`, `bitlk.h` (Milan Broz, Vojtech Trefny, Red Hat), revision `086591ce183ef40b8ad6b75a67e7f298bc1767f2` | LGPL-2.1-or-later — taken under LGPL-3.0 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.BitLocker/THIRD-PARTY-NOTICE.cryptsetup.txt` |
 | `Compression.Core/Crypto/Rar20Cipher.cs`, `Compression.Core/Crypto/KeyDerivation.cs` | 7-Zip `CPP/7zip/Crypto/Rar20Crypto.cpp`, `RarAes.cpp` (Igor Pavlov) | LGPL-2.1-or-later — taken under LGPL-3.0 | `Compression.Core/Crypto/THIRD-PARTY-NOTICE.7-Zip.txt` |
