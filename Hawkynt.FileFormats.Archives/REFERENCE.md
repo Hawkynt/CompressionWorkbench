@@ -32431,6 +32431,9 @@ How `StuffItXWriter` codes the archive's data stream.
 | `Deflate` | `1` | Method 3, StuffIt X's Deflate (a six-bit distance-code count in dynamic blocks). |
 | `Darkhorse` | `2` | Method 2, Darkhorse: LZ77 with adaptive binary range coding. |
 | `Brimstone` | `3` | Method 0, Brimstone: PPMd variant G (order 8, 16 MiB model). |
+| `Cyanide` | `4` | Method 1, Cyanide: Burrows-Wheeler blocks with range-coded "move one from front" ranks. |
+| `Blend` | `5` | Method 4, Blend: 64 KiB segments, each Darkhorse, Cyanide or Brimstone, whichever is smallest. |
+| `Obscured` | `6` | Method 5: the data RC4-obscured under a one-byte key (no compression). |
 
 #### `StuffItXEntry`
 
@@ -32453,7 +32456,7 @@ One file, directory or resource fork of a StuffIt X (.sitx) archive.
 
 #### `StuffItXFormatDescriptor`
 
-StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro): read, and written stored, Deflate-, Brimstone- or Darkhorse-coded. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver), the reader this one is converted from`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt X
+StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro): read, and written stored, Deflate-, Brimstone-, Darkhorse-, Cyanide-, Blend- or Obscured-coded, optionally behind the x86 preprocessor. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver), the reader this one is converted from`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt X
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
@@ -32493,11 +32496,11 @@ Implements `IDisposable`.
 
 #### `StuffItXWriter`
 
-Writes StuffIt X (.sitx) archives: one solid data stream holding every file's data fork, stored or Deflate-coded and CRC-32 checked, and a stored catalog of names and dates.
+Writes StuffIt X (.sitx) archives: one solid data stream holding every file's data fork, stored or coded (Deflate, Brimstone, Darkhorse, Cyanide, Blend or Obscured, optionally behind the x86 preprocessor) and CRC-32 checked, and a stored catalog of names and dates.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, StuffItXCompression compression = 1)` | Writes a StuffIt X archive of `inputs`. |
+| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, StuffItXCompression compression = 1, bool x86 = false)` | Writes a StuffIt X archive of `inputs`. |
 
 #### `StuffItXWriter.Input`
 

@@ -14,11 +14,18 @@ public enum StuffItXCompression {
   Darkhorse,
   /// <summary>Method 0, Brimstone: PPMd variant G (order 8, 16 MiB model).</summary>
   Brimstone,
+  /// <summary>Method 1, Cyanide: Burrows-Wheeler blocks with range-coded "move one from front" ranks.</summary>
+  Cyanide,
+  /// <summary>Method 4, Blend: 64 KiB segments, each Darkhorse, Cyanide or Brimstone, whichever is smallest.</summary>
+  Blend,
+  /// <summary>Method 5: the data RC4-obscured under a one-byte key (no compression).</summary>
+  Obscured,
 }
 
 /// <summary>
 /// Writes StuffIt X (.sitx) archives: one solid data stream holding every file's data fork,
-/// stored or Deflate-coded and CRC-32 checked, and a stored catalog of names and dates.
+/// stored or coded (Deflate, Brimstone, Darkhorse, Cyanide, Blend or Obscured, optionally behind the
+/// x86 preprocessor) and CRC-32 checked, and a stored catalog of names and dates.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -41,7 +48,8 @@ public static class StuffItXWriter {
   public readonly record struct Input(string Path, byte[]? Data, DateTime? LastModified = null);
 
   /// <summary>Writes a StuffIt X archive of <paramref name="inputs"/>.</summary>
-  public static void Write(Stream output, IEnumerable<Input> inputs, StuffItXCompression compression = StuffItXCompression.Deflate) {
+  /// <param name="x86">Run the x86 preprocessor (preprocess id 2) in front of the coder.</param>
+  public static void Write(Stream output, IEnumerable<Input> inputs, StuffItXCompression compression = StuffItXCompression.Deflate, bool x86 = false) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var (method, encode) = compression switch {
@@ -49,9 +57,62 @@ public static class StuffItXWriter {
       StuffItXCompression.Deflate => (3L, EncodeDeflate),
       StuffItXCompression.Darkhorse => (2L, static d => StuffItXDarkhorseEncoder.Encode(d)),
       StuffItXCompression.Brimstone => (0L, static d => StuffItXBrimstone.Encode(d)),
+      StuffItXCompression.Cyanide => (1L, static d => StuffItXCyanideEncoder.Encode(d)),
+      StuffItXCompression.Blend => (4L, EncodeBlend),
+      StuffItXCompression.Obscured => (5L, EncodeObscured),
       _ => throw new ArgumentOutOfRangeException(nameof(compression)),
     };
-    WriteCoded(output, inputs, method, -1, encode);
+    if (x86) WriteCoded(output, inputs, method, 2, d => encode(StuffItXX86.Encode(d)));
+    else WriteCoded(output, inputs, method, -1, encode);
+  }
+
+  /// <summary>
+  /// Method 4's payload: segments of 64 KiB (a multiple of the 0x2000 the reader's resynchronisation
+  /// trusts), each behind its six-byte header (0x77, coding, big-endian size) and coded with
+  /// whichever of Darkhorse, Cyanide and Brimstone gives the fewest bytes. Each coder's output ends
+  /// exactly where its decoder stops, so the next header follows directly.
+  /// </summary>
+  private static byte[] EncodeBlend(byte[] data) {
+    const int Segment = 0x10000;
+    using var ms = new MemoryStream();
+    Span<byte> header = stackalloc byte[6];
+    for (var start = 0; start < data.Length; start += Segment) {
+      var part = data.AsSpan(start, Math.Min(Segment, data.Length - start)).ToArray();
+      var candidates = new (byte Coding, byte[] Payload)[] {
+        (1, StuffItXDarkhorseEncoder.Encode(part)),
+        (2, StuffItXCyanideEncoder.Encode(part)),
+        (3, StuffItXBrimstone.Encode(part)),
+      };
+      var best = candidates.MinBy(c => c.Payload.Length);
+      header[0] = 0x77;
+      header[1] = best.Coding;
+      System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(header[2..], (uint)part.Length);
+      ms.Write(header);
+      ms.Write(best.Payload);
+    }
+    return ms.ToArray();
+  }
+
+  /// <summary>Method 5's payload: two unused bytes, the one-byte RC4 key, then the RC4-obscured data.</summary>
+  private static byte[] EncodeObscured(byte[] data) {
+    const byte Key = 0x5A;
+    var output = new byte[data.Length + 3];
+    output[2] = Key;
+    Span<byte> s = stackalloc byte[256];
+    for (var k = 0; k < 256; ++k) s[k] = (byte)k;
+    var j = 0;
+    for (var k = 0; k < 256; ++k) {
+      j = (j + s[k] + Key) & 255;
+      (s[k], s[j]) = (s[j], s[k]);
+    }
+    int x = 0, y = 0;
+    for (var n = 0; n < data.Length; ++n) {
+      x = (x + 1) & 255;
+      y = (y + s[x]) & 255;
+      (s[x], s[y]) = (s[y], s[x]);
+      output[n + 3] = (byte)(data[n] ^ s[(s[x] + s[y]) & 255]);
+    }
+    return output;
   }
 
   /// <summary>Method 3's payload: the window-size byte 15, then Deflate with a six-bit HDIST.</summary>
