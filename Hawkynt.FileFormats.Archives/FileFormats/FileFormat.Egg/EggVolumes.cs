@@ -68,6 +68,53 @@ public static class EggVolumes {
     return joined.ToArray();
   }
 
+  /// <summary>
+  /// Cuts a complete single-volume archive (as <see cref="EggWriter"/> writes it: header, end marker,
+  /// members) into a split set of volumes of at most <paramref name="volumeSize"/> bytes. Volume 1 keeps
+  /// the archive's header id; later ids follow from it. Each volume gets a header with the split field
+  /// naming its neighbours, as <see cref="Join"/> reads them back.
+  /// </summary>
+  public static List<byte[]> Split(byte[] archive, long volumeSize) {
+    ArgumentNullException.ThrowIfNull(archive);
+    const int SplitHeader = FixedHeader + 4 + 1 + 2 + 8 + 4;
+    if (volumeSize <= SplitHeader) throw new ArgumentOutOfRangeException(nameof(volumeSize), "An EGG volume must hold its header and some data.");
+    var h = ReadHeader(archive);
+    if (h.IsSplit) throw new ArgumentException("The archive is already a volume of a split set.", nameof(archive));
+    if (archive.Length <= volumeSize) return [archive];
+    var body = archive.AsSpan(h.PayloadStart);
+    var capacity = (int)Math.Min(volumeSize - SplitHeader, int.MaxValue);
+    var count = Math.Max(1, (body.Length + capacity - 1) / capacity);
+    var ids = new uint[count];
+    for (var i = 0; i < count; ++i) {
+      ids[i] = unchecked(h.Id + (uint)i * 0x9E3779B9u);
+      if (ids[i] == 0) ids[i] = 0x9E3779B9u;
+    }
+    var version = BinaryPrimitives.ReadUInt16LittleEndian(archive.AsSpan(4));
+    var volumes = new List<byte[]>(count);
+    for (var i = 0; i < count; ++i) {
+      using var v = new MemoryStream();
+      var w = new BinaryWriter(v);
+      w.Write(EggReader.EggMagic);
+      w.Write(version);
+      w.Write(ids[i]);
+      w.Write(0u);
+      w.Write(EggReader.SplitMagic);
+      w.Write((byte)0);
+      w.Write((ushort)8);
+      w.Write(i == 0 ? 0u : ids[i - 1]);
+      w.Write(i == count - 1 ? 0u : ids[i + 1]);
+      w.Write(EggReader.EndMarker);
+      var start = i * capacity;
+      w.Write(body.Slice(start, Math.Min(capacity, body.Length - start)));
+      w.Flush();
+      volumes.Add(v.ToArray());
+    }
+    return volumes;
+  }
+
+  /// <summary>Path of volume <paramref name="number"/> (from 1) of the set based at <paramref name="setBase"/>.</summary>
+  public static string VolumePath(string setBase, int number) => $"{setBase}.vol{number}.egg";
+
   /// <summary>The set base of a volume path (<c>dir/name</c> for <c>dir/name.vol3.egg</c>), or null.</summary>
   internal static string? SetBase(string path) {
     var file = Path.GetFileName(path);

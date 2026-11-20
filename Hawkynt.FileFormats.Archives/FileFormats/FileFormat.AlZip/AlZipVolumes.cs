@@ -44,6 +44,55 @@ public static class AlZipVolumes {
     return joined.ToArray();
   }
 
+  /// <summary>
+  /// Cuts a complete archive into a split set of volumes of at most <paramref name="volumeSize"/> bytes,
+  /// laid out as <see cref="Join"/> reads them back; the last volume keeps the whole end record.
+  /// An archive that fits one volume stays one.
+  /// </summary>
+  public static List<byte[]> Split(byte[] archive, long volumeSize) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (volumeSize < HeaderLength + TrailerLength * 2 + 1)
+      throw new ArgumentOutOfRangeException(nameof(volumeSize), "An ALZip volume must hold its header, a trailer and some data.");
+    if (archive.Length < HeaderLength + TrailerLength || !archive.AsSpan(0, 4).SequenceEqual(AlZipReader.Magic)
+        || BinaryPrimitives.ReadUInt32LittleEndian(archive.AsSpan(archive.Length - 4)) != AlZipReader.EndSig)
+      throw new ArgumentException("Not a complete single-volume ALZip archive.", nameof(archive));
+    if (archive.Length <= volumeSize) return [archive];
+    var volumes = new List<byte[]>();
+    var at = 0;
+    while (true) {
+      var number = volumes.Count;
+      var header = number == 0 ? 0 : HeaderLength;
+      var rest = archive.Length - at;
+      if (header + rest <= volumeSize) {
+        volumes.Add(Volume(number, archive.AsSpan(at), trailer: false, archive));
+        return volumes;
+      }
+      // leave the 16-byte end record whole for the last volume
+      var take = (int)Math.Min(volumeSize - header - TrailerLength, rest - TrailerLength);
+      volumes.Add(Volume(number, archive.AsSpan(at, take), trailer: true, archive));
+      at += take;
+    }
+  }
+
+  private static byte[] Volume(int number, ReadOnlySpan<byte> content, bool trailer, byte[] archive) {
+    using var v = new MemoryStream();
+    if (number > 0) {
+      Span<byte> header = stackalloc byte[HeaderLength];
+      archive.AsSpan(0, 6).CopyTo(header);
+      BinaryPrimitives.WriteUInt16LittleEndian(header[6..], checked((ushort)number));
+      v.Write(header);
+    }
+    v.Write(content);
+    if (trailer) {
+      Span<byte> t = stackalloc byte[TrailerLength];
+      t.Clear();
+      BinaryPrimitives.WriteUInt32LittleEndian(t, AlZipReader.CentralSig);
+      BinaryPrimitives.WriteUInt32LittleEndian(t[12..], AlZipReader.SplitSig);
+      v.Write(t);
+    }
+    return v.ToArray();
+  }
+
   /// <summary>The path of volume <paramref name="number"/> of the set whose first volume is <paramref name="firstVolume"/>.</summary>
   public static string VolumePath(string firstVolume, int number) =>
     number == 0 ? firstVolume : Path.ChangeExtension(firstVolume, $".a{number - 1:00}");

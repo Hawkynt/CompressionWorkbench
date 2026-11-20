@@ -13,7 +13,7 @@ namespace FileFormat.AlZip;
 ///   <item><description><c>https://github.com/MacPaw/XADMaster</c> — XADALZipParser (LGPL-2.1)</description></item>
 /// </list>
 /// </summary>
-public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap {
+public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
@@ -69,7 +69,34 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return r.Extract(e, password);
   }
 
+  /// <inheritdoc />
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: FormatOptionKeys.VolumeSize,
+      DisplayName: "Volume size",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Split into volumes of at most this size (bytes, or with k/m/g). The target must be named name.alz; name.a00, name.a01, ... follow beside it. Empty writes one file.",
+      IsOptimizationAxis: false),
+  ];
+
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var volumeSize = ParseVolumeSize(options.GetString(FormatOptionKeys.VolumeSize));
+    if (volumeSize > 0) {
+      var path = OutputFilePath(output) ?? throw new ArgumentException("An ALZip split set must be written to a file, so its other volumes can go beside it.");
+      if (!Path.GetExtension(path).Equals(".alz", StringComparison.OrdinalIgnoreCase))
+        throw new ArgumentException($"The first volume of an ALZip split set is named name.alz; '{Path.GetFileName(path)}' is not.");
+      using var whole = new MemoryStream();
+      WriteArchive(whole, inputs, options);
+      var volumes = AlZipVolumes.Split(whole.ToArray(), volumeSize);
+      output.Write(volumes[0]);
+      for (var i = 1; i < volumes.Count; ++i) File.WriteAllBytes(AlZipVolumes.VolumePath(path, i), volumes[i]);
+      return;
+    }
+    WriteArchive(output, inputs, options);
+  }
+
+  private static void WriteArchive(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new AlZipWriter(output, leaveOpen: true, password: options.Password, store: options.MethodName == "store");
     foreach (var input in inputs) {
       if (string.IsNullOrEmpty(input.ArchiveName)) continue;

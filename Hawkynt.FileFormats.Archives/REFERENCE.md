@@ -8750,7 +8750,7 @@ One local file header of an ALZip archive.
 
 ALZip (ESTsoft), the Korean archiver: stored, deflate and ALZ-bzip2 members, ZipCrypto encryption. References: `https://github.com/alkegi/unalz` — unalz (MIT), its CC0 test archives, and the reader the layout follows`https://github.com/MacPaw/XADMaster` — XADALZipParser (LGPL-2.1)
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8766,6 +8766,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
@@ -8796,6 +8797,7 @@ ALZip split sets: `name.alz`, `name.a00`, `name.a01`, …. Every volume starts w
 | --- | --- | --- |
 | `ContinuesInNextVolume` | `static bool ContinuesInNextVolume(ReadOnlySpan<byte> volume)` | Whether `volume` is a volume that continues in another one. |
 | `Join` | `static byte[] Join(IReadOnlyList<byte[]> volumes)` | Joins the volumes of a set, in order, into the one archive they hold. |
+| `Split` | `static List<byte[]> Split(byte[] archive, long volumeSize)` | Cuts a complete archive into a split set of volumes of at most `volumeSize` bytes, laid out as `Join` reads them back; the last volume keeps the whole end record. An archive that fits one volume stays one. |
 | `VolumePath` | `static string VolumePath(string firstVolume, int number)` | The path of volume `number` of the set whose first volume is `firstVolume`. |
 
 #### `AlZipWriter`
@@ -15580,7 +15582,7 @@ A file entry parsed from an EGG (ALZip) archive.
 
 EGG (ALZip) archive — ESTsoft's native container for newer ALZip versions, with Unicode filenames, per-file algorithm selection, solid/split modes, and optional encryption. The native implementation reads Store/Deflate and creates non-solid, single-volume Store/Deflate archives; unsupported methods are listed honestly and rejected on extraction rather than returning incorrect data. References: `https://github.com/alkegi/docs/blob/master/egg.md` — CC0 EGG Archive Format Specification`http://justsolve.archiveteam.org/wiki/EGG_(ALZip)` — ArchiveTeam format summary and historical references`EGG Format Specification, Version 1.0` (ESTsoft Corp.) — original published layout
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15596,6 +15598,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a single-volume, non-solid EGG archive using Store/Deflate. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
@@ -15628,6 +15631,8 @@ EGG split sets: `name.vol1.egg`, `name.vol2.egg`, …. Each volume has its own E
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Join` | `static byte[] Join(IReadOnlyList<byte[]> volumes)` | Joins the volumes of a set, in order, into the one archive they hold. |
+| `Split` | `static List<byte[]> Split(byte[] archive, long volumeSize)` | Cuts a complete single-volume archive (as `EggWriter` writes it: header, end marker, members) into a split set of volumes of at most `volumeSize` bytes. Volume 1 keeps the archive's header id; later ids follow from it. Each volume gets a header with the split field naming its neighbours, as `Join` reads them back. |
+| `VolumePath` | `static string VolumePath(string setBase, int number)` | Path of volume `number` (from 1) of the set based at `setBase`. |
 
 #### `EggWriter`
 

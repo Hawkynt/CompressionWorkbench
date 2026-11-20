@@ -24,7 +24,19 @@ public sealed class EggFormatDescriptor :
   IArchiveFormatOperations,
   IArchiveCreatable,
   IArchiveModifiable,
-  IArchiveDefragmentable {
+  IArchiveDefragmentable,
+  IFormatOptionsSchema {
+
+  /// <inheritdoc />
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: FormatOptionKeys.VolumeSize,
+      DisplayName: "Volume size",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Split into volumes of at most this size (bytes, or with k/m/g). The target must be named name.vol1.egg; name.vol2.egg, ... follow beside it. Empty writes one file.",
+      IsOptimizationAxis: false),
+  ];
 
   /// <summary>
   /// Gets the id.
@@ -142,6 +154,23 @@ public sealed class EggFormatDescriptor :
     if (!string.IsNullOrEmpty(options.Password) || !string.IsNullOrEmpty(options.EncryptionMethod))
       throw new NotSupportedException("Native EGG creation does not yet implement encryption.");
 
+    var volumeSize = ParseVolumeSize(options.GetString(FormatOptionKeys.VolumeSize));
+    if (volumeSize > 0) {
+      var path = OutputFilePath(output) ?? throw new ArgumentException("An EGG split set must be written to a file, so its other volumes can go beside it.");
+      var setBase = EggVolumes.SetBase(path);
+      if (setBase is null || !Path.GetFileName(path).Equals(Path.GetFileName(EggVolumes.VolumePath(setBase, 1)), StringComparison.OrdinalIgnoreCase))
+        throw new ArgumentException($"The first volume of an EGG split set is named name.vol1.egg; '{Path.GetFileName(path)}' is not.");
+      using var whole = new MemoryStream();
+      this.WriteArchive(whole, inputs, options);
+      var volumes = EggVolumes.Split(whole.ToArray(), volumeSize);
+      output.Write(volumes[0]);
+      for (var i = 1; i < volumes.Count; ++i) File.WriteAllBytes(EggVolumes.VolumePath(setBase, i + 1), volumes[i]);
+      return;
+    }
+    this.WriteArchive(output, inputs, options);
+  }
+
+  private void WriteArchive(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var requestedMethod = ResolveMethod(options.MethodName);
     var level = ResolveLevel(options);
     using var writer = new EggWriter(output, leaveOpen: true);
