@@ -712,9 +712,15 @@ public sealed class DeflateDecompressor {
         Unsafe.Add(ref destination, i) = Unsafe.Add(ref source, i);
   }
 
+  /// <summary>
+  /// Width of a dynamic block's distance-code count (HDIST): 5 bits in RFC 1951, 6 in the
+  /// modified Deflate of StuffIt X.
+  /// </summary>
+  public int DistanceCountBits { get; init; } = 5;
+
   private void ReadDynamicTables() {
     var hlit = (int)this.GetBits(5) + 257;
-    var hdist = (int)this.GetBits(5) + 1;
+    var hdist = (int)this.GetBits(this.DistanceCountBits) + 1;
     var hclen = (int)this.GetBits(4) + 4;
     if (hlit > 286 || hdist > 30)
       throw new InvalidDataException($"Invalid DEFLATE dynamic header: HLIT={hlit}, HDIST={hdist}.");

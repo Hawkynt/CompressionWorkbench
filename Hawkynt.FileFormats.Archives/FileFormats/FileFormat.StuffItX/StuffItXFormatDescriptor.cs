@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.StuffItX;
 
 /// <summary>
-/// StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro), read-only.
+/// StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro): read, and written stored or Deflate-coded.
 ///
 /// References:
 /// <list type="bullet">
@@ -13,26 +13,26 @@ namespace FileFormat.StuffItX;
 ///   <item><description><c>https://en.wikipedia.org/wiki/StuffIt</c> — Wikipedia — covers StuffIt X</description></item>
 /// </list>
 /// </summary>
-public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   public string Id => "StuffItX";
   public string DisplayName => "StuffIt X";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".sitx";
   public IReadOnlyList<string> Extensions => [".sitx"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [new("StuffIt!"u8.ToArray(), Confidence: 0.90)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("sitx", "StuffIt X")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate (method 3)"), new("store", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "StuffIt X archive (Aladdin/Smith Micro), read-only: files, folders and resource forks (as .rsrc) " +
-    "from Brimstone, Cyanide, Darkhorse, Iron and stored streams, also behind the English " +
-    "preprocessor, each checked against its CRC-32. Deflate, Blend, method 7, x86-preprocessed and " +
-    "encrypted streams are listed but not extracted.";
+    "StuffIt X archive (Aladdin/Smith Micro): files, folders and resource forks (as .rsrc) from " +
+    "Brimstone, Cyanide, Darkhorse, Deflate, Blend, Iron and stored streams, also behind the English " +
+    "and x86 preprocessors, each checked against its CRC-32; written stored or Deflate-coded. Method 7 " +
+    "and encrypted streams are listed but not extracted.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new StuffItXReader(stream, leaveOpen: true);
@@ -47,5 +47,18 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
       if (files != null && !MatchesFilter(e.FullPath, files)) continue;
       WriteFile(outputDir, e.FullPath, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(inputs);
+    if (!string.IsNullOrEmpty(options.Password))
+      throw new NotSupportedException("StuffIt X encryption is not written: its scheme is not known.");
+    var compression = (options.MethodName ?? "deflate").Trim().ToLowerInvariant() switch {
+      "" or "deflate" or "sitx" => StuffItXCompression.Deflate,
+      "store" or "stored" => StuffItXCompression.Store,
+      var m => throw new NotSupportedException($"StuffIt X method '{m}' is not written (deflate, store)."),
+    };
+    StuffItXWriter.Write(output, inputs.Select(i => new StuffItXWriter.Input(i.ArchiveName, i.IsDirectory ? null : i.ReadContent(),
+      i.Metadata?.LastWriteTimeUtc?.UtcDateTime)), compression);
   }
 }

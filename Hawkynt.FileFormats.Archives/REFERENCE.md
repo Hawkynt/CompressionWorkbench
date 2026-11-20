@@ -32019,7 +32019,16 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.StuffItX`
 
-[`StuffItXEntry`](#stuffitxentry) · [`StuffItXFormatDescriptor`](#stuffitxformatdescriptor) · [`StuffItXReader`](#stuffitxreader)
+[`StuffItXCompression`](#stuffitxcompression) · [`StuffItXEntry`](#stuffitxentry) · [`StuffItXFormatDescriptor`](#stuffitxformatdescriptor) · [`StuffItXReader`](#stuffitxreader) · [`StuffItXWriter`](#stuffitxwriter) · [`StuffItXWriter.Input`](#stuffitxwriterinput)
+
+#### `StuffItXCompression`
+
+How `StuffItXWriter` codes the archive's data stream.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Store` | `0` | Stored (no coding). |
+| `Deflate` | `1` | Method 3, StuffIt X's Deflate (a six-bit distance-code count in dynamic blocks). |
 
 #### `StuffItXEntry`
 
@@ -32042,9 +32051,9 @@ One file, directory or resource fork of a StuffIt X (.sitx) archive.
 
 #### `StuffItXFormatDescriptor`
 
-StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro), read-only. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver), the reader this one is converted from`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt X
+StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro): read, and written stored or Deflate-coded. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver), the reader this one is converted from`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt X
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -32061,6 +32070,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
@@ -32077,6 +32087,27 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(StuffItXEntry entry)` | Decodes one entry. |
 | `IsStuffItX` | `static bool IsStuffItX(ReadOnlySpan<byte> data)` | Whether `data` starts with a StuffIt X signature. |
+
+#### `StuffItXWriter`
+
+Writes StuffIt X (.sitx) archives: one solid data stream holding every file's data fork, stored or Deflate-coded and CRC-32 checked, and a stored catalog of names and dates.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, StuffItXCompression compression = 1)` | Writes a StuffIt X archive of `inputs`. |
+
+#### `StuffItXWriter.Input`
+
+An object to write: a file with data, or a directory (null data).
+
+Implements `IEquatable<Input>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Input` | `Input(string Path, byte[] Data, DateTime? LastModified = null)` | An object to write: a file with data, or a directory (null data). |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `LastModified` | `DateTime? LastModified { get; init; }` |  |
+| `Path` | `string Path { get; init; }` |  |
 
 ### Namespace `FileFormat.Sup`
 

@@ -45,7 +45,7 @@ LBR (Commodore library),lbr,archive,,,,,,,Y,,1,http://unusedino.de/ec64/technica
 ALZip,alz,archive,,,R,,R,,RW,Y,4,https://en.wikipedia.org/wiki/ALZip,AlZip,Y,Y,Y,PARTIAL,,"split (multi-volume) archives and obfuscated deflate (method 3) refused; writer emits stored/deflate, not ALZ bzip2 (AlZipReader.cs)"
 EGG (ALZip),egg,archive,,,R,,,,,,1,https://en.wikipedia.org/wiki/ALZip,Egg,Y,Y,,PARTIAL,,"reads store/deflate/bzip2/AZO/LZMA, solid, ZIP 2.0/AES/LEA encryption (EggDotNet corpus); writer store/deflate only (EggDotNet reads it back); split (multi-volume) archives unsupported (EggReader.cs)"
 StuffIt (classic + 5),sit;sea,archive,,,R,,R,fmt/1459;fmt/1460;fmt/639,RW,Y,5,https://en.wikipedia.org/wiki/StuffIt,StuffIt,Y,Y,Y,PARTIAL,,"method 8 (MW) and segmented sets unsupported; method 14 installer LZ77 reads real archives verified with unar; classic DES and StuffIt 5 RC4 passwords read and written, verified with unar. Classic encrypted forks require the MacBinary resource fork for the key check; the writer emits classic or StuffIt 5 archives with store, RLE, method 13 or method 15 (Arsenic)"
-StuffIt X,sitx,archive,,,R,,R,fmt/399,RW,Y,5,https://en.wikipedia.org/wiki/StuffIt,StuffItX,Y,,,PARTIAL,,Deflate/Blend/method 7/x86 preprocessor/encryption throw (StuffItXReader.cs)
+StuffIt X,sitx,archive,,,R,,R,fmt/399,RW,Y,5,https://en.wikipedia.org/wiki/StuffIt,StuffItX,Y,Y,,PARTIAL,,method 7 and encryption throw (StuffItXReader.cs); written stored or Deflate only
 DiskDoubler,dd,archive,,,R,,,,Y,,2,https://en.wikipedia.org/wiki/DiskDoubler,DiskDoubler,Y,Y,,PARTIAL,,"single files and DDAR/DDA2 archives (listings match lsar on real archives); methods 0, 1, 6, 8, 9 decoded and checked against unar on real files; 2, 5, 7 and delta 1 checked against unar on files we built; 3, 4, 10 refused (DiskDoublerReader.cs)"
 Compact Pro,cpt,archive,,,R,,,,Y,Y,3,https://en.wikipedia.org/wiki/Compact_Pro,CompactPro,Y,Y,Y,PARTIAL,,multi-volume and encrypted archives refused; writer emits RLE-only forks (CompactProReader.cs)
 PackIt,pit,archive,,,R,,,,Y,,2,https://en.wikipedia.org/wiki/PackIt,PackIt,Y,Y,Y,PARTIAL,,"real layout (PMag/PMa4, header and fork CRC-16) verified on real archives against unar; encrypted PMa5/PMa6 entries refused (PackItReader.cs)"
@@ -183,12 +183,12 @@ StuffIt method 13,,codec,,,R,,,,,,1,,StuffIt,Y,Y,Y,OK,,
 StuffIt Huffman (method 3),,codec,,,R,,,,,,1,,StuffIt,Y,Y,Y,OK,,
 StuffIt LZW (method 2),,codec,,,R,,,,,,1,,StuffIt,Y,Y,Y,OK,,
 StuffIt DES encryption,,encryption,,,R,,,,,,1,,,,,,MISSING,,
-StuffIt X Blend,,codec,,,R,,,,,,1,,,,,,MISSING,,
+StuffIt X Blend,,codec,,,R,,,,,,1,,StuffItX,Y,,,OK,,
 StuffIt X Cyanide,,codec,,,R,,,,,,1,,StuffItX,Y,,,OK,,
 StuffIt X Darkhorse,,codec,,,R,,,,,,1,,StuffItX,Y,,,OK,,
 StuffIt X Iron,,codec,,,R,,,,,,1,,StuffItX,Y,,,OK,,
 StuffIt X English dictionary preprocessor,,codec,,,R,,,,,,1,,StuffItX,Y,,,OK,,
-StuffIt X x86 filter,,filter,,,R,,,,,,1,,,,,,MISSING,,
+StuffIt X x86 filter,,filter,,,R,,,,,,1,,StuffItX,Y,,,OK,,
 DiskDoubler methods (ADn/DDn/Method2),,codec,,,R,,,,,,1,,DiskDoubler,Y,Y,,PARTIAL,,"ADn (6, 9), Method 2/5 splay trees and Stac LZS (7) decoded; DDn refused (DiskDoublerCodecs.cs)"
 Compact Pro LZH/RLE,,codec,,,R,,,,,,1,,CompactPro,Y,Y,Y,PARTIAL,,decoded inside the CompactPro descriptor (no building block); no LZH encoder
 Squeeze (Huffman),,codec,,,R,,,,,,1,,Squeeze,Y,Y,,OK,,

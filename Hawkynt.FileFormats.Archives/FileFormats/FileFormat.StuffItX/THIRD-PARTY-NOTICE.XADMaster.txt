@@ -8,6 +8,8 @@ Files:     XADStuffItXParser.m, StuffItXUtilities.m, XADStuffItXBlockHandle.m,
            XADPPMdHandles.m (Brimstone), PPMd/VariantG.c, PPMd/Context.c, PPMd/RangeCoder.c,
            PPMd/SubAllocatorBrimstone.c, CarrylessRangeCoder.m, BWT.c, CSInputBuffer.m,
            XADStuffItXDarkhorseHandle.m, XADLZSSHandle.m, XADStuffItXEnglishHandle.m,
+           XADStuffItXBlendHandle.m, XADStuffItXX86Handle.m, the StuffIt X variant of
+           XADDeflateHandle.m (six-bit distance-code count),
            StuffItXEnglishDictionary.c (the packed word list, carried verbatim as
            StuffItXEnglishDictionary.ppmd)
 Licence:   GNU Lesser General Public License, version 2.1 or (at your option) any later version.

@@ -17,14 +17,14 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | Catalogue rows | 1024 |
 | … formats listed by at least one source | 586 |
 | … registry ids no source lists (OURS-ONLY) | 438 |
-| Source-listed rows mapped to something here | 413 / 586 (70.5 %) |
+| Source-listed rows mapped to something here | 415 / 586 (70.8 %) |
 | … of rows listed by ≥ 2 sources | 150 / 159 (94.3 %) |
 | … of rows listed by ≥ 3 sources | 76 / 77 (98.7 %) |
 | … of rows listed by ≥ 4 sources | 43 / 43 (100.0 %) |
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 173 | a source lists it; no descriptor or building block covers it |
+| `MISSING` | 171 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 35 | we only read it; a source or the format's own tool writes it |
 | `PARTIAL` | 48 | covered, but the reader handles only part of the format (see the table below) |
 | `OK` | 328 | covered with no known gap against what the sources list |
@@ -93,7 +93,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 | 4 | PECompact | MISSING | 3 | The handler locates the payload. Decode its block series (the aPLib and LZMA cores exist) against the 130 PackingData samples, then wrap it in a descriptor. |
 | 5 | ACE | PARTIAL | 2 | The writer lacks the ACE 2.0 SOUND/PIC modes. Oracle: unace, acefile (BSD-2). |
 | 6 | StuffIt | PARTIAL | 2 | Method 8 and segmented sets; method 14 is read and verified with unar; classic DES and StuffIt 5 RC4 reads and writes are proven. Rung 1: XADMaster (LGPL); oracle: unar. |
-| 7 | StuffIt X | PARTIAL | 2 | Blend, Deflate, method 7, the x86 preprocessor, encryption; no writer (Darkhorse and the English preprocessor are read, verified with unar). Rung 1: XADMaster (LGPL); oracle: unar. |
+| 7 | StuffIt X | PARTIAL | 2 | Method 7 and encryption: no source and no decoder anywhere, unar refuses them too. Every other coding is read and the writer stores or Deflate-codes, all verified with unar. Rung 1: XADMaster (LGPL); oracle: unar. |
 | 8 | ALZip | PARTIAL | 2 | Split archives and method 3 need samples; ALZip is the oracle. |
 | 9 | PEA | OK | 2 | Done: volume sets, every single-cipher encryption and the TRI*/SRI*/HRI* triple cascades are read and written and verified with pea. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
 | 10 | PAK (NoGate) | MISSING | 2 | Rung 1: XADMaster's Crushed method (BB_ArcDistill already covers Distilled). Needs a real sample; PAK 2.51 under DOSBox is the oracle. |
@@ -238,7 +238,7 @@ running real-world samples. The file named at the end of each row is where the l
 | ZIP | `Zip` | 7 | methods xz (95), JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs) |
 | LHA / LZH | `Lzh` | 6 | every method and header level of lhasa's test suite reads except LHARK's lk7; lh2, lh3, lhx, pm1 and pm2 are read-only; self-extracting executables are not opened (LhaReader.cs) |
 | StuffIt (classic + 5) | `StuffIt` | 4 | store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs) |
-| StuffIt X | `StuffItX` | 4 | Deflate, Blend, method 7, the x86 preprocessor and encryption throw (StuffItXReader.cs) |
+| StuffIt X | `StuffItX` | 4 | Method 7 and encryption throw (StuffItXReader.cs) |
 | zoo | `Zoo` | 4 | LZH method (2) unsupported (ZooReader.cs) |
 | BCM | `Bcm` | 1 | BCM 2.x files (`BCM2`) refused: bcm 2.03 is exe-only; its framing, CRC-32C and libsais BWT are measured but its LZP and context-mixing model are not ([BCM2-ON-DISK.md](../BCM2-ON-DISK.md)); BCM 1.x reads and writes (BcmStream.cs) |
 | ALZip | `AlZip` | 3 | store and deflate only (AlZipReader.cs) |

@@ -142,11 +142,11 @@ public class StuffItXTests {
   }
 
   [Test, Category("Contract")]
-  public void GivenDescriptor_ThenItIsReadOnly() {
+  public void GivenDescriptor_ThenItCreatesButDoesNotModify() {
     var d = new StuffItXFormatDescriptor();
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(StuffItXReader.IsStuffItX(Vector("testfile.stuffit_deluxe_2010.win.basic.sitx")), Is.True);
   }
 
