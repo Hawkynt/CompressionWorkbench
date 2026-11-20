@@ -85,6 +85,65 @@ public class DvdisasterEccTests {
     Assert.Throws<InvalidDataException>(() => new DvdisasterEccFormatDescriptor().List(new MemoryStream(bytes), null));
   }
 
+  // the README's image: 40 sectors, byte i = (i*7) ^ (i >> 11)
+  private static byte[] TinyImage() => [.. Enumerable.Range(0, 81920).Select(i => (byte)((i * 7) ^ (i >> 11)))];
+
+  [Test, Category("ThirdPartyVector")]
+  public void Given_TheTinyImage_When_OurRs01FileIsCreated_Then_ItIsByteForByteDvdisasters() {
+    var expected = Vector("tiny.ecc");
+    var ours = DvdisasterEccWriter.CreateRs01(TinyImage(), 8, creatorVersion: 7910);
+    ours[19] = expected[19];   // dvdisaster's release flag: 1 for its development builds
+    Assert.That(ours, Is.EqualTo(expected));
+  }
+
+  [TestCase(1, 8), TestCase(2047, 8), TestCase(2048, 32), TestCase(2049, 100), TestCase(16 * 2048 + 1, 32),
+   TestCase(300_000, 40), TestCase(1_000_000, 64)]
+  [Category("RoundTrip")]
+  public void Given_AnImage_When_ItsRs01FileIsCreated_Then_ItReadsBackDescribingIt(int size, int roots) {
+    var image = new byte[size];
+    new Random(size).NextBytes(image);
+    var ecc = DvdisasterEccWriter.CreateRs01(image, roots);
+    var h = DvdisasterEccHeader.Read(ecc);
+    Assert.That((h.Method, h.Sectors, h.EccBytes, h.DataBytes), Is.EqualTo(("RS01", (size + 2047L) / 2048, roots, 255 - roots)));
+    Assert.That(h.MediumMd5, Is.EqualTo(System.Security.Cryptography.MD5.HashData(image)));
+    Assert.That(h.NeededVersion, Is.EqualTo(size % 2048 == 0 ? 5500 : 6600));
+    Assert.That(DvdisasterEccFormatDescriptor.EccDataIntact(ecc), Is.True);
+    Assert.That(new DvdisasterEccFormatDescriptor().List(new MemoryStream(ecc), null), Has.Count.EqualTo(3));
+  }
+
+  [Test, Category("Exception")]
+  public void Given_BadParameters_When_Created_Then_Refused() {
+    Assert.Throws<ArgumentException>(() => DvdisasterEccWriter.CreateRs01([]));
+    Assert.Throws<ArgumentOutOfRangeException>(() => DvdisasterEccWriter.CreateRs01([1], 7));
+    Assert.Throws<ArgumentOutOfRangeException>(() => DvdisasterEccWriter.CreateRs01([1], 101));
+    Assert.Throws<NotSupportedException>(() => new DvdisasterEccFormatDescriptor().Create(new MemoryStream(),
+      [Compression.Registry.ArchiveInputInfo.InMemory("a.iso", [1])], new Compression.Registry.FormatCreateOptions("rs03")));
+  }
+
+  [Test, Category("EndToEnd")]
+  public void Given_OurEccFile_When_DvdisasterTestsAndFixesTheImage_Then_TheImageComesBack() {
+    if (!FsInteropToolbox.WslHasTool("dvdisaster")) Assert.Ignore("dvdisaster not in WSL.");
+    var dir = Path.Combine(Path.GetTempPath(), $"cwb_ecc_{Guid.NewGuid():N}");
+    Directory.CreateDirectory(dir);
+    try {
+      var img = new byte[2048 * 300 + 777];
+      new Random(6).NextBytes(img);
+      using (var ecc = File.Create(Path.Combine(dir, "img.ecc")))
+        new DvdisasterEccFormatDescriptor().Create(ecc, [Compression.Registry.ArchiveInputInfo.InMemory("img.iso", img)],
+          new Compression.Registry.FormatCreateOptions { FormatSpecific = { ["Roots"] = "24" } });
+      File.WriteAllBytes(Path.Combine(dir, "img.iso"), img);
+      var damaged = img.ToArray();
+      Array.Clear(damaged, 2048 * 10, 2048 * 5);   // five sectors gone
+      damaged[2048 * 200 + 9] ^= 0x55;             // and one corrupted
+      File.WriteAllBytes(Path.Combine(dir, "bad.iso"), damaged);
+      var w = FsInteropToolbox.WinToWsl(dir);
+      var run = FsInteropToolbox.RunWsl($"cd {w} && dvdisaster -i img.iso -e img.ecc -t 2>&1; echo TESTED=$?; dvdisaster -i bad.iso -e img.ecc -f 2>&1; echo FIXED=$?");
+      Assert.That(run.StdOut, Does.Contain("TESTED=0").And.Contain("FIXED=0"), run.StdOut + run.StdErr);
+      Assert.That(run.StdOut, Does.Contain("- good").Or.Contain("good"), run.StdOut);
+      Assert.That(File.ReadAllBytes(Path.Combine(dir, "bad.iso")), Is.EqualTo(img));
+    } finally { Directory.Delete(dir, true); }
+  }
+
   [Test, Category("EndToEnd")]
   public void Given_ImageAndOurReading_When_DvdisasterVerifies_Then_SameMd5AndSectors() {
     if (!FsInteropToolbox.WslHasTool("dvdisaster")) Assert.Ignore("dvdisaster not in WSL.");

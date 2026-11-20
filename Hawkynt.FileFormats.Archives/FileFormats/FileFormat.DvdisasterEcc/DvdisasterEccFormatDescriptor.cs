@@ -32,7 +32,8 @@ public sealed record DvdisasterEccHeader(
 }
 
 /// <summary>
-/// dvdisaster error-correction file (<c>.ecc</c>), read-only: the parity a disc image is repaired from.
+/// dvdisaster error-correction file (<c>.ecc</c>): the parity a disc image is repaired from; RS01 files are
+/// created by <see cref="DvdisasterEccWriter"/>.
 /// It holds no files, so the view is its header as <c>metadata.ini</c> and, for the RS01 method, the
 /// per-sector CRC table and the Reed-Solomon parity layers; RS03 files list their header and raw data.
 /// Test checks the ecc MD5 the header records.
@@ -49,7 +50,7 @@ public sealed record DvdisasterEccHeader(
 /// versions, Int32 fingerprint sector. RS01 then stores one CRC32 per medium sector and
 /// roots × ceil(sectors / dataBytes) × 2048 bytes of parity.
 /// </remarks>
-public sealed class DvdisasterEccFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class DvdisasterEccFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   private const int SectorSize = 2048;
 
@@ -57,7 +58,8 @@ public sealed class DvdisasterEccFormatDescriptor : IFormatDescriptor, IArchiveF
   public string DisplayName => "dvdisaster ecc";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
+    FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".ecc";
   public IReadOnlyList<string> Extensions => [".ecc"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -65,7 +67,24 @@ public sealed class DvdisasterEccFormatDescriptor : IFormatDescriptor, IArchiveF
   public IReadOnlyList<FormatMethodInfo> Methods => [new("rs01", "RS01"), new("rs03", "RS03")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "dvdisaster error-correction file: header as metadata.ini, RS01 sector CRCs and parity (read-only)";
+  public string Description => "dvdisaster error-correction file: header as metadata.ini, RS01 sector CRCs and parity; RS01 files created";
+
+  /// <summary>
+  /// Creates the RS01 ecc file of the one input image. Option <c>Roots</c> (8-100, default 32) sets the parity
+  /// bytes per codeword; RS03 is not written.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    var files = inputs.Where(i => !i.IsDirectory).ToList();
+    if (files.Count != 1)
+      throw new NotSupportedException($"dvdisaster ecc: an ecc file protects exactly one image ({files.Count} given).");
+    if ((options.MethodName ?? "rs01").Trim().ToLowerInvariant() is not ("" or "rs01"))
+      throw new NotSupportedException($"dvdisaster ecc: method '{options.MethodName}' is not written; RS01 is.");
+    var roots = int.Parse(options.GetOption("Roots", DvdisasterEccWriter.DefaultRoots.ToString(CultureInfo.InvariantCulture)), CultureInfo.InvariantCulture);
+    output.Write(DvdisasterEccWriter.CreateRs01(files[0].ReadContent(), roots));
+  }
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => [.. Entries(ReadAll(stream)).Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Data.Length, e.Data.Length, "stored", false, false, null))];
