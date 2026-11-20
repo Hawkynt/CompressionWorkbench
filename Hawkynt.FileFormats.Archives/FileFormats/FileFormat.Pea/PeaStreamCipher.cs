@@ -115,7 +115,7 @@ internal sealed class PeaStreamCipher {
   }
 
   private static byte[] Derive(byte algo, byte[] material, ReadOnlySpan<byte> salt) => algo >= 0x41
-    ? KeyDerivation.Pbkdf2(static d => Whirlpool.Compute(d), 64, material, salt, Iterations, 32 + 32 + 2)
+    ? WhirlpoolPbkdf2(material, salt, Iterations, 32 + 32 + 2)
     : Rfc2898DeriveBytes.Pbkdf2(material, salt, Iterations, HashAlgorithmName.SHA1, 16 + 16 + 2);
 
   private static byte[][] CascadeKeys(byte algo, int strength, byte[] material, ReadOnlySpan<byte> subheader) {
@@ -148,7 +148,7 @@ internal sealed class PeaStreamCipher {
     var parallel = strength switch { 5 => 2, 6 => 4, 7 => 8, _ => 1 };
     var iterations = strength * 100000 + cipher switch { 'A' => 25000, 'T' => 50000, _ => 75000 };
     return (cipher, kdf) switch {
-      ('A', "pbkdf2") => KeyDerivation.Pbkdf2(static d => Whirlpool.Compute(d), 64, material, salt, iterations, length),
+      ('A', "pbkdf2") => WhirlpoolPbkdf2(material, salt, iterations, length),
       ('A', _) => ZpaqCrypto.Scrypt(material, salt, memory, 8, parallel, length),
       ('T', "pbkdf2") => Rfc2898DeriveBytes.Pbkdf2(material, salt, iterations, HashAlgorithmName.SHA512, length),
       ('T', "scrypt") => ZpaqCrypto.Scrypt(material, salt, memory, 8, parallel, length),
@@ -161,12 +161,12 @@ internal sealed class PeaStreamCipher {
     };
   }
 
-  // HMAC over SHA3-512 takes the sponge rate, 72 bytes, as its block size. The platform's PBKDF2 gives
-  // the same bytes (EaxPbkdf2Tests pins that) and is far faster for the 25,075,000 iterations of HRI*7.
+  // HMAC over SHA3-512 takes the sponge rate, 72 bytes, as its block size; the HMAC pads are hashed once.
   private static byte[] Sha3Pbkdf2(byte[] material, ReadOnlySpan<byte> salt, int iterations, int length)
-    => SHA3_512.IsSupported
-      ? Rfc2898DeriveBytes.Pbkdf2(material, salt, iterations, HashAlgorithmName.SHA3_512, length)
-      : KeyDerivation.Pbkdf2(static d => Sha3.Compute512(d), 72, material, salt, iterations, length);
+    => Pbkdf2.Derive(KeccakHasher.Sha3_512(), material, salt, iterations, length);
+
+  private static byte[] WhirlpoolPbkdf2(byte[] material, ReadOnlySpan<byte> salt, int iterations, int length)
+    => Pbkdf2.Derive(new WhirlpoolHasher(), material, salt, iterations, length);
 
   private static byte[] Verifier(byte[][] keys)
     => [(byte)(keys[0][64] ^ keys[1][64] ^ keys[2][64]), (byte)(keys[0][65] ^ keys[1][65] ^ keys[2][65])];
