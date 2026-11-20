@@ -256,7 +256,8 @@ internal sealed class DosCpu {
       case 0: case 2: this.Set(OF, ((v & top) != 0) ^ this.Get(CF)); break;
       case 1: case 3: this.Set(OF, ((v ^ (v << 1)) & top) != 0); break;
       case 4: case 6: this.Set(OF, ((v & top) != 0) ^ this.Get(CF)); this.SetSzp(v, word); break;
-      case 5: this.Set(OF, (original & top) != 0); this.SetSzp(v, word); break;
+      // OF comes from the last single-bit step: the sign bit of the value it shifted.
+      case 5: this.Set(OF, ((original >> (count - 1)) & top) != 0); this.SetSzp(v, word); break;
       default: this.Set(OF, false); this.SetSzp(v, word); break;
     }
     return v;
@@ -289,7 +290,7 @@ internal sealed class DosCpu {
   // ── execution ────────────────────────────────────────────────────────
 
   public void Step() {
-    if (this.S[CS] == ServiceSegment) {
+    if (this.S[CS] == ServiceSegment && this.ServiceInterrupt != null) {
       this.ServiceInterrupt?.Invoke(this.IP);
       ++this.Instructions;
       return;
@@ -475,7 +476,12 @@ internal sealed class DosCpu {
         break;
       case 0xD4: {
         var b = this.Fetch8();
-        if (b == 0) { this.Interrupt(0); break; }
+        if (b == 0) {
+          // The 8086 leaves the flags of a zero result behind before it traps.
+          this.SetSzp(0, false); this.Set(AF, false); this.Set(CF, false); this.Set(OF, false);
+          this.Interrupt(0);
+          break;
+        }
         var al = (byte)this.R[AX];
         this.R[AX] = (ushort)(((al / b) << 8) | (al % b));
         this.SetSzp((byte)this.R[AX], false);
@@ -623,7 +629,8 @@ internal sealed class DosCpu {
           var n = (int)(((uint)this.R[DX] << 16) | this.R[AX]);
           if (d == 0) { this.Interrupt(0); return; }
           var q = n / d;
-          if (q is > short.MaxValue or < short.MinValue) { this.Interrupt(0); return; }
+          // The 8086 traps on the most negative quotient as well.
+          if (q is > short.MaxValue or <= short.MinValue) { this.Interrupt(0); return; }
           this.R[AX] = (ushort)q;
           this.R[DX] = (ushort)(n % d);
         } else {
@@ -631,7 +638,7 @@ internal sealed class DosCpu {
           var n = (short)this.R[AX];
           if (d == 0) { this.Interrupt(0); return; }
           var q = n / d;
-          if (q is > sbyte.MaxValue or < sbyte.MinValue) { this.Interrupt(0); return; }
+          if (q is > sbyte.MaxValue or <= sbyte.MinValue) { this.Interrupt(0); return; }
           this.R[AX] = (ushort)(((byte)(n % d) << 8) | (byte)q);
         }
         break;
@@ -662,7 +669,8 @@ internal sealed class DosCpu {
         this.Transfer(Linear(cs, ip));
         break;
       }
-      case 6: this.Push(this.GetE16()); break;
+      // PUSH SP stores the decremented SP on the 8086/80186.
+      case 6: this.Push(this._mod == 3 && this._rm == SP ? (ushort)(this.R[SP] - 2) : this.GetE16()); break;
       default: throw new InvalidOperationException("invalid opcode FF /7");
     }
   }
@@ -729,38 +737,47 @@ internal sealed class DosCpu {
 
   // ── BCD ──────────────────────────────────────────────────────────────
 
+  // The 8086 compares the original AL with 0x9F instead of 0x99 when AF was set.
   private void Daa() {
-    var al = (byte)this.R[AX];
+    var old = (byte)this.R[AX];
     var cf = this.Get(CF);
-    if ((al & 0x0F) > 9 || this.Get(AF)) { al += 6; this.Set(AF, true); } else this.Set(AF, false);
-    if ((byte)this.R[AX] > 0x99 || cf) { al += 0x60; this.Set(CF, true); } else this.Set(CF, false);
+    var af = this.Get(AF);
+    var al = old;
+    if ((al & 0x0F) > 9 || af) { al += 6; this.Set(AF, true); } else this.Set(AF, false);
+    if (old > (af ? 0x9F : 0x99) || cf) { al += 0x60; this.Set(CF, true); } else this.Set(CF, false);
     this.SetR8(0, al);
     this.SetSzp(al, false);
   }
 
   private void Das() {
-    var al = (byte)this.R[AX];
+    var old = (byte)this.R[AX];
     var cf = this.Get(CF);
-    if ((al & 0x0F) > 9 || this.Get(AF)) { al -= 6; this.Set(AF, true); } else this.Set(AF, false);
-    if ((byte)this.R[AX] > 0x99 || cf) { al -= 0x60; this.Set(CF, true); } else this.Set(CF, false);
+    var af = this.Get(AF);
+    var al = old;
+    if ((al & 0x0F) > 9 || af) { al -= 6; this.Set(AF, true); } else this.Set(AF, false);
+    if (old > (af ? 0x9F : 0x99) || cf) { al -= 0x60; this.Set(CF, true); } else this.Set(CF, false);
     this.SetR8(0, al);
     this.SetSzp(al, false);
   }
 
+  // The 8086 adjusts AL and AH separately (no carry from AL into AH).
   private void Aaa() {
-    if (((byte)this.R[AX] & 0x0F) > 9 || this.Get(AF)) {
-      this.R[AX] = (ushort)(this.R[AX] + 0x106);
+    var al = (byte)this.R[AX];
+    var ah = (byte)(this.R[AX] >> 8);
+    if ((al & 0x0F) > 9 || this.Get(AF)) {
+      al += 6; ++ah;
       this.Set(AF, true); this.Set(CF, true);
     } else { this.Set(AF, false); this.Set(CF, false); }
-    this.R[AX] &= 0xFF0F;
+    this.R[AX] = (ushort)((ah << 8) | (al & 0x0F));
   }
 
   private void Aas() {
-    if (((byte)this.R[AX] & 0x0F) > 9 || this.Get(AF)) {
-      this.R[AX] = (ushort)(this.R[AX] - 6);
-      this.R[AX] = (ushort)(this.R[AX] - 0x100);
+    var al = (byte)this.R[AX];
+    var ah = (byte)(this.R[AX] >> 8);
+    if ((al & 0x0F) > 9 || this.Get(AF)) {
+      al -= 6; --ah;
       this.Set(AF, true); this.Set(CF, true);
     } else { this.Set(AF, false); this.Set(CF, false); }
-    this.R[AX] &= 0xFF0F;
+    this.R[AX] = (ushort)((ah << 8) | (al & 0x0F));
   }
 }
