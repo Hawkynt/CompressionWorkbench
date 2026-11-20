@@ -12,7 +12,7 @@ namespace FileFormat.Uharc;
 /// and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP and ALZ modes, with passwords and
 /// the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP and ALZ modes; and UHARC 0.2 archives.
 /// 0.4 and 0.3 PPM streams are refused. Creates 0.6 archives in every 0.6 method, 0.4 and 0.3 archives in every method
-/// but PPM and 0.2 archives (store, LZW, main coder), optionally password-protected or behind a self-extractor stub, that <c>uharc.exe</c> extracts; it cannot modify them.
+/// but PPM and 0.2 archives (store, RLE, LZW, main coder), optionally password-protected or behind a self-extractor stub, that <c>uharc.exe</c> extracts; it cannot modify them.
 ///
 /// References:
 /// <list type="bullet">
@@ -88,7 +88,7 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <see cref="FormatCreateOptions.DictSize"/> caps the LZP and ALZ window, as <c>-md</c> does;
   /// the <see cref="VersionOption"/> option 4 or 3 writes a UHARC 0.4 or 0.3 archive (store, RLE,
   /// LZW as <c>lz78</c>, LZP, ALZ), and 2 a UHARC 0.2 archive (store, LZW as <c>lz78</c>, the main
-  /// coder as <c>alz</c>; DOS 8.3 names).
+  /// coder as <c>alz</c>, RLE; DOS 8.3 names).
   /// </summary>
   /// <exception cref="NotSupportedException">
   /// Another method, a password that is not printable ASCII or longer than 255 characters, a stub

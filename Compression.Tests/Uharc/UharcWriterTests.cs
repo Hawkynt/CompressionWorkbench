@@ -206,6 +206,7 @@ public class UharcWriterTests {
   };
 
   [TestCase("store", "Store", 0L)]
+  [TestCase("rle", "RLE", 0L)]
   [TestCase("lz78", "LZW", 0L)]
   [TestCase("alz", "m2", 0L)]
   [TestCase("alz", "m2", 1024L)]
@@ -221,7 +222,6 @@ public class UharcWriterTests {
     Assert.That(reader.Entries.Where(e => e.IsDirectory).Select(e => e.FileName).Order(), Is.EqualTo(new[] { "EMPTYDIR", "SUB", "SUB/DEEPER" }));
   }
 
-  [TestCase("rle")]
   [TestCase("lzp")]
   [TestCase("ppm")]
   [Category("ErrorHandling")]
@@ -466,6 +466,35 @@ public class UharcWriterTests {
   public void GivenData_WhenRleEncodedAndDecoded_ThenItIsUnchanged(byte[] data) {
     var packed = UharcRleEncoder.Encode(data);
     Assert.That(UharcRleDecoder.Decode(packed, 0, packed.Length, data.Length), Is.EqualTo(data));
+  }
+
+  /// <summary>Streams measured against UHARC 0.2's extractor under DOSBox (see docs, "UHARC 0.2", RLE).</summary>
+  [TestCase("EE0541", "4141414141")]
+  [TestCase("ED41", "414141")]
+  [TestCase("EE00AD41", "ED414141")]
+  [TestCase("EE03414243", "EEEE414243")]
+  [Category("HappyPath")]
+  public void GivenAVersion02RleStream_WhenDecoded_ThenItGivesWhatUharc02Gave(string stream, string expected) {
+    var packed = Convert.FromHexString(stream);
+    var want = Convert.FromHexString(expected);
+    Assert.That(UharcRleDecoder.Decode(packed, 0, packed.Length, want.Length, byteFirst: true), Is.EqualTo(want));
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenTheVersion02LongRun_WhenCodedBothWays_ThenTheByteComesBeforeTheCount() {
+    var data = Enumerable.Repeat((byte)0x41, 272).Concat(new byte[] { 0x42, 0x43 }).ToArray();
+    Assert.Multiple(() => {
+      Assert.That(UharcRleEncoder.Encode(data, byteFirst: true), Is.EqualTo(Convert.FromHexString("EEFF4110014243")));
+      Assert.That(UharcRleDecoder.Decode(Convert.FromHexString("EEFF4110014243"), 0, 7, data.Length, byteFirst: true), Is.EqualTo(data));
+      Assert.That(UharcRleEncoder.Encode(data), Is.EqualTo(Convert.FromHexString("EEFF1001414243")));
+    });
+  }
+
+  [TestCaseSource(nameof(RleInputs))]
+  [Category("RoundTrip")]
+  public void GivenData_WhenVersion02RleEncodedAndDecoded_ThenItIsUnchanged(byte[] data) {
+    var packed = UharcRleEncoder.Encode(data, byteFirst: true);
+    Assert.That(UharcRleDecoder.Decode(packed, 0, packed.Length, data.Length, byteFirst: true), Is.EqualTo(data));
   }
 
   [Test, Category("HappyPath")]

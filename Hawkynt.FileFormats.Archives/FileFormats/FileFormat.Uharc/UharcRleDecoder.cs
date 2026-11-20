@@ -8,11 +8,17 @@ namespace FileFormat.Uharc;
 /// <c>ED</c>/<c>EE</c>. <c>T x</c> is <c>x</c> three times; <c>R n x</c> (4 ≤ n ≤ 254) is <c>x</c>
 /// <c>n</c> times; <c>R FF lo hi x</c> is <c>x</c> repeated a 16-bit count; <c>R c</c> with c ≤ 3 is
 /// one or two literal marker bytes (<c>T</c> for even c, <c>R</c> for odd, twice when c ≥ 2), after
-/// which both markers move down by 0x40. Every other byte stands for itself.
+/// which both markers move down by 0x40. Every other byte stands for itself. UHARC 0.2's stream
+/// differs in the long run only: <c>R FF x lo hi</c>, the byte before its count.
 /// </remarks>
 internal static class UharcRleDecoder {
 
-  public static byte[] Decode(byte[] packed, int offset, int length, int unpackedSize) {
+  /// <param name="packed">Buffer holding the packed stream.</param>
+  /// <param name="offset">Start of the packed stream.</param>
+  /// <param name="length">Length of the packed stream.</param>
+  /// <param name="unpackedSize">Number of bytes to produce.</param>
+  /// <param name="byteFirst">UHARC 0.2's long run, which puts the byte before its 16-bit count.</param>
+  public static byte[] Decode(byte[] packed, int offset, int length, int unpackedSize, bool byteFirst = false) {
     var output = new byte[unpackedSize];
     var end = offset + length;
     var position = offset;
@@ -39,9 +45,15 @@ internal static class UharcRleDecoder {
           Fill((count & 1) == 0 ? triple : run, (count >> 1) + 1);
           triple -= 0x40;
         } else {
-          if (count == 0xFF)
+          if (count != 0xFF)
+            Fill(Next(), count);
+          else if (byteFirst) {
+            var value = Next();
+            Fill(value, Next() | Next() << 8);
+          } else {
             count = Next() | Next() << 8;
-          Fill(Next(), count);
+            Fill(Next(), count);
+          }
         }
       } else
         Fill(b, 1);

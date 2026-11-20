@@ -14,7 +14,7 @@ store, RLE, LZW, LZP and ALZ modes, and the UHARC 0.3 container with its store, 
 ALZ modes (see their sections). 0.4's and 0.3's PPM streams are not, and are refused. The writer
 produces 0.6 archives in every method — store, RLE, LZ78, LZP, PPM and ALZ — with or without a
 password and a self-extractor stub (see Writing), 0.4 and 0.3 archives in store, RLE, LZW, LZP
-and ALZ (see Writing UHARC 0.4 and Writing UHARC 0.3), and 0.2 archives in store, LZW and its main
+and ALZ (see Writing UHARC 0.4 and Writing UHARC 0.3), and 0.2 archives in store, RLE, LZW and its main
 coder (see Writing UHARC 0.2).
 
 ## Evidence
@@ -624,6 +624,13 @@ Methods: 0 store, 1 RLE, 2..7 LZW, 8..19 `-m1`, 20..31 `-m2`, 32..43 `-m3`, the 
 `1 << ((m − 8) mod 12 + 10)` (1 KiB to 2 MiB; `-md-` gives 1 KiB). The tool writes no stream
 with methods 1..7; the tables use LZW.
 
+**RLE** (method 1). The tool never writes it, but its extractor reads it, and streams crafted for
+it show 0.6's RLE (see there) with one difference: the long run is *R* `FF` `x` `lo` `hi`, the
+byte before its 16-bit count. Measured on single-file archives under DOSBox: `EE 05 41` gives
+five `41`, `ED 41` three, `EE 00`..`EE 03` the escaped markers, after which `AD`/`AE` are the
+markers; `EE FE 41` gives 254 `41`, `EE FF 41 10 01 42 43` gives 272 `41` then `42 43`, and the
+executable filter is undone on RLE streams as on the others.
+
 **Tables.** Each is enciphered on its own: a 256-byte state filled with
 `"UHARC Default Password"` repeated (no length byte), keyed by the same CRC rounds as 0.6's
 cipher, then `a = S[p]; p = p + 1; S[p] += a; byte ^= S[p]`. The CRC table (4*N*) is stored, the
@@ -686,7 +693,7 @@ name table), and the executable filter on stored archives (fails `v02-exe-m0`'s 
 
 ### Writing UHARC 0.2
 
-The writer produces 0.2 archives (format option `version` 2) stored, as LZW method 7, or with the
+The writer produces 0.2 archives (format option `version` 2) stored, as RLE, as LZW method 7, or with the
 main coder's `-m2` band (methods 20..31, 1 KiB to 2 MiB): the 48-byte header with its full
 CRC-32 check, the stream, the stored CRC table, the name table (LZW 7), the dates-then-times
 table (LZW 2) and the size table (32-bit size deltas, 16-bit directory indices, attributes; LZW
@@ -703,7 +710,7 @@ shifted out as the range doubles, and the low's sixteen bits at the end. It neve
 models or codes byte runs, and takes the best of a recent distance, distance 1, a new distance
 whose class is open at the current history length, or a literal. UHARC 0.2 under DOSBox extracts
 our archives of every fixture input set and of the 39 MB mixed set (with `cp.html` renamed to
-8.3) byte for byte in all three modes and at a 1 KiB window.
+8.3) byte for byte in all four modes and at a 1 KiB window.
 
 ## UHARC 0.4
 
@@ -1043,8 +1050,8 @@ accepts them.
 
 - **UHARC 0.3's PPM streams** (`-mx`): the container reads, the stream is refused.
 - **UHARC 0.4's PPM streams** (`-mx`): the container reads, the stream is refused.
-- **UHARC 0.2's RLE stream method 1**: no archive the tool writes uses it; refused.
-- **Writing** any method other than store and LZP, passwords, filters and SFX stubs.
+- **Writing** 0.6's executable and multimedia filters, the multimedia ALZ/PPM classes and text
+  PPM streams, and 0.4/0.3 PPM.
 
 ## Sources
 
