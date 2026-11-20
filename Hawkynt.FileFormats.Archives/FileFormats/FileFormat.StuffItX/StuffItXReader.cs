@@ -65,6 +65,8 @@ public sealed class StuffItXReader : IDisposable {
   /// <summary>The archive's files, directories and resource forks.</summary>
   public IReadOnlyList<StuffItXEntry> Entries => this._entries;
 
+  /// <summary>The archive's own comment, from the catalog of the archive object, if it has one.</summary>
+  public string? Comment { get; private set; }
   /// <summary>Whether <paramref name="data"/> starts with a StuffIt X signature.</summary>
   public static bool IsStuffItX(ReadOnlySpan<byte> data)
     => data.Length >= 8 && data[..7].SequenceEqual(Signature) && data[7] is (byte)'!' or (byte)'?';
@@ -189,6 +191,7 @@ public sealed class StuffItXReader : IDisposable {
     var nodes = new List<Node>();
     var nodesById = new Dictionary<long, Node>();
     var streamForks = new Dictionary<long, List<Fork?>>();
+    var catalogs = 0;
 
     for (var done = false; !done;) {
       if (input.Position >= input.End) throw new InvalidDataException("StuffIt X archive has no end element.");
@@ -227,7 +230,14 @@ public sealed class StuffItXReader : IDisposable {
           ScanElementData(input, element);
           var end = input.Position;
           var catalog = this.Decode(element, element.Attributes[4]);
-          ParseCatalog(new StuffItXInput(catalog), nodes, nodesById);
+          if (catalogs++ == 0) ParseCatalog(new StuffItXInput(catalog), nodes, nodesById);
+          else {
+            // a later catalog describes the archive itself (the object a type-9 element announced):
+            // StuffIt 7 for Mac OS 9 keeps the archive comment there
+            var archiveNode = new Node(element.Attributes[0], -1, false);
+            ParseCatalog(new StuffItXInput(catalog), [archiveNode], []);
+            this.Comment ??= archiveNode.Comment;
+          }
           input.Position = end;
           break;
         }
@@ -235,6 +245,10 @@ public sealed class StuffItXReader : IDisposable {
           input.Skip(element.Attributes[4]);
           break;
         case ElementRoot:
+          // StuffIt's "recoverability"/"redundancy" option marks the root with algorithm 5 and spreads
+          // the archive over 255 checked blocks of an undecoded layout (docs/STUFFITX-RECOVERY-ON-DISK.md)
+          if (element.Algorithms[4] >= 0)
+            throw new NotSupportedException("This StuffIt X archive was written with a recovery record (redundancy blocks), whose layout is not decoded.");
           input.ReadP2();
           break;
         case ElementBoundary:

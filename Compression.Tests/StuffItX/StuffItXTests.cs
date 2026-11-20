@@ -73,6 +73,25 @@ public class StuffItXTests {
     Assert.That(files, Is.EquivalentTo(expected), methods);
   }
 
+  /// <summary>
+  /// StuffIt 7 for Mac OS 9 stores an archive comment as a second catalog, for the object a type-9
+  /// element announces: tag 9, the string, tag 0. The OS X build writes no comment into the data fork.
+  /// </summary>
+  [TestCase("testfile.stuffit7_dlx.mac9.comment.sitx", "Test Comment")]
+  [TestCase("testfile.stuffit7_dlx.macx1.comment.sitx", null)]
+  [Category("ThemVsUs")]
+  public void GivenArchiveWithAComment_WhenExtracted_ThenEveryForkMatchesAndTheCommentReads(string vector, string? comment) {
+    using var r = new StuffItXReader(new MemoryStream(Vector(vector)));
+    var files = r.Entries.Where(e => !e.IsDirectory).ToDictionary(e => e.FullPath, e => Sha(r.Extract(e)));
+    Assert.That(files, Is.EquivalentTo(MacSources));
+    Assert.That(r.Comment, Is.EqualTo(comment));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenArchiveWithARecoveryRecord_WhenOpened_ThenRefusedAsNotSupported()
+    => Assert.That(() => new StuffItXReader(new MemoryStream(Vector("testfile.stuffit7_dlx.mac9.recoverability.sitx"))),
+      Throws.InstanceOf<NotSupportedException>().With.Message.Contains("recovery record"));
+
   [TestCase("testfile.stuffit_deluxe_2009.win.sitx")]
   [TestCase("testfile.stuffit_deluxe_2010.win.sitx")]
   [Category("ThemVsUs")]

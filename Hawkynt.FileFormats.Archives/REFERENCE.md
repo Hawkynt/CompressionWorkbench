@@ -32083,6 +32083,7 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `StuffItXReader` | `StuffItXReader(Stream stream, bool leaveOpen = false)` | Opens a StuffIt X archive and reads its directory. |
+| `Comment` | `string Comment { get; }` | The archive's own comment, from the catalog of the archive object, if it has one. |
 | `Entries` | `IReadOnlyList<StuffItXEntry> Entries { get; }` | The archive's files, directories and resource forks. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(StuffItXEntry entry)` | Decodes one entry. |

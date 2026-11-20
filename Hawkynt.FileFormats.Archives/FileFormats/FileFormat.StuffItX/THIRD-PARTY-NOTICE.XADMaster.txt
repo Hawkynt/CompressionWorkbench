@@ -27,5 +27,8 @@ Local changes against XADMaster's behaviour, each confirmed against StuffIt-writ
   unaligned and fails on StuffIt 7 for Mac archives);
 - a data stream is decoded to the size its data element records, which the stored CRC-32 covers,
   even where its forks claim less (the preview stream of StuffIt Deluxe 2009/2010 archives);
+- a catalog after the first describes the archive object a type-9 element announces (StuffIt 7
+  for Mac OS 9 keeps the archive comment there); XADMaster reads it as another catalog of the
+  files and fails;
 - Iron's weighted recency list stops sinking an entry at the last of its 256 slots, where
   XADMaster reads one element past its array.
