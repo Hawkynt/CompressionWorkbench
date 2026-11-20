@@ -82,8 +82,7 @@ public sealed class NrbfBinaryFormatterOracleTests {
     foreach (var argument in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath, input, output })
       start.ArgumentList.Add(argument);
     using var process = Process.Start(start)!;
-    var stdout = process.StandardOutput.ReadToEndAsync();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit();
     Assert.That(process.ExitCode, Is.EqualTo(0), $"BinaryFormatter rejected our NRBF:\n{stderr}");
 
@@ -94,7 +93,7 @@ public sealed class NrbfBinaryFormatterOracleTests {
       expected.Add(entry.IsDirectory ? "null" : "bytes " + Convert.ToBase64String(entry.ReadContent()));
     }
     Assert.Multiple(() => {
-      Assert.That(stdout.Result.ReplaceLineEndings("\n").TrimEnd('\n').Split('\n'), Is.EqualTo(expected),
+      Assert.That(stdout.ReplaceLineEndings("\n").TrimEnd('\n').Split('\n'), Is.EqualTo(expected),
         "BinaryFormatter must see exactly our strings, byte arrays and nulls");
       Assert.That(File.ReadAllBytes(output), Is.EqualTo(ours),
         "BinaryFormatter must serialize the same graph to the same bytes");

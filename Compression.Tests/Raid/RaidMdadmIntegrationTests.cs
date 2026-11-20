@@ -209,8 +209,7 @@ public sealed class RaidMdadmIntegrationTests {
         p.StandardInput.Write(stdin);
         p.StandardInput.Close();
       }
-      var so = p.StandardOutput.ReadToEnd();
-      var se = p.StandardError.ReadToEnd();
+      var (so, se) = p.ReadOutput();
       if (!p.WaitForExit(180_000)) {
         try { p.Kill(true); } catch { /* best effort */ }
       }

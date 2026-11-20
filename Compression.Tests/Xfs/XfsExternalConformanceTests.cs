@@ -96,8 +96,7 @@ public class XfsExternalConformanceTests {
     };
     using var proc = Process.Start(psi)
       ?? throw new InvalidOperationException($"Failed to start shell for: {command}");
-    var stdout = proc.StandardOutput.ReadToEnd();
-    var stderr = proc.StandardError.ReadToEnd();
+    var (stdout, stderr) = proc.ReadOutput();
     if (!proc.WaitForExit(30_000)) {
       try { proc.Kill(); } catch { /* best effort */ }
     }
@@ -115,8 +114,7 @@ public class XfsExternalConformanceTests {
     };
     using var proc = Process.Start(psi)
       ?? throw new InvalidOperationException($"Failed to start {tool}");
-    var stdout = proc.StandardOutput.ReadToEnd();
-    var stderr = proc.StandardError.ReadToEnd();
+    var (stdout, stderr) = proc.ReadOutput();
     if (!proc.WaitForExit(timeoutMs)) {
       try { proc.Kill(); } catch { /* best effort */ }
     }

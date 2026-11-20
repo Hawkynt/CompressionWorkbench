@@ -160,8 +160,7 @@ public sealed class MobiConformanceTests {
       foreach (var a in new[] { scriptPath, modulePath, bookPath, rawPath })
         psi.ArgumentList.Add(a);
       using var p = Process.Start(psi)!;
-      var stdout = p.StandardOutput.ReadToEnd();
-      var stderr = p.StandardError.ReadToEnd();
+      var (stdout, stderr) = p.ReadOutput();
       p.WaitForExit();
       Assert.That(p.ExitCode, Is.EqualTo(0), stderr);
       var lines = stdout.Split('\n', StringSplitOptions.TrimEntries);

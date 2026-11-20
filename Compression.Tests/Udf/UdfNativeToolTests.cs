@@ -283,8 +283,7 @@ public sealed class UdfNativeToolTests {
       };
       using var process = Process.Start(start);
       if (process == null) return ("", "could not start " + file, -1);
-      var stdout = process.StandardOutput.ReadToEnd();
-      var stderr = process.StandardError.ReadToEnd();
+      var (stdout, stderr) = process.ReadOutput();
       process.WaitForExit(120_000);
       return (stdout, stderr, process.ExitCode);
     } catch (Exception ex) {

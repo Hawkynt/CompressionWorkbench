@@ -183,8 +183,7 @@ public class ReiserFsExternalConformanceTests {
       proc.StandardInput.Write(stdin);
       proc.StandardInput.Close();
     }
-    var stdout = proc.StandardOutput.ReadToEnd();
-    var stderr = proc.StandardError.ReadToEnd();
+    var (stdout, stderr) = proc.ReadOutput();
     if (!proc.WaitForExit(timeoutMs)) {
       try { proc.Kill(); } catch { /* best effort */ }
     }

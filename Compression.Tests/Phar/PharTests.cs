@@ -264,9 +264,7 @@ public class PharTests {
   private static string RunPhp(string php, string arguments) {
     var psi = new ProcessStartInfo(php, arguments) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
     using var p = Process.Start(psi)!;
-    var stdout = p.StandardOutput.ReadToEnd();
-    p.StandardError.ReadToEnd();
-    p.WaitForExit();
+    var (stdout, _) = p.ReadOutput();
     return stdout;
   }
 

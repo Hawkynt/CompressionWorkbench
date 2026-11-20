@@ -94,12 +94,11 @@ public sealed class BinHexConvertBinHexOracleTests {
 
       string stderr;
       using (process) {
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
+        string stdout;
+        (stdout, stderr) = process.ReadOutput();
         if (stderr.Contains("Can't locate Convert/BinHex.pm", StringComparison.Ordinal))
           Assert.Ignore("The Perl module Convert::BinHex is not installed.");
-        Assert.That(process.ExitCode, Is.EqualTo(0), $"Convert::BinHex refused our file:\n{stdout.Result}{stderr}");
+        Assert.That(process.ExitCode, Is.EqualTo(0), $"Convert::BinHex refused our file:\n{stdout}{stderr}");
       }
 
       Assert.That(File.ReadAllBytes(unpackedPath), Is.EqualTo(expected));

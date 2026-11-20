@@ -288,10 +288,9 @@ public class MpqStormLibOracleTests {
     foreach (var arg in args)
       info.ArgumentList.Add(arg);
     using var process = Process.Start(info)!;
-    var stdout = process.StandardOutput.ReadToEndAsync();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit();
-    return (stdout.Result, stderr, process.ExitCode);
+    return (stdout, stderr, process.ExitCode);
   }
 
   /// <summary>Parses mpqoracle's extract listing: name, size, flags, status.</summary>

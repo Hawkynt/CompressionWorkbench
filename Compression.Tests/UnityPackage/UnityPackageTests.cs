@@ -179,8 +179,7 @@ public class UnityPackageTests {
   private static (int Exit, string Out, string Err) Run(string exe, string args) {
     var psi = new ProcessStartInfo(exe, args) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
     using var p = Process.Start(psi)!;
-    var stdout = p.StandardOutput.ReadToEnd();
-    var stderr = p.StandardError.ReadToEnd();
+    var (stdout, stderr) = p.ReadOutput();
     p.WaitForExit();
     return (p.ExitCode, stdout, stderr);
   }

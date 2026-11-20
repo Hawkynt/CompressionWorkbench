@@ -136,7 +136,7 @@ public class ExtBlockMoverFsckTests {
         RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
       };
       using var p = Process.Start(psi)!;
-      var o = p.StandardOutput.ReadToEnd();
+      var (o, _) = p.ReadOutput();
       p.WaitForExit(5_000);
       return p.ExitCode == 0 && !string.IsNullOrWhiteSpace(o);
     } catch { return false; }
@@ -148,8 +148,7 @@ public class ExtBlockMoverFsckTests {
       RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
     };
     using var proc = Process.Start(psi)!;
-    var so = proc.StandardOutput.ReadToEnd();
-    var se = proc.StandardError.ReadToEnd();
+    var (so, se) = proc.ReadOutput();
     if (!proc.WaitForExit(timeoutMs)) { try { proc.Kill(true); } catch { /* best effort */ } }
     return (so, se, proc.ExitCode);
   }

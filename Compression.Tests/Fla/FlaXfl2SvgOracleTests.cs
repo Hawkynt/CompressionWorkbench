@@ -61,10 +61,9 @@ public sealed class FlaXfl2SvgOracleTests {
     start.Environment["PYTHONUTF8"] = "1";
     foreach (var argument in arguments) start.ArgumentList.Add(argument);
     using var process = Process.Start(start)!;
-    var stdout = process.StandardOutput.ReadToEndAsync();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit();
-    return (process.ExitCode, stdout.Result, stderr);
+    return (process.ExitCode, stdout, stderr);
   }
 
   /// <summary>

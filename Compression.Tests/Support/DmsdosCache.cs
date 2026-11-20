@@ -89,9 +89,11 @@ internal static class DmsdosCache {
       },
     };
     p.Start();
-    p.StandardOutput.ReadToEnd();
-    p.StandardError.ReadToEnd();
-    if (!p.WaitForExit(300_000)) { try { p.Kill(true); } catch { /* ignore */ } return -1; }
+    try {
+      p.ReadOutput(TimeSpan.FromSeconds(300));
+    } catch (TimeoutException) {
+      return -1;
+    }
     return p.ExitCode;
   }
 
@@ -126,10 +128,7 @@ internal static class DmsdosCache {
       },
     };
     p.Start();
-    using var ms = new MemoryStream();
-    p.StandardOutput.BaseStream.CopyTo(ms);
-    p.StandardError.ReadToEnd();
-    p.WaitForExit(60_000);
-    return (p.ExitCode, ms.ToArray());
+    var (bytes, _) = p.ReadOutputBytes(TimeSpan.FromSeconds(60));
+    return (p.ExitCode, bytes);
   }
 }

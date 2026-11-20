@@ -132,8 +132,7 @@ public class MinixV1WriterTests {
     psi.ArgumentList.Add(image);
     using var p = Process.Start(psi)!;
     p.StandardInput.Close();
-    var stdout = p.StandardOutput.ReadToEnd();
-    var stderr = p.StandardError.ReadToEnd();
+    var (stdout, stderr) = p.ReadOutput();
     p.WaitForExit();
     return (p.ExitCode, stdout + stderr);
   }

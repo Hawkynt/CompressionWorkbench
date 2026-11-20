@@ -124,10 +124,9 @@ public sealed class SqueezeCiderPressOracleTests {
     foreach (var argument in arguments)
       start.ArgumentList.Add(argument);
     using var process = Process.Start(start)!;
-    var stdout = process.StandardOutput.ReadToEndAsync();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit();
     Assert.That(process.ExitCode, Is.EqualTo(0), $"cp2 {string.Join(' ', arguments)} failed:\n{stderr}");
-    return stdout.Result;
+    return stdout;
   }
 }

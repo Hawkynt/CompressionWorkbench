@@ -80,7 +80,7 @@ public class RarEncryptionVectorTests {
         RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
       };
       using var p = Process.Start(psi)!;
-      var output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+      var output = p.ReadOutputJoined();
       p.WaitForExit();
       Assert.That(p.ExitCode, Is.Zero, output);
     } finally {
@@ -162,7 +162,7 @@ public class RarEncryptionVectorTests {
         RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
       };
       using var p = Process.Start(psi)!;
-      var output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+      var output = p.ReadOutputJoined();
       p.WaitForExit();
       Assert.That(p.ExitCode, Is.Zero, output);
       Assert.That(File.ReadAllBytes(Path.Combine(dir, "out", "a.txt")), Is.EqualTo(ATxt));

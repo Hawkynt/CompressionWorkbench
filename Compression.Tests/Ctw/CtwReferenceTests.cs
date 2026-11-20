@@ -120,7 +120,7 @@ public sealed class CtwReferenceTests {
     if (string.IsNullOrEmpty(configured)) return null;
     try {
       using var process = Process.Start(new ProcessStartInfo(configured) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true })!;
-      var banner = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+      var banner = process.ReadOutputJoined();
       process.WaitForExit();
       return banner.Contains("CTW (Context Tree Weighting)", StringComparison.Ordinal) ? configured : null;
     } catch (Win32Exception) {

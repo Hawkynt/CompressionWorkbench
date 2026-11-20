@@ -210,7 +210,7 @@ public class XfsInPlaceAddExternalTests {
         UseShellExecute = false, CreateNoWindow = true,
       };
       using var proc = Process.Start(psi)!;
-      var outp = proc.StandardOutput.ReadToEnd();
+      var (outp, _) = proc.ReadOutput();
       proc.WaitForExit(30_000);
       return proc.ExitCode == 0 && !string.IsNullOrWhiteSpace(outp);
     } catch {
@@ -229,8 +229,7 @@ public class XfsInPlaceAddExternalTests {
     psi.Environment["LANG"] = "C";
     psi.Environment["LC_ALL"] = "C";
     using var proc = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start {tool}");
-    var stdout = proc.StandardOutput.ReadToEnd();
-    var stderr = proc.StandardError.ReadToEnd();
+    var (stdout, stderr) = proc.ReadOutput();
     if (!proc.WaitForExit(timeoutMs)) {
       try { proc.Kill(); } catch { /* best effort */ }
     }

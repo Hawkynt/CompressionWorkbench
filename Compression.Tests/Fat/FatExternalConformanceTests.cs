@@ -125,8 +125,7 @@ public class FatExternalConformanceTests {
     };
     try {
       using var proc = Process.Start(psi)!;
-      var stdout = proc.StandardOutput.ReadToEnd();
-      var stderr = proc.StandardError.ReadToEnd();
+      var (stdout, stderr) = proc.ReadOutput();
       if (!proc.WaitForExit(timeoutMs)) try { proc.Kill(); } catch { /* best effort */ }
       return new ToolResult(stdout, stderr, proc.ExitCode);
     } catch (Exception ex) {

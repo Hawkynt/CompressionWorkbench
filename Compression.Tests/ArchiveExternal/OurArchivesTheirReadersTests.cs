@@ -144,7 +144,7 @@ public class OurArchivesTheirReadersTests {
       RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
     };
     using var process = Process.Start(start)!;
-    var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+    var output = process.ReadOutputJoined();
     process.WaitForExit(120_000);
     return (process.HasExited ? process.ExitCode : -1, output);
   }

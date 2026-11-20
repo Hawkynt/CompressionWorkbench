@@ -178,7 +178,7 @@ public sealed class BscLibbscReferenceTests {
       if (string.IsNullOrEmpty(candidate)) continue;
       try {
         using var process = Process.Start(new ProcessStartInfo(candidate) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true })!;
-        var banner = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+        var banner = process.ReadOutputJoined();
         process.WaitForExit();
         if (banner.Contains("Block Sorting Compressor", StringComparison.Ordinal)) return candidate;
       } catch (Win32Exception) {

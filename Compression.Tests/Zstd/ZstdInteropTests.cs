@@ -126,9 +126,7 @@ public class ZstdInteropTests {
       RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
     };
     using var process = Process.Start(start)!;
-    process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
-    process.WaitForExit(120_000);
-    return (process.HasExited ? process.ExitCode : -1, stderr);
+    var (_, stderr) = process.ReadOutput(TimeSpan.FromSeconds(120));
+    return (process.ExitCode, stderr);
   }
 }

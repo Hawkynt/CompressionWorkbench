@@ -201,10 +201,9 @@ public sealed class SqxReferenceTests {
 
       string output;
       using (process) {
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEnd();
+        var (stdout, stderr) = process.ReadOutput();
         process.WaitForExit();
-        output = stdout.Result + stderr;
+        output = stdout + stderr;
         Assert.That(process.ExitCode, Is.EqualTo(0), $"sqx refused our archive:\n{output}");
       }
 

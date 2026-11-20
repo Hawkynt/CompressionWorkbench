@@ -143,10 +143,9 @@ public sealed class ZipNameEncodingTests {
       StandardErrorEncoding = Encoding.UTF8,
     };
     using var p = System.Diagnostics.Process.Start(psi)!;
-    var stdOutTask = p.StandardOutput.ReadToEndAsync();
-    var stdErr = p.StandardError.ReadToEnd();
+    var (stdOutTask, stdErr) = p.ReadOutput();
     p.WaitForExit();
-    var stdOut = stdOutTask.Result;
+    var stdOut = stdOutTask;
     var exitCode = p.ExitCode;
 
     Assert.Multiple(() => {
@@ -177,10 +176,9 @@ public sealed class ZipNameEncodingTests {
       StandardErrorEncoding = Encoding.UTF8,
     };
     using var p = System.Diagnostics.Process.Start(psi)!;
-    var stdOutTask = p.StandardOutput.ReadToEndAsync();
-    var stdErr = p.StandardError.ReadToEnd();
+    var (stdOutTask, stdErr) = p.ReadOutput();
     p.WaitForExit();
-    var stdOut = stdOutTask.Result;
+    var stdOut = stdOutTask;
     var exitCode = p.ExitCode;
 
     var theirs = stdOut.Split('\n').Where(l => l.StartsWith("Path = ", StringComparison.Ordinal))

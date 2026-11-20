@@ -601,7 +601,7 @@ public class ExternalInteropTests {
         FileName = p, Arguments = "--version", RedirectStandardOutput = true, RedirectStandardError = true,
         UseShellExecute = false, CreateNoWindow = true,
       })!;
-      var text = proc.StandardOutput.ReadToEnd();
+      var (text, _) = proc.ReadOutput();
       proc.WaitForExit(10000);
       return text.Contains("GNU tar", StringComparison.Ordinal);
     } catch {
@@ -627,8 +627,7 @@ public class ExternalInteropTests {
       CreateNoWindow = true,
     };
     using var proc = Process.Start(psi)!;
-    var stdout = proc.StandardOutput.ReadToEnd();
-    var stderr = proc.StandardError.ReadToEnd();
+    var (stdout, stderr) = proc.ReadOutput();
     proc.WaitForExit(30000);
     if (proc.ExitCode != 0)
       Assert.Fail($"{Path.GetFileName(tool)} exited with code {proc.ExitCode}.\nstdout: {stdout}\nstderr: {stderr}");

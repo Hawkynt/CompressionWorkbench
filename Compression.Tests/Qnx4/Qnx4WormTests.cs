@@ -355,8 +355,7 @@ public class Qnx4WormTests {
     };
     using var p = System.Diagnostics.Process.Start(psi);
     if (p is null) return ("", "wsl failed to launch", -1);
-    var stdout = p.StandardOutput.ReadToEnd();
-    var stderr = p.StandardError.ReadToEnd();
+    var (stdout, stderr) = p.ReadOutput();
     p.WaitForExit(30_000);
     return (stdout, stderr, p.ExitCode);
   }

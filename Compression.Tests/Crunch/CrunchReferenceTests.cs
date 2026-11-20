@@ -90,7 +90,7 @@ public sealed class CrunchReferenceTests {
       }
 
       using (process) {
-        var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+        var output = process.ReadOutputJoined();
         process.WaitForExit();
         Assert.That(process.ExitCode, Is.EqualTo(0), output);
       }
