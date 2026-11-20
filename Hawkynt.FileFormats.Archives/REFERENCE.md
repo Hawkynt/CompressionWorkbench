@@ -20305,9 +20305,11 @@ Reads the files an Inno Setup installer carries.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `InnoSetupReader` | `InnoSetupReader(Stream stream)` | Opens an Inno Setup installer (setup.exe) or a bare setup-0 file. |
+| `InnoSetupReader` | `InnoSetupReader(Stream stream, string password)` | Opens an Inno Setup installer with the password its encrypted files (or, with Encryption=full, its headers) need. |
 | `AppName` | `string AppName { get; }` | Gets the application name from the setup header. |
 | `AppVersion` | `string AppVersion { get; }` | Gets the application version from the setup header. |
 | `Compression` | `InnoCompression Compression { get; }` | Gets the compressor the files were stored with. |
+| `EncryptionMethods` | `IReadOnlyList<InnoEncryption> EncryptionMethods { get; }` | Gets the ciphers the installer's files use (empty when none is encrypted). |
 | `Entries` | `IReadOnlyList<InnoSetupEntry> Entries { get; }` | Gets the files, named and filtered the way innoextract extracts them. |
 | `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether some files are encrypted. |
 | `VersionText` | `string VersionText { get; }` | Gets the version as text, e.g. "5.5.7 (unicode)". |

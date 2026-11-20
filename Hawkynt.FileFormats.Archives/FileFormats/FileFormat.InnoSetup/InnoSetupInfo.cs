@@ -68,6 +68,8 @@ internal sealed class InnoSetupInfo {
   public string BaseFilename { get; private set; } = "";
   public InnoCompression Compression { get; private set; } = InnoCompression.Zlib;
   public bool EncryptionUsed { get; set; }
+  /// <summary>The password check and key material (6.5+: set from the encryption header).</summary>
+  public InnoPasswordData Password { get; set; } = new();
   public uint SlicesPerDisk { get; private set; } = 1;
   public Encoding TextEncoding { get; private set; } = Encoding.Unicode;
   public List<InnoFileEntry> Files { get; } = [];
@@ -224,14 +226,19 @@ internal sealed class InnoSetupInfo {
     if (v.AtLeast(6, 6, 1)) c.Skip(v.AtLeast(6, 7, 0) ? 2 : 1); // image (, back image) opacity
     if (v.AtLeast(6, 7, 0)) c.Enum(3); // light control styling
 
-    if (v.AtLeast(6, 5, 0)) { } // encryption moved to the header outside the blocks
-    else if (v.AtLeast(6, 4, 0)) c.Skip(4); // password check (XChaCha20)
-    else if (v.AtLeast(5, 3, 9)) c.Skip(20); // SHA-1
-    else if (v.AtLeast(4, 2, 0)) c.Skip(16); // MD5
-    else c.Skip(4); // CRC32
+    // the password check, then its salt (6.5+: both in the encryption header outside the blocks)
     if (v.AtLeast(6, 5, 0)) { }
-    else if (v.AtLeast(6, 4, 0)) c.Skip(44); // PBKDF2 salt + iterations + base nonce
-    else if (v.AtLeast(4, 2, 2)) c.Skip(8); // salt
+    else if (v.AtLeast(6, 4, 0)) this.Password = new() { Check = InnoPasswordCheck.XChaCha20, Expected = c.Bytes(4) };
+    else if (v.AtLeast(5, 3, 9)) this.Password = new() { Check = InnoPasswordCheck.Sha1, Expected = c.Bytes(20) };
+    else if (v.AtLeast(4, 2, 0)) this.Password = new() { Check = InnoPasswordCheck.Md5, Expected = c.Bytes(16) };
+    else this.Password = new() { Check = InnoPasswordCheck.Crc32, Expected = c.Bytes(4) };
+    if (v.AtLeast(6, 5, 0)) { }
+    else if (v.AtLeast(6, 4, 0)) {
+      // PBKDF2 salt, iterations, base nonce
+      this.Password.Salt = c.Bytes(16);
+      this.Password.Iterations = (int)c.U32();
+      this.Password.BaseNonce = c.Bytes(24);
+    } else if (v.AtLeast(4, 2, 2)) this.Password.Salt = c.Bytes(8);
 
     if (v.AtLeast(4, 0, 0)) { c.I64(); this.SlicesPerDisk = c.U32(); } // extra disk space, slices per disk
     else c.I32();

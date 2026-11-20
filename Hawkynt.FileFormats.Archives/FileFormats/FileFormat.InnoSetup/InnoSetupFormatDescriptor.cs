@@ -35,7 +35,7 @@ public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveForma
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     InnoSetupReader reader;
     try {
-      reader = new InnoSetupReader(stream);
+      reader = new InnoSetupReader(stream, password);
     } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or EndOfStreamException) {
       var note = Metadata(ex.Message);
       return [new ArchiveEntryInfo(0, "metadata.ini", note.Length, note.Length, "stored", false, false, null, Kind: "metadata")];
@@ -48,7 +48,7 @@ public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveForma
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     InnoSetupReader reader;
     try {
-      reader = new InnoSetupReader(stream);
+      reader = new InnoSetupReader(stream, password);
     } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or EndOfStreamException) {
       WriteFile(outputDir, "metadata.ini", Metadata(ex.Message));
       return;
@@ -69,7 +69,7 @@ public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveForma
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek)
       archive.Position = 0;
-    var reader = new InnoSetupReader(archive);
+    var reader = new InnoSetupReader(archive, password);
     var entry = reader.Entries.FirstOrDefault(e => string.Equals(e.FileName, entryName, StringComparison.OrdinalIgnoreCase));
     return entry == null ? [] : reader.Extract(entry);
   }
