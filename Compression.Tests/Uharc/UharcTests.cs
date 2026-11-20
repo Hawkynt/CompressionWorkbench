@@ -93,6 +93,16 @@ public class UharcTests {
   [TestCase("v04-runs-mw.uha", "runs", null, true)]
   [TestCase("v04-reset-mw1.uha", "reset", null, true)]
   [TestCase("v04-exe-mw.uha", "exe", null, true)]
+  [TestCase("v04-basic-mx.uha", "basic", null, true)]
+  [TestCase("v04-reset-mx.uha", "reset", null, true)]
+  [TestCase("v04-reset-mx1.uha", "reset", null, true)]
+  [TestCase("v04-exe-mx.uha", "exe", null, true)]
+  [TestCase("v04-mm-mx.uha", "mm", null, true)]
+  [TestCase("v04-fax-mx.uha", "fax", null, true)]
+  [TestCase("v04-runs-mx.uha", "runs", null, true)]
+  [TestCase("v04-sizes-mx-a.uha", "sizes", null, false)]
+  [TestCase("v04-sizes-mx-b.uha", "sizes", null, false)]
+  [TestCase("v04-slots-mx.uha", "slots", null, true)]
   [TestCase("v03-basic-m0.uha", "basic", null, true)]
   [TestCase("v03-basic-mz.uha", "basic", null, true)]
   [TestCase("v03-basic-mz-pw.uha", "basic", "secret", true)]
@@ -182,6 +192,8 @@ public class UharcTests {
   [TestCase("v04-basic-mr.uha", "RLE", 0)]
   [TestCase("v04-basic-mw.uha", "LZW", 16384)]
   [TestCase("v04-reset-mw1.uha", "LZW", 1024)]
+  [TestCase("v04-basic-mx.uha", "PPM", 16384)]
+  [TestCase("v04-reset-mx1.uha", "PPM", 1024)]
   [TestCase("v03-basic-m0.uha", "Store", 0)]
   [TestCase("v03-basic-mz.uha", "LZP", 16384)]
   [TestCase("v03-reset-mz1.uha", "LZP", 1024)]
@@ -256,6 +268,7 @@ public class UharcTests {
   [TestCase("v04-reset-mz.uha")]
   [TestCase("v04-reset-m2.uha")]
   [TestCase("v04-reset-mw1.uha")]
+  [TestCase("v04-reset-mx.uha")]
   [TestCase("v03-reset-mz.uha")]
   [TestCase("v03-reset-m2.uha")]
   [Category("ErrorHandling")]
@@ -449,17 +462,6 @@ public class UharcTests {
     var reader = Open(archive);
     Assert.Multiple(() => {
       Assert.That(reader.MethodName, Is.EqualTo(mode));
-      Assert.That(reader.CanDecodeMethod, Is.False);
-      Assert.That(reader.Entries.Count(e => !e.IsDirectory), Is.EqualTo(6));
-      Assert.That(() => reader.Extract(reader.Entries.First(e => e.Size > 0)), Throws.TypeOf<NotSupportedException>());
-    });
-  }
-
-  [Test, Category("ErrorHandling")]
-  public void GivenVersion04PpmArchive_WhenExtracted_ThenTheModeIsRefusedButListed() {
-    var reader = Open("v04-basic-mx.uha");
-    Assert.Multiple(() => {
-      Assert.That(reader.MethodName, Is.EqualTo("PPM"));
       Assert.That(reader.CanDecodeMethod, Is.False);
       Assert.That(reader.Entries.Count(e => !e.IsDirectory), Is.EqualTo(6));
       Assert.That(() => reader.Extract(reader.Entries.First(e => e.Size > 0)), Throws.TypeOf<NotSupportedException>());

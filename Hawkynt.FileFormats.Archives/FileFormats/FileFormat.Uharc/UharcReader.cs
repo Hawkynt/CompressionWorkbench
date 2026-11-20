@@ -70,8 +70,7 @@ public sealed class UharcReader {
     ? this._v04.Method is UharcMethods.Store or UharcMethods.Store03Alias or UharcMethods.Rle
       or >= UharcMethods.Lz78First and < UharcMethods.Ppm03First or >= UharcMethods.Alz03First and <= UharcMethods.Alz03Last
     : this._v04 != null
-    ? this._v04.Method is UharcMethods.Store or UharcMethods.Rle or >= UharcMethods.Lz78First and <= UharcMethods.LzpLast
-      or >= UharcMethods.AlzFirst and <= UharcMethods.AlzLast
+    ? this._v04.Method is UharcMethods.Store or UharcMethods.Rle or >= UharcMethods.Lz78First and <= UharcMethods.AlzLast
     : this._header.Method is UharcMethods.Store or UharcMethods.Rle
     or >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last
     or >= UharcMethods.LzpFirst and <= UharcMethods.LzpLast
@@ -540,6 +539,8 @@ public sealed class UharcReader {
         < UharcMethods.Ppm03First when h.Version == 3 => Uharc03LzpDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
         >= UharcMethods.Alz03First when h.Version == 3 => Uharc03AlzDecoder.Decode(packed, offset, length, h.Method, size),
         <= UharcMethods.LzpLast => Uharc04LzpDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
+        <= UharcMethods.PpmLast => Uharc04PpmDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds,
+          recordModel: (h.Filters & UharcHeader.RecordFileModel) != 0),
         _ => Uharc04AlzDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
       };
     } catch (Exception e) when (e is IndexOutOfRangeException or ArgumentOutOfRangeException) {

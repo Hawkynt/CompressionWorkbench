@@ -9,9 +9,9 @@ is not covered is listed at the end.
 
 **Status: read, write-once.** Container, ciphers, every 0.6 mode — store, RLE, LZ78, LZP, PPM and ALZ
 with its nine multimedia predictors —, the executable and multimedia filters, passwords and SFX
-stubs are established and verified, and so are UHARC 0.2 and the UHARC 0.4 container with its
-store, RLE, LZW, LZP and ALZ modes, and the UHARC 0.3 container with its store, RLE, LZW, LZP and
-ALZ modes (see their sections). 0.4's and 0.3's PPM streams are not, and are refused. The writer
+stubs are established and verified, and so are UHARC 0.2, the UHARC 0.4 container with its
+store, RLE, LZW, LZP, PPM and ALZ modes, and the UHARC 0.3 container with its store, RLE, LZW,
+LZP and ALZ modes (see their sections). 0.3's PPM streams are not, and are refused. The writer
 produces 0.6 archives in every method — store, RLE, LZ78, LZP, PPM and ALZ — with or without a
 password and a self-extractor stub (see Writing), 0.4 and 0.3 archives in store, RLE, LZW, LZP
 and ALZ (see Writing UHARC 0.4 and Writing UHARC 0.3), and 0.2 archives in store, RLE, LZW and its main
@@ -733,7 +733,7 @@ low 16 bits of the CRC of the descrambled bytes 4..39.
 | 4 | 2 | archive DOS time |
 | 6 | 2 | archive DOS date |
 | 8 | 1 | flags: bit 1 tables and packed stream enciphered with the password |
-| 9 | 1 | filters: as 0.6 (bit 0 executable, bit 1 multimedia delta, bit 7 fax page) |
+| 9 | 1 | filters: as 0.6 (bit 0 executable, bit 1 multimedia delta, bit 6 record file of PPM, bit 7 fax page) |
 | 10 | 1 | stream method |
 | 11 | 2 | number of directory names |
 | 13 | 4 | unpacked size of the stream |
@@ -870,7 +870,119 @@ methods 2..7 are 0.2's LZW (not 0.6's LZ78), the code count `2^(method+8)` (`-md
 for 0.6's LZ78). Fixtures `v04-basic-mr`, `v04-runs-mr`, `v04-basic-mw`, `v04-runs-mw`,
 `v04-reset-mw1` and `v04-exe-mw` decode byte for byte, and so does the 17 MB set with each.
 
-PPM (`-mx`) streams of 0.4 do not decode with 0.6's PPM and are refused.
+### UHARC 0.4 PPM (methods 24..39)
+
+The ancestor of 0.6's PPM: the same stream kind and text length, reset points, record file,
+text transform (the same tables) and copy candidates, with simpler stages behind them. The
+range decoder is 0.6's; the window holds the complemented bytes; the cost of a symbol of share
+*i*/16384 is 0.6's `65520 − ⌈4680·log2(i)⌉`. Count tables of two bytes, (hits, misses), recur
+throughout: a decision codes them as frequencies (hits first), the outcome adds one, and both
+halve rounding up once either reaches 254. Tables that are only rows of numbers are named after
+their place in `Uharc04PpmModel`.
+
+**Copies.** The candidates and their decision contexts are 0.6's, except that the deep hash
+needs 12 agreeing symbols always (there is no streak counter) and the hash slot's position or
+the last distance is offered without a confidence test. A hit codes the length as a symbol of
+one of four frequency rows (below) — 0x2FB, or 0x2FC when the slot remembers a length of 16 or
+more, and 0x2FD/0x2FE during runs (more than two runs: 0x2FE) — with the uniform row 0x30C behind
+them, counted at once. Excluded from it: 3, unless the copy repeats the last distance, and every
+length from 7 up to the floor less one, the floor being `LengthFloorInRun` (repeated distance)
+or `LengthFloorDefault` less the stream kind (doubled with the marker state) at
+`(record hits·4)/total` — 29 when the strong hits exceed the total. 255 continues a run; only a
+copy of at least 7 excludes the byte after it from the next literal; length 0 copies 256 bytes.
+
+**Literals.** The context is the last four symbols (alternate bytes in interleaved 16-bit text,
+as in 0.6). A byte excluded by the last copy starts the exclusion list.
+
+1. **Order-4 record** — 32 bytes: escape count, thirteen counts, thirteen symbols, a confidence
+   byte (bits 0..5 the hits so far, bits 6..7 a run of hits on minor slots), the context as a
+   tag; banks `(c ^ c>>13) mod 2^15 + k·2^15`, *k* = 0..7, searched until an empty one. It is
+   skipped while the binary predictor's credit is 0, the strong hits do not exceed the total,
+   the stride exceeds 1, the stride rank exceeds 1022 and the long rank is not 0; and when its
+   confidence is below 8 and the order-2 record outweighs it,
+   `o2[1]·(992 − 32·confidence)/o2.total > (o4[1]·1024)/o4.total`. The first excluded byte
+   leaves it; it is skipped when the escapes reach what remains. One symbol with a count below
+   80 is a count-pair decision, pair `SinglePair[count] + (c & 0xF0)` plus `(c >> 11) & 12` in
+   binary streams or, in text, the word-boundary flags of the last byte ×8 and of the one before
+   ×4. Otherwise the counts are decoded with the escape taking the rest of a total that, for
+   fewer than 32 escapes and fewer than 128 other counts, is `others + max(1, others·misses/hits)`
+   (at most 255) of the count pair `EscapeColumn[escapes] + 8·EscapeRow[others]` (+ context bits
+   6..7 ×2, or in text the word-boundary flags ×256 and ×128 and 0x200 after `DF`), else the
+   record's own total.
+2. **Order-2 record and binary predictor**, the order-2 first when the binary predictor has no
+   guess or a weak one (3·hits < 5·misses and confidence ≤ 2). The order-2 record — 20 bytes:
+   escape count, eight counts and symbols, a novelty count and the total, indexed by the last
+   two symbols — is used while the global novelty is 0, its own is 0, or the rank step is below
+   65535 and the stride rank at most 1022; it is skipped when four times what remains after the
+   exclusions is at most five times the escapes, or four times its novelty plus the global one
+   reaches 16. Three escapes and one count below 16 make a count-pair decision (pair
+   `count/4`); otherwise the counts are decoded with the escape taking the rest of the total,
+   which for at most four symbols and fewer than 16 other counts comes from the count pair
+   `(others & 12) + symbols − 1`. A hit worth at least a quarter of that total earns a bonus of
+   1 (2 above a total of 16), the single symbol one of 1 when its count exceeds a quarter of the
+   record; the order-4 update uses it.
+   The binary predictor (binary streams) keeps eight tables of (hits, misses, byte, confidence
+   with a just-missed flag) keyed by the history (*hₖ* the *k*-th last symbol): `h4h8`, `h3h2`,
+   `h4h3` (both +65536 when *h1* is `FF`), `h3h1`, `h4h2`, `h4h1`, `h6h5` + 65536·*m* (*m* = 1
+   for `h4h3 = FFFF`, 2 for `h2h1 = FFFF`, else 3..6 for the first of *h4*, *h3*, *h2*, *h1* that
+   is `FF`, 0 for none), and the stride phase with the difference `b₁ − b₂` of the symbols one
+   and two strides back, whose byte is set to `2·b₁ − b₂` before every guess. The table with the largest
+   `256·hits·confidence/misses` (misses > 0, not just missed) guesses, when its hits exceed its
+   misses or its confidence exceeds 1; a guess already excluded is not coded. The decision uses
+   its (hits, misses), or for 2 misses with 3..6 hits and 3 misses with 4..7 hits a count pair
+   per case and table. The rank tables and their step are 0.6's.
+3. **Frequency rows**: 0x30D rows of 256 counts with an escape weight: 0..0x1FF order-1 (the
+   previous symbol; +0x100 in text after a word-boundary byte; in binary streams with a stride
+   rank, 0x100 + the symbol one stride back), 0x200 order-0 (never counted itself: its symbols
+   go to its fallback), 0x201/0x202 the linear rows of no class (0x202 when the two predicting
+   symbols agree), 0x203..0x2FA the multimedia classes (ALZ's contexts less 0xFE),
+   0x2FB..0x2FE copy lengths, and the fallbacks 0x2FF (literals), 0x300/0x301 (order-0 of the
+   class and literal paths), 0x302 + class and 0x30C. A row codes its symbols from the top
+   (255 nearest 0) and its escape weight; after an escape the fallback row codes what neither
+   the row nor the exclusions hold; an empty row passes straight to its fallback. The cost of
+   the last 256 literals chooses the row, a raw byte, or the cheaper of the row and order-0, as
+   in 0.6; the class path (its row and bias as ALZ's, or rows 0x201/0x202 coding the difference
+   from the previous symbol or the one a stride back) replaces it when its decayed cost is lower,
+   and the path not taken is charged what it would have cost. A row counts a symbol with step
+   32 (10 for rows 0x2F3..0x2FA); a new one also adds the step to the escape weight and 16 (8 for
+   rows 0x2E3..0x2FA, 6 for order-0) to the fallback. A row halves (rounding up) when its total
+   with the escape weight reaches 16384, the weight becoming a quarter plus one.
+
+**Updates.** The order-4 record (created over an empty bank, else over the least confident:
+escape 1 and count 1 plus the bonus) gains 2 on a hit; a new symbol adds 2 to the escapes (1
+after a bonus) and takes the first free slot from the second on, or the thirteenth, while its
+count is below 6 (count 2, 3 after a bonus of 2); counts and escapes halve when the total
+passes `Order4Threshold` or the run field wraps. The order-2 record (created as escape 3, the
+symbol with 3) gains 4; a new symbol adds 4 to its escapes and 1 to its novelty and takes the
+first free slot from the second on, or the eighth, while its count is below 12 (count 4); it
+halves past `Order2Threshold`. Hits of either record add 5 to the record hits, a hit of an
+order-4 record that passed its gates with a count above 64 times its escapes adds 4 to the
+strong hits, and every update adds 2 to the total; all three halve past 2048. The binary predictor's eight tables learn the byte (a
+miss at confidence below 2 replaces it). The deferred row counts are applied last.
+
+**Upkeep** is 0.6's marker counters, ALZ's multimedia class predictor, and the stride detector
+with two differences: the misses are compared before counting the current one against 64, and
+the halved hit counts — the one for distance 1 raised first — add up to the restarted miss
+count.
+
+**Resets.** At every reset point the count pairs are reseeded (ones; the escape pairs biased
+along `0, 1, 2, 5, 8, 13, 21, 34, 55, 89, 144`), the binary predictor and the order-1, order-0
+and linear rows cleared, the class and length rows halved, the fallbacks made uniform (8 each),
+the copy decisions reseeded, the order-2 records quartered, and the stride, rank and cost state
+cleared, before the file-size rules and the multimedia class. The rules: (481861, 426754) and
+(587984, 2988578) clear the first bank of the order-4 records; (1566200, 2934336) and
+(2934336, 438144) quarter the order-4 and the order-2 records; (3706306, 1498414), (513216,
+246814) and the record-file rule clear the first order-4 bank and every order-2 record. At the
+end of a text stream the window is rewritten as in 0.6, both record kinds are quartered, the
+hashes and order-4 records are rebuilt over the last 32 KiB, and the length rows are cleared.
+
+Fixtures `v04-basic-mx`, `v04-reset-mx`, `v04-reset-mx1`, `v04-exe-mx`, `v04-mm-mx`,
+`v04-fax-mx`, `v04-runs-mx`, `v04-sizes-mx-a`/`-b` and `v04-slots-mx` decode byte for byte (the
+two size fixtures fail without the rules), and so does the 39 MB mixed set (record file,
+fax page and multimedia included) packed at 1 KiB, 4 MiB and 32 MiB windows. `UHARC04.EXE t`
+accepts every archive.
+
+*Refuted:* 0.6's PPM decodes the 0.4 streams for 2 to 24 bytes only.
 
 ## UHARC 0.3
 
@@ -1049,7 +1161,6 @@ accepts them.
 ## What is not derived
 
 - **UHARC 0.3's PPM streams** (`-mx`): the container reads, the stream is refused.
-- **UHARC 0.4's PPM streams** (`-mx`): the container reads, the stream is refused.
 - **Writing** 0.6's executable and multimedia filters, the multimedia ALZ/PPM classes and text
   PPM streams, and 0.4/0.3 PPM.
 
