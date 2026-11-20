@@ -12,7 +12,8 @@ with its nine multimedia predictors —, the executable and multimedia filters, 
 stubs are established and verified, and so are UHARC 0.2 and the UHARC 0.4 container with its
 store, RLE, LZW, LZP and ALZ modes (see their sections). Archives of 0.3, and 0.4's PPM streams,
 are not, and are refused. The writer produces 0.6 archives in every method — store, RLE, LZ78, LZP, PPM and ALZ —
-with or without a password and a self-extractor stub (see Writing).
+with or without a password and a self-extractor stub (see Writing), and 0.4 archives in store,
+RLE, LZW and LZP (see Writing UHARC 0.4).
 
 ## Evidence
 
@@ -840,6 +841,21 @@ for 0.6's LZ78). Fixtures `v04-basic-mr`, `v04-runs-mr`, `v04-basic-mw`, `v04-ru
 `v04-reset-mw1` and `v04-exe-mw` decode byte for byte, and so does the 17 MB set with each.
 
 PPM (`-mx`) streams of 0.4 do not decode with 0.6's PPM and are refused.
+
+### Writing UHARC 0.4
+
+The writer produces 0.4 archives (format option `version` 4) in store, RLE, LZW and LZP: the
+header above with its own check, the stream, the stored CRC table, the name table as 0.4 LZP
+method 17, the dates-then-times table as LZW method 2 and the size table as LZW method 7, each
+table enciphered with the default password or, with a password, all of them and the stream with
+it (flags `0x02`). The filters byte is 0. The LZW encoder codes the longest phrase the decoder
+knows and restarts a full dictionary with code 256 followed by a plain byte: coding on past a
+full dictionary, which our decoder follows, crashes `UHARC04.EXE` (a 513 216-byte fax page with
+long zero runs fills the 32768-code dictionary). The 0.4 LZP encoder is the decoder's model
+(generic over the coder direction, as for 0.6) answering each prediction with the full match
+when its first byte matches. `UHARC04.EXE x` extracts our archives of every fixture input set
+and the 39 MB mixed set byte for byte in all four modes, with and without a password and at a
+1 KiB window, and unuharc_recon's unpacker accepts them.
 
 ## What is not derived
 
