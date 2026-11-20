@@ -670,6 +670,11 @@ public static partial class FormatDetector {
     }
     if (best != Format.Unknown) return best;
 
+    // Now Compress: bytes 2-7 of the header vary between archives, so beyond the registry's signature
+    // the header is recognised by its structure (record count, first name, two checksums).
+    if (FileFormat.NowCompress.NowCompressArchive.HasNowCompressHeader(header))
+      return Format.NowCompress;
+
     // ── Special heuristic detections not expressible as simple magic ──
 
     // RefPack/QFS: 0x10 0xFB or at offset 4 (with compressed size prefix)

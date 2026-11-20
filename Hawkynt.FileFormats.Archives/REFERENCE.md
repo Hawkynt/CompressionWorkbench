@@ -25218,6 +25218,7 @@ Now Compress (Now Software, Macintosh, early 1990s): a directory of 110-byte rec
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `HasNowCompressHeader` | `static bool HasNowCompressHeader(ReadOnlySpan<byte> b)` | Whether the bytes start like a Now Compress archive and the archive header's own sum (bytes 20-23, the sum of bytes 0-19) holds too. Content detection uses this stricter test: bytes 2-7 of the header differ between archives, so no fixed signature covers them all. |
 | `IsNowCompress` | `static bool IsNowCompress(ReadOnlySpan<byte> b)` | Whether the bytes start like a Now Compress archive (magic, file count, first name, header checksum). |
 | `Read` | `static List<NowCompressEntry> Read(Stream stream)` | Parses the directory and decodes every fork. |
 

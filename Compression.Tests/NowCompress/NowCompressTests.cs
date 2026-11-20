@@ -85,4 +85,82 @@ public class NowCompressTests {
     }
     if (compared == 0) Assert.Inconclusive("unar extracted none of the samples, so nothing could be compared.");
   }
+
+  // ── detection ────────────────────────────────────────────────────────
+
+  private static Compression.Lib.FormatDetector.Format DetectFile(byte[] bytes) {
+    var path = Path.Combine(Path.GetTempPath(), $"cwb_now_{Guid.NewGuid():N}");
+    File.WriteAllBytes(path, bytes);
+    try {
+      return Compression.Lib.FormatDetector.Detect(path);
+    } finally {
+      File.Delete(path);
+    }
+  }
+
+  [Test, Category("ThirdPartyVector")]
+  public void GivenLocalSampleArchives_WhenDetectedWithoutAName_ThenEveryOneIsNowCompress() {
+    var detected = 0;
+    foreach (var (file, bytes, offset) in Samples()) {
+      Assert.That(DetectFile(bytes[offset..]), Is.EqualTo(Compression.Lib.FormatDetector.Format.NowCompress), file);
+      ++detected;
+    }
+    Assert.That(detected, Is.EqualTo(11), "the pinned sample set has eleven archives");
+  }
+
+  // The authored five-folder archive (ReferenceVectors/README.md); its header sum is left 0.
+  private static byte[] Written() {
+    using var input = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("NowCompressVectors.macroman-names.now")
+      ?? throw new FileNotFoundException("Embedded Now Compress vector 'macroman-names.now' is missing.");
+    using var ms = new MemoryStream();
+    input.CopyTo(ms);
+    return ms.ToArray();
+  }
+
+  private static void SetHeader(byte[] archive, ReadOnlySpan<byte> bytes2To7) {
+    bytes2To7.CopyTo(archive.AsSpan(2));
+    uint sum = 0;
+    for (var i = 0; i < 20; ++i) sum += archive[i];
+    BinaryPrimitives.WriteUInt32BigEndian(archive.AsSpan(20), sum);
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenTheAuthoredArchive_WhenDetectedWithoutAName_ThenNowCompress()
+    => Assert.That(DetectFile(Written()), Is.EqualTo(Compression.Lib.FormatDetector.Format.NowCompress));
+
+  // The header form one of the eleven samples has (00 02 00 10 00 00 80 00).
+  [Test, Category("EdgeCase")]
+  public void GivenTheOtherHeaderForm_WhenDetectedWithoutAName_ThenNowCompress() {
+    var archive = Written();
+    SetHeader(archive, [0x00, 0x10, 0x00, 0x00, 0x80, 0x00]);
+    Assert.That(DetectFile(archive), Is.EqualTo(Compression.Lib.FormatDetector.Format.NowCompress));
+    Assert.That(NowCompressArchive.Read(new MemoryStream(archive)), Has.Count.EqualTo(5));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenTheOtherHeaderFormWithAWrongHeaderSum_WhenDetected_ThenNotNowCompress() {
+    var archive = Written();
+    SetHeader(archive, [0x00, 0x10, 0x00, 0x00, 0x80, 0x00]);
+    archive[23] ^= 1;
+    Assert.That(DetectFile(archive), Is.Not.EqualTo(Compression.Lib.FormatDetector.Format.NowCompress));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenTheOtherHeaderFormWithAWrongRecordSum_WhenDetected_ThenNotNowCompress() {
+    var archive = Written();
+    SetHeader(archive, [0x00, 0x10, 0x00, 0x00, 0x80, 0x00]);
+    archive[24 + 106 + 3] ^= 1;
+    Assert.That(DetectFile(archive), Is.Not.EqualTo(Compression.Lib.FormatDetector.Format.NowCompress));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenRandomBytesStartingLikeNowCompress_WhenDetected_ThenNotNowCompress() {
+    var rng = new Random(11);
+    for (var n = 0; n < 200; ++n) {
+      var bytes = new byte[512];
+      rng.NextBytes(bytes);
+      bytes[0] = 0; bytes[1] = 2;
+      Assert.That(Compression.Lib.FormatDetector.DetectByMagic(bytes), Is.Not.EqualTo(Compression.Lib.FormatDetector.Format.NowCompress));
+    }
+  }
 }

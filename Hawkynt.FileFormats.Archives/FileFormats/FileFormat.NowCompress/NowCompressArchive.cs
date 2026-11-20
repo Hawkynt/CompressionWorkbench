@@ -37,6 +37,18 @@ public static class NowCompressArchive {
   internal const string MacRomanHigh =
     "ÄÅÇÉÑÖÜáàâäãåçéèêëíìîïñóòôöõúùûü†°¢£§•¶ß®©™´¨≠ÆØ∞±≤≥¥µ∂∑∏π∫ªºΩæø¿¡¬√ƒ≈∆«»…\u00A0ÀÃÕŒœ–—“”‘’÷◊ÿŸ⁄€‹›ﬁﬂ‡·‚„‰ÂÊÁËÈÍÎÏÌÓÔ\uF8FFÒÚÛÙıˆ˜¯˘˙˚¸˝˛ˇ";
 
+  /// <summary>
+  /// Whether the bytes start like a Now Compress archive and the archive header's own sum (bytes 20-23, the sum
+  /// of bytes 0-19) holds too. Content detection uses this stricter test: bytes 2-7 of the header differ between
+  /// archives, so no fixed signature covers them all.
+  /// </summary>
+  public static bool HasNowCompressHeader(ReadOnlySpan<byte> b) {
+    if (!IsNowCompress(b)) return false;
+    uint sum = 0;
+    for (var i = 0; i < 20; ++i) sum += b[i];
+    return sum == BinaryPrimitives.ReadUInt32BigEndian(b[20..]);
+  }
+
   /// <summary>Whether the bytes start like a Now Compress archive (magic, file count, first name, header checksum).</summary>
   public static bool IsNowCompress(ReadOnlySpan<byte> b) {
     if (b.Length < 134 || b[0] != 0x00 || b[1] != 0x02) return false;
