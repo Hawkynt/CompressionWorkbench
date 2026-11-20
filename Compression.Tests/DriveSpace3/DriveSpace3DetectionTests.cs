@@ -35,7 +35,8 @@ public class DriveSpace3DetectionTests {
     Assert.Multiple(() => {
       Assert.That(System.Text.Encoding.ASCII.GetString(image, 3, 8), Is.EqualTo("MSDBL6.0"));
       Assert.That(image[0x0D], Is.EqualTo(64), "32 KiB clusters");
-      Assert.That(image[0x33], Is.EqualTo(3), "version 3");
+      Assert.That(image[..3], Is.EqualTo(new byte[] { 0xEB, 0x6E, 0x90 }), "the MDBPB runs to 0x47");
+      Assert.That(image[0x33], Is.EqualTo(0), "as Windows 98 writes it");
     });
     using var reader = new GenuineDvr3Reader(new MemoryStream(image));
     Assert.That(reader.Extract(reader.Entries.Single(e => e.Name == "TEST.TXT")), Is.EqualTo("hello"u8.ToArray()));

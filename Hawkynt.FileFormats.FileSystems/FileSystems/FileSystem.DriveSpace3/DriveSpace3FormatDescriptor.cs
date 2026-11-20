@@ -94,18 +94,18 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
       Description: "Keep the compressed form even when it does not shrink a cluster."),
   ];
 
-  // The DriveSpace 3 container: MSDBL6.0, 64 sectors per cluster (boot byte 13) and version 3
-  // (boot byte 51) — distinct from DoubleSpace/DriveSpace version 2 (16 sectors per cluster).
+  // The DriveSpace 3 container: MSDBL6.0 and 64 sectors per cluster (boot byte 13) — distinct from
+  // DoubleSpace/DriveSpace (16 sectors per cluster). Volumes Windows 98 creates carry 0 at boot byte 51,
+  // which DoubleSpace volumes share, so that byte decides nothing.
   internal static bool IsDriveSpace3(byte[] data) =>
     data.Length > 0x34
     && System.Text.Encoding.ASCII.GetString(data, 3, 8) == "MSDBL6.0"
-    && data[0x0D] == 64
-    && data[0x33] == 3;
+    && data[0x0D] == 64;
 
   private static GenuineDvr3Reader Open(byte[] data) =>
     IsDriveSpace3(data)
       ? new GenuineDvr3Reader(new MemoryStream(data))
-      : throw new InvalidDataException("DriveSpace 3: not an MSDBL6.0 volume with 64-sector clusters and version 3.");
+      : throw new InvalidDataException("DriveSpace 3: not an MSDBL6.0 volume with 64-sector clusters.");
 
   /// <inheritdoc />
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
