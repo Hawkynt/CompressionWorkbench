@@ -34,6 +34,9 @@ public sealed class UharcReader {
     return e;
   }
 
+  /// <summary>Where the archive starts: the length of a self-extractor stub in front of it, else 0.</summary>
+  internal int ArchiveStart => this._base;
+
   /// <summary>Gets the entries of the archive in stored order.</summary>
   public IReadOnlyList<UharcEntry> Entries => this._entries;
 

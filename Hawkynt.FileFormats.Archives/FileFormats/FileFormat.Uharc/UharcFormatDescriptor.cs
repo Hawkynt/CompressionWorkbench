@@ -13,7 +13,9 @@ namespace FileFormat.Uharc;
 /// the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP, PPM and ALZ modes; and UHARC 0.2 archives.
 /// Creates 0.6, 0.4 and 0.3 archives in every method and 0.2 archives (store, RLE, LZW, main
 /// coder), optionally password-protected or behind a self-extractor stub, with fax pages, BMP/WAV/VOC files and executables
-/// run through UHARC's filters, that <c>uharc.exe</c> extracts; it cannot modify them.
+/// run through UHARC's filters, that <c>uharc.exe</c> extracts. Adds, replaces and removes files of
+/// an archive of any of these versions by rebuilding it with its own version, method, password and
+/// stub.
 ///
 /// References:
 /// <list type="bullet">
@@ -22,16 +24,50 @@ namespace FileFormat.Uharc;
 ///   <item><description>UHARC 0.6b documentation (<c>UHARC.DOC</c>, 01 Oct 2005) — modes, switches and dictionary sizes</description></item>
 /// </list>
 /// </summary>
-public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable {
+public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable, IArchiveModifiable {
 
   public string Id => "Uharc";
   public string DisplayName => "UHARC";
   public FormatCategory Category => FormatCategory.Archive;
-  // Write-once: uharc.exe itself only creates archives, and every archive the writer makes is
-  // extracted byte for byte by uharc.exe and unuharc.exe.
+  // R/W: every archive the writer makes, and every archive it rebuilds for an edit, is extracted
+  // byte for byte by the original tool of its version.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+
+  /// <summary>
+  /// False: the original tools refuse an archive that holds no file, so an edit always keeps at
+  /// least one and refuses to remove the last.
+  /// </summary>
+  public bool CanPurgeToEmpty => false;
+
+  /// <inheritdoc />
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) => this.Add(archive, inputs, new ArchiveMutationOptions());
+
+  /// <summary>
+  /// Adds files, replacing those of the same name, by rebuilding the archive as its own version,
+  /// method, password and self-extractor stub; kept files keep their time stamps and attributes.
+  /// A password archive needs <see cref="ArchiveMutationOptions.Password"/>.
+  /// </summary>
+  /// <exception cref="UnauthorizedAccessException">The password is missing or wrong; the archive is left unchanged.</exception>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, ArchiveMutationOptions options) {
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    var additions = inputs.Select(i => (i.ArchiveName, i.IsDirectory ? null : i.ReadContent(), i.SourceLastModifiedUtc)).ToList();
+    UharcEditor.Edit(archive, options.Password, items => UharcEditor.Add(items, additions));
+  }
+
+  /// <inheritdoc />
+  public void Remove(Stream archive, string[] entryNames) => this.Remove(archive, entryNames, new ArchiveMutationOptions());
+
+  /// <summary>Removes files and directories (with everything beneath them) by rebuilding the archive, as <see cref="Add(Stream, IReadOnlyList{ArchiveInputInfo}, ArchiveMutationOptions)"/> does.</summary>
+  /// <exception cref="UnauthorizedAccessException">The password is missing or wrong; the archive is left unchanged.</exception>
+  public void Remove(Stream archive, string[] entryNames, ArchiveMutationOptions options) {
+    ArgumentNullException.ThrowIfNull(entryNames);
+    ArgumentNullException.ThrowIfNull(options);
+    UharcEditor.Edit(archive, options.Password, items => UharcEditor.Remove(items, entryNames));
+  }
   public string DefaultExtension => ".uha";
   public IReadOnlyList<string> Extensions => [".uha"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -45,7 +81,8 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     "UHARC 0.6 archive. Lists and extracts the store, RLE, LZ78, LZP, PPM and ALZ modes (with multimedia " +
     "and executable filters, passwords and SFX stubs), UHARC 0.4 and 0.3 store, RLE, LZW, LZP, PPM and ALZ archives, " +
     "and UHARC 0.2 archives. " +
-    "Creates 0.6, 0.4 and 0.3 archives in every method and 0.2 archives, with passwords and self-extractor stubs.";
+    "Creates 0.6, 0.4 and 0.3 archives in every method and 0.2 archives, with passwords and self-extractor stubs, " +
+    "and edits archives of every version by rebuilding them with their own method.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (TryOpen(stream, password, out var reader, out var image) is { } failure)
