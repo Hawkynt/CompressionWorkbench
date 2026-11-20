@@ -156,9 +156,25 @@ internal static partial class ZfsPoolEditor {
 
     public int SlotSize => 1 << Math.Clamp(this.Ashift, ZfsConstants.MinUberblockShift, ZfsConstants.MaxUberblockShift);
 
-    public long AllocatedSize(int size) => this.Parity > 0
-      ? ZfsRaidzVdev.AllocatedSize(size, this.Children.Length, this.Parity, this.Ashift)
+    /// <summary>The dRAID layout of a dRAID top-level vdev (its parity is not RAID-Z's).</summary>
+    public ZfsDraidVdev? Draid;
+
+    public long AllocatedSize(int size) =>
+      this.Draid != null ? this.Draid.AllocatedSize(size)
+      : this.Parity > 0 ? ZfsRaidzVdev.AllocatedSize(size, this.Children.Length, this.Parity, this.Ashift)
       : Align(size, 1L << this.Ashift);
+
+    /// <summary>Where allocations may start: a dRAID allocates whole stripes, group-width aligned.</summary>
+    public long Alignment => this.Draid != null ? (long)this.Draid.GroupWidth << this.Ashift : 1L << this.Ashift;
+
+    /// <summary>A metaslab's range: a dRAID's starts at the next stripe boundary and keeps whole stripes.</summary>
+    public long MetaslabStart(int m) => Align((long)m << this.MetaslabShift, this.Alignment);
+
+    public long MetaslabEnd(int m) {
+      var start = (long)m << this.MetaslabShift;
+      var aligned = this.MetaslabStart(m);
+      return aligned + ((1L << this.MetaslabShift) - (aligned - start)) / this.Alignment * this.Alignment;
+    }
 
     public long Charged(long allocated) => (allocated >> ZfsConstants.SectorShift) * this.DeflateRatio;
   }
@@ -198,7 +214,7 @@ internal static partial class ZfsPoolEditor {
     /// <summary>Features whose activity changes how blocks may be freed or space maps written; refused while active.</summary>
     private static readonly HashSet<string> RefusedWhenActive = new(StringComparer.Ordinal) {
       "com.delphix:device_removal", "com.delphix:obsolete_counts",
-      "com.delphix:zpool_checkpoint", "org.openzfs:draid", "com.delphix:async_destroy",
+      "com.delphix:zpool_checkpoint", "com.delphix:async_destroy",
       "org.zfsonlinux:allocation_classes", "com.delphix:livelist", "org.openzfs:raidz_expansion",
       "com.delphix:redacted_datasets",
     };
@@ -213,7 +229,7 @@ internal static partial class ZfsPoolEditor {
       "com.delphix:head_errlog", "com.delphix:bookmarks", "com.datto:bookmark_v2", "com.delphix:bookmark_written",
       "com.delphix:redaction_bookmarks", "org.openzfs:zilsaxattr", "com.joyent:filesystem_limits",
       "com.joyent:multi_vdev_crash_dump", "org.openzfs:device_rebuild", "com.datto:resilver_defer", "com.datto:encryption",
-      "com.fudosecurity:block_cloning",
+      "com.fudosecurity:block_cloning", "org.openzfs:draid",
     };
 
     private void LoadFeatures() {
@@ -407,13 +423,13 @@ internal static partial class ZfsPoolEditor {
       Stream[] children;
       if (type is "disk" or "file") {
         children = [Device(byGuid, tree, $"device {id}")];
-      } else if (type is "mirror" or "raidz") {
+      } else if (type is "mirror" or "raidz" or "draid") {
         var leaves = tree.Lists("children");
         if (leaves.Any(c => c.String("type") is not ("disk" or "file")))
-          throw new NotSupportedException("ZFS: a mirror or RAID-Z with nested or replacing children is not edited.");
+          throw new NotSupportedException($"ZFS: a {type} with nested, replacing or spare children is not edited.");
         children = leaves.Select((leaf, i) => Device(byGuid, leaf, $"device {i} of vdev {id} ({type})")).ToArray();
       } else {
-        throw new NotSupportedException($"ZFS: a '{type}' top-level vdev is not edited; plain devices, mirrors and RAID-Z are.");
+        throw new NotSupportedException($"ZFS: a '{type}' top-level vdev is not edited; plain devices, mirrors, RAID-Z and dRAID are.");
       }
       var top = new TopVdev {
         Id = id, Children = children, Tree = tree, IsMirror = type == "mirror",
@@ -424,12 +440,18 @@ internal static partial class ZfsPoolEditor {
       if (type == "raidz") {
         top.Parity = (int)(tree.UInt64("nparity") ?? 1);
         top.DeflateRatio = ZfsRaidzVdev.DeflateRatio(children.Length, top.Parity, top.Ashift);
+      } else if (type == "draid") {
+        // the layout alone: mapping needs no reads
+        top.Draid = new ZfsDraidVdev([.. children.Select(_ => (ZfsVdev)new ZfsMissingVdev("draid child"))],
+          (int)(tree.UInt64("draid_ndata") ?? 0), (int)(tree.UInt64("nparity") ?? 0),
+          (int)(tree.UInt64("draid_nspares") ?? 0), (int)(tree.UInt64("draid_ngroups") ?? 0), top.Ashift);
+        top.DeflateRatio = (1L << 17) / (top.Draid.AllocatedSize(1L << 17) >> ZfsConstants.SectorShift);
       }
       var asize = (long)(tree.UInt64("asize") ?? throw new InvalidDataException("ZFS: a vdev has no asize."));
       if (top.Ashift is < 9 or > 16 || top.MetaslabShift is < 16 or > 40)
         throw new InvalidDataException("ZFS: a vdev's geometry is implausible.");
       top.MetaslabCount = (int)(asize >> top.MetaslabShift);
-      var perDevice = ((long)top.MetaslabCount << top.MetaslabShift) / (top.Parity > 0 ? children.Length : 1);
+      var perDevice = ((long)top.MetaslabCount << top.MetaslabShift) / (top.Draid != null ? top.Draid.Disks : top.Parity > 0 ? children.Length : 1);
       if (ZfsConstants.DataStart + perDevice > children.Min(c => c.Length))
         throw new InvalidDataException("ZFS: the metaslabs run past the devices.");
       return top;
@@ -457,9 +479,8 @@ internal static partial class ZfsPoolEditor {
       if (map.Bonus.Length is not (24 or 320))
         throw new InvalidDataException("ZFS: a space map header of unexpected size.");
       top.SpaceMapBlockSize[m] = map.DataBlockSize;
-      var start = (long)m << top.MetaslabShift;
       var set = this.Allocated[top.Base + m];
-      var expected = this.ReplayMap(top.SpaceMaps[m], start, start + (1L << top.MetaslabShift), top.Ashift, (_, offset, run, alloc) => {
+      var expected = this.ReplayMap(top.SpaceMaps[m], top.MetaslabStart(m), top.MetaslabEnd(m), top.Ashift, (_, offset, run, alloc) => {
         if (alloc) set.Add(offset, offset + run);
         else set.Remove(offset, offset + run);
       });
@@ -722,8 +743,7 @@ internal static partial class ZfsPoolEditor {
         var allocated = top.AllocatedSize(size);
         foreach (var m in Enumerable.Range(0, top.MetaslabCount).OrderBy(m => top.SpaceMaps[m] == 0 ? 1 : 0).ThenBy(m => m)) {
           var g = top.Base + m;
-          var start = (long)m << top.MetaslabShift;
-          var gap = this._busy[g].FindGap(start, start + (1L << top.MetaslabShift), allocated, 1L << top.Ashift);
+          var gap = this._busy[g].FindGap(top.MetaslabStart(m), top.MetaslabEnd(m), allocated, top.Alignment);
           if (gap is not { } at) continue;
           this._busy[g].Add(at, at + allocated);
           this._allocated[g].Add(at, at + allocated);
@@ -2189,7 +2209,7 @@ internal static partial class ZfsPoolEditor {
 
     private List<ulong> Words(int g) {
       var (top, m) = this._s.Metaslab(g);
-      var start = (long)m << top.MetaslabShift;
+      var start = top.MetaslabStart(m);
       var words = new List<ulong> { 2UL << 62 | 1UL << 50 | this.Txg };      // debug: ALLOC, pass 1, txg
       var maxRun = (long)SmRunMax << top.Ashift;
       foreach (var (from, to) in this._allocated[g].Ranges)
@@ -2241,8 +2261,7 @@ internal static partial class ZfsPoolEditor {
         W64(bonus, 8, (ulong)(words.Count * 8));
         W64(bonus, 16, (ulong)this._allocated[g].Total);
         if (bonus.Length >= 320) {
-          var start = (long)m << top.MetaslabShift;
-          ZfsWriter.SpaceMapHistogram(bonus[64..], start, start + (1L << top.MetaslabShift), this._allocated[g].Ranges, top.Ashift);
+          ZfsWriter.SpaceMapHistogram(bonus[64..], top.MetaslabStart(m), top.MetaslabEnd(m), this._allocated[g].Ranges, top.Ashift);
         }
       }
       if (this._logSpacemap is { } log) {
@@ -2270,7 +2289,24 @@ internal static partial class ZfsPoolEditor {
       foreach (var block in this._blocks) {
         if (block.Pointer == null) throw new InvalidOperationException("ZFS: a block was planned but never placed in a tree.");
         var top = this._s.Tops[block.Vdev];
-        if (top.Parity > 0) {
+        if (top.Draid is { } draid) {
+          // dRAID: each row's columns, every one written to the parity column's length (the
+          // short data columns end in zero sectors the parity covers)
+          var at = 0;
+          foreach (var row in draid.Map(block.Offset, block.Size)) {
+            var columns = row.Select(c => new ZfsRaidzVdev.Column(c.Child, c.Offset, c.Size, c.IsData)).ToArray();
+            var rowData = columns.Where(c => c.IsData).Sum(c => c.Size);
+            var slice = block.Data!.AsSpan(at, Math.Min(rowData, block.Data!.Length - at)).ToArray();
+            at += rowData;
+            var encoded = ZfsRaidzVdev.Encode(slice, columns, draid.Parity);
+            var width = columns[0].Size;
+            for (var c = 0; c < columns.Length; ++c) {
+              var stripe = new byte[width];
+              encoded[c].CopyTo(stripe, 0);
+              commit.Blocks.Add((first[block.Vdev] + columns[c].Child, ZfsConstants.DataStart + columns[c].Offset, stripe));
+            }
+          }
+        } else if (top.Parity > 0) {
           // RAID-Z: the block's data and parity columns, each on its device
           var columns = ZfsRaidzVdev.Map(block.Offset, block.Size, top.Children.Length, top.Parity, top.Ashift);
           var encoded = ZfsRaidzVdev.Encode(block.Data!, columns, top.Parity);

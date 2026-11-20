@@ -137,7 +137,8 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Writes a new pool (version 28) over <paramref name="devices"/>: one device, or with two or
   /// more an n-way mirror of equally sized devices, each holding every block, or with the option
   /// <c>Layout</c> = <c>raidz1</c>, <c>raidz2</c> or <c>raidz3</c> a RAID-Z (at least parity + 2
-  /// devices), or with <c>stripe</c> one top-level vdev per device. Other options as for <see cref="Create"/>.
+  /// devices), <c>draid&lt;p&gt;:&lt;d&gt;d</c> a dRAID (version 5000; every device a child, no
+  /// distributed spare), or with <c>stripe</c> one top-level vdev per device. Other options as for <see cref="Create"/>.
   /// </summary>
   public void CreatePool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(devices);
@@ -153,12 +154,19 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
     var layout = options.GetOption("Layout", "mirror").Trim().ToLowerInvariant();
     writer.Stripe = layout == "stripe";
+    // draid<parity>:<data>d, e.g. draid1:2d (every device a child, no distributed spare)
+    if (System.Text.RegularExpressions.Regex.Match(layout, @"^draid([1-3])?(?::(\d+)d)?$") is { Success: true } d) {
+      var parity = d.Groups[1].Success ? int.Parse(d.Groups[1].Value) : 1;
+      var data = d.Groups[2].Success ? int.Parse(d.Groups[2].Value) : Math.Min(8, devices.Count - parity);
+      writer.Draid = (data, parity);
+      layout = "mirror";
+    }
     writer.Parity = layout switch {
       "mirror" or "stripe" or "" => 0,
       "raidz" or "raidz1" => 1,
       "raidz2" => 2,
       "raidz3" => 3,
-      var other => throw new ArgumentException($"ZFS: layout '{other}' is not mirror, stripe, raidz1, raidz2 or raidz3."),
+      var other => throw new ArgumentException($"ZFS: layout '{other}' is not mirror, stripe, raidz1-3 or draid<p>:<d>d."),
     };
     writer.Version = options.GetOption("Version", "28").Trim() switch {
       "28" or "" => 28UL,
