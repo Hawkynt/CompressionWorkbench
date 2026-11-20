@@ -20491,7 +20491,7 @@ Implements `IEquatable<InnoSetupEntry>`.
 | `DataIndex` | `int DataIndex { get; init; }` | Index of the file location (data entry) holding the bytes. |
 | `FileName` | `string FileName { get; init; }` | The destination path with Inno constants spelled as directories, as innoextract writes it: `{app}\bin\x.dll` becomes `app/bin/x.dll`. |
 | `IsDirectory` | `bool IsDirectory { get; }` | Gets whether the entry is a directory; Inno [Files] entries never are. |
-| `LastModified` | `DateTime? LastModified { get; init; }` | The file time the compiler recorded (UTC), or null. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | The file time the compiler recorded, or null: UTC, except in 16-bit (1.2.x) installers, which record a DOS date and time without a zone (`Unspecified`). |
 | `Size` | `long Size { get; init; }` | The uncompressed size in bytes. |
 
 #### `InnoSetupFormatDescriptor`
@@ -20550,18 +20550,23 @@ Implements `IEquatable<InnoVersion>`.
 | --- | --- | --- |
 | `InnoVersion` | `InnoVersion(uint Value, bool IsUnicode, bool IsIsx, bool IsKnown)` | The setup-data version an Inno Setup installer was written with, packed as `(a << 24) \| (b << 16) \| (c << 8) \| d`. |
 | `Build` | `int Build { get; }` | Gets the fourth version component (variant or build). |
+| `IntegerSize` | `int IntegerSize { get; }` | Gets the width in bytes of a Delphi `Integer` in this installer's records. |
+| `Is16Bit` | `bool Is16Bit { get; init; }` | Gets whether this is a 16-bit installer (Inno Setup 1.2.x for Windows 3.x): integers that are `Integer` in the Delphi records are then 16 bits wide, timestamps are DOS date/time, and flag sets of three bytes carry no padding byte. |
 | `IsAmbiguous` | `bool IsAmbiguous { get; }` | True for the tags that more than one layout used (the compiler was changed without the tag). |
 | `IsIsx` | `bool IsIsx { get; init; }` |  |
 | `IsKnown` | `bool IsKnown { get; init; }` |  |
+| `IsLegacyTag` | `bool IsLegacyTag { get; init; }` | Gets whether the version came from a 12-byte 1.2.x tag ("i1.2.10--16\x1a") rather than the 64-byte one. |
 | `IsUnicode` | `bool IsUnicode { get; init; }` |  |
 | `Major` | `int Major { get; }` | Gets the major version. |
 | `Minor` | `int Minor { get; }` | Gets the minor version. |
 | `Patch` | `int Patch { get; }` | Gets the patch version. |
+| `TagLength` | `int TagLength { get; }` | Gets the length of the version tag that opens setup-0: 12 bytes for 1.2.x, 64 otherwise. |
 | `Value` | `uint Value { get; init; }` |  |
 | `AtLeast` | `bool AtLeast(int a, int b, int c, int d = 0)` | True when this version is at least a.b.c.d. |
 | `Below` | `bool Below(int a, int b, int c, int d = 0)` | True when this version is below a.b.c.d. |
 | `Next` | `InnoVersion? Next()` | The next known version of the same flavour (ANSI/Unicode, ISX), or null. |
 | `Parse` | `static InnoVersion Parse(ReadOnlySpan<byte> tag64)` | Parses the 64-byte version tag at the start of setup-0. |
+| `StartsWithLegacyTag` | `static bool StartsWithLegacyTag(ReadOnlySpan<byte> tag)` | Whether the bytes open with a 12-byte Inno Setup 1.2.x tag: "i", the version, "--16" or "--32", then 0x1A. |
 | `ToString` | `override string ToString()` |  |
 | `V` | `static uint V(int a, int b, int c, int d = 0)` | Packs a version number. |
 
