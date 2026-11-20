@@ -8,7 +8,7 @@ namespace Compression.Tests.InnoSetup;
 
 /// <summary>
 /// Encrypted installers compiled by ISCC (Encryption=yes, 5.3.8 ANSI with ARC4-MD5, 5.6.1 Unicode
-/// with ARC4-SHA1, 6.4.3 with XChaCha20; Encryption=full, 6.5.4, headers encrypted too; see
+/// with ARC4-SHA1, 6.4.3 and 7.1.1 with XChaCha20; Encryption=full, 6.5.4 and 7.1.1, headers encrypted too; see
 /// ReferenceVectors/README.md): with the password every file matches innoextract 1.9 (or, from
 /// 6.4, which no innoextract reads, the payload compiled in); without it, or with a wrong one,
 /// nothing is decrypted.
@@ -23,6 +23,8 @@ public class InnoSetupEncryptionTests {
     yield return new TestCaseData("inno561u-enc-lzma2-solid.exe", UnicodePassword, InnoEncryption.Arc4Sha1);
     yield return new TestCaseData("inno643-enc-zip.exe", UnicodePassword, InnoEncryption.XChaCha20);
     yield return new TestCaseData("inno654-encfull-zip.exe", UnicodePassword, InnoEncryption.XChaCha20);
+    yield return new TestCaseData("inno711-enc-zip.exe", UnicodePassword, InnoEncryption.XChaCha20);
+    yield return new TestCaseData("inno711-encfull-lzma2-solid.exe", UnicodePassword, InnoEncryption.XChaCha20);
   }
 
   private static byte[] Load(string name) {
@@ -62,7 +64,7 @@ public class InnoSetupEncryptionTests {
     }
   }
 
-  [TestCase("inno538a-enc-zip.exe"), TestCase("inno561u-enc-lzma2-solid.exe"), TestCase("inno643-enc-zip.exe")]
+  [TestCase("inno538a-enc-zip.exe"), TestCase("inno561u-enc-lzma2-solid.exe"), TestCase("inno643-enc-zip.exe"), TestCase("inno711-enc-zip.exe")]
   public void Given_AnInstallerEncryptingOnlyItsFiles_When_OpenedWithoutPassword_Then_ItListsButRefusesToExtract(string fixture) {
     var data = Load(fixture);
     var entries = new InnoSetupFormatDescriptor().List(new MemoryStream(data), null);
@@ -73,9 +75,9 @@ public class InnoSetupEncryptionTests {
     Assert.That(e!.PasswordWasSupplied, Is.False);
   }
 
-  [Test]
-  public void Given_AFullyEncryptedInstaller_When_OpenedWithoutPassword_Then_ThePasswordIsAskedFor() {
-    var e = Assert.Throws<ArchivePasswordException>(() => new InnoSetupFormatDescriptor().List(new MemoryStream(Load("inno654-encfull-zip.exe")), null));
+  [TestCase("inno654-encfull-zip.exe"), TestCase("inno711-encfull-lzma2-solid.exe")]
+  public void Given_AFullyEncryptedInstaller_When_OpenedWithoutPassword_Then_ThePasswordIsAskedFor(string fixture) {
+    var e = Assert.Throws<ArchivePasswordException>(() => new InnoSetupFormatDescriptor().List(new MemoryStream(Load(fixture)), null));
     Assert.That(e!.PasswordWasSupplied, Is.False);
   }
 
@@ -83,6 +85,8 @@ public class InnoSetupEncryptionTests {
   [TestCase("inno561u-enc-lzma2-solid.exe", "Passwort-€1")]
   [TestCase("inno643-enc-zip.exe", "Pässwört-€")]
   [TestCase("inno654-encfull-zip.exe", "x")]
+  [TestCase("inno711-enc-zip.exe", "pässwört-€1")]
+  [TestCase("inno711-encfull-lzma2-solid.exe", "Pässwört-€1 ")]
   public void Given_AWrongPassword_When_Extracted_Then_ItIsRefusedAsWrong(string fixture, string wrong) {
     var data = Load(fixture);
     var e = Assert.Throws<ArchivePasswordException>(() => {

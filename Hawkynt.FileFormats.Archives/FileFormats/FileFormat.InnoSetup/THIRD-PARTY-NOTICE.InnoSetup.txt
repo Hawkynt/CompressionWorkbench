@@ -22,10 +22,11 @@ The Inno Setup reader in this directory was written from these sources:
         as being the original software.
      3. This notice may not be removed or altered from any source distribution.
 
-2. Inno Setup, https://github.com/jrsoftware/issrc, tags is-6_4_2 to is-7_1_0:
+2. Inno Setup, https://github.com/jrsoftware/issrc, tags is-6_4_2 to is-7_1_1:
    Projects/Src/Shared.Struct.pas (record layouts), Setup.MainFunc.pas (read order),
    Compression.Base.pas (block header), for the setup data layouts newer than innoextract's
-   (6.4.2, 6.4.3, 6.5.0, 6.5.2, 6.6.0, 6.6.1, 6.7.0, 7.0.0.3); Shared.EncryptionFunc.pas and
+   (6.4.2, 6.4.3, 6.5.0, 6.5.2, 6.6.0, 6.6.1, 6.7.0, 7.0.0.3, 7.1.1) and
+   Setup.FileExtractor.pas (slice names); Shared.EncryptionFunc.pas and
    Compression.Base.pas at is-6_5_4 for the encryption header and Encryption=full.
 
    Copyright (C) 1997-2026 Jordan Russell. All rights reserved.

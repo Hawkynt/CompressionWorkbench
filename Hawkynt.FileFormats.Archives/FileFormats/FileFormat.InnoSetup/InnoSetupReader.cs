@@ -26,6 +26,7 @@ public sealed class InnoSetupReader {
   private readonly InnoSetupInfo _info;
   private readonly List<InnoSetupEntry> _entries = [];
   private readonly string? _sliceDirectory;
+  private readonly string? _sliceBase;
   private readonly string? _password;
   private byte[]? _key;
 
@@ -78,8 +79,10 @@ public sealed class InnoSetupReader {
       throw new ArgumentException("Stream must be seekable.", nameof(stream));
     this._stream = stream;
     this._offsets = InnoLoader.Locate(stream);
-    if (stream is FileStream fs)
+    if (stream is FileStream fs) {
       this._sliceDirectory = Path.GetDirectoryName(Path.GetFullPath(fs.Name));
+      this._sliceBase = Path.GetFileNameWithoutExtension(fs.Name);
+    }
 
     if (this._offsets.HeaderOffset < 0 || this._offsets.HeaderOffset + 64 > stream.Length)
       throw new InvalidDataException("Inno Setup headers lie outside the file.");
@@ -281,6 +284,12 @@ public sealed class InnoSetupReader {
 
   // ── extraction ──────────────────────────────────────────────────────
 
+  /// <summary>The checksum the compiler stored for an entry's bytes.</summary>
+  internal (InnoChecksumKind Kind, byte[] Checksum) StoredChecksum(InnoSetupEntry entry) {
+    var d = this._info.DataEntries[entry.DataIndex];
+    return (d.ChecksumKind, d.Checksum);
+  }
+
   /// <summary>Returns the bytes of one entry, verified against the stored checksum.</summary>
   public byte[] Extract(InnoSetupEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
@@ -363,7 +372,9 @@ public sealed class InnoSetupReader {
 
     var perDisk = Math.Max(1u, this._info.SlicesPerDisk);
     var suffix = perDisk == 1 ? $"{index + 1}" : $"{index / perDisk + 1}{(char)('a' + index % perDisk)}";
-    var bases = new[] { this._info.BaseFilename, "setup" }.Where(b => b.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase);
+    // Up to 7.1.0 the header names the slices (OutputBaseFilename); 7.1.1 names them after the
+    // setup EXE itself (Setup.FileExtractor.pas FindSliceFilename), so the EXE's name is tried too.
+    var bases = new[] { this._info.BaseFilename, this._sliceBase ?? "", "setup" }.Where(b => b.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase);
     foreach (var b in bases) {
       var name = b + "-" + suffix + ".bin";
       var path = Directory.EnumerateFiles(this._sliceDirectory)

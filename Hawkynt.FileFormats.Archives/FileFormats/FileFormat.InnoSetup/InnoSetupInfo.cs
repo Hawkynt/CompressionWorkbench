@@ -162,7 +162,7 @@ internal sealed class InnoSetupInfo {
     c.SkipString(); // default dir name
     c.SkipString(); // default group name
     if (v.Below(3, 0, 0)) c.SkipString(); // uninstall icon name
-    this._baseFilenameRaw = c.BinString();
+    if (v.Below(7, 1, 1)) this._baseFilenameRaw = c.BinString(); // 7.1.1 dropped it: slices take the setup EXE's name
     if (v.AtLeast(1, 3, 0) && v.Below(5, 2, 5)) { c.SkipString(); c.SkipString(); c.SkipString(); } // license, info before/after
     if (v.AtLeast(1, 3, 3)) c.SkipString(); // uninstall files dir
     if (v.AtLeast(1, 3, 6)) { c.SkipString(); c.SkipString(); } // uninstall name, icon
