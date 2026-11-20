@@ -90,6 +90,7 @@ format,Bik,Bink Video,Audio,,.bik;.bk2,Y,Y,Y,
 format,BinaryII,Apple II Binary II,Archive,,.bny;.bqy,Y,Y,Y,Y
 format,BinCue,BIN/CUE,Archive,,.bin;.cue,Y,Y,Y,Y
 format,BinHex,BinHex,Wrapper,,.hqx,,Y,Y,
+format,BitLocker,BitLocker,Archive,,.bitlocker;.bde,Y,Y,Y,
 format,BitRock,BitRock / InstallBuilder,Archive,,,Y,Y,,
 format,Bkf,Microsoft NTBackup (MTF),Archive,,.bkf,Y,Y,Y,Y
 format,BlakHole,BlakHole,Archive,,.bh,Y,Y,,
@@ -166,6 +167,7 @@ format,DiskCopy42,Apple Disk Copy 4.2,Archive,,.dc42;.image,Y,Y,Y,Y
 format,DiskDoubler,DiskDoubler,Archive,,.dd;.sea,Y,Y,Y,
 format,Djvu,DjVu,Image,,.djvu;.djv,Y,Y,,
 format,Dls,DLS (Downloadable Sounds),Audio,,.dls,Y,Y,,
+format,DmCryptPlain,dm-crypt (plain),Archive,,,Y,Y,Y,
 format,Dmg,DMG,Archive,,.dmg,Y,Y,Y,Y
 format,Dms,DMS,Archive,,.dms,Y,Y,Y,
 format,Dng,Adobe DNG / Camera RAW,Image,,.dng;.nef;.cr2;.raf;.arw;.rw2;.orf;.pef;.srw,Y,Y,,
@@ -237,6 +239,7 @@ format,Gbs,Game Boy Sound,Audio,,.gbs,Y,Y,,
 format,Gdi,Dreamcast GDI,Archive,,.gdi,Y,Y,,
 format,Gem,Ruby Gem,Archive,,.gem,Y,Y,Y,
 format,Gemdos,GEMDOS (Atari ST),Archive,Y,.st;.stx;.dim,Y,Y,Y,Y
+format,GenteeInstaller,Gentee installer (CreateInstall),Archive,,,Y,Y,,
 format,Gfs1,"GFS (Sistina/Red Hat, original)",Archive,Y,.gfs;.gfs1,Y,Y,Y,Y
 format,Gfs2,GFS2 (Global File System 2),Archive,Y,.gfs2,Y,Y,Y,Y
 format,Ghost,Symantec / Norton Ghost,Archive,,.gho;.ghs,Y,Y,Y,Y
@@ -630,7 +633,7 @@ format,Uc2,UltraCompressor II,Archive,,.uc2;.pu2,Y,Y,Y,
 format,Udf,UDF,Archive,Y,.udf,Y,Y,Y,Y
 format,UefiFv,UEFI Firmware Volume,Archive,,.fv;.fd,Y,Y,Y,Y
 format,Ufs,UFS,Archive,Y,.ufs,Y,Y,Y,Y
-format,Uharc,UHARC,Archive,,.uha,Y,Y,,
+format,Uharc,UHARC,Archive,,.uha,Y,Y,Y,
 format,Uif,MagicISO UIF,Archive,,.uif,Y,Y,,
 format,UImage,U-Boot uImage,Archive,,,Y,Y,Y,Y
 format,Ult,UltraTracker,Audio,,.ult,Y,Y,,
@@ -650,6 +653,7 @@ format,Vag,Sony VAG (PS1/PS2 SPU-ADPCM),Audio,,.vag,Y,Y,Y,
 format,Vdfs,VDFS,Archive,Y,.vdf,Y,Y,Y,Y
 format,Vdi,VDI,Archive,,.vdi,Y,Y,Y,Y
 format,Veeam,Veeam Backup & Replication,Archive,,.vbk;.vib;.vrb,Y,Y,,
+format,VeraCrypt,VeraCrypt / TrueCrypt,Archive,,.hc;.tc,Y,Y,Y,
 format,Vgm,Video Game Music Log,Audio,,.vgm;.vgz,Y,Y,,
 format,Vhd,VHD,Archive,,.vhd,Y,Y,Y,Y
 format,Vhdx,VHDX,Archive,,.vhdx,Y,Y,Y,Y
@@ -713,7 +717,7 @@ format,YEnc,yEnc,Wrapper,,.yenc,,Y,Y,
 format,YodaCrypter,Yoda's Crypter (Win32 PE),Archive,,,Y,Y,,
 format,Ypf,YukaScript YPF,Archive,,.ypf,Y,Y,Y,Y
 format,Zarr,Zarr array metadata,Archive,,,Y,Y,,
-format,Zfs,ZFS,Archive,Y,.zfs;.zpool,Y,Y,,
+format,Zfs,ZFS,Archive,Y,.zfs;.zpool,Y,Y,Y,Y
 format,Zip,ZIP,Archive,,.zip;.zipx,Y,Y,Y,Y
 format,Zlib,Zlib,Stream,,.zlib,,Y,Y,
 format,Zling,Zling,Stream,,.zling,,Y,Y,

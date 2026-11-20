@@ -15914,7 +15914,7 @@ Implements `IEquatable<ParsedEsps>`.
 
 ### Namespace `FileFormat.ExePackers`
 
-[`AlienyzeExecutablePackerHandler`](#alienyzeexecutablepackerhandler) · [`AmberExecutablePackerHandler`](#amberexecutablepackerhandler) · [`AplibSectionPackerHandler`](#aplibsectionpackerhandler) · [`AplibSectionPackerHandler.Decoded`](#aplibsectionpackerhandlerdecoded) · [`AsPackExecutablePackerHandler`](#aspackexecutablepackerhandler) · [`AsPackFormatDescriptor`](#aspackformatdescriptor) · [`AsProtectFormatDescriptor`](#asprotectformatdescriptor) · [`BeRoExecutablePackerHandler`](#beroexecutablepackerhandler) · [`BzexeExecutablePackerHandler`](#bzexeexecutablepackerhandler) · [`BzexeFormatDescriptor`](#bzexeformatdescriptor) · [`CrinklerFormatDescriptor`](#crinklerformatdescriptor) · [`DescriptorExecutablePackerHandler`](#descriptorexecutablepackerhandler) · [`DietFormatDescriptor`](#dietformatdescriptor) · [`DietUnpacker`](#dietunpacker) · [`DosExePackerHandler`](#dosexepackerhandler) · [`DosPackedExeDescriptor`](#dospackedexedescriptor) · [`DosUnpacked`](#dosunpacked) · [`EnigmaVirtualBoxExecutablePackerHandler`](#enigmavirtualboxexecutablepackerhandler) · [`EronanaExecutablePackerHandler`](#eronanaexecutablepackerhandler) · [`Exe32packExecutablePackerHandler`](#exe32packexecutablepackerhandler) · [`ExePackFormatDescriptor`](#exepackformatdescriptor) · [`ExePackUnpacker`](#exepackunpacker) · [`ExpressorExecutablePackerHandler`](#expressorexecutablepackerhandler) · [`EzuriExecutablePackerHandler`](#ezuriexecutablepackerhandler) · [`FsgExecutablePackerHandler`](#fsgexecutablepackerhandler) · [`FsgFallbackExecutablePackerHandler`](#fsgfallbackexecutablepackerhandler) · [`FsgFormatDescriptor`](#fsgformatdescriptor) · [`GenericAplibPackedPeHandler`](#genericaplibpackedpehandler) · [`GenericNrvPackedPeHandler`](#genericnrvpackedpehandler) · [`GoPackerExecutablePackerHandler`](#gopackerexecutablepackerhandler) · [`GoPackerFormatDescriptor`](#gopackerformatdescriptor) · [`GzexeExecutablePackerHandler`](#gzexeexecutablepackerhandler) · [`GzexeFormatDescriptor`](#gzexeformatdescriptor) · [`HuanExecutablePackerHandler`](#huanexecutablepackerhandler) · [`HuanFormatDescriptor`](#huanformatdescriptor) · [`HxorExecutablePackerHandler`](#hxorexecutablepackerhandler) · [`IDosExeUnpacker`](#idosexeunpacker) · [`JdpackExecutablePackerHandler`](#jdpackexecutablepackerhandler) · [`KkrunchyFormatDescriptor`](#kkrunchyformatdescriptor) · [`LzExeFormatDescriptor`](#lzexeformatdescriptor) · [`LzExeUnpacker`](#lzexeunpacker) · [`M0dernP4ckerExecutablePackerHandler`](#m0dernp4ckerexecutablepackerhandler) · [`MPressExecutablePackerHandler`](#mpressexecutablepackerhandler) · [`MPressFormatDescriptor`](#mpressformatdescriptor) · [`MewExecutablePackerHandler`](#mewexecutablepackerhandler) · [`MewFormatDescriptor`](#mewformatdescriptor) · [`MidgetPackExecutablePackerHandler`](#midgetpackexecutablepackerhandler) · [`MinorExecutablePackerHandlerBase`](#minorexecutablepackerhandlerbase) · [`MoleboxExecutablePackerHandler`](#moleboxexecutablepackerhandler) · [`MoleboxIdea`](#moleboxidea) · [`NeoliteExecutablePackerHandler`](#neoliteexecutablepackerhandler) · [`NsPackExecutablePackerHandler`](#nspackexecutablepackerhandler) · [`NsPackFormatDescriptor`](#nspackformatdescriptor) · [`OrigamiExecutablePackerHandler`](#origamiexecutablepackerhandler) · [`OrigamiFormatDescriptor`](#origamiformatdescriptor) · [`PackmanExecutablePackerHandler`](#packmanexecutablepackerhandler) · [`PakkeroExecutablePackerHandler`](#pakkeroexecutablepackerhandler) · [`PapawExecutablePackerHandler`](#papawexecutablepackerhandler) · [`PapawFormatDescriptor`](#papawformatdescriptor) · [`PeCompactExecutablePackerHandler`](#pecompactexecutablepackerhandler) · [`PePackerExecutablePackerHandler`](#pepackerexecutablepackerhandler) · [`PeToyExecutablePackerHandler`](#petoyexecutablepackerhandler) · [`PetiteExecutablePackerHandler`](#petiteexecutablepackerhandler) · [`PetiteFormatDescriptor`](#petiteformatdescriptor) · [`PetiteInflate`](#petiteinflate) · [`PetiteUnpacker`](#petiteunpacker) · [`PetiteUnpacker.PetiteBlock`](#petiteunpackerpetiteblock) · [`PetiteUnpacker.PetiteImage`](#petiteunpackerpetiteimage) · [`PkLiteFormatDescriptor`](#pkliteformatdescriptor) · [`PkLiteUnpacker`](#pkliteunpacker) · [`ProtectorExecutablePackerHandlerBase`](#protectorexecutablepackerhandlerbase) · [`PyPePackerExecutablePackerHandler`](#pypepackerexecutablepackerhandler) · [`RlPackExecutablePackerHandler`](#rlpackexecutablepackerhandler) · [`ShrinklerFormatDescriptor`](#shrinklerformatdescriptor) · [`SilentPackerExecutablePackerHandler`](#silentpackerexecutablepackerhandler) · [`SilentPackerFormatDescriptor`](#silentpackerformatdescriptor) · [`SimpleDpackExecutablePackerHandler`](#simpledpackexecutablepackerhandler) · [`SquishyExecutablePackerHandler`](#squishyexecutablepackerhandler) · [`TelockExecutablePackerHandler`](#telockexecutablepackerhandler) · [`ThemidaExecutablePackerHandler`](#themidaexecutablepackerhandler) · [`ThemidaFormatDescriptor`](#themidaformatdescriptor) · [`VmProtectFormatDescriptor`](#vmprotectformatdescriptor) · [`WardExecutablePackerHandler`](#wardexecutablepackerhandler) · [`WinUpackExecutablePackerHandler`](#winupackexecutablepackerhandler) · [`WinUpackFallbackExecutablePackerHandler`](#winupackfallbackexecutablepackerhandler) · [`XorPackerExecutablePackerHandler`](#xorpackerexecutablepackerhandler) · [`YodaByteOp`](#yodabyteop) · [`YodaByteOpKind`](#yodabyteopkind) · [`YodaCrypterExecutablePackerHandler`](#yodacrypterexecutablepackerhandler) · [`YodaCrypterFormatDescriptor`](#yodacrypterformatdescriptor) · [`YodaCrypterStub`](#yodacrypterstub) · [`YodaCrypterStubInfo`](#yodacrypterstubinfo) · [`YodaProtectorExecutablePackerHandler`](#yodaprotectorexecutablepackerhandler)
+[`AlienyzeExecutablePackerHandler`](#alienyzeexecutablepackerhandler) · [`AmberExecutablePackerHandler`](#amberexecutablepackerhandler) · [`ApackFormatDescriptor`](#apackformatdescriptor) · [`ApackUnpacker`](#apackunpacker) · [`AplibSectionPackerHandler`](#aplibsectionpackerhandler) · [`AplibSectionPackerHandler.Decoded`](#aplibsectionpackerhandlerdecoded) · [`AsPackExecutablePackerHandler`](#aspackexecutablepackerhandler) · [`AsPackFormatDescriptor`](#aspackformatdescriptor) · [`AsProtectFormatDescriptor`](#asprotectformatdescriptor) · [`AxeFormatDescriptor`](#axeformatdescriptor) · [`AxeUnpacker`](#axeunpacker) · [`BeRoExecutablePackerHandler`](#beroexecutablepackerhandler) · [`BzexeExecutablePackerHandler`](#bzexeexecutablepackerhandler) · [`BzexeFormatDescriptor`](#bzexeformatdescriptor) · [`CrinklerFormatDescriptor`](#crinklerformatdescriptor) · [`DescriptorExecutablePackerHandler`](#descriptorexecutablepackerhandler) · [`DietFormatDescriptor`](#dietformatdescriptor) · [`DietUnpacker`](#dietunpacker) · [`DosExePackerHandler`](#dosexepackerhandler) · [`DosPackedExeDescriptor`](#dospackedexedescriptor) · [`DosTraceUnpacker`](#dostraceunpacker) · [`DosUnpacked`](#dosunpacked) · [`EnigmaVirtualBoxExecutablePackerHandler`](#enigmavirtualboxexecutablepackerhandler) · [`EronanaExecutablePackerHandler`](#eronanaexecutablepackerhandler) · [`Exe32packExecutablePackerHandler`](#exe32packexecutablepackerhandler) · [`ExeLiteFormatDescriptor`](#exeliteformatdescriptor) · [`ExeLiteUnpacker`](#exeliteunpacker) · [`ExePackFormatDescriptor`](#exepackformatdescriptor) · [`ExePackUnpacker`](#exepackunpacker) · [`ExpressorExecutablePackerHandler`](#expressorexecutablepackerhandler) · [`EzuriExecutablePackerHandler`](#ezuriexecutablepackerhandler) · [`FsgExecutablePackerHandler`](#fsgexecutablepackerhandler) · [`FsgFallbackExecutablePackerHandler`](#fsgfallbackexecutablepackerhandler) · [`FsgFormatDescriptor`](#fsgformatdescriptor) · [`GenericAplibPackedPeHandler`](#genericaplibpackedpehandler) · [`GenericNrvPackedPeHandler`](#genericnrvpackedpehandler) · [`GoPackerExecutablePackerHandler`](#gopackerexecutablepackerhandler) · [`GoPackerFormatDescriptor`](#gopackerformatdescriptor) · [`GzexeExecutablePackerHandler`](#gzexeexecutablepackerhandler) · [`GzexeFormatDescriptor`](#gzexeformatdescriptor) · [`HuanExecutablePackerHandler`](#huanexecutablepackerhandler) · [`HuanFormatDescriptor`](#huanformatdescriptor) · [`HxorExecutablePackerHandler`](#hxorexecutablepackerhandler) · [`IDosExeUnpacker`](#idosexeunpacker) · [`JdpackExecutablePackerHandler`](#jdpackexecutablepackerhandler) · [`KkrunchyFormatDescriptor`](#kkrunchyformatdescriptor) · [`LzExeFormatDescriptor`](#lzexeformatdescriptor) · [`LzExeUnpacker`](#lzexeunpacker) · [`M0dernP4ckerExecutablePackerHandler`](#m0dernp4ckerexecutablepackerhandler) · [`MPressExecutablePackerHandler`](#mpressexecutablepackerhandler) · [`MPressFormatDescriptor`](#mpressformatdescriptor) · [`MewExecutablePackerHandler`](#mewexecutablepackerhandler) · [`MewFormatDescriptor`](#mewformatdescriptor) · [`MidgetPackExecutablePackerHandler`](#midgetpackexecutablepackerhandler) · [`MinorExecutablePackerHandlerBase`](#minorexecutablepackerhandlerbase) · [`MoleboxExecutablePackerHandler`](#moleboxexecutablepackerhandler) · [`MoleboxIdea`](#moleboxidea) · [`NeoliteExecutablePackerHandler`](#neoliteexecutablepackerhandler) · [`NsPackExecutablePackerHandler`](#nspackexecutablepackerhandler) · [`NsPackFormatDescriptor`](#nspackformatdescriptor) · [`OrigamiExecutablePackerHandler`](#origamiexecutablepackerhandler) · [`OrigamiFormatDescriptor`](#origamiformatdescriptor) · [`PackmanExecutablePackerHandler`](#packmanexecutablepackerhandler) · [`PakkeroExecutablePackerHandler`](#pakkeroexecutablepackerhandler) · [`PapawExecutablePackerHandler`](#papawexecutablepackerhandler) · [`PapawFormatDescriptor`](#papawformatdescriptor) · [`PeCompactExecutablePackerHandler`](#pecompactexecutablepackerhandler) · [`PePackerExecutablePackerHandler`](#pepackerexecutablepackerhandler) · [`PeToyExecutablePackerHandler`](#petoyexecutablepackerhandler) · [`PetiteExecutablePackerHandler`](#petiteexecutablepackerhandler) · [`PetiteFormatDescriptor`](#petiteformatdescriptor) · [`PetiteInflate`](#petiteinflate) · [`PetiteUnpacker`](#petiteunpacker) · [`PetiteUnpacker.PetiteBlock`](#petiteunpackerpetiteblock) · [`PetiteUnpacker.PetiteImage`](#petiteunpackerpetiteimage) · [`PgmpakFormatDescriptor`](#pgmpakformatdescriptor) · [`PgmpakUnpacker`](#pgmpakunpacker) · [`PkLiteFormatDescriptor`](#pkliteformatdescriptor) · [`PkLiteUnpacker`](#pkliteunpacker) · [`ProtectorExecutablePackerHandlerBase`](#protectorexecutablepackerhandlerbase) · [`PyPePackerExecutablePackerHandler`](#pypepackerexecutablepackerhandler) · [`RlPackExecutablePackerHandler`](#rlpackexecutablepackerhandler) · [`ShrinklerFormatDescriptor`](#shrinklerformatdescriptor) · [`SilentPackerExecutablePackerHandler`](#silentpackerexecutablepackerhandler) · [`SilentPackerFormatDescriptor`](#silentpackerformatdescriptor) · [`SimpleDpackExecutablePackerHandler`](#simpledpackexecutablepackerhandler) · [`SquishyExecutablePackerHandler`](#squishyexecutablepackerhandler) · [`TelockExecutablePackerHandler`](#telockexecutablepackerhandler) · [`ThemidaExecutablePackerHandler`](#themidaexecutablepackerhandler) · [`ThemidaFormatDescriptor`](#themidaformatdescriptor) · [`TinyProgFormatDescriptor`](#tinyprogformatdescriptor) · [`TinyProgUnpacker`](#tinyprogunpacker) · [`VmProtectFormatDescriptor`](#vmprotectformatdescriptor) · [`WardExecutablePackerHandler`](#wardexecutablepackerhandler) · [`WinUpackExecutablePackerHandler`](#winupackexecutablepackerhandler) · [`WinUpackFallbackExecutablePackerHandler`](#winupackfallbackexecutablepackerhandler) · [`WwpackFormatDescriptor`](#wwpackformatdescriptor) · [`WwpackUnpacker`](#wwpackunpacker) · [`XorPackerExecutablePackerHandler`](#xorpackerexecutablepackerhandler) · [`YodaByteOp`](#yodabyteop) · [`YodaByteOpKind`](#yodabyteopkind) · [`YodaCrypterExecutablePackerHandler`](#yodacrypterexecutablepackerhandler) · [`YodaCrypterFormatDescriptor`](#yodacrypterformatdescriptor) · [`YodaCrypterStub`](#yodacrypterstub) · [`YodaCrypterStubInfo`](#yodacrypterstubinfo) · [`YodaProtectorExecutablePackerHandler`](#yodaprotectorexecutablepackerhandler)
 
 #### `AlienyzeExecutablePackerHandler`
 
@@ -15945,6 +15945,34 @@ Inherits `MinorExecutablePackerHandlerBase`. Implements `IExecutablePackerHandle
 | `Detect` | `override DetectionResult Detect(ReadOnlySpan<byte> image)` | Performs the detect operation. |
 | `IsPackerSection` | `protected override bool IsPackerSection(string name)` | Performs the is packer section operation. |
 | `Unpack` | `override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options)` | Amber turns a PE into position-independent shellcode plus an embedded copy of the original image that its reflective loader maps at runtime. When that embedded copy is stored as a plaintext `MZ..PE` (the loader relocates it in place) we carve and validate it as a real PE. When it is XOR/RC4-obscured — the common case — the key lives in the shellcode stub, so we honestly stop at locating the payload-bearing region rather than fabricating a decode. |
+
+#### `ApackFormatDescriptor`
+
+aPACK-packed DOS executables (Joergen Ibsen, 1997-2009): lists the restored program, recovered by running aPACK's stub in the built-in 8086 emulator (`DosTracer`). Reference: `https://ibsensoftware.com/products_aPACK.html`.
+
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ApackFormatDescriptor` | `ApackFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+
+#### `ApackUnpacker`
+
+aPACK 1.00 (Joergen Ibsen) EXE stubs: the standard one, the one without DS/ES saving (-s) and the tiny one (-t).
+
+Inherits `DosTraceUnpacker`. Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ApackUnpacker` | `ApackUnpacker()` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `Instance` | `static ApackUnpacker Instance { get; }` |  |
 
 #### `AplibSectionPackerHandler`
 
@@ -16040,6 +16068,34 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `AxeFormatDescriptor`
+
+AXE-packed DOS executables (System Enhancement Associates): lists the restored program (8086 emulation of the stub).
+
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AxeFormatDescriptor` | `AxeFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+
+#### `AxeUnpacker`
+
+AXE 2.2 (System Enhancement Associates).
+
+Inherits `DosTraceUnpacker`. Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AxeUnpacker` | `AxeUnpacker()` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `Instance` | `static AxeUnpacker Instance { get; }` |  |
 
 #### `BeRoExecutablePackerHandler`
 
@@ -16210,6 +16266,22 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `FindMarker` | `protected virtual string FindMarker(ReadOnlySpan<byte> file)` | A looser recognition for files whose stub is not one the unpacker knows (e.g. the packer's copyright text); returns a description of the mark or null. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
+#### `DosTraceUnpacker`
+
+A DOS packer restored by running its own stub in the emulator (`DosTracer`). Only stubs recognised by `Variant` are taken: each recognised layout was checked against original programs packed by the real packer.
+
+Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DosTraceUnpacker` | `protected DosTraceUnpacker()` |  |
+| `DisplayName` | `abstract string DisplayName { get; }` |  |
+| `Id` | `abstract string Id { get; }` |  |
+| `RoutinePrefix` | `protected virtual int RoutinePrefix { get; }` | Stub bytes in front of a routine the stub unpacks behind the image and runs. |
+| `Detect` | `virtual string Detect(ReadOnlySpan<byte> file)` |  |
+| `Match` | `protected static bool Match(byte[] mem, int pos, string pattern)` | Pattern of byte values (chars 0-255) where '?' matches anything. |
+| `Unpack` | `DosUnpacked Unpack(ReadOnlySpan<byte> file)` |  |
+
 #### `DosUnpacked`
 
 A DOS executable restored from its packed form.
@@ -16267,6 +16339,34 @@ Inherits `MinorExecutablePackerHandlerBase`. Implements `IExecutablePackerHandle
 | `LiteralSignature` | `protected override ReadOnlySpan<byte> LiteralSignature { get; }` | Gets the literal signature. |
 | `Detect` | `override DetectionResult Detect(ReadOnlySpan<byte> image)` | Performs the detect operation. |
 | `IsPackerSection` | `protected override bool IsPackerSection(string name)` | Performs the is packer section operation. |
+
+#### `ExeLiteFormatDescriptor`
+
+ExeLITE-packed DOS executables: lists the restored program (8086 emulation of the stub).
+
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ExeLiteFormatDescriptor` | `ExeLiteFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+
+#### `ExeLiteUnpacker`
+
+ExeLITE (EXE compression of the ELITE tool).
+
+Inherits `DosTraceUnpacker`. Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ExeLiteUnpacker` | `ExeLiteUnpacker()` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `Instance` | `static ExeLiteUnpacker Instance { get; }` |  |
 
 #### `ExePackFormatDescriptor`
 
@@ -17088,6 +17188,34 @@ Implements `IEquatable<PetiteImage>`.
 | `MemoryImage` | `byte[] MemoryImage { get; init; }` |  |
 | `StubSectionRva` | `uint StubSectionRva { get; init; }` |  |
 
+#### `PgmpakFormatDescriptor`
+
+PGMPAK-packed DOS executables (Todor Todorov): lists the restored program (8086 emulation of the stub).
+
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PgmpakFormatDescriptor` | `PgmpakFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+
+#### `PgmpakUnpacker`
+
+PGMPAK 0.15 (Todor Todorov). The packed file asks DOS to load it high (zero minimum and maximum allocation); the stub unpacks the program at the bottom of its memory, gives it a child PSP and jumps to it. Measured on programs packed by PGMPAK 0.15 whose images end at different paragraph offsets: the decompressor writes one zero byte past the image; the program's minimum and maximum allocation are stored in front of its SS, SP, IP and CS near the end of the packed image; the file ends with `"\0PGMPAK 0.15"`, which is the packer's, not the program's.
+
+Inherits `DosTraceUnpacker`. Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PgmpakUnpacker` | `PgmpakUnpacker()` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `Instance` | `static PgmpakUnpacker Instance { get; }` |  |
+
 #### `PkLiteFormatDescriptor`
 
 Pseudo-archive descriptor for PKLITE-packed DOS executables and COM files (PKWARE, 1990-1996): lists the restored program as `unpacked.exe` or `unpacked.com`. Restoring is done by `PkLiteUnpacker`; on files from PKLITE 1.15 and 2.01 the result equals both `pklite -x` and UNP 4.11 byte for byte. References: `https://en.wikipedia.org/wiki/PKLITE` — format and tool history`https://github.com/jsummers/deark` — modules/pklite.c, the converted decoder
@@ -17314,6 +17442,35 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+#### `TinyProgFormatDescriptor`
+
+TINYPROG-packed DOS executables (Tranzoa): lists the restored program (8086 emulation of the stub).
+
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TinyProgFormatDescriptor` | `TinyProgFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+
+#### `TinyProgUnpacker`
+
+TINYPROG (Tranzoa). Recognised as Deark's src/fmtutil-exe.c recognises it: no relocations, a jump over the user data, a short jump, then the stub's fixed opening (MIT; see THIRD-PARTY-NOTICE.Deark.txt).
+
+Inherits `DosTraceUnpacker`. Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TinyProgUnpacker` | `TinyProgUnpacker()` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `Instance` | `static TinyProgUnpacker Instance { get; }` |  |
+| `Detect` | `override string Detect(ReadOnlySpan<byte> file)` | TINYPROG's jumps reach past the 64 entry bytes, so it reads the file itself. |
+
 #### `VmProtectFormatDescriptor`
 
 Pseudo-archive descriptor for VMProtect-protected Win32 executables. VMProtect (~2003+) is a commercial virtualizing protector that re-routes selected bytecode through a per-build virtual machine. The unpacker stub commonly renames sections to `".vmp0"`, `".vmp1"`, `".vmp2"` and almost always embeds the literal `"VMProtect"` in the build for licensing/runtime calls. References: `https://vmpsoft.com` — official VMProtect site (VMProtect Software)`https://en.wikipedia.org/wiki/VMProtect` — background`https://github.com/horsicq/Detect-It-Easy` — Detect It Easy — maintained packer-detection signature database
@@ -17384,6 +17541,35 @@ Inherits `MinorExecutablePackerHandlerBase`. Implements `IExecutablePackerHandle
 | `LiteralSignature` | `protected override ReadOnlySpan<byte> LiteralSignature { get; }` | Gets the literal signature. |
 | `Detect` | `override DetectionResult Detect(ReadOnlySpan<byte> image)` | Performs the detect operation. |
 | `IsPackerSection` | `protected override bool IsPackerSection(string name)` | Performs the is packer section operation. |
+
+#### `WwpackFormatDescriptor`
+
+WWPACK-packed DOS executables: lists the restored program (8086 emulation of the stub).
+
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WwpackFormatDescriptor` | `WwpackFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+
+#### `WwpackUnpacker`
+
+WWPACK 3.05 (Rafal Wierzbicki, Piotr Warezak), files made with the P command. Recognised as Deark's src/fmtutil-exe.c recognises it (MIT; see THIRD-PARTY-NOTICE.Deark.txt): no relocations, a 32-byte header, an entry point after the image start and the stub's opening bytes. Its stub unpacks a relocation routine right behind the image and runs it; one data byte of the stub sits in front of that routine (measured on files whose image ends at different paragraph offsets), so it is not part of the image.
+
+Inherits `DosTraceUnpacker`. Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WwpackUnpacker` | `WwpackUnpacker()` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `Instance` | `static WwpackUnpacker Instance { get; }` |  |
+| `RoutinePrefix` | `protected override int RoutinePrefix { get; }` |  |
 
 #### `XorPackerExecutablePackerHandler`
 
@@ -33442,7 +33628,7 @@ One file or directory of a UHARC archive.
 
 #### `UharcFormatDescriptor`
 
-UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP and ALZ modes, with passwords and the multimedia predictors; and UHARC 0.2 archives. Archives of 0.3, and 0.4 PPM streams, are refused. Creates 0.6 archives in every 0.6 method and 0.4 archives in store, RLE, LZW and LZP, optionally password-protected or behind a self-extractor stub, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
+UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP and ALZ modes, with passwords and the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP and ALZ modes; and UHARC 0.2 archives. 0.4 and 0.3 PPM streams are refused. Creates 0.6 archives in every 0.6 method and 0.4 archives in store, RLE, LZW and LZP, optionally password-protected or behind a self-extractor stub, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
 

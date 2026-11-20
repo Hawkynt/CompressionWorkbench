@@ -183,12 +183,12 @@ StuffIt method 13,,codec,,,R,,,,,,1,,StuffIt,Y,Y,Y,OK,,
 StuffIt Huffman (method 3),,codec,,,R,,,,,,1,,StuffIt,Y,Y,Y,OK,,
 StuffIt LZW (method 2),,codec,,,R,,,,,,1,,StuffIt,Y,Y,Y,OK,,
 StuffIt DES encryption,,encryption,,,R,,,,,,1,,,,,,MISSING,,
-StuffIt X Blend,,codec,,,R,,,,,,1,,StuffItX,Y,,,OK,,
-StuffIt X Cyanide,,codec,,,R,,,,,,1,,StuffItX,Y,,,OK,,
-StuffIt X Darkhorse,,codec,,,R,,,,,,1,,StuffItX,Y,,,OK,,
-StuffIt X Iron,,codec,,,R,,,,,,1,,StuffItX,Y,,,OK,,
-StuffIt X English dictionary preprocessor,,codec,,,R,,,,,,1,,StuffItX,Y,,,OK,,
-StuffIt X x86 filter,,filter,,,R,,,,,,1,,StuffItX,Y,,,OK,,
+StuffIt X Blend,,codec,,,R,,,,,,1,,StuffItX,Y,Y,,OK,,
+StuffIt X Cyanide,,codec,,,R,,,,,,1,,StuffItX,Y,Y,,OK,,
+StuffIt X Darkhorse,,codec,,,R,,,,,,1,,StuffItX,Y,Y,,OK,,
+StuffIt X Iron,,codec,,,R,,,,,,1,,StuffItX,Y,Y,,OK,,
+StuffIt X English dictionary preprocessor,,codec,,,R,,,,,,1,,StuffItX,Y,Y,,OK,,
+StuffIt X x86 filter,,filter,,,R,,,,,,1,,StuffItX,Y,Y,,OK,,
 DiskDoubler methods (ADn/DDn/Method2),,codec,,,R,,,,,,1,,DiskDoubler,Y,Y,,PARTIAL,,"ADn (6, 9), Method 2/5 splay trees and Stac LZS (7) decoded; DDn refused (DiskDoublerCodecs.cs)"
 Compact Pro LZH/RLE,,codec,,,R,,,,,,1,,CompactPro,Y,Y,Y,PARTIAL,,decoded inside the CompactPro descriptor (no building block); no LZH encoder
 Squeeze (Huffman),,codec,,,R,,,,,,1,,Squeeze,Y,Y,,OK,,
@@ -360,7 +360,7 @@ AvPack (DOS),exe,executable,,,,,,,,Y,1,,,,,,MISSING,AvPack,not implemented: no s
 ProPack (DOS executable),exe,executable,,,,,,,,Y,1,,,,,,MISSING,ProPack,not implemented: executable form of RNC ProPack; the data codec is the Rnc descriptor
 WWPack (DOS),exe,executable,,,,,,,,Y,1,http://fileformats.archiveteam.org/wiki/WWPACK,Wwpack,Y,,,PARTIAL,WWPack,"WWPACK 3.05 files (P command) restored by running the stub in the built-in 8086 emulator; image, relocations and registers equal the original programs WWPACK was given; WWPACK's own output for some programs does not run (under DOSBox either) and is refused; writing refused"
 aPACK (DOS),exe;com,executable,,,,,,,,Y,1,https://ibsensoftware.com/products_aPACK.html,Apack,Y,,,PARTIAL,aPACK,"aPACK 1.00 EXE files (standard, -s, -m and tiny stubs) restored by running the stub in the built-in 8086 emulator; image, relocations and registers equal the original programs aPACK was given; COM files are not handled; writing refused"
-ExeLITE (DOS exe),,archive,,,,,,,,,0,https://www.sac.sk/download/pack/elite.zip,ExeLite,Y,,,OURS-ONLY,,"ExeLITE EXE files restored by emulating the stub; the original header the stub keeps restores the allocation fields too"
+ExeLITE (DOS exe),,archive,,,,,,,,,0,https://www.sac.sk/download/pack/elite.zip,ExeLite,Y,,,OURS-ONLY,,ExeLITE EXE files restored by emulating the stub; the original header the stub keeps restores the allocation fields too
 TINYPROG (DOS exe),,archive,,,,,,,,,0,http://fileformats.archiveteam.org/wiki/TINYPROG,TinyProg,Y,,,OURS-ONLY,,"TINYPROG 3.x EXE files restored by emulating the stub (TINYPROG 3.9 samples); image, relocations and registers equal the originals, where UNP 4.11 gets the relocation set wrong"
 AXE (DOS exe),,archive,,,,,,,,,0,http://fileformats.archiveteam.org/wiki/AXE,Axe,Y,,,OURS-ONLY,,"AXE 2.2 EXE files restored by emulating the stub; equal to the originals except SP two lower, as AXE starts them and as UNP 4.11 restores them"
 PGMPAK (DOS exe),,archive,,,,,,,,,0,,Pgmpak,Y,,,OURS-ONLY,,"PGMPAK 0.15 EXE files restored by emulating the stub (loaded high, child PSP); image, relocations, registers and allocation equal the originals; UNP 4.11 agrees on image and relocations; writing refused"
