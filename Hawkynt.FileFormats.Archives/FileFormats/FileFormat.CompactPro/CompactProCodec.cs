@@ -10,6 +10,12 @@ internal static class CompactProCodec {
   private const int LzhBlockSize = 0x1FFF0;
   private const int LzhWindow = 8192;
 
+  /// <summary>
+  /// LZH blocks (code-table sets) this thread has read so far; lets tests show that a stream
+  /// crossed a block boundary.
+  /// </summary>
+  [ThreadStatic] internal static int LzhBlocksRead;
+
   /// <summary>Decodes a fork: LZH (when <paramref name="lzh"/>) feeding RLE, until <paramref name="size"/> bytes.</summary>
   /// <param name="packed">The fork's stored bytes.</param>
   /// <param name="size">The decoded size.</param>
@@ -170,6 +176,7 @@ internal static class CompactProCodec {
             literals = this.ReadCode(256).Codes;
             lengths = this.ReadCode(64).Codes;
             offsets = this.ReadCode(128).Codes;
+            ++LzhBlocksRead;
             blockCount = 0;
             blockStart = this.BytePos;
           }

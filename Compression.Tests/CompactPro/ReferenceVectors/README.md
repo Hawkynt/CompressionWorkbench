@@ -10,3 +10,16 @@
 
 The real archives also prove the per-file CRC covers the resource fork followed by the data fork
 (macutils' convention), which our reader verifies and XADMaster does not.
+
+## Large archives (not committed)
+
+`CompactProCorpusTests` reads large Compact Pro archives from Info-Mac (the ftp.funet.fi
+mirror). Their LZH forks run past one 0x1FFF0-unit block, which none of the fixtures above do.
+They are not committed because their redistribution terms vary from package to package.
+
+* `../fetch-info-mac.py <repo>/test-corpus/compactpro` downloads all 14 and BinHex-decodes
+  them.
+* The test extracts each archive with unar inside Linux (`../unar-manifest.py`), so Mac names
+  survive, and compares every data and resource fork.
+
+Measured: 1181 forks identical, and 12 entries with an LZH stream spanning more than one block.
