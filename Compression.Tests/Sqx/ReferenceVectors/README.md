@@ -49,5 +49,9 @@ CommandLine 5.2 for Linux (`sqc`, from the SQX SDK mirror https://github.com/wes
 | `pw.encutf8_v2.0.sqx` | 2.0 | `b.txt` and `c.bin` with the password `pässwort` (UTF-8) |
 | `pw.sdk_EncryptedArchive.sqx` | 1.1 | the SQX SDK 2.06's `Archives/EncryptedArchive.sqx` (password `test`), unchanged |
 
+`volumes/mvol.sqx`, `mvol.001`, `mvol.002`: a multi-volume set Squeez CommandLine 5.2 wrote with
+`sqc a -ep -fmt SQX2 -m0 -mv 140000` from `text.txt` (3000 lines `line i of the volume test`),
+`huge.bin` (200000 random bytes, split over all three volumes) and `small.bin` (`tiny file`).
+
 The `*_ultra.sqx` archives come from the same `packed_corpus` at revision
 `03211cd1e86473da08bc675198f6902e15a28ca3`; `records.bin` (240000 bytes) is in its `corpus`.

@@ -31913,7 +31913,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `SqxReader`
 
-Reads SQX archives (formats 1.1 and 2.0) as Squeez-c (MIT) reads them: main, file and directory blocks with their header checksums, stored and LZ77 + Huffman (methods 1-4) files, solid chains and self-extracting archives whose stub precedes the main block, audio (method 5: WAV samples behind predictors), text (method 6: PPMd var. I) and ultra (method 7: LZ77 with a range coder) files, AES-encrypted files and Blowfish-encrypted headers given the password. Split files are refused.
+Reads SQX archives (formats 1.1 and 2.0) as Squeez-c (MIT) reads them: main, file and directory blocks with their header checksums, stored and LZ77 + Huffman (methods 1-4) files, solid chains and self-extracting archives whose stub precedes the main block, audio (method 5: WAV samples behind predictors), text (method 6: PPMd var. I) and ultra (method 7: LZ77 with a range coder) files, AES-encrypted files and Blowfish-encrypted headers given the password, and multi-volume sets opened at their first volume. A file split into a volume not given is refused.
 
 Implements `IDisposable`.
 
@@ -31924,6 +31924,7 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<SqxEntry> Entries { get; }` | Gets the entries in the archive, in archive order. |
 | `HeadersEncrypted` | `bool HeadersEncrypted { get; }` | Whether the archive's headers are encrypted (they open only with the password). |
 | `IsSolid` | `bool IsSolid { get; }` | Whether the main block marks the archive solid. |
+| `VolumeCount` | `int VolumeCount { get; }` | Volumes read: 1 for a single-volume archive. |
 | `Dispose` | `void Dispose()` |  |
 | `ExtractAll` | `byte[][] ExtractAll()` | Extracts every file in archive order (directories yield empty arrays). |
 | `ExtractEntry` | `byte[] ExtractEntry(SqxEntry entry)` | Extracts one file, decoding the files before it when it continues a solid chain. |

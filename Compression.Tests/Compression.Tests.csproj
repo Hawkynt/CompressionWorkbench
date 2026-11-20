@@ -538,6 +538,9 @@
     <EmbeddedResource Include="Sqx\ReferenceVectors\*.sqx">
       <LogicalName>SqxVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="Sqx\ReferenceVectors\volumes\*">
+      <LogicalName>SqxVolumes.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- keramics' HFS+ volume written on macOS (decmpfs files); see HfsPlus/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="HfsPlus\ReferenceVectors\*.gz">
       <LogicalName>HfsPlusVectors.%(Filename)%(Extension)</LogicalName>
