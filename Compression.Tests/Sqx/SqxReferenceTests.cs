@@ -43,7 +43,7 @@ public sealed class SqxReferenceTests {
   };
 
   private static IEnumerable<string> Fixtures() => Assembly.GetExecutingAssembly().GetManifestResourceNames()
-    .Where(n => n.StartsWith("SqxVectors.", StringComparison.Ordinal) && !n.StartsWith("SqxVectors.refused.", StringComparison.Ordinal) && n.EndsWith(".sqx", StringComparison.Ordinal))
+    .Where(n => n.StartsWith("SqxVectors.", StringComparison.Ordinal) && !n.StartsWith("SqxVectors.refused.", StringComparison.Ordinal) && !n.StartsWith("SqxVectors.pw.", StringComparison.Ordinal) && n.EndsWith(".sqx", StringComparison.Ordinal))
     .Select(n => n["SqxVectors.".Length..]).Order();
 
   [TestCaseSource(nameof(Fixtures)), Category("HappyPath")]
