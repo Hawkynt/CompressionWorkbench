@@ -74,6 +74,24 @@ The `v04-*` archives were written by **UHARC 0.4 BETA** (`UHARC04.EXE`, Win32, 2
 
 `UHARC04.EXE t` reports "All files OK" for every `v04-*` archive.
 
+The `v03-*` archives were written by **UHARC 0.3 BETA** (`uharc_u.exe`, Win32, 14 Jun 2000, MD5
+`9a05cd175ce79fe3c5a4e1adc56e46aa`, the copy kept in the unuharc_recon repository) the same way.
+It prints nothing; its `x` reproduces every input of every `v03-*` archive:
+
+| Archive | Set | Switches | What it pins |
+| --- | --- | --- | --- |
+| `v03-basic-m0.uha` | basic | `-m0` | 0.3 container, 0.3-LZP name table, LZW date/size tables |
+| `v03-basic-mz.uha` / `v03-basic-mz-pw.uha` | basic | `-mz` / `-mz -pwsecret` | 0.3 LZP and its range coder; the password |
+| `v03-reset-mz.uha` / `v03-reset-mz1.uha` | reset | `-mz` / `-mz -md1` | 0.3 LZP model resets; a 1 KiB window |
+| `v03-exe-mz.uha` / `v03-mm-mz.uha` | exe / mm | `-mz` (mm: `pic.bmp u8.wav s16.wav`) | the executable and multimedia filters |
+| `v03-runs-mz.uha` / `v03-dates-mz.uha` | runs / dates | `-mz` | 256-byte copies; per-file stamps |
+| `v03-basic-mr.uha` / `v03-runs-mr.uha` | basic / runs | `-mr` | 0.3 RLE |
+| `v03-basic-mw.uha` / `v03-runs-mw.uha` / `v03-reset-mw1.uha` / `v03-exe-mw.uha` | | `-mw` (`-md1`) | 0.3 LZW |
+| `v03-basic-m1.uha` / `-m2` / `-m3` / `v03-basic-m2-pw.uha` | basic | `-m1`..`-m3` (`-pwsecret`) | 0.3 ALZ:1..3 |
+| `v03-reset-m2.uha` / `v03-reset-m21.uha` | reset | `-m2` / `-m2 -md1` | 0.3 ALZ over 232 KiB; a 1 KiB window |
+| `v03-exe-m2.uha` / `v03-mm-m1.uha` / `v03-runs-m2.uha` | exe / mm / runs | `-m2` / `-m1` / `-m2` | executables, the literal groups 1..5, long runs |
+| `v03-basic-mx.uha` | basic | `-mx` | 0.3 PPM, listed but not decoded |
+
 Every archive here is also tested by the unpacker of unuharc_recon
 (<https://github.com/roytam1/unuharc_recon>, revision
 `37f1953ac57609b95ab738bb45991d6d00415789`, built from source and run as a black box), which

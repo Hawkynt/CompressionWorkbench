@@ -93,6 +93,30 @@ public class UharcTests {
   [TestCase("v04-runs-mw.uha", "runs", null, true)]
   [TestCase("v04-reset-mw1.uha", "reset", null, true)]
   [TestCase("v04-exe-mw.uha", "exe", null, true)]
+  [TestCase("v03-basic-m0.uha", "basic", null, true)]
+  [TestCase("v03-basic-mz.uha", "basic", null, true)]
+  [TestCase("v03-basic-mz-pw.uha", "basic", "secret", true)]
+  [TestCase("v03-reset-mz.uha", "reset", null, true)]
+  [TestCase("v03-reset-mz1.uha", "reset", null, true)]
+  [TestCase("v03-exe-mz.uha", "exe", null, true)]
+  [TestCase("v03-mm-mz.uha", "mm", null, false)]
+  [TestCase("v03-runs-mz.uha", "runs", null, true)]
+  [TestCase("v03-dates-mz.uha", "dates", null, true)]
+  [TestCase("v03-basic-mr.uha", "basic", null, true)]
+  [TestCase("v03-runs-mr.uha", "runs", null, true)]
+  [TestCase("v03-basic-mw.uha", "basic", null, true)]
+  [TestCase("v03-runs-mw.uha", "runs", null, true)]
+  [TestCase("v03-reset-mw1.uha", "reset", null, true)]
+  [TestCase("v03-exe-mw.uha", "exe", null, true)]
+  [TestCase("v03-basic-m1.uha", "basic", null, true)]
+  [TestCase("v03-basic-m2.uha", "basic", null, true)]
+  [TestCase("v03-basic-m3.uha", "basic", null, true)]
+  [TestCase("v03-basic-m2-pw.uha", "basic", "secret", true)]
+  [TestCase("v03-reset-m2.uha", "reset", null, true)]
+  [TestCase("v03-reset-m21.uha", "reset", null, true)]
+  [TestCase("v03-exe-m2.uha", "exe", null, true)]
+  [TestCase("v03-mm-m1.uha", "mm", null, true)]
+  [TestCase("v03-runs-m2.uha", "runs", null, true)]
   [TestCase("sizes-mx-a.uha", "sizes", null, false)]
   [TestCase("sizes-mx-b.uha", "sizes", null, false)]
   [TestCase("fax-m2.uha", "fax", null, true)]
@@ -156,6 +180,15 @@ public class UharcTests {
   [TestCase("v04-basic-mr.uha", "RLE", 0)]
   [TestCase("v04-basic-mw.uha", "LZW", 16384)]
   [TestCase("v04-reset-mw1.uha", "LZW", 1024)]
+  [TestCase("v03-basic-m0.uha", "Store", 0)]
+  [TestCase("v03-basic-mz.uha", "LZP", 16384)]
+  [TestCase("v03-reset-mz1.uha", "LZP", 1024)]
+  [TestCase("v03-basic-mr.uha", "RLE", 0)]
+  [TestCase("v03-basic-mw.uha", "LZW", 16384)]
+  [TestCase("v03-basic-m1.uha", "ALZ:1", 16384)]
+  [TestCase("v03-basic-m2.uha", "ALZ:2", 16384)]
+  [TestCase("v03-reset-m21.uha", "ALZ:2", 1024)]
+  [TestCase("v03-basic-mx.uha", "PPM", 16384)]
   [Category("HappyPath")]
   public void GivenEachMode_WhenOpened_ThenModeAndDictionaryAreReported(string archive, string mode, int dictionary) {
     var reader = Open(archive);
@@ -221,6 +254,8 @@ public class UharcTests {
   [TestCase("v04-reset-mz.uha")]
   [TestCase("v04-reset-m2.uha")]
   [TestCase("v04-reset-mw1.uha")]
+  [TestCase("v03-reset-mz.uha")]
+  [TestCase("v03-reset-m2.uha")]
   [Category("ErrorHandling")]
   public void GivenCorruptedPackedStream_WhenExtracted_ThenNoWrongBytesAreReturned(string archive) {
     var data = Vector(archive);
@@ -234,10 +269,17 @@ public class UharcTests {
   }
 
   [Test, Category("ErrorHandling")]
-  public void GivenOlderUharcVersion_WhenOpened_ThenTheVersionIsNamed() {
+  public void GivenUnknownUharcVersion_WhenOpened_ThenTheVersionIsNamed() {
+    var data = Vector("v04-basic-mz.uha");
+    data[3] = 5;
+    Assert.That(() => new UharcReader(new MemoryStream(data)), Throws.TypeOf<InvalidDataException>().With.Message.Contains("version 5"));
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenVersion04ArchiveRelabelledAs03_WhenOpened_ThenItsTablesAreRejected() {
     var data = Vector("v04-basic-mz.uha");
     data[3] = 3;
-    Assert.That(() => new UharcReader(new MemoryStream(data)), Throws.TypeOf<InvalidDataException>().With.Message.Contains("version 3"));
+    Assert.That(() => new UharcReader(new MemoryStream(data)), Throws.InstanceOf<InvalidDataException>());
   }
 
   // ── Descriptor ─────────────────────────────────────────────────────────
@@ -377,6 +419,38 @@ public class UharcTests {
     var data = Vector("v04-basic-mz.uha");
     data[^3] ^= 0x40;
     Assert.That(() => new UharcReader(new MemoryStream(data)), Throws.InstanceOf<InvalidDataException>());
+  }
+
+  // ── UHARC 0.3 ──────────────────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void GivenVersion03Archive_WhenListed_ThenVersionDirectoriesAndPerFileStampsAreRead() {
+    var reader = Open("v03-dates-mz.uha");
+    var stamps = reader.Entries.Where(e => !e.IsDirectory).ToDictionary(e => e.FileName, e => e.LastModified);
+    Assert.Multiple(() => {
+      Assert.That(reader.Version, Is.EqualTo(3));
+      Assert.That(reader.Entries.Where(e => e.IsDirectory).Select(e => e.FileName), Is.EqualTo(new[] { "deep", "deep/er" }));
+      Assert.That(stamps["a.txt"], Is.EqualTo(new DateTime(1999, 12, 31, 23, 59, 58)));
+      Assert.That(stamps["deep/c.txt"], Is.EqualTo(new DateTime(2010, 1, 15, 12, 30, 44)));
+      Assert.That(stamps["e.txt"], Is.EqualTo(new DateTime(2024, 11, 30, 18, 1, 2)));
+    });
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenVersion03PasswordArchive_WhenOpenedWithTheWrongPassword_ThenItIsRejectedAsAWrongPassword()
+    => Assert.That(() => Open("v03-basic-mz-pw.uha", "Secret"),
+      Throws.TypeOf<InvalidDataException>().With.Message.Contains("password"));
+
+  [TestCase("v03-basic-mx.uha", "PPM")]
+  [Category("ErrorHandling")]
+  public void GivenVersion03ModeNotDecoded_WhenExtracted_ThenItIsRefusedButListed(string archive, string mode) {
+    var reader = Open(archive);
+    Assert.Multiple(() => {
+      Assert.That(reader.MethodName, Is.EqualTo(mode));
+      Assert.That(reader.CanDecodeMethod, Is.False);
+      Assert.That(reader.Entries.Count(e => !e.IsDirectory), Is.EqualTo(6));
+      Assert.That(() => reader.Extract(reader.Entries.First(e => e.Size > 0)), Throws.TypeOf<NotSupportedException>());
+    });
   }
 
   [Test, Category("ErrorHandling")]
