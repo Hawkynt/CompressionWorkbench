@@ -46,6 +46,9 @@ public class StuffItXWriterTests {
   [TestCase(StuffItXCompression.Deflate)]
   [TestCase(StuffItXCompression.Darkhorse)]
   [TestCase(StuffItXCompression.Brimstone)]
+  [TestCase(StuffItXCompression.Cyanide)]
+  [TestCase(StuffItXCompression.Blend)]
+  [TestCase(StuffItXCompression.Obscured)]
   [Category("RoundTrip")]
   public void GivenFiles_WhenWrittenAndRead_ThenEveryFileFolderAndDateRoundTrips(StuffItXCompression compression) {
     using var r = new StuffItXReader(new MemoryStream(Write(Inputs(), compression)));
@@ -74,6 +77,8 @@ public class StuffItXWriterTests {
 
   [TestCase(StuffItXCompression.Darkhorse, "Darkhorse")]
   [TestCase(StuffItXCompression.Brimstone, "Brimstone")]
+  [TestCase(StuffItXCompression.Cyanide, "Cyanide")]
+  [TestCase(StuffItXCompression.Blend, "Blend")]
   [Category("HappyPath")]
   public void GivenAModelCoder_WhenWritten_ThenTheStreamShrinksAndIsNamedForIt(StuffItXCompression compression, string name) {
     var text = Inputs().Where(i => i.Path.EndsWith(".txt", StringComparison.Ordinal)).ToList();
@@ -92,6 +97,10 @@ public class StuffItXWriterTests {
   [TestCase("deflate")]
   [TestCase("darkhorse")]
   [TestCase("brimstone")]
+  [TestCase("cyanide")]
+  [TestCase("blend")]
+  [TestCase("obscured")]
+  [TestCase("darkhorse+x86")]
   [Category("HappyPath")]
   public void GivenMethod_WhenCreatedThroughTheDescriptor_ThenTheArchiveReadsBack(string method) {
     using var ms = new MemoryStream();
@@ -105,12 +114,37 @@ public class StuffItXWriterTests {
   [TestCase(StuffItXCompression.Deflate)]
   [TestCase(StuffItXCompression.Darkhorse)]
   [TestCase(StuffItXCompression.Brimstone)]
+  [TestCase(StuffItXCompression.Cyanide)]
+  [TestCase(StuffItXCompression.Blend)]
+  [TestCase(StuffItXCompression.Obscured)]
   [Category("ExternalInterop")]
   public void GivenOurArchive_WhenUnarExtractsIt_ThenEveryFileMatches(StuffItXCompression compression) {
     var theirs = Unar(Write(Inputs(), compression));
     foreach (var input in Inputs().Where(i => i.Data != null))
       Assert.That(theirs[input.Path], Is.EqualTo(input.Data), input.Path);
     Assert.That(theirs.Keys, Has.Member("docs/empty dir/"), "the empty folder");
+  }
+
+  [TestCase(StuffItXCompression.Store)]
+  [TestCase(StuffItXCompression.Cyanide)]
+  [TestCase(StuffItXCompression.Darkhorse)]
+  [Category("ExternalInterop")]
+  public void GivenX86PreprocessingWeWrote_WhenUnarAndWeExtractIt_ThenTheCodeComesBack(StuffItXCompression compression) {
+    var payload = X86Payload();
+    using var ms = new MemoryStream();
+    StuffItXWriter.Write(ms, [new("code.bin", payload)], compression, x86: true);
+    var archive = ms.ToArray();
+    using (var r = new StuffItXReader(new MemoryStream(archive)))
+      Assert.That(r.Extract(r.Entries.Single(e => e.FullPath == "code.bin")), Is.EqualTo(payload));
+    Assert.That(Unar(archive)["code.bin"], Is.EqualTo(payload));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void GivenCode_WhenX86FilteredAndUnfiltered_ThenItIsTheSame() {
+    var payload = X86Payload();
+    var filtered = StuffItXX86.Encode(payload);
+    Assert.That(filtered, Is.Not.EqualTo(payload));
+    Assert.That(StuffItXX86.Decode(filtered, filtered.Length), Is.EqualTo(payload));
   }
 
   /// <summary>
