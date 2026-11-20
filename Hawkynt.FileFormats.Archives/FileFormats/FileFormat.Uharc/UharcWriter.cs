@@ -6,7 +6,7 @@ namespace FileFormat.Uharc;
 
 /// <summary>
 /// Writes UHARC 0.6 archives (docs/UHARC-ON-DISK.md, "Writing"): the stream stored or packed
-/// with RLE, LZ78 or LZP, the directory tables packed with LZP method 17 and enciphered with the default
+/// with RLE, LZ78, LZP or ALZ, the directory tables packed with LZP method 17 and enciphered with the default
 /// password, the header scrambled — the layout <c>uharc.exe</c> itself writes, without the
 /// executable and multimedia filters.
 /// </summary>
@@ -22,6 +22,8 @@ internal static class UharcWriter {
     Lz78,
     /// <summary>Methods 8..23, the smallest window that holds the stream.</summary>
     Lzp,
+    /// <summary>ALZ:2, methods 56..71, the smallest window that holds the stream.</summary>
+    Alz,
   }
 
   /// <summary>One archive member; <see cref="Data"/> is null for a directory.</summary>
@@ -42,7 +44,12 @@ internal static class UharcWriter {
   /// A Win32 self-extractor stub (UHARC's <c>UHARCSFX.EXE</c>) written in front of the archive,
   /// which then starts where the stub's last PE section ends; null for a plain archive.
   /// </param>
-  public static void Write(Stream output, IReadOnlyList<Item> items, Mode mode, DateTime now, string? password = null, byte[]? sfxStub = null) {
+  /// <param name="dictionaryLimit">
+  /// Largest LZP/ALZ window in bytes, as <c>-md</c> sets it (rounded up to a power of two, 1 KiB
+  /// to 32 MiB); 0 fits the window to the stream.
+  /// </param>
+  public static void Write(Stream output, IReadOnlyList<Item> items, Mode mode, DateTime now, string? password = null, byte[]? sfxStub = null,
+    long dictionaryLimit = 0) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(items);
     var key = PasswordBytes(password);
@@ -99,13 +106,15 @@ internal static class UharcWriter {
       Mode.Store => UharcMethods.Store,
       Mode.Rle => UharcMethods.Rle,
       Mode.Lz78 => UharcMethods.Lz78Last,
-      Mode.Lzp => LzpMethodFor(total),
+      Mode.Lzp => LzpMethodFor(total, dictionaryLimit),
+      Mode.Alz => AlzMethodFor(total, dictionaryLimit),
       _ => throw new ArgumentOutOfRangeException(nameof(mode)),
     };
     var packed = method switch {
       UharcMethods.Store => stream,
       UharcMethods.Rle => UharcRleEncoder.Encode(stream),
       >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => UharcLz78Encoder.Encode(stream, method),
+      >= UharcMethods.AlzFirst and <= UharcMethods.AlzLast => UharcAlzEncoder.Encode(stream, method, fileEnds),
       _ => UharcLzpEncoder.Encode(stream, method, fileEnds),
     };
 
@@ -189,13 +198,19 @@ internal static class UharcWriter {
     output.Write(packedFiles);
   }
 
-  /// <summary>The LZP method whose window is the smallest power of two that holds the stream (1 KiB to 32 MiB).</summary>
-  internal static int LzpMethodFor(long size) {
+  /// <summary>
+  /// The LZP method whose window is the smallest power of two that holds the stream (1 KiB to
+  /// 32 MiB), at most <paramref name="limit"/> rounded up (0 for no limit).
+  /// </summary>
+  internal static int LzpMethodFor(long size, long limit = 0) {
     var shift = 10;
-    while (shift < 25 && 1L << shift < size)
+    while (shift < 25 && 1L << shift < size && (limit <= 0 || 1L << shift < limit))
       ++shift;
     return UharcMethods.LzpFirst + shift - 10;
   }
+
+  /// <summary>The ALZ:2 method for the same window as <see cref="LzpMethodFor"/>.</summary>
+  internal static int AlzMethodFor(long size, long limit = 0) => LzpMethodFor(size, limit) - UharcMethods.LzpFirst + UharcMethods.AlzFirst + 16;
 
   private static byte[] PackTable(byte[] table) => UharcLzpEncoder.Encode(table, UharcMethods.Table, []);
 

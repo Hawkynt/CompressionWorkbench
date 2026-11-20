@@ -38,6 +38,7 @@ public class UharcWriterTests {
   [TestCase("store", "Store")]
   [TestCase("rle", "RLE")]
   [TestCase("lz78", "LZ78")]
+  [TestCase("alz", "ALZ:2")]
   [Category("HappyPath"), Category("RoundTrip")]
   public void GivenFilesAndDirectories_WhenWrittenAndRead_ThenEverythingComesBack(string? method, string mode) {
     var inputs = SampleInputs();
@@ -61,7 +62,7 @@ public class UharcWriterTests {
   }
 
   [TestCase("ppm")]
-  [TestCase("alz")]
+  [TestCase("lzma")]
   [Category("ErrorHandling")]
   public void GivenAMethodTheWriterDoesNotProduce_WhenWritten_ThenItIsRefused(string method)
     => Assert.That(() => Create(method), Throws.TypeOf<NotSupportedException>());
@@ -76,6 +77,7 @@ public class UharcWriterTests {
   [TestCase("store")]
   [TestCase("rle")]
   [TestCase("lz78")]
+  [TestCase("alz")]
   [Category("HappyPath"), Category("RoundTrip")]
   public void GivenAPassword_WhenWrittenAndReadWithIt_ThenEverythingComesBack(string? method) {
     var inputs = SampleInputs();
@@ -233,6 +235,51 @@ public class UharcWriterTests {
   [Test, Category("HappyPath")]
   public void GivenDistinctBytes_WhenLz78Encoded_ThenEachTakesItsOwnByte()
     => Assert.That(UharcLz78Encoder.Encode("ABCDEFGH"u8, 7), Is.EqualTo("ABCDEFGH"u8.ToArray()));
+
+  // ── The ALZ encoder against the decoder ───────────────────────────────
+
+  private static IEnumerable<TestCaseData> AlzInputs() {
+    var random = new Random(9);
+    var noise = new byte[50000];
+    random.NextBytes(noise);
+    var text = System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 5000).Select(i => $"the {i % 13} quick brown fox {i * 7 % 101}\r\n")));
+    var runs = Enumerable.Range(0, 400).SelectMany(i => Enumerable.Repeat((byte)(i % 5), i % 600)).ToArray();
+    yield return new TestCaseData(new byte[] { 0x41 }, 56).SetName("Alz_OneByte");
+    yield return new TestCaseData("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"u8.ToArray(), 56).SetName("Alz_RunAfterOneByte");
+    yield return new TestCaseData(text, 63).SetName("Alz_Text");
+    yield return new TestCaseData(text, 56).SetName("Alz_TextIn1KiBWindow");
+    yield return new TestCaseData(runs, 60).SetName("Alz_LongRuns");
+    yield return new TestCaseData(noise.Concat(text).Concat(noise).ToArray(), 57).SetName("Alz_MixedIn2KiBWindow");
+    yield return new TestCaseData(text.Concat(noise).Concat(text).ToArray(), 76).SetName("Alz_Mode3Band");
+  }
+
+  [TestCaseSource(nameof(AlzInputs))]
+  [Category("RoundTrip")]
+  public void GivenData_WhenAlzEncodedAndDecoded_ThenItIsUnchanged(byte[] data, int method) {
+    var packed = UharcAlzEncoder.Encode(data, method, []);
+    Assert.That(UharcAlzDecoder.Decode(packed, 0, packed.Length, method, data.Length, []), Is.EqualTo(data));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void GivenManyFiles_WhenAlzEncodedAndDecoded_ThenTheModelResetsLineUp() {
+    var files = Enumerable.Range(0, 30).Select(i => System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat($"file {i} record {i * i}\n", 600 + i * 97)))).ToList();
+    var data = files.SelectMany(f => f).ToArray();
+    var ends = new List<long>();
+    long end = 0;
+    foreach (var f in files)
+      ends.Add(end += f.Length);
+    var packed = UharcAlzEncoder.Encode(data, 66, ends);
+    Assert.That(UharcAlzDecoder.Decode(packed, 0, packed.Length, 66, data.Length, ends), Is.EqualTo(data));
+  }
+
+  [TestCase(100000L, 0L, 15)]
+  [TestCase(100000L, 1024L, 8)]
+  [TestCase(100000L, 1500L, 9)]
+  [TestCase(100000L, 1L << 30, 15)]
+  [TestCase(500L, 65536L, 8)]
+  [Category("Boundary")]
+  public void GivenADictionaryLimit_WhenTheWindowIsChosen_ThenItNeverExceedsTheLimitRoundedUp(long size, long limit, int method)
+    => Assert.That(UharcWriter.LzpMethodFor(size, limit), Is.EqualTo(method));
 
   [TestCase(0, 8)]
   [TestCase(1024, 8)]

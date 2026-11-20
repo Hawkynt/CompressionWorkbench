@@ -11,7 +11,7 @@ is not covered is listed at the end.
 with its nine multimedia predictors —, the executable and multimedia filters, passwords and SFX
 stubs are established and verified, and so are UHARC 0.2 and the UHARC 0.4 container with its
 store, RLE, LZW, LZP and ALZ modes (see their sections). Archives of 0.3, and 0.4's PPM streams,
-are not, and are refused. The writer produces stored, RLE-, LZ78- and LZP-packed 0.6 archives,
+are not, and are refused. The writer produces stored, RLE-, LZ78-, LZP- and ALZ-packed 0.6 archives,
 with or without a password and a self-extractor stub (see Writing).
 
 ## Evidence
@@ -414,7 +414,8 @@ by `32 + tag/8` when the two-byte context's remembered token tag says so (a tag 
 the top two bits and a repeat count below). A token adds 88 to its frequency; the row halves at
 16384.
 
-**Copies.** Twelve recent distances, all 1 at first. A new distance: a slot 1..44 by binary
+**Copies.** Twelve recent distances, empty at first (both 0.6b extractors copy zero bytes
+through a slot no copy has filled, so a valid stream never uses one). A new distance: a slot 1..44 by binary
 search (root 16), slot *k* covering `[base, base + span)` with bases 1, 2, 4, 8, 16, 32, then
 64, 96, 128, 192, … (2ᵏ and 1.5·2ᵏ alternating), the span clipped to what has been output; the low bit coded
 with its own probability when the span is ≥ 4, then a uniform value, split into 2048-wide
@@ -422,8 +423,9 @@ blocks when wider. Token 3 picks slot 1..11 of the recent list by a small tree. 
 decoded by binary search from node 10 over a 256-node tree, in one of eight probability sets
 (the distance class < 256, < 4 Ki, < 64 Ki, < 1 Mi, larger for new distances; one set for
 repeats and two for runs), each node's probability refined by the two lengths last seen after
-the copy's source byte pair. Short lengths are not coded at all: a new distance of class *c*
-copies at least *c* + 4 bytes, a repeat at least 3. 255 means a run: the next token is decoded
+the copy's source byte pair. Short lengths are not coded at all: the tree nodes below *c* + 3
+(new distance of class *c*) or below 2 (repeats) carry no bit, so a new distance copies at
+least *c* + 3 bytes and a repeat at least 2 — both extractors take such copies. 255 means a run: the next token is decoded
 in the run rows. The distance enters the recent list unless it is 1 and fewer than two runs
 precede it; a repeat moves its slot to the front.
 
@@ -509,12 +511,27 @@ transposed. Fixtures `fax-m2`, `fax-mx` and `v04-fax-mz`.
 ## Writing
 
 The writer produces 0.6 archives in the layout above: the stream stored (method 0), packed with
-RLE (method 1), with LZ78 (method 7, 32768 phrases) or with LZP at the smallest window that holds
-it (methods 8..23, 1 KiB to 32 MiB), the three tables
+RLE (method 1), with LZ78 (method 7, 32768 phrases), or with LZP or ALZ:2 at the smallest window
+that holds it (methods 8..23 and 56..71, 1 KiB to 32 MiB), the three tables
 — the name table lists the root as an empty name and every directory with a trailing `\` —
 packed with LZP method 17 and enciphered with the default password, the header scrambled with
 the low byte of its own check. The filters byte is 0: no executable or multimedia filter runs,
-so none is undone. It writes no PPM or ALZ stream.
+so none is undone. It writes no PPM stream.
+
+The ALZ encoder runs the decoder's model step for step (one model, generic over the coder
+direction, so the decoding instantiation stays as fast as before) with selector 0 — no
+multimedia predictor. Each step takes the best of: a copy at one of the recent distances that
+holds a value, a new distance from a 3-byte hash chain (48 deep) that the slot coding can express
+at this position (narrowed slots and the low-bit halving leave some odd offsets out) and that is
+at least *c* + 3 bytes long, or a literal. A copy is always taken whole — the full match, or 255
+for a run — and never crosses a model reset point, because a shortened copy would leave the next
+byte equal to the byte the literal coder excludes. Distances stay within the window less 255,
+the farthest UHARC 0.6b's own `-m2` streams reach (769 at `-md1`, 1793 at `-md2`, 3841 at
+`-md4`); both 0.6b extractors mis-copy distances near the full window (at 1 KiB, a text
+whose copies reach 1003 bytes back fails its CRC). The window is the smallest power of two that
+holds the stream, capped by the dictionary size option as `-md` caps it. On a 39 MB mixed set
+(Canterbury corpus and system DLLs) the stream is 13.8 MB against UHARC's own 12.1 MB, and
+`UHARC.EXE x` and `UNUHARC.EXE x` extract it byte for byte.
 
 **Passwords** set flags `0x06` and encipher the packed stream and the three tables with the
 password instead of the default one, as `-pw` does; the writer takes printable ASCII up to 255
