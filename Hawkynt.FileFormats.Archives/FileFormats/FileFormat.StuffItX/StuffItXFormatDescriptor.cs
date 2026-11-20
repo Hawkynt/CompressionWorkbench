@@ -30,8 +30,9 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "StuffIt X archive (Aladdin/Smith Micro), read-only: files, folders and resource forks (as .rsrc) " +
-    "from Brimstone, Cyanide, Iron and stored streams, each checked against its CRC-32. Darkhorse, " +
-    "Deflate, Blend, method 7, preprocessed and encrypted streams are listed but not extracted.";
+    "from Brimstone, Cyanide, Darkhorse, Iron and stored streams, also behind the English " +
+    "preprocessor, each checked against its CRC-32. Deflate, Blend, method 7, x86-preprocessed and " +
+    "encrypted streams are listed but not extracted.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new StuffItXReader(stream, leaveOpen: true);

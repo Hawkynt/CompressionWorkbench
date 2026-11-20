@@ -17,9 +17,10 @@ namespace FileFormat.StuffItX;
 /// decoded stream; a Brimstone-compressed catalog element holds names, dates and Finder info.
 /// </para>
 /// <para>
-/// Supported stream codings are none, Brimstone (method 0), Cyanide (1), the RC4-obscured stored
-/// method (5) and Iron (6). Darkhorse (2), Deflate (3), Blend (4), method 7, the English and x86
-/// preprocessors and encrypted streams are listed but not extracted.
+/// Supported stream codings are none, Brimstone (method 0), Cyanide (1), Darkhorse (2), the
+/// RC4-obscured stored method (5) and Iron (6), each optionally followed by the English
+/// preprocessor. Deflate (3), Blend (4), method 7, the x86 preprocessor and encrypted streams are
+/// listed but not extracted.
 /// </para>
 /// <para>Converted from XADMaster's <c>XADStuffItXParser.m</c>, <c>StuffItXUtilities.m</c>,
 /// <c>XADStuffItXBlockHandle.m</c> and <c>XADRC4Handle.m</c> (LGPL-2.1-or-later, see
@@ -82,6 +83,9 @@ public sealed class StuffItXReader : IDisposable {
 
   /// <summary>Ids of every data stream, including the ones only previews refer to.</summary>
   internal IEnumerable<long> StreamIds => this._streams.Keys;
+
+  /// <summary>The coding of one data stream, as the entries name it (e.g. "Darkhorse+x86").</summary>
+  internal string StreamMethod(long id) => this._streams.TryGetValue(id, out var s) ? MethodName(s.Element) : "?";
 
   /// <summary>Decodes a whole data stream and checks its CRC-32 where the archive stores one.</summary>
   internal byte[] DecodeStream(long id) {
@@ -327,25 +331,24 @@ public sealed class StuffItXReader : IDisposable {
 
   private byte[] Decode(Element element, long length) {
     if (element.Algorithms[3] >= 0) throw new NotSupportedException("Encrypted StuffIt X streams are not supported.");
-    if (element.Algorithms[2] >= 0) throw new NotSupportedException($"StuffIt X stream preprocessing '{MethodName(element)}' is not supported.");
+    var preprocess = element.Algorithms[2];
+    if (preprocess is >= 0 and not 0) throw new NotSupportedException($"StuffIt X stream preprocessing '{MethodName(element)}' is not supported.");
     if (length < 0 || length > int.MaxValue) throw new InvalidDataException("StuffIt X stream length is out of range.");
 
     var payload = this.ReadBlocks(element);
     var input = new StuffItXInput(payload);
-    switch (element.Algorithms[0]) {
-      case -1:
-        return payload;
-      case 0:
-        return StuffItXBrimstone.Decode(input, length);
-      case 1:
-        return StuffItXCyanide.Decode(input, length);
-      case 5:
-        return Rc4(payload);
-      case 6:
-        return StuffItXIron.Decode(input, length);
-      default:
-        throw new NotSupportedException($"StuffIt X compression method '{MethodName(element)}' is not supported.");
-    }
+    // A preprocessed stream's coded length is unknown: the coder runs to its own end.
+    var coded = preprocess >= 0 ? long.MaxValue : length;
+    var decoded = element.Algorithms[0] switch {
+      -1 => payload,
+      0 => StuffItXBrimstone.Decode(input, coded),
+      1 => StuffItXCyanide.Decode(input, coded),
+      2 => StuffItXDarkhorse.Decode(input, coded),
+      5 => Rc4(payload),
+      6 => StuffItXIron.Decode(input, coded),
+      _ => throw new NotSupportedException($"StuffIt X compression method '{MethodName(element)}' is not supported."),
+    };
+    return preprocess == 0 ? StuffItXEnglish.Decode(decoded, length) : decoded;
   }
 
   /// <summary>Method 5: two skipped bytes, a one-byte RC4 key, then the RC4-obscured data.</summary>
