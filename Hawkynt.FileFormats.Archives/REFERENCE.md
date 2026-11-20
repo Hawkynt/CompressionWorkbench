@@ -26805,6 +26805,60 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the trailing directory and patches the PACK header. |
 
+### Namespace `FileFormat.Paq8l`
+
+[`Paq8lArchive`](#paq8larchive) · [`Paq8lEntry`](#paq8lentry) · [`Paq8lFormatDescriptor`](#paq8lformatdescriptor)
+
+#### `Paq8lArchive`
+
+paq8l archives (docs/PAQ8L-FORMAT.md): a text header naming the files and their sizes, then one context-mixing coded stream holding all of them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultLevel` | `const int DefaultLevel` | Level paq8l uses by default. |
+| `Signature` | `static ReadOnlySpan<byte> Signature { get; }` | The header's first bytes: "paq8l -". |
+| `List` | `static List<Paq8lEntry> List(Stream stream)` | Lists the files without decoding anything. |
+| `ReadHeader` | `static ValueTuple<int, List<Paq8lEntry>, long> ReadHeader(Stream stream)` | Reads the header: the level and the files. Returns the offset of the coded data. |
+| `Read` | `static List<ValueTuple<Paq8lEntry, byte[]>> Read(Stream stream)` | Decodes every file, in header order. |
+| `Write` | `static void Write(Stream output, IReadOnlyList<ValueTuple<string, byte[]>> files, int level = 5)` | Writes `files` at `level` (0–9). |
+
+#### `Paq8lEntry`
+
+One file listed in a paq8l header.
+
+Implements `IEquatable<Paq8lEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Paq8lEntry` | `Paq8lEntry(string Name, long Size)` | One file listed in a paq8l header. |
+| `Name` | `string Name { get; init; }` | Name with '/' separators, as stored. |
+| `Size` | `long Size { get; init; }` | Size in bytes. |
+
+#### `Paq8lFormatDescriptor`
+
+paq8l archive (Matt Mahoney et al., 2007): a context-mixing compressor whose output is defined by its model, written from docs/PAQ8L-FORMAT.md. Archives read and written here are byte-identical to what paq8l itself writes and reads.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Paq8lFormatDescriptor` | `Paq8lFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes the inputs as one archive at `Level` (0–9, default 5). Directories are not stored: paq8l records only files, with their relative paths. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Par2`
 
 [`Par2FormatDescriptor`](#par2formatdescriptor) · [`Par2Writer`](#par2writer) · [`Par2Writer.SourceFile`](#par2writersourcefile)
