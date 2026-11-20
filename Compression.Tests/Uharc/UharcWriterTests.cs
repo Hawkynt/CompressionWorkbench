@@ -694,6 +694,95 @@ public class UharcWriterTests {
     return data;
   }
 
+  private static IEnumerable<TestCaseData> Executables()
+    => ExecutableImages().Select((image, k) => new TestCaseData(image).SetName($"ExecutableFilter_{k}_{image.Length:X}"));
+
+  /// <summary>MZ, ELF and relocation-table images dense with E8/E9 operands of every kind the filter tells apart.</summary>
+  internal static IEnumerable<byte[]> ExecutableImages() {
+    var random = new Random(2026);
+    foreach (var (kind, size) in new[] { ("pe", 0x5000), ("pe", 0x40000), ("mz-relocations", 0x3000), ("elf", 0x2000), ("tight-lows", 0x8000) }) {
+      var image = new byte[size];
+      random.NextBytes(image);
+      switch (kind) {
+        case "elf":
+          image[0] = 0x7F; image[1] = (byte)'E'; image[2] = (byte)'L'; image[3] = (byte)'F'; image[0x12] = 3; image[0x13] = 0;
+          break;
+        case "mz-relocations":
+          image[0] = (byte)'M'; image[1] = (byte)'Z';
+          System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(6), 40);
+          System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(0x18), 0x40);
+          break;
+        default:
+          image[0] = (byte)'M'; image[1] = (byte)'Z';
+          System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(6), 3);
+          break;
+      }
+
+      for (var i = 0x200; i < size - 20; i += random.Next(2, 12)) {
+        image[i] = random.Next(2) == 0 ? (byte)0xE8 : (byte)0xE9;
+        var operand = random.Next(7) switch {
+          0 => random.Next(-i, size - i),
+          1 => -i,
+          2 => 0,
+          3 => size - i + random.Next(0, i),
+          // Far targets with a nontrivial high half, low halves repeating and in the index range.
+          4 => (random.Next(2, 0x7000) << 16) | random.Next(0x8000, 0x8080),
+          5 => (random.Next(2, 0x7000) << 16) | ((0x4000 - i) & 0xFFFF),
+          _ => random.Next(),
+        };
+        if (kind == "tight-lows")
+          operand = (random.Next(2, 0x7000) << 16) | random.Next(0x7FF0, 0x8090);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(i + 1), operand);
+      }
+
+      yield return image;
+    }
+  }
+
+  [TestCaseSource(nameof(Executables))]
+  [Category("RoundTrip")]
+  public void GivenAnExecutable_WhenTheFilterIsAppliedAndRestored_ThenItIsUnchanged(byte[] image) {
+    var filtered = image.ToArray();
+    Assert.That(UharcExecutableFilter.Apply(filtered, out var encodable), Is.True);
+    Assert.Multiple(() => {
+      Assert.That(encodable, Is.True);
+      Assert.That(filtered, Is.Not.EqualTo(image));
+    });
+    UharcExecutableFilter.Restore(filtered);
+    Assert.That(filtered, Is.EqualTo(image));
+  }
+
+  [TestCase(1023)]
+  [TestCase(0)]
+  [Category("Boundary")]
+  public void GivenAnExecutableTooShortForTheFilter_WhenApplied_ThenItIsLeftAlone(int length) {
+    var image = new byte[length];
+    if (length > 1)
+      image[0] = (byte)'M';
+    if (length > 1)
+      image[1] = (byte)'Z';
+    var filtered = image.ToArray();
+    Assert.Multiple(() => {
+      Assert.That(UharcExecutableFilter.Apply(filtered, out var encodable), Is.False);
+      Assert.That(encodable, Is.True);
+      Assert.That(filtered, Is.EqualTo(image));
+    });
+  }
+
+  [TestCase("lzp", "6")]
+  [TestCase("alz", "6")]
+  [TestCase("lz78", "6")]
+  [TestCase("ppm", "6")]
+  [TestCase("ppm", "4")]
+  [TestCase("alz", "3")]
+  [Category("HappyPath"), Category("RoundTrip")]
+  public void GivenExecutablesAmongOtherFiles_WhenWritten_ThenEveryFileComesBack(string method, string version) {
+    var inputs = SampleInputs().Concat(ExecutableImages().Select((image, k) => ArchiveInputInfo.InMemory($"prog{k}.exe", image))).ToList();
+    var reader = new UharcReader(new MemoryStream(CreateWith(new FormatCreateOptions(method) { FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version } }, inputs)));
+    foreach (var input in inputs.Where(i => !i.IsDirectory))
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == input.ArchiveName)), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+  }
+
   [Test, Category("RoundTrip")]
   public void GivenAFaxPage_WhenTheFilterIsAppliedAndRestored_ThenItIsUnchanged() {
     var page = FaxPage();

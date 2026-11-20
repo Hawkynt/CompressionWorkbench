@@ -150,22 +150,27 @@ public class UharcExternalConformanceTests {
   }
 
   /// <summary>
-  /// A fax page (stored as bands) and a WAV file (delta-coded in LZP and LZ78) beside the sample
-  /// files: the tool of each version extracts our archive byte for byte.
+  /// A fax page (stored as bands), a WAV file (delta-coded in LZP and LZ78) and executables (their
+  /// branch operands and relocations transformed) beside the sample files: the tool of each
+  /// version extracts our archive byte for byte.
   /// </summary>
   [TestCase("6", "store")]
   [TestCase("6", "lzp")]
   [TestCase("6", "lz78")]
+  [TestCase("6", "alz")]
   [TestCase("6", "ppm")]
   [TestCase("4", "lzp")]
   [TestCase("4", "lz78")]
+  [TestCase("4", "ppm")]
   [TestCase("3", "lzp")]
   [TestCase("3", "alz")]
-  public void GivenFaxAndMultimediaFiles_WhenWeWriteThem_ThenTheVersionsToolExtractsThem(string version, string method) {
+  [TestCase("3", "ppm")]
+  public void GivenFilteredFiles_WhenWeWriteThem_ThenTheVersionsToolExtractsThem(string version, string method) {
     var tool = version switch { "4" => RequireUharc04(), "3" => RequireUharc03(), _ => RequireUharc() };
     var inputs = UharcWriterTests.SampleInputs()
       .Append(ArchiveInputInfo.InMemory("page.fax", UharcWriterTests.FaxPage()))
-      .Append(ArchiveInputInfo.InMemory("tone.wav", UharcWriterTests.Wave(30000))).ToList();
+      .Append(ArchiveInputInfo.InMemory("tone.wav", UharcWriterTests.Wave(30000)))
+      .Concat(UharcWriterTests.ExecutableImages().Select((image, k) => ArchiveInputInfo.InMemory($"prog{k}.exe", image))).ToList();
     var archive = Path.Combine(this._tmp, "ours.uha");
     File.WriteAllBytes(archive, UharcWriterTests.CreateWith(new FormatCreateOptions(method) {
       FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version },

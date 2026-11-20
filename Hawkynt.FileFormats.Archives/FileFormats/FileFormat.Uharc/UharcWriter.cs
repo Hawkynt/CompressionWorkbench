@@ -117,6 +117,24 @@ internal static class UharcWriter {
       filters |= UharcHeader.FaxFilter;
     var multimedia = version != 2 && mode is Mode.Lzp or Mode.Lz78;
 
+    // The executable filter (0.6: not under PPM, whose restore also swaps operand bytes) is all or
+    // nothing: one file it cannot express would be damaged by the restore, so then none gets it.
+    var executable = version switch {
+      6 => mode is Mode.Lzp or Mode.Lz78 or Mode.Alz,
+      3 or 4 => mode is Mode.Lzp or Mode.Lz78 or Mode.Alz or Mode.Ppm,
+      _ => false,
+    };
+    if (executable)
+      foreach (var f in files) {
+        if ((filters & UharcHeader.FaxFilter) != 0 && f.Data.Length == UharcFaxFilter.PageSize)
+          continue;
+        UharcExecutableFilter.Apply(f.Data.ToArray(), out var encodable);
+        if (!encodable) {
+          executable = false;
+          break;
+        }
+      }
+
     var stream = new byte[total];
     var fileEnds = new List<long>(n);
     long offset = 0;
@@ -128,8 +146,13 @@ internal static class UharcWriter {
         UharcExecutableFilter.ApplyLegacy(slice);
       else if ((filters & UharcHeader.FaxFilter) != 0 && slice.Length == UharcFaxFilter.PageSize)
         UharcFaxFilter.Apply(slice);
-      else if (multimedia && UharcMultimediaFilter.Apply(slice))
-        filters |= UharcHeader.MultimediaFilter;
+      else {
+        // The reader undoes the executable filter before the multimedia one.
+        if (multimedia && UharcMultimediaFilter.Apply(slice))
+          filters |= UharcHeader.MultimediaFilter;
+        if (executable && UharcExecutableFilter.Apply(slice, out _))
+          filters |= UharcHeader.ExecutableFilter;
+      }
       offset += f.Data.LongLength;
       fileEnds.Add(offset);
     }
