@@ -113,6 +113,8 @@ internal static class ZfsOracle {
   public static Dictionary<string, string> KernelManifest(string dir, string wsl, string pool, out string log, string after, bool download, string before = "") {
     var images = Directory.GetFiles(dir, "*.img").Select(f => Path.GetFileName(f)!).Order(StringComparer.Ordinal).ToList();
     var uploads = string.Concat(images.Select(f => $"upload {f} /out/{f}\\n"));
+    // the scratch disk holds every uploaded image with room to spare
+    var scratch = Math.Max(512, images.Sum(f => new FileInfo(Path.Combine(dir, f)).Length) / (1 << 20) * 5 / 4 + 256);
     var downloads = download ? string.Concat(images.Select(f => $"download /out/{f} {f}\\n")) : "";
     File.WriteAllText(Path.Combine(dir, "inner.sh"), $$"""
       modprobe zfs
@@ -130,7 +132,7 @@ internal static class ZfsOracle {
       """.Replace("\r\n", "\n"));
     var run = FsInteropToolbox.RunWsl(
       "export LIBGUESTFS_BACKEND=direct LIBGUESTFS_CACHEDIR=$HOME/cwbzfs-work/cache LIBGUESTFS_MEMSIZE=2048; " +
-      $"mkdir -p $HOME/cwbzfs-work/cache; cd {wsl}; truncate -s 512M scratch.img; " +
+      $"mkdir -p $HOME/cwbzfs-work/cache; cd {wsl}; truncate -s {scratch}M scratch.img; " +
       $"printf 'run\\nmkfs ext4 /dev/sda\\nmount /dev/sda /\\nmkdir /out\\n{uploads}upload inner.sh /inner.sh\\n" +
       "debug sh \"sh /sysroot/inner.sh > /sysroot/log.txt 2>&1\"\\ndownload /log.txt log.txt\\n" +
       $"download /out/pool.manifest pool.manifest\\n{downloads}' | timeout 300 guestfish -a scratch.img 2>&1");

@@ -517,7 +517,7 @@ to the RAID-Z's devices; the space maps take the RAID-Z `asize`, the accounting 
 
 **Feature-flag pools (version 5000).** The enabled features and their reference counts are
 the entries of `features_for_read` and `features_for_write`. An edit is refused while one of
-these is active: device_removal, obsolete_counts, zpool_checkpoint, draid,
+these is active: device_removal, obsolete_counts, zpool_checkpoint,
 async_destroy, allocation_classes, livelist, raidz_expansion, redacted_datasets — and while any
 feature not known to the editor is. What the active ones ask of an edit:
 
@@ -736,6 +736,15 @@ none if r = 0) but always takes whole stripes: its allocated size is ceil(n / D)
 the short columns padded with zero sectors that the parity covers. A block that reaches past
 its group's end is split: the first part takes what is left of the group (in whole stripes),
 the rest starts the next group. There is no RAID-Z1 column swap.
+
+**Writing.** Every column of a row is written to the parity column's length, the short data
+columns ending in zero sectors (scrubs read and check them). Allocations are whole stripes and
+start on group-width boundaries; a metaslab's range starts at the first stripe boundary at or
+after `m << metaslab_shift` and keeps whole stripes (its space map counts from that start). The
+deflate ratio is `2^17 / (allocated sectors of a 128 KiB block)`. A new dRAID pool (version 5000,
+`org.openzfs:draid` active, read list and label) uses no distributed spare and the smallest G
+with W × G divisible by N; its `asize` is the children's whole 16 MiB rows after the labels and a
+32 MiB reserve, times N, rounded down to whole groups.
 
 ## RAID-Z
 
