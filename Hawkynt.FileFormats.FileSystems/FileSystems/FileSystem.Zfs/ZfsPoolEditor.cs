@@ -463,13 +463,7 @@ internal static partial class ZfsPoolEditor {
             slots[i] = (list.Count - 1, -1);
             continue;
           }
-          var parts = leafType == "spare" ? leaf.Lists("children") : [];
-          var dspare = parts.FirstOrDefault(c => c.String("type") == "dspare");
-          var original = parts.FirstOrDefault(c => c.String("type") is "disk" or "file");
-          if (dspare == null || original == null || parts.Length != 2)
-            throw new NotSupportedException($"ZFS: child {i} of the dRAID is a '{leafType}' this editor does not edit.");
-          if (parts.Any(c => c.UInt64("resilver_txg") != null || c.UInt64("rebuild_txg") != null))
-            throw new NotSupportedException("ZFS: a distributed spare is still being rebuilt; the pool is not edited.");
+          var (original, dspare) = DraidSpareSlot(leaf, i);
           var device = -1;
           if (ZfsVdev.IsOutOfService(original)) {
             if (byGuid.ContainsKey(original.UInt64("guid") ?? 0)) ++ignored;            // given, but not written
@@ -728,6 +722,23 @@ internal static partial class ZfsPoolEditor {
     public bool EntriesChanged;
     public bool LinksChanged;
     public bool Freed;
+  }
+
+  /// <summary>
+  /// A dRAID child that is not a plain device: a fully rebuilt <c>spare</c> of the original device
+  /// and the distributed spare standing in for it. Anything else, or a spare still being rebuilt
+  /// (<c>resilver_txg</c>/<c>rebuild_txg</c>), is refused.
+  /// </summary>
+  internal static (XdrNvList Original, XdrNvList Spare) DraidSpareSlot(XdrNvList leaf, int index) {
+    var type = leaf.String("type");
+    var parts = type == "spare" ? leaf.Lists("children") : [];
+    var dspare = parts.FirstOrDefault(c => c.String("type") == "dspare");
+    var original = parts.FirstOrDefault(c => c.String("type") is "disk" or "file");
+    if (dspare == null || original == null || parts.Length != 2)
+      throw new NotSupportedException($"ZFS: child {index} of the dRAID is a '{type}' this editor does not edit.");
+    if (parts.Append(leaf).Any(c => c.UInt64("resilver_txg") != null || c.UInt64("rebuild_txg") != null))
+      throw new NotSupportedException("ZFS: a distributed spare is still being rebuilt; the pool is not edited.");
+    return (original, dspare);
   }
 
   private sealed class MapPlan {
