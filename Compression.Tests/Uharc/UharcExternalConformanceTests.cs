@@ -190,6 +190,7 @@ public class UharcExternalConformanceTests {
   [TestCase("4", "alz")]
   [TestCase("4", "ppm")]
   [TestCase("3", "ppm")]
+  [TestCase("3", "alz")]
   public void GivenMediaFiles_WhenWeWriteThemWithTheirClasses_ThenTheVersionsToolExtractsThem(string version, string method) {
     var tool = version switch { "4" => RequireUharc04(), "3" => RequireUharc03(), _ => RequireUharc() };
     byte[][] media = [

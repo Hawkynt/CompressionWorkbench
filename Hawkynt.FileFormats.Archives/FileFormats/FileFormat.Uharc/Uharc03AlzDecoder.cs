@@ -114,6 +114,7 @@ internal sealed class Uharc03AlzModel<TCoder> where TCoder : struct, IUharcCoder
 
   private TCoder _coder;
   private int _switches;
+  private int _switchValue;
   private readonly byte[] _window;
   private readonly uint _mask;
   private uint _position;
@@ -211,9 +212,23 @@ internal sealed class Uharc03AlzModel<TCoder> where TCoder : struct, IUharcCoder
     return slot;
   }
 
+  /// <summary>The literal group the model codes in (0 plain bytes, 1..5 differences).</summary>
+  public int Group => this._group;
+
+  /// <summary>
+  /// Codes a model switch (encoder): the switch decision, then <paramref name="value"/> — 0..5 a
+  /// literal group, 6..9 a step — applied as the decoder applies it at <paramref name="position"/>.
+  /// </summary>
+  public void Select(int value, int position) {
+    this._switchValue = value;
+    if (this.DecodeDecision(0) != 0)
+      throw new InvalidOperationException("UHARC: 0.3 ALZ switch decision lost.");
+    this.Switch(position);
+  }
+
   /// <summary>
   /// Codes one step — a copy (token 1 new distance, 3 a recent one by <see cref="UharcAlzChoice.Slot"/>)
-  /// or a literal (token 4); model switches are read but never written. Returns the position
+  /// or a literal (token 4); model switches go through <see cref="Select"/>. Returns the position
   /// after the bytes it produced.
   /// </summary>
   public int Step(byte[] output, int position, in UharcAlzChoice choice) {
@@ -262,8 +277,7 @@ internal sealed class Uharc03AlzModel<TCoder> where TCoder : struct, IUharcCoder
   }
 
   private void Switch(int position) {
-    var value = (int)this._coder.Uniform(12, 0);
-    switch (value) {
+    var value = (int)this._coder.Uniform(12, TCoder.Encoding ? (uint)this._switchValue : 0u);    switch (value) {
       case <= 5:
         this._group = value;
         this._lag = (value - 1) & 3;
@@ -295,8 +309,19 @@ internal sealed class Uharc03AlzModel<TCoder> where TCoder : struct, IUharcCoder
   // ── Literal model ──────────────────────────────────────────────────────
 
   private int DecodeLiteral(byte[] output, int position, byte literal) {
-    // The encoder keeps group 0, where the model symbol is the complemented byte.
-    var target = (byte)~literal;
+    // The model symbol is the complemented byte, or in groups 1..5 its signed difference.
+    byte target = 0;
+    if (TCoder.Encoding) {
+      var difference = literal;
+      if (this._group != 0) {
+        difference = (byte)(literal - this.LagByte());
+        if (!this._positive)
+          difference = (byte)-difference;
+      }
+
+      target = (byte)~difference;
+    }
+
     int symbol;
     if (this._rawLiterals)
       symbol = (int)this._coder.Uniform(256, target);

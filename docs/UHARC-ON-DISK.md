@@ -564,7 +564,8 @@ the fitted window and at 1 KiB.
 The ALZ encoder runs the decoder's model step for step (one model, generic over the coder
 direction, so the decoding instantiation stays as fast as before) with each block's
 multimedia class as its selector. **Classes**: at every model reset the ALZ and PPM encoders (0.6,
-and 0.4's; 0.3's PPM too) code the class of the file that covers at least half of the block up to
+and 0.4's; 0.3's PPM too; 0.3's ALZ picks a literal group per file instead, see Writing UHARC
+0.3) code the class of the file that covers at least half of the block up to
 the next reset point — 3 for a 24-bit BMP, 5, 7, 8 and 9 for PCM WAV of 8-bit mono, 8-bit
 stereo, 16-bit mono and 16-bit stereo — and 0 otherwise; the model then codes the block's
 literals through that predictor. The extractors of each version take such archives of single BMP
@@ -1255,10 +1256,17 @@ range encoder is the decoder's mirror: a 31-bit low whose top bit is the carry, 
 held back while it is 0xFF so a carry can still reach it, a leading byte the decoder skips, and
 the top symbol of each interval given the remainder. The LZP and ALZ models are the decoders'
 (generic over the coder direction; decoding the 39 MB set takes as long as before). The LZP
-encoder answers as 0.4's does. The ALZ encoder stays in literal group 0, never switches models
-or codes long runs, and takes the best of a recent distance, a new distance whose slot is open
-at the current history length and whose offset the narrowed slot holds, or a literal; 0.3
-excludes no byte after a copy, so its copies need not be whole. The PPM encoder is 0.4's (see
+encoder answers as 0.4's does. The ALZ encoder never codes long runs, and takes the best of a
+recent distance, a new distance whose slot is open at the current history length and whose
+offset the narrowed slot holds, or a literal; 0.3 excludes no byte after a copy, so its copies
+need not be whole, and they stop at the next file start. There the encoder picks the literal
+group by the file's multimedia class (see Writing) and, when it is not the current one, codes a
+model switch to it followed by a step switch: group 3 and step 128 for a 24-bit BMP, group 5
+and 128 for 8-bit mono WAV, group 2 and 128 for 8-bit stereo, group 2 and 32 for 16-bit mono,
+group 4 with its default 8 for 16-bit stereo, and group 0 and 128 for anything else. These are
+the pairs `uharc_u.exe` codes for such single files (it chooses per 12 800-byte block rather
+than per file); the decoder only follows the switches. A literal in groups 1..5 is coded as its
+signed difference from the byte *lag* + 1 back, as the decoder reads it. The PPM encoder is 0.4's (see
 Writing UHARC 0.4) on the 0.3 model: a binary stream with each block's class, copies cut to a codable length
 from 4 bytes on, and copies of 7 to 254 ending where the match does; 255 is a plain copy here
 and need not. `uharc_u.exe` (0.3 BETA) `x` extracts our archives of every fixture input set and
@@ -1267,7 +1275,7 @@ window, and unuharc_recon's unpacker accepts them.
 
 ## What is not derived
 
-- **Writing** text PPM streams (in 0.6, 0.4 and 0.3 alike) and 0.3's ALZ literal groups 1..5.
+- **Writing** text PPM streams (in 0.6, 0.4 and 0.3 alike).
 
 ## Sources
 
