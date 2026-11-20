@@ -19508,7 +19508,7 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 
 ### Namespace `FileFormat.Ha`
 
-[`HaEntry`](#haentry) · [`HaFormatDescriptor`](#haformatdescriptor) · [`HaModifier`](#hamodifier) · [`HaReader`](#hareader) · [`HaWriter`](#hawriter)
+[`HaEntry`](#haentry) · [`HaFormatDescriptor`](#haformatdescriptor) · [`HaModifier`](#hamodifier) · [`HaReader`](#hareader) · [`HaSpecialFile`](#haspecialfile) · [`HaSpecialKind`](#haspecialkind) · [`HaWriter`](#hawriter)
 
 #### `HaEntry`
 
@@ -19517,20 +19517,26 @@ One member record of an HA archive (docs/HA-ON-DISK.md §1.1).
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `HaEntry` | `HaEntry()` |  |
+| `MachineUnix` | `const byte MachineUnix` | First machine-information byte of a record written on Unix. |
 | `MethodAsc` | `const int MethodAsc` | LZ77 with arithmetic-coded tokens (ASC). |
 | `MethodCpy` | `const int MethodCpy` | Stored data (CPY). |
 | `MethodDirectory` | `const int MethodDirectory` | Directory record. |
 | `MethodHsc` | `const int MethodHsc` | Order-4 finite-context model (HSC). |
-| `MethodSpecial` | `const int MethodSpecial` | Unix special file (device, FIFO or symlink data). |
+| `MethodSpecial` | `const int MethodSpecial` | Unix special file: a device, FIFO, socket or symbolic link (docs/HA-ON-DISK.md §1.4). |
 | `CompressedSize` | `uint CompressedSize { get; init; }` | Gets the stored (compressed) length. |
 | `Crc32` | `uint Crc32 { get; init; }` | Gets the CRC-32 of the original data (0 for directories). |
 | `FileName` | `string FileName { get; init; }` | Gets the full name, directories separated by '/'. |
 | `IsDirectory` | `bool IsDirectory { get; }` | Gets whether this is a directory record. |
+| `IsSpecial` | `bool IsSpecial { get; }` | Gets whether this is a Unix special-file record (read it with `ReadSpecial`). |
 | `LastModified` | `DateTime LastModified { get; init; }` | Gets the modification time (stored as Unix seconds), in UTC. |
 | `MachineInfo` | `byte[] MachineInfo { get; init; }` | Gets the machine-specific information bytes (first byte: 1 MS-DOS, 2 Unix). |
 | `MethodName` | `string MethodName { get; }` | Gets the method's name as HA lists it. |
 | `Method` | `int Method { get; init; }` | Gets the record type (method): 0 CPY, 1 ASC, 2 HSC, 14 directory, 15 special. |
 | `OriginalSize` | `uint OriginalSize { get; init; }` | Gets the original length. |
+| `SpecialKind` | `HaSpecialKind? SpecialKind { get; }` | Gets what a special-file record holds, from the file-type bits of its Unix mode; null for any other record, `Unknown` when the record carries no Unix mode. |
+| `UnixGroupId` | `ushort? UnixGroupId { get; }` | Gets the Unix group id of a record written on Unix, or null. |
+| `UnixMode` | `ushort? UnixMode { get; }` | Gets the Unix mode (file type and permission bits) of a record written on Unix, or null. |
+| `UnixUserId` | `ushort? UnixUserId { get; }` | Gets the Unix owner id of a record written on Unix, or null. |
 
 #### `HaFormatDescriptor`
 
@@ -19557,7 +19563,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Compacts away records `ha d` marked deleted, as `ha` does on its next write. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts files and directories; special files (devices, FIFOs, sockets, links) have no content and are listed only. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named members; every other record is copied byte for byte. |
 
@@ -19572,7 +19578,7 @@ Edits an HA archive by rewriting it: every member that stays is copied byte for 
 
 #### `HaReader`
 
-Reads an HA archive (Harri Hirvola, 1993–1995): CPY, ASC and HSC members, directory records, deleted records skipped. Layout and methods: docs/HA-ON-DISK.md.
+Reads an HA archive (Harri Hirvola, 1993–1995): CPY, ASC and HSC members, directory records, Unix special files (devices, FIFOs, sockets, symbolic links; `ReadSpecial`), deleted records skipped. Layout and methods: docs/HA-ON-DISK.md.
 
 Implements `IDisposable`.
 
@@ -19584,6 +19590,36 @@ Implements `IDisposable`.
 | `IsTruncated` | `bool IsTruncated { get; }` | Gets whether a record could not be parsed; `Entries` holds those before it. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(HaEntry entry)` | Decodes a member and checks its CRC-32. |
+| `ReadSpecial` | `HaSpecialFile ReadSpecial(HaEntry entry)` | Reads and decodes a Unix special-file record (docs/HA-ON-DISK.md §1.4). |
+
+#### `HaSpecialFile`
+
+The decoded content of an HA special-file record (docs/HA-ON-DISK.md §1.4).
+
+Implements `IEquatable<HaSpecialFile>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HaSpecialFile` | `HaSpecialFile(HaSpecialKind Kind, byte[] Data, string LinkTarget = null, ulong? DeviceNumber = null, uint? DeviceMajor = null, uint? DeviceMinor = null)` | The decoded content of an HA special-file record (docs/HA-ON-DISK.md §1.4). |
+| `Data` | `byte[] Data { get; init; }` | The record's stored bytes, unchanged. |
+| `DeviceMajor` | `uint? DeviceMajor { get; init; }` | The major number of a device stored as an 8-byte number, split the way Linux (glibc) packs `dev_t`; null for any other width, whose packing depends on the writing system. |
+| `DeviceMinor` | `uint? DeviceMinor { get; init; }` | The minor number, under the same condition as `DeviceMajor`. |
+| `DeviceNumber` | `ulong? DeviceNumber { get; init; }` | The device number of a device, read little-endian from all of its 2, 4 or 8 stored bytes; otherwise null. |
+| `Kind` | `HaSpecialKind Kind { get; init; }` | What the record holds. |
+| `LinkTarget` | `string LinkTarget { get; init; }` | The link text of a symbolic link, without its NUL; otherwise null. |
+
+#### `HaSpecialKind`
+
+What an HA special-file record (type 15) holds, from the file-type bits of its Unix mode.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Unknown` | `0` | The record carries no Unix mode, or one with a file type HA does not store as special. |
+| `CharacterDevice` | `1` | A character device; the data is the device number. |
+| `BlockDevice` | `2` | A block device; the data is the device number. |
+| `SymbolicLink` | `3` | A symbolic link; the data is the link text and a terminating NUL. |
+| `Fifo` | `4` | A named pipe; no data. |
+| `Socket` | `5` | A Unix-domain socket; no data. |
 
 #### `HaWriter`
 
