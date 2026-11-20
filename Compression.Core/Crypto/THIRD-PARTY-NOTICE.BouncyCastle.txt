@@ -1,11 +1,14 @@
-Bouncy Castle C# (AES engines) - converted to C#
+Bouncy Castle C# (AES and DES engines) - converted to C#
 
 Source:   https://github.com/bcgit/bc-csharp
           crypto/src/crypto/engines/AesEngine.cs
           crypto/src/crypto/engines/AesEngine_X86.cs
+          crypto/src/crypto/engines/DesEngine.cs
+          crypto/src/crypto/engines/DesEdeEngine.cs
 Revision: 4814a10bc95da8757d8390c59b0b62d4cc00cb0d (master, 2026-11-18)
 Author:   The Legion of the Bouncy Castle Inc.; AesEngine follows Brian Gladman's
-          table layout for FIPS-197.
+          table layout for FIPS-197; DesEngine follows Richard Outerbridge's D3DES,
+          its key schedule credited there to James Gillogly and Phil Karn.
 Licence:  MIT, reproduced below. It permits redistribution in this
           LGPL-3.0-or-later repository.
 
@@ -16,8 +19,15 @@ Converted parts, into Compression.Core/Crypto/AesBlockCipher.cs:
 - AesEngine_X86: the AESKEYGENASSIST key schedules for 128-, 192- and 256-bit
   keys and the inverse round keys through AESIMC.
 The FIPS-197 key expansion is written as one loop over the key length instead
-of the engine's three unrolled ones, and the four-block pipeline over the AES
+of the engine's three unrolled ones, and the eight-block pipeline over the AES
 instructions is written as one loop over the rounds.
+
+Converted parts, into Compression.Core/Crypto/TripleDes.cs:
+- DesEngine: the bytebit, bigbyte, pc1, totrot, pc2 and SP1-SP8 tables (value
+  for value), GenerateWorkingKey and DesFunc, its two half-rounds per loop
+  written as one round function.
+- DesEdeEngine: the encrypt-decrypt-encrypt order, the third key of a 16-byte
+  bundle being the first.
 
 Upstream licence (bc-csharp's LICENSE.md, verbatim):
 
