@@ -31,6 +31,11 @@ source trees.
 | 248 | 8 | build timestamp (UNIX seconds; `mkfs.axfs` writes 0). The field is 8-byte aligned, which leaves 244–247 unused |
 | 256 | 1 | `page_shift` (12 → 4096-byte nodes) |
 
+The superblock ends at 257; `mkfs.axfs` zero-pads it to 264, where the region descriptors begin.
+`size` covers the image up to and including a second copy of the magic, which the driver reads
+from the last four bytes of `size` before it mounts; `mmap_size` equals `size`; `blocks` is the
+number of nodes the files use.
+
 ## Region descriptor (40 bytes on disk, big-endian)
 
 | Offset | Size | Field |
@@ -75,7 +80,26 @@ For node *n*: type = `node_type[n]` (0 XIP, 1 compressed, 2 byte-aligned); idx =
 The last page of a file is cut to the file size. `mkfs.axfs -a` forces the pages of
 owner-executable ELF files into the XIP region (measured: only full pages; the partial
 last page is stored like any other); other pages are compressed or
-byte-aligned. Files with the same content share nodes.
+byte-aligned. Files with the same content do not share nodes: in the reference images
+`etc/numbers.txt` and its copy `deep/a/b/c/copy.txt` each have four nodes of their own.
+
+## Layout as `mkfs.axfs` writes it
+
+Measured on the reference images:
+
+* the 18 region descriptors back to back from offset 264, in superblock order;
+* the byte tables packed back to back from offset 984, in descriptor order from `node_type`
+  to `gids`, with no alignment;
+* zero padding to the next page, where the XIP region starts, then the byte-aligned
+  region, the compressed region and the strings, each straight after the last;
+* the end magic, then zero padding to a whole page.
+
+Inodes are numbered breadth-first: each directory's children take consecutive inode
+numbers, sorted by name, and the root's name in the strings is `./`. A directory's
+`inode_file_size` is the sum of its children's name lengths plus one each. Nodes are
+handed out in inode order, so each file's pages are consecutive nodes. A file with no
+data has no entries and an array index of 0. `mkfs.axfs` sizes some node tables a
+few entries larger than the nodes it writes; the driver only reads entries files point at.
 
 ## What the implementation does with it
 
@@ -83,5 +107,37 @@ Reads directories, regular files, symlinks, modes and owners, and data from all 
 node kinds. Every zlib stream's Adler-32 is checked, and every table index and region
 range is bounds-checked: a damaged image is refused, never read as different bytes.
 Images other than version 2.x or zlib are refused. Device nodes, FIFOs and sockets are
-listed without data. No writer exists: nothing outside this package reads AXFS on a
-current kernel, so a writer could not be proven.
+listed without data.
+
+## Writing
+
+`AxfsWriter` writes directories, regular files and symlinks in the layout above. It
+differs from `mkfs.axfs` in three ways:
+
+* nothing goes into the XIP region;
+* each byte table uses the fewest bytes per entry that hold its largest value, where
+  `mkfs.axfs` uses 1 for `node_type` and 4 for the rest;
+* byte-aligned nodes are packed without the extra byte `mkfs.axfs` leaves after each.
+
+Each page is deflated into its own zlib cblock at the best level, with `cblock_size` set
+to the page size. A page whose zlib stream is not shorter than the page is stored
+byte-aligned instead. The compressed bytes are this package's own deflate output, so
+they differ from zlib's, and images are not byte-identical to `mkfs.axfs` output.
+
+The driver refuses to mount a root with no entries. The writer still writes such an
+image, which our reader reads as empty.
+
+**Proof.** `Compression.Tests/Axfs/KernelOracle/axfs-run.sh` builds the AXFS driver
+(jaredeh/axfs at a pinned revision) as a module for Debian buster's Linux 4.19. It boots
+that kernel under QEMU and mounts an image as a block device. Two build-time edits are
+applied to the module, both outside the format:
+
+* the mmap fault path calls a page-lock helper 4.19 does not export, so the harness
+  locks the page outright;
+* block-device reads take a division remainder as the block number, so the harness takes
+  the quotient.
+
+With these edits the driver reads both `mkfs.axfs` reference images exactly as their
+manifests describe. It reads our images back with every file's size and MD5, every mode,
+owner and group, and every link target as written. The test tree needs 2- and 3-byte
+table entries, compressed and byte-aligned nodes, and a 70,000-byte file.
