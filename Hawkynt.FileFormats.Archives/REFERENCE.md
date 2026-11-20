@@ -20515,7 +20515,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes an Inno Setup 6.0 installer that installs every input below its installation directory. The method is "lzma2" (the default) or "stored". The loader, setup program, messages and wizard bitmaps come from an installed Inno Setup 6.0.x: `FormatSpecific["innodir"]`, the INNOSETUPDIR environment variable, or "Inno Setup 6" under Program Files (`Load`); `FormatSpecific["name"]` sets the application name. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes an Inno Setup installer that installs every input below its installation directory. The method is "lzma2" (the default) or "stored". The loader, setup program, messages and wizard bitmaps come from an installed Inno Setup 6.0 to 7.1.1, whose setup data layout the installer then uses: `FormatSpecific["innodir"]`, the INNOSETUPDIR environment variable, or "Inno Setup 7" or "Inno Setup 6" under Program Files (`Load`); `FormatSpecific["name"]` sets the application name. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Decodes one entry into memory; an unknown name yields no bytes. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
@@ -20544,6 +20544,7 @@ Settings of an installer written by `InnoSetupWriter`.
 | `AppName` | `string AppName { get; init; }` | Application name (the wizard's title and the default folder name). |
 | `AppVersion` | `string AppVersion { get; init; }` | Application version. |
 | `Compression` | `InnoSetupWriterCompression Compression { get; init; }` | How the files are stored. |
+| `DefaultDirName` | `string DefaultDirName { get; init; }` | The default installation directory, written as is (Inno constants allowed, a literal brace doubled); null means `{autopf}\` and the application name, as the compiler's default. |
 
 #### `InnoSetupReader`
 
@@ -20567,23 +20568,23 @@ Reads the files an Inno Setup installer carries.
 
 #### `InnoSetupStubs`
 
-The parts of an Inno Setup 6.0.x installation an installer is built from: the loader (SetupLdr.e32), the setup program (Setup.e32), the default messages (Default.isl) and the wizard bitmaps. They are native code and Inno Setup's own text, so they are read from the user's installation and never shipped here.
+The parts of an Inno Setup 6.x/7.x installation an installer is built from: the loader (SetupLdr.e32), the setup program (Setup.e32), the default messages (Default.isl) and the wizard bitmaps. They are native code and Inno Setup's own text, so they are read from the user's installation and never shipped here.
 
 Implements `IEquatable<InnoSetupStubs>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `InnoSetupStubs` | `InnoSetupStubs(byte[] SetupLdr, byte[] Setup, string DefaultMessages, byte[] WizardImage, byte[] WizardSmallImage)` | The parts of an Inno Setup 6.0.x installation an installer is built from: the loader (SetupLdr.e32), the setup program (Setup.e32), the default messages (Default.isl) and the wizard bitmaps. They are native code and Inno Setup's own text, so they are read from the user's installation and never shipped here. |
+| `InnoSetupStubs` | `InnoSetupStubs(byte[] SetupLdr, byte[] Setup, string DefaultMessages, byte[] WizardImage, byte[] WizardSmallImage)` | The parts of an Inno Setup 6.x/7.x installation an installer is built from: the loader (SetupLdr.e32), the setup program (Setup.e32), the default messages (Default.isl) and the wizard bitmaps. They are native code and Inno Setup's own text, so they are read from the user's installation and never shipped here. |
 | `DefaultMessages` | `string DefaultMessages { get; init; }` |  |
 | `SetupLdr` | `byte[] SetupLdr { get; init; }` |  |
 | `Setup` | `byte[] Setup { get; init; }` |  |
 | `WizardImage` | `byte[] WizardImage { get; init; }` |  |
 | `WizardSmallImage` | `byte[] WizardSmallImage { get; init; }` |  |
-| `Load` | `static InnoSetupStubs Load(string directory = null)` | Reads the stubs from `directory`, else the INNOSETUPDIR environment variable, else the usual install locations ("Inno Setup 6" under Program Files). Null when none is found. |
+| `Load` | `static InnoSetupStubs Load(string directory = null)` | Reads the stubs from `directory`, else the INNOSETUPDIR environment variable, else the usual install locations ("Inno Setup 7", then "Inno Setup 6" under Program Files). Null when none is found. |
 
 #### `InnoSetupWriter`
 
-Writes Inno Setup 6.0.x installers: the user's SetupLdr.e32 followed by the file data (setup-1), the setup headers (setup-0) and the setup program, with the loader's offset table resource pointing at them. The installer is not uninstallable, runs without elevation and installs exactly the given files and directories below its installation directory.
+Writes Inno Setup installers for the setup data layouts of Inno Setup 6.0 to 7.1.1, whichever the given stubs speak: the user's SetupLdr.e32 followed by the file data (setup-1), the setup headers (setup-0) and the setup program, with the loader's offset table resource pointing at them. The installer is not uninstallable, runs without elevation and installs exactly the given files and directories below its installation directory.
 
 | Member | Signature | Summary |
 | --- | --- | --- |

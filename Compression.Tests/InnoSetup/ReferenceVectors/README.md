@@ -62,3 +62,12 @@ each of [Dirs], [Files], [Icons], [INI], [Registry], [Run] and [UninstallDelete]
 record layout is parsed. The payload is generated: 21643 bytes of seeded words, 3000 seeded random
 bytes, an empty file, and a 16-byte file in a subdirectory. The `oracle.tsv` rows are what
 innoextract 1.10-dev (`6e9e34e`) extracts. They equal the generated inputs.
+
+**Writer headers** (`iscc-headers/`): what the writer must reproduce. `make-iscc-headers.sh`
+compiles `ref.iss` (two files, `Compression=none`, `TimeStampsInUTC=yes`, the release's own
+wizard bitmaps) with the ISCC of one installed release per setup data id (6.0.5, 6.1.2, 6.2.2,
+6.3.3, 6.4.1, 6.4.2, 6.4.3, 6.5.1, 6.5.4, 6.6.0, 6.6.1, 6.7.4, 7.1.0 and 7.1.1, each from its
+official installer at https://github.com/jrsoftware/issrc/releases, installed under wine 9.0 with
+`/VERYSILENT /DIR=C:\IS<version>`), and `iscc-headers.py` prints the SHA-256 of both decompressed
+setup-0 blocks. `InnoSetupWriterVersionTests` holds those hashes and requires the writer, given the
+same release's stubs (`CWB_INNO_STUBS_ROOT`), to produce exactly those blocks.
