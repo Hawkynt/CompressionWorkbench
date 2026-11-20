@@ -52,6 +52,10 @@ public static class ExecutablePackerHandlers {
     new DosExePackerHandler(PkLiteUnpacker.Instance),
     new DosExePackerHandler(ExePackUnpacker.Instance),
     new DosExePackerHandler(DietUnpacker.Instance),
+    new DosExePackerHandler(ApackUnpacker.Instance),
+    new DosExePackerHandler(ExeLiteUnpacker.Instance),
+    new DosExePackerHandler(TinyProgUnpacker.Instance),
+    new DosExePackerHandler(AxeUnpacker.Instance),
     new DescriptorExecutablePackerHandler(new ShrinklerFormatDescriptor()),
     new DescriptorExecutablePackerHandler(new VmProtectFormatDescriptor()),
 
