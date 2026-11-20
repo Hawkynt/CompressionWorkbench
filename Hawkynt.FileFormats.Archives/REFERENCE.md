@@ -33639,7 +33639,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | --- | --- | --- |
 | `UharcFormatDescriptor` | `UharcFormatDescriptor()` |  |
 | `SfxStubOption` | `const string SfxStubOption` | Format-specific option naming a self-extractor stub file (UHARC's `UHARCSFX.EXE`). |
-| `VersionOption` | `const string VersionOption` | Format-specific option choosing the archive version: 6 (the default) or 4. |
+| `VersionOption` | `const string VersionOption` | Format-specific option choosing the archive version: 6 (the default), 4 or 3. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
@@ -33652,7 +33652,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a UHARC 0.6 archive: method `lzp` (the default), `ppm`, `alz`, `lz78`, `rle` or `store`; a password enciphers the stream and the tables as `-pw` does; the `SfxStubOption` option puts the named Win32 stub in front, as `-sfx` does; `DictSize` caps the LZP and ALZ window, as `-md` does; the `VersionOption` option 4 writes a UHARC 0.4 archive (store, RLE, LZW as `lz78`, LZP, ALZ). |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a UHARC 0.6 archive: method `lzp` (the default), `ppm`, `alz`, `lz78`, `rle` or `store`; a password enciphers the stream and the tables as `-pw` does; the `SfxStubOption` option puts the named Win32 stub in front, as `-sfx` does; `DictSize` caps the LZP and ALZ window, as `-md` does; the `VersionOption` option 4 or 3 writes a UHARC 0.4 or 0.3 archive (store, RLE, LZW as `lz78`, LZP, ALZ). |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |

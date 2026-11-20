@@ -138,7 +138,76 @@ public class UharcWriterTests {
   public void GivenAMethodVersion04CannotWriteYet_WhenWritten_ThenItIsRefused(string method)
     => Assert.That(() => CreateWith(Version4(method)), Throws.TypeOf<NotSupportedException>());
 
-  [TestCase("3")]
+  // ── UHARC 0.3 archives ─────────────────────────────────────────────────
+
+  private static FormatCreateOptions Version3(string? method, string? password = null, long dictionary = 0) => new(method) {
+    Password = password,
+    DictSize = dictionary,
+    FormatSpecific = { [UharcFormatDescriptor.VersionOption] = "3" },
+  };
+
+  [TestCase("store", "Store", null, 0L)]
+  [TestCase("rle", "RLE", null, 0L)]
+  [TestCase("lz78", "LZW", null, 0L)]
+  [TestCase(null, "LZP", null, 0L)]
+  [TestCase("lzp", "LZP", "secret", 1024L)]
+  [TestCase("alz", "ALZ:2", null, 0L)]
+  [TestCase("alz", "ALZ:2", "secret", 1024L)]
+  [Category("HappyPath"), Category("RoundTrip")]
+  public void GivenFilesAndDirectories_WhenWrittenAsVersion03AndRead_ThenEverythingComesBack(string? method, string mode, string? password, long dictionary) {
+    var inputs = SampleInputs();
+    var archive = CreateWith(Version3(method, password, dictionary), inputs);
+    Assert.That(archive[3], Is.EqualTo(3));
+    var reader = new UharcReader(new MemoryStream(archive), password);
+    Assert.That(reader.MethodName, Is.EqualTo(mode));
+    foreach (var input in inputs.Where(i => !i.IsDirectory))
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == input.ArchiveName)), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+    Assert.That(reader.Entries.Where(e => e.IsDirectory).Select(e => e.FileName).Order(), Is.EqualTo(new[] { "emptydir", "sub", "sub/deeper" }));
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenPpm_WhenWrittenAsVersion03_ThenItIsRefused()
+    => Assert.That(() => CreateWith(Version3("ppm")), Throws.TypeOf<NotSupportedException>());
+
+  [TestCase(8)]
+  [TestCase(17)]
+  [TestCase(21)]
+  [Category("RoundTrip")]
+  public void GivenData_WhenVersion03LzpEncodedAndDecoded_ThenItIsUnchanged(int method) {
+    var data = MixedData(method);
+    var packed = Uharc03LzpEncoder.Encode(data, method, []);
+    Assert.That(Uharc03LzpDecoder.Decode(packed, 0, packed.Length, method, data.Length, []), Is.EqualTo(data));
+  }
+
+  [TestCase(36)]
+  [TestCase(50)]
+  [TestCase(77)]
+  [Category("RoundTrip")]
+  public void GivenData_WhenVersion03AlzEncodedAndDecoded_ThenItIsUnchanged(int method) {
+    var data = MixedData(method);
+    var packed = Uharc03AlzEncoder.Encode(data, method);
+    Assert.That(Uharc03AlzDecoder.Decode(packed, 0, packed.Length, method, data.Length), Is.EqualTo(data));
+  }
+
+  [TestCase(new byte[0])]
+  [TestCase(new byte[] { 0x42 })]
+  [TestCase(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF })]
+  [Category("Boundary")]
+  public void GivenTinyInputs_WhenVersion03LzpEncodedAndDecoded_ThenTheyAreUnchanged(byte[] data) {
+    var packed = Uharc03LzpEncoder.Encode(data, 8, []);
+    Assert.That(Uharc03LzpDecoder.Decode(packed, 0, packed.Length, 8, data.Length, []), Is.EqualTo(data));
+  }
+
+  private static byte[] MixedData(int seed) {
+    var random = new Random(seed);
+    var noise = new byte[30000];
+    random.NextBytes(noise);
+    var text = System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 5000).Select(i => $"the {i % 13} quick brown fox {i * 7 % 101}\r\n")));
+    var runs = Enumerable.Range(0, 300).SelectMany(i => Enumerable.Repeat((byte)(i % 5), i % 600)).ToArray();
+    return text.Concat(noise).Concat(runs).Concat(new byte[20000]).Concat(text).ToArray();
+  }
+
+  [TestCase("2")]
   [TestCase("5")]
   [Category("ErrorHandling")]
   public void GivenAnUnwrittenVersion_WhenWritten_ThenItIsRefused(string version)
