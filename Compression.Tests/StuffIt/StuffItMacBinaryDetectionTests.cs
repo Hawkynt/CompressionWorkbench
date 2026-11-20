@@ -89,7 +89,7 @@ public class StuffItMacBinaryDetectionTests {
     var psi = new ProcessStartInfo(cli) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, WorkingDirectory = cwd };
     foreach (var a in args) psi.ArgumentList.Add(a);
     using var p = Process.Start(psi)!;
-    var output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+    var output = p.ReadOutputJoined();
     p.WaitForExit();
     return (p.ExitCode, output);
   }

@@ -126,7 +126,7 @@ public class ZipStrongEncryptionTests {
   private static (int Code, string Output) Run(string exe, params string[] args) {
     var psi = new ProcessStartInfo(exe, args) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
     using var p = Process.Start(psi)!;
-    var output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+    var output = p.ReadOutputJoined();
     p.WaitForExit();
     return (p.ExitCode, output);
   }

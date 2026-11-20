@@ -354,8 +354,7 @@ public sealed class Qcow2MaintenanceTests {
       RedirectStandardError = true,
       CreateNoWindow = true,
     }) ?? throw new InvalidOperationException($"Could not start {executable}.");
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit();
     return (process.ExitCode, stdout, stderr);
   }

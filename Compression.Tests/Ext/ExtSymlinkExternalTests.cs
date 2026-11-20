@@ -115,7 +115,7 @@ public class ExtSymlinkExternalTests {
     };
     try {
       using var p = Process.Start(psi)!;
-      var o = p.StandardOutput.ReadToEnd();
+      var (o, _) = p.ReadOutput();
       p.WaitForExit(10_000);
       return p.ExitCode == 0 && !string.IsNullOrWhiteSpace(o);
     } catch { return false; }
@@ -128,8 +128,7 @@ public class ExtSymlinkExternalTests {
       UseShellExecute = false, CreateNoWindow = true,
     };
     using var p = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start {tool}");
-    var o = p.StandardOutput.ReadToEnd();
-    var e = p.StandardError.ReadToEnd();
+    var (o, e) = p.ReadOutput();
     if (!p.WaitForExit(timeoutMs)) { try { p.Kill(); } catch { /* best effort */ } }
     return new ToolResult(o, e, p.ExitCode);
   }
@@ -145,8 +144,7 @@ public class ExtSymlinkExternalTests {
     using var p = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start sudo");
     p.StandardInput.WriteLine(SudoPassword);
     p.StandardInput.Flush();
-    var o = p.StandardOutput.ReadToEnd();
-    var e = p.StandardError.ReadToEnd();
+    var (o, e) = p.ReadOutput();
     if (!p.WaitForExit(60_000)) { try { p.Kill(); } catch { /* best effort */ } }
     return new ToolResult(o, e, p.ExitCode);
   }

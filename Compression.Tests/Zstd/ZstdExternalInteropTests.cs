@@ -95,14 +95,9 @@ public class ZstdExternalInteropTests {
       proc.StandardInput.BaseStream.Flush();
       proc.StandardInput.Close();
     }
-    string stdout;
-    if (stdoutFile is not null) {
+    var (stdout, stderr) = proc.ReadOutput(TimeSpan.FromSeconds(30));
+    if (stdoutFile is not null)
       stdout = "";
-    } else {
-      stdout = proc.StandardOutput.ReadToEnd();
-    }
-    var stderr = proc.StandardError.ReadToEnd();
-    proc.WaitForExit(30000);
     if (proc.ExitCode != 0)
       Assert.Fail($"{tool} {args} exited with code {proc.ExitCode}.\nstdout: {stdout}\nstderr: {stderr}");
     return (stdout, stderr, proc.ExitCode);

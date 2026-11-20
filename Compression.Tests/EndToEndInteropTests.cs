@@ -230,8 +230,7 @@ public class EndToEndInteropTests {
     };
     using var proc = Process.Start(psi)
       ?? throw new InvalidOperationException($"Failed to start {toolPath}");
-    var stdout = proc.StandardOutput.ReadToEnd();
-    var stderr = proc.StandardError.ReadToEnd();
+    var (stdout, stderr) = proc.ReadOutput();
     if (!proc.WaitForExit(timeoutMs)) {
       try { proc.Kill(); } catch { /* best effort */ }
       Assert.Fail($"{Path.GetFileName(toolPath)} timed out after {timeoutMs}ms.\nstdout: {stdout}\nstderr: {stderr}");

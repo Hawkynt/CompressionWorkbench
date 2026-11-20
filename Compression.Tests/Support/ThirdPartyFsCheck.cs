@@ -396,8 +396,7 @@ internal static class ThirdPartyFsCheck {
     };
     using var process = Process.Start(psi);
     if (process == null) return ("", "could not start " + file, -1);
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     if (!process.WaitForExit(120_000)) {
       try { process.Kill(entireProcessTree: true); } catch { /* already gone */ }
       return (stdout, stderr + " (timed out)", -1);

@@ -238,7 +238,7 @@ public class NsisInstallerWriterTests {
     foreach (var a in new[] { "x", installer, "-o" + outDir, "-y" })
       psi.ArgumentList.Add(a);
     using var p = Process.Start(psi)!;
-    var output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+    var output = p.ReadOutputJoined();
     p.WaitForExit();
     Assert.That(p.ExitCode, Is.Zero, output);
     AssertSameFiles(Tree(outDir), "7-Zip");

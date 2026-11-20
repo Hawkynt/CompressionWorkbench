@@ -81,10 +81,9 @@ public sealed class FreezeAncientOracleTests {
       }
 
       using (process) {
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEnd();
+        var (stdout, stderr) = process.ReadOutput();
         process.WaitForExit();
-        Assert.That(process.ExitCode, Is.EqualTo(0), $"ancient refused our file:\n{stdout.Result}{stderr}");
+        Assert.That(process.ExitCode, Is.EqualTo(0), $"ancient refused our file:\n{stdout}{stderr}");
       }
     } finally {
       Directory.Delete(dir, recursive: true);

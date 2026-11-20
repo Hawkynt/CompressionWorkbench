@@ -61,7 +61,7 @@ public sealed class SzddRingSemanticsTests {
     start.ArgumentList.Add(packed);
     start.ArgumentList.Add(unpacked);
     using var process = Process.Start(start)!;
-    var stdout = process.StandardOutput.ReadToEnd();
+    var (stdout, _) = process.ReadOutput();
     process.WaitForExit();
     Assert.That(process.ExitCode, Is.Zero, stdout);
     Assert.That(File.ReadAllBytes(unpacked), Is.EqualTo(data), $"{name} ({parser})");

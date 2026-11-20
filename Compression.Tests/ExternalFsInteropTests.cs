@@ -2650,11 +2650,9 @@ internal static class FsInteropToolbox {
     };
     try {
       using var proc = Process.Start(psi)!;
-      var stdout = proc.StandardOutput.ReadToEnd();
-      var stderr = proc.StandardError.ReadToEnd();
-      proc.WaitForExit(60000);
+      var (stdout, stderr) = proc.ReadOutput(); // both streams at once; past ProcessOutput.DefaultTimeout the tool is killed
       return (stdout, stderr, proc.ExitCode);
-    } catch (Exception ex) {
+    } catch (Exception ex) when (ex is not TimeoutException) {
       return (string.Empty, ex.Message, -1);
     }
   }

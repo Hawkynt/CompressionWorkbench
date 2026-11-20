@@ -119,10 +119,9 @@ public class PolyglotInteropTests {
       psi.ArgumentList.Add("--version");
       using var proc = Process.Start(psi);
       if (proc == null) return false;
-      proc.StandardOutput.ReadToEnd();
-      proc.StandardError.ReadToEnd();
-      if (!proc.WaitForExit(5_000)) {
-        try { proc.Kill(true); } catch { /* ignore */ }
+      try {
+        proc.ReadOutput(TimeSpan.FromSeconds(5));
+      } catch (TimeoutException) {
         return false;
       }
       return proc.ExitCode == 0;
@@ -191,18 +190,17 @@ public class PolyglotInteropTests {
       proc.StandardInput.Close();
     }
 
-    using var stdout = new MemoryStream();
-    var stdoutTask = proc.StandardOutput.BaseStream.CopyToAsync(stdout);
-    var stderr = proc.StandardError.ReadToEnd();
-
-    if (!proc.WaitForExit(timeoutMs)) {
-      try { proc.Kill(true); } catch { /* ignore */ }
-      Assert.Fail($"{Path.GetFileName(interpreter)} timed out after {timeoutMs} ms\nstderr: {stderr}");
+    byte[] stdout;
+    string stderr;
+    try {
+      (stdout, stderr) = proc.ReadOutputBytes(TimeSpan.FromMilliseconds(timeoutMs));
+    } catch (TimeoutException ex) {
+      Assert.Fail($"{Path.GetFileName(interpreter)}: {ex.Message}");
+      throw;
     }
-    stdoutTask.GetAwaiter().GetResult();
 
     return new ScriptResult {
-      Stdout = stdout.ToArray(),
+      Stdout = stdout,
       Stderr = stderr,
       ExitCode = proc.ExitCode,
     };
@@ -1525,8 +1523,7 @@ print $out;
     psi.ArgumentList.Add(script);
 
     using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start powershell.exe");
-    var stdout = proc.StandardOutput.ReadToEnd();
-    var stderr = proc.StandardError.ReadToEnd();
+    var (stdout, stderr) = proc.ReadOutput();
     proc.WaitForExit(30_000);
     return (proc.ExitCode, stdout, stderr);
   }

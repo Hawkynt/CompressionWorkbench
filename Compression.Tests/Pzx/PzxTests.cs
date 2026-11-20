@@ -136,7 +136,7 @@ public class PzxExternalConformanceTests {
     var psi = new ProcessStartInfo(exe) { RedirectStandardOutput = true, RedirectStandardError = true };
     foreach (var a in args) psi.ArgumentList.Add(a);
     using var p = Process.Start(psi)!;
-    var output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+    var output = p.ReadOutputJoined();
     p.WaitForExit();
     TestContext.Out.WriteLine($"{tool} {string.Join(' ', args)} -> {p.ExitCode}\n{output}");
     return (output, p.ExitCode);

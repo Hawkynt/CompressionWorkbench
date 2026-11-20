@@ -267,8 +267,7 @@ public class ChromiumPakTests {
       File.WriteAllBytes(oracle, Vector("grit_oracle.py"));
       var psi = new ProcessStartInfo(python, $"-I \"{oracle}\" list \"{path}\"") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
       using var p = Process.Start(psi)!;
-      var listing = p.StandardOutput.ReadToEnd();
-      var errors = p.StandardError.ReadToEnd();
+      var (listing, errors) = p.ReadOutput();
       p.WaitForExit();
       Assert.That(p.ExitCode, Is.Zero, errors);
       AssertMatchesGrit(File.ReadAllBytes(path), listing, "ours.pak");

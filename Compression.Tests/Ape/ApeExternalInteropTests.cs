@@ -162,8 +162,7 @@ public sealed class ApeExternalInteropTests {
       start.ArgumentList.Add(argument);
 
     using var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start ffmpeg.");
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     if (!process.WaitForExit(60_000)) {
       process.Kill(entireProcessTree: true);
       Assert.Fail("ffmpeg timed out.");

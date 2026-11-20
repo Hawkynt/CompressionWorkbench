@@ -126,11 +126,10 @@ public sealed class LzvnAppleFormatTests {
       start.ArgumentList.Add(input);
       start.ArgumentList.Add(length.ToString(System.Globalization.CultureInfo.InvariantCulture));
       using var process = Process.Start(start)!;
-      var stdout = process.StandardOutput.ReadToEndAsync();
-      var stderr = process.StandardError.ReadToEnd();
+      var (stdout, stderr) = process.ReadOutput();
       process.WaitForExit();
       Assert.That(process.ExitCode, Is.EqualTo(0), $"pyfmos.{function} refused our stream:\n{stderr}");
-      return Convert.FromHexString(stdout.Result);
+      return Convert.FromHexString(stdout);
     } finally {
       File.Delete(input);
     }

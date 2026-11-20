@@ -133,10 +133,9 @@ public sealed class ApLibAppackOracleTests {
       }
 
       using (process) {
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEnd();
+        var (stdout, stderr) = process.ReadOutput();
         process.WaitForExit();
-        Assert.That(process.ExitCode, Is.EqualTo(0), $"appack refused our file:\n{stdout.Result}{stderr}");
+        Assert.That(process.ExitCode, Is.EqualTo(0), $"appack refused our file:\n{stdout}{stderr}");
       }
 
       Assert.That(File.ReadAllBytes(unpackedPath), Is.EqualTo(expected));

@@ -115,9 +115,7 @@ public class F2fsExternalConformanceTests {
       };
       using var proc = Process.Start(psi);
       if (proc == null) return false;
-      var outp = proc.StandardOutput.ReadToEnd();
-      proc.StandardError.ReadToEnd();
-      proc.WaitForExit(10_000);
+      var (outp, _) = proc.ReadOutput(TimeSpan.FromSeconds(10));
       return proc.ExitCode == 0 && !string.IsNullOrWhiteSpace(outp);
     } catch {
       return false;
@@ -132,8 +130,7 @@ public class F2fsExternalConformanceTests {
     };
     using var proc = Process.Start(psi)
       ?? throw new InvalidOperationException($"Failed to start {tool}");
-    var stdout = proc.StandardOutput.ReadToEnd();
-    var stderr = proc.StandardError.ReadToEnd();
+    var (stdout, stderr) = proc.ReadOutput();
     if (!proc.WaitForExit(timeoutMs)) {
       try { proc.Kill(); } catch { /* best effort */ }
     }

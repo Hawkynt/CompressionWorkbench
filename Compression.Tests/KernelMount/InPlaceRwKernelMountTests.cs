@@ -218,8 +218,7 @@ public sealed class InPlaceRwKernelMountTests {
     };
     try {
       using var p = Process.Start(psi)!;
-      var so = p.StandardOutput.ReadToEnd();
-      var se = p.StandardError.ReadToEnd();
+      var (so, se) = p.ReadOutput();
       if (!p.WaitForExit(90_000)) {
         try { p.Kill(true); } catch { /* best effort */ }
       }

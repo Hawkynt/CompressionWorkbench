@@ -136,10 +136,7 @@ public class LzopInteropTests {
       RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
     };
     using var process = Process.Start(start)!;
-    using var captured = new MemoryStream();
-    process.StandardOutput.BaseStream.CopyTo(captured);
-    var stderr = process.StandardError.ReadToEnd();
-    process.WaitForExit(120_000);
-    return (process.HasExited ? process.ExitCode : -1, captured.ToArray(), stderr);
+    var (captured, stderr) = process.ReadOutputBytes(TimeSpan.FromSeconds(120));
+    return (process.ExitCode, captured, stderr);
   }
 }

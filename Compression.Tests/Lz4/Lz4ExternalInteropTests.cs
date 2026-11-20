@@ -81,8 +81,7 @@ public class Lz4ExternalInteropTests {
       CreateNoWindow = true,
     };
     using var proc = Process.Start(psi)!;
-    var stdout = proc.StandardOutput.ReadToEnd();
-    var stderr = proc.StandardError.ReadToEnd();
+    var (stdout, stderr) = proc.ReadOutput();
     proc.WaitForExit(30000);
     if (proc.ExitCode != 0)
       Assert.Fail($"{tool} {args} exited with code {proc.ExitCode}.\nstdout: {stdout}\nstderr: {stderr}");

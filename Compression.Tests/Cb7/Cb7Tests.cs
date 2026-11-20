@@ -83,7 +83,7 @@ public class Cb7Tests {
         RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
       };
       using var proc = System.Diagnostics.Process.Start(psi)!;
-      var stdout = proc.StandardOutput.ReadToEnd();
+      var (stdout, _) = proc.ReadOutput();
       proc.WaitForExit();
       Assert.That(proc.ExitCode, Is.EqualTo(0), $"7z t rejected the CB7 archive:\n{stdout}");
     } finally {

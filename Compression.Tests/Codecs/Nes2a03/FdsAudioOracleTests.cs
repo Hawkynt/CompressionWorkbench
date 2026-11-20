@@ -225,10 +225,9 @@ public class FdsAudioOracleTests {
       start.ArgumentList.Add(argument);
     try {
       using var process = Process.Start(start) ?? throw new InvalidOperationException("could not start ffmpeg");
-      var stdout = process.StandardOutput.ReadToEndAsync();
-      var stderr = process.StandardError.ReadToEnd();
+      var (stdout, stderr) = process.ReadOutput();
       process.WaitForExit();
-      _ = stdout.Result;
+      _ = stdout;
       return (process.ExitCode, stderr);
     } catch (System.ComponentModel.Win32Exception) {
       Assert.Ignore("ffmpeg is not installed or not on PATH.");

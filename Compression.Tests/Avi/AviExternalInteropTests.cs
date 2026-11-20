@@ -88,8 +88,7 @@ public sealed class AviExternalInteropTests {
       start.ArgumentList.Add(argument);
 
     using var process = Process.Start(start) ?? throw new InvalidOperationException($"Could not start {executable}.");
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    var (stdout, stderr) = process.ReadOutput();
     process.WaitForExit();
     return (process.ExitCode, stdout, stderr);
   }

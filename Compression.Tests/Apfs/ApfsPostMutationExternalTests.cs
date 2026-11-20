@@ -43,7 +43,7 @@ public class ApfsPostMutationExternalTests {
       using var proc = Process.Start(psi);
       if (proc == null) return null;
       proc.WaitForExit(5000);
-      var stdout = proc.StandardOutput.ReadToEnd().Trim();
+      var stdout = proc.ReadOutput().StdOut.Trim();
       _wslApfsinfo = string.IsNullOrEmpty(stdout) ? null : "apfsinfo";
       return _wslApfsinfo;
     } catch {
@@ -70,8 +70,8 @@ public class ApfsPostMutationExternalTests {
       };
       using var proc = Process.Start(psi);
       if (proc == null) return (-1, "", "could not start wsl");
-      proc.WaitForExit(30000);
-      return (proc.ExitCode, proc.StandardOutput.ReadToEnd(), proc.StandardError.ReadToEnd());
+      var (stdout, stderr) = proc.ReadOutput(TimeSpan.FromSeconds(30));
+      return (proc.ExitCode, stdout, stderr);
     } finally {
       try { File.Delete(tmpFile); } catch { /* best effort */ }
     }
