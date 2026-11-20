@@ -79,7 +79,10 @@ public sealed class SqxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
 
     var method = (byte)Math.Clamp(options.Level is { } level ? (level + 2) / 3 + 1 : 2, 1, 4);
-    var w = new SqxWriter(method, dictionary);
+    var recovery = 0;
+    if (options.FormatSpecific.TryGetValue("recovery", out var r) && !int.TryParse(r, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out recovery))
+      throw new ArgumentException($"SQX: FormatSpecific[\"recovery\"] is a percentage (1-100), not '{r}'.");
+    var w = new SqxWriter(method, dictionary, recoveryLevel: recovery);
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
       w.AddFile(name, data);
     w.WriteTo(output);

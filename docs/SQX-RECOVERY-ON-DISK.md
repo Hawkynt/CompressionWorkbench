@@ -3,7 +3,8 @@
 What an SQX recovery record holds, as `FileFormat.Sqx` creates and uses it. The field list is
 from the SQX 1.1 format notes (section 7.6); the block size, CRC forms, parity grouping and
 counts were measured on records Squeez CommandLine 5.2 writes (`-rr1` to `-rr5`, external with
-`-rre`) for archives of 3 KB to 2 MB, and on the SQX SDK's `DamagedArchive.sqx` (internal).
+`-rre`) for archives of 3 KB to 2 MB, on the SQX SDK's `DamagedArchive.sqx` (internal), and on
+internal records SpeedCommander 22.40's sqc.exe writes (`-rr2`, `-rr5`).
 
 | Offset | Size | Field |
 | ---: | ---: | --- |
@@ -23,6 +24,9 @@ counts were measured on records Squeez CommandLine 5.2 writes (`-rr1` to `-rr5`,
 | 49 + 2N | 512 × R | parity block k: the XOR of every protected block whose index is k modulo R |
 
 An external record is the file `name.sqx.sqr` and protects the whole archive. An internal record
-follows the data it protects inside the archive (its protected size is its own offset); the
-reader skips its CRCs and parity. Any one damaged block per parity group can be rebuilt; a
+takes the place of the end block: it follows the last file block, protects everything in front
+of it (its protected size is its own offset) and ends the archive; everything before it is byte
+for byte the archive without a record, minus the 7-byte end block. Its data-CRC field is
+0xFFFFFFFF. The reader skips its CRCs and parity. Squeez CommandLine 5.2's `t` checks the
+record's header CRC but not its body. Any one damaged block per parity group can be rebuilt; a
 rebuilt block must match its CRC.

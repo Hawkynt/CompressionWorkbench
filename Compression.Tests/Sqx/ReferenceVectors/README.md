@@ -57,7 +57,10 @@ CommandLine 5.2 for Linux (`sqc`, from the SQX SDK mirror https://github.com/wes
 `recovery/`: `a3000_1.sqx` and `a60000_3.sqx` with their external records (`.sqx.sqr`), written by
 Squeez CommandLine 5.2 with `sqc a -ep -fmt SQX2 -m0 -rr1|-rr3 -rre` from 3000 and 60000 random bytes;
 `sdk_DamagedArchive.sqx`, the SQX SDK 2.06's `Archives/DamagedArchive.sqx` (an internal recovery
-record and a damaged file), unchanged.
+record and a damaged file), unchanged. `sc22_rr2.sqx` and `sc22_rr5.sqx`: two generated files
+(seeded words, 30000 random bytes) with internal records at 2 and 5 percent, written by the
+sqc.exe that ships with SpeedCommander 22.40 (`sqc a -ep -rr2|-rr5`) under wine; Squeez
+CommandLine 5.2 for Linux refuses `-rr`. The script is `recovery/make-internal-rr.sh`.
 
 The `*_ultra.sqx` archives come from the same `packed_corpus` at revision
 `03211cd1e86473da08bc675198f6902e15a28ca3`; `records.bin` (240000 bytes) is in its `corpus`.

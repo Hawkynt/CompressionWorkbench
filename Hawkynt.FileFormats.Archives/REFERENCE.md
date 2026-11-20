@@ -32093,11 +32093,12 @@ Implements `IDisposable`.
 
 #### `SqxRecovery`
 
-SQX recovery records: creates the external one (`name.sqx.sqr`) for an archive and repairs an archive from its internal record or an external one. A parity group (the blocks with the same index modulo the parity count) can lose one block.
+SQX recovery records: creates the external one (`name.sqx.sqr`) or the internal one for an archive and repairs an archive from its internal record or an external one. A parity group (the blocks with the same index modulo the parity count) can lose one block.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CreateExternal` | `static byte[] CreateExternal(ReadOnlySpan<byte> archive, int level = 2)` | The external recovery record of `archive` with `level` percent of recovery data: ceil(blocks × level / 100) parity blocks, as Squeez writes them. |
+| `CreateInternal` | `static byte[] CreateInternal(ReadOnlySpan<byte> archive, int level = 2)` | The internal recovery record for `archive`, the archive's bytes up to where the record goes: in place of the end block, protecting everything in front of it, its data-CRC field 0xFFFFFFFF. Squeez writes this for `-rr`. |
 | `Repair` | `static SqxRecoveryReport Repair(byte[] archive, byte[] externalRecord = null)` | Repairs `archive` in place from `externalRecord` or, when that is null, from the archive's own recovery record. |
 
 #### `SqxRecoveryRecord`
@@ -32139,11 +32140,11 @@ Implements `IEquatable<SqxRecoveryReport>`.
 
 #### `SqxWriter`
 
-Writes SQX archives the way Squeez-c (MIT) does: a main block, one file block per file with its LZ77 + Huffman stream (methods 1-4, each file on its own, not solid) or the stored bytes when compression does not pay, and the end block.
+Writes SQX archives the way Squeez-c (MIT) does: a main block, one file block per file with its LZ77 + Huffman stream (methods 1-4, each file on its own, not solid) or the stored bytes when compression does not pay, and the end block, or in its place an internal recovery record.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SqxWriter` | `SqxWriter(byte method = 2, int dictionarySize = 262144, byte format = 20)` | Creates a writer. |
+| `SqxWriter` | `SqxWriter(byte method = 2, int dictionarySize = 262144, byte format = 20, int recoveryLevel = 0)` | Creates a writer. |
 | `AddFile` | `void AddFile(string name, byte[] data, DateTime? modified = null)` | Adds a file; `name` may contain `/` separators. |
 | `ToArray` | `byte[] ToArray()` | Builds the archive. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the archive. |
