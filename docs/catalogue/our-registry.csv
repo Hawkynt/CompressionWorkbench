@@ -643,7 +643,7 @@ format,Umx,Unreal Music (UMX),Archive,,.umx,Y,Y,Y,
 format,UnityBundle,Unity Asset Bundle,Archive,,.bundle;.unity3d;.assetbundle,Y,Y,Y,Y
 format,UnityPackage,Unity package,Archive,,.unitypackage,Y,Y,Y,Y
 format,UnixPack,pack (.z),Stream,,,,Y,Y,
-format,UnixV6,UNIX V6 file system,Archive,Y,.v6,Y,Y,,
+format,UnixV6,UNIX V6 file system,Archive,Y,.v6,Y,Y,Y,
 format,UnixV7,UNIX V7 file system,Archive,Y,.v7,Y,Y,Y,
 format,UnrealPak,Unreal Pak,Archive,,.pak,Y,Y,Y,
 format,Upx,UPX-packed executable,Archive,,,Y,Y,,

@@ -20283,7 +20283,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileSystem.UnixV6`
 
-[`UnixV6Entry`](#unixv6entry) · [`UnixV6FormatDescriptor`](#unixv6formatdescriptor) · [`UnixV6Reader`](#unixv6reader)
+[`UnixV6Entry`](#unixv6entry) · [`UnixV6FormatDescriptor`](#unixv6formatdescriptor) · [`UnixV6Reader`](#unixv6reader) · [`UnixV6WriteNode`](#unixv6writenode) · [`UnixV6Writer`](#unixv6writer)
 
 #### `UnixV6Entry`
 
@@ -20302,9 +20302,9 @@ Implements `IEquatable<UnixV6Entry>`.
 
 #### `UnixV6FormatDescriptor`
 
-Sixth Edition UNIX file system (PDP-11, 1975), read-only. The volume has no magic number, so it is found by its `.v6` extension or selected by id rather than sniffed. Read-only because nothing outside this package can check a V6 volume written here: no maintained kernel or tool mounts the format. The reader is checked against the 1975 root volume Dennis Ritchie's tapes preserve (TUHS), whose files were independently extracted to a tar archive. References:V6 `/usr/sys/filsys.h`, `inode.h`, `ken/subr.c` (The Unix Heritage Society archive)John Lions, A Commentary on the Sixth Edition UNIX Operating System (1977)`https://en.wikipedia.org/wiki/Version_6_Unix`
+Sixth Edition UNIX file system (PDP-11, 1975). The volume has no magic number, so it is found by its `.v6` extension or selected by id rather than sniffed. The reader is checked against the 1975 root volume Dennis Ritchie's tapes preserve (TUHS), whose files were independently extracted to a tar archive. Written volumes are checked by the V6 system itself, running on a simulated PDP-11: `icheck` and `dcheck` pass, the kernel mounts the volume, reads every file back unchanged and writes into it. References:V6 `/usr/sys/filsys.h`, `inode.h`, `ken/subr.c` (The Unix Heritage Society archive)John Lions, A Commentary on the Sixth Edition UNIX Operating System (1977)`https://en.wikipedia.org/wiki/Version_6_Unix`
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -20321,6 +20321,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a volume with directories 0755 and files 0644 owned by root, each input's modification time as its access and modification time. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
@@ -20337,6 +20338,33 @@ Implements `IDisposable`.
 | `VolumeBlocks` | `int VolumeBlocks { get; }` | Size of the volume in blocks (`s_fsize`). |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(UnixV6Entry entry)` |  |
+
+#### `UnixV6WriteNode`
+
+A file (`Data` set) or directory (`Children` set) to write into a V6 volume.
+
+Implements `IEquatable<UnixV6WriteNode>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UnixV6WriteNode` | `UnixV6WriteNode(string Name, byte[] Data = null, IReadOnlyList<UnixV6WriteNode> Children = null)` | A file (`Data` set) or directory (`Children` set) to write into a V6 volume. |
+| `Children` | `IReadOnlyList<UnixV6WriteNode> Children { get; init; }` | Directory contents. |
+| `Data` | `byte[] Data { get; init; }` | File contents, at most 16 MiB - 1 (the 24-bit `i_size`). |
+| `IsDirectory` | `bool IsDirectory { get; }` |  |
+| `Name` | `string Name { get; init; }` | Entry name, at most 14 Latin-1 bytes; ignored for the root. |
+| `Permissions` | `int? Permissions { get; init; }` | Permission bits (`0777` and the set-id/sticky bits); defaults to 0644 / 0755. |
+| `Time` | `uint Time { get; init; }` | Access and modification time, seconds since 1970 (a PDP-11 long). |
+
+#### `UnixV6Writer`
+
+Writes Sixth Edition UNIX volumes the V6 kernel mounts and V6 `icheck`/`dcheck` pass: boot block 0, the superblock in block 1, the i-list from block 2, then the data blocks. The root is inode 1 and each directory's entries take consecutive numbers; every directory starts with `.` and `..` and has two links plus one per subdirectory. Data is laid out in inode order, each large file's indirect blocks ahead of the data they map. A file of up to eight blocks is small (direct addresses); a longer one is `ILARG` with `i_addr[0..6]` single-indirect and `i_addr[7]` double-indirect, the mapping of the kernel's `bmap`. The free blocks are chained as the kernel's `alloc` consumes them: `s_free[0]` of the last link is 0, and each full set of 100 is stored in the block named by the next set's `s_free[0]` (count word, then the 100 numbers). Blocks are pushed from the top of the volume down, so allocation proceeds upwards. `s_ninode` is left 0, which makes the kernel's `ialloc` scan the i-list for free inodes. References: V6 `/usr/sys/filsys.h`, `inode.h`, `ken/alloc.c`, `ken/subr.c` (TUHS); Lions, A Commentary on the Sixth Edition UNIX Operating System.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultSpareBlocks` | `const int DefaultSpareBlocks` | Free blocks added on top of the used ones when no volume size is given. |
+| `DefaultSpareInodes` | `const int DefaultSpareInodes` | Free inodes added on top of the used ones (rounded up to whole i-list blocks). |
+| `Rk05Blocks` | `const int Rk05Blocks` | Blocks on an RK05 cartridge, the V6 distribution's own medium. |
+| `Write` | `static void Write(Stream output, UnixV6WriteNode root, int volumeBlocks = 0, uint time = 0)` | Writes `root` as a complete volume. |
 
 ### Namespace `FileSystem.UnixV7`
 
