@@ -207,7 +207,6 @@ Every catalogued row where a source records write support (7-Zip, libarchive, an
 | BeeGFS | `BeeGfs` | beegfs-setup-storage | Wikipedia |
 | BitRock InstallBuilder | `BitRock` | InstallBuilder | UniExtract |
 | NSIS installer | `Nsis` | makensis | 7-Zip, XADMaster, UniExtract |
-| Inno Setup | `InnoSetup` | ISCC | UniExtract |
 | GPFS / IBM Storage Scale | `Gpfs` | mmcrfs | Wikipedia |
 | GlusterFS | `GlusterFs` | gluster volume create | Wikipedia |
 | HxC Floppy Emulator (HFE) | `Hfe` | HxC Floppy Emulator tool | PRONOM |

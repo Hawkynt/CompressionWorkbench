@@ -20453,7 +20453,7 @@ Creates IFF CDAF archives with FNAM+FDAT chunk pairs.
 
 ### Namespace `FileFormat.InnoSetup`
 
-[`InnoCompression`](#innocompression) · [`InnoEncryption`](#innoencryption) · [`InnoSetupEntry`](#innosetupentry) · [`InnoSetupFormatDescriptor`](#innosetupformatdescriptor) · [`InnoSetupReader`](#innosetupreader) · [`InnoVersion`](#innoversion)
+[`InnoCompression`](#innocompression) · [`InnoEncryption`](#innoencryption) · [`InnoSetupEntry`](#innosetupentry) · [`InnoSetupFormatDescriptor`](#innosetupformatdescriptor) · [`InnoSetupInstallerFile`](#innosetupinstallerfile) · [`InnoSetupInstallerOptions`](#innosetupinstalleroptions) · [`InnoSetupReader`](#innosetupreader) · [`InnoSetupStubs`](#innosetupstubs) · [`InnoSetupWriter`](#innosetupwriter) · [`InnoSetupWriterCompression`](#innosetupwritercompression) · [`InnoVersion`](#innoversion)
 
 #### `InnoCompression`
 
@@ -20498,7 +20498,7 @@ Implements `IEquatable<InnoSetupEntry>`.
 
 Inno Setup installer: the files of its [Files] section. References: `https://jrsoftware.org/isinfo.php` — Inno Setup; `https://github.com/jrsoftware/issrc` holds its sources (Shared.Struct.pas defines the records)`https://github.com/dscharrer/innoextract` — innoextract (zlib licence), the extractor this reader was converted from and is checked against
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -20515,10 +20515,35 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes an Inno Setup 6.0 installer that installs every input below its installation directory. The method is "lzma2" (the default) or "stored". The loader, setup program, messages and wizard bitmaps come from an installed Inno Setup 6.0.x: `FormatSpecific["innodir"]`, the INNOSETUPDIR environment variable, or "Inno Setup 6" under Program Files (`Load`); `FormatSpecific["name"]` sets the application name. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Decodes one entry into memory; an unknown name yields no bytes. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens one entry as a bounded read-only stream. |
+
+#### `InnoSetupInstallerFile`
+
+One file or directory an installer writes below its installation directory.
+
+Implements `IEquatable<InnoSetupInstallerFile>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `InnoSetupInstallerFile` | `InnoSetupInstallerFile(string Path, byte[] Data, DateTime? LastWriteTimeUtc = null)` | One file or directory an installer writes below its installation directory. |
+| `Data` | `byte[] Data { get; init; }` | The file's bytes, or null for a directory. |
+| `LastWriteTimeUtc` | `DateTime? LastWriteTimeUtc { get; init; }` | Time stamp the installed file gets; null means now. |
+| `Path` | `string Path { get; init; }` | Relative path, '/' or '\' separated. |
+
+#### `InnoSetupInstallerOptions`
+
+Settings of an installer written by `InnoSetupWriter`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `InnoSetupInstallerOptions` | `InnoSetupInstallerOptions()` |  |
+| `AppName` | `string AppName { get; init; }` | Application name (the wizard's title and the default folder name). |
+| `AppVersion` | `string AppVersion { get; init; }` | Application version. |
+| `Compression` | `InnoSetupWriterCompression Compression { get; init; }` | How the files are stored. |
 
 #### `InnoSetupReader`
 
@@ -20539,6 +20564,39 @@ Reads the files an Inno Setup installer carries.
 | `ExtractMany` | `void ExtractMany(IEnumerable<InnoSetupEntry> entries, Action<InnoSetupEntry, byte[]> sink)` | Decodes the given entries; each chunk is decompressed once for all the files it holds. |
 | `Extract` | `byte[] Extract(InnoSetupEntry entry)` | Returns the bytes of one entry, verified against the stored checksum. |
 | `IsInnoSetup` | `static bool IsInnoSetup(Stream stream)` | Cheap detection: a setup loader offset table whose setup-0 starts with an Inno Setup version tag. |
+
+#### `InnoSetupStubs`
+
+The parts of an Inno Setup 6.0.x installation an installer is built from: the loader (SetupLdr.e32), the setup program (Setup.e32), the default messages (Default.isl) and the wizard bitmaps. They are native code and Inno Setup's own text, so they are read from the user's installation and never shipped here.
+
+Implements `IEquatable<InnoSetupStubs>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `InnoSetupStubs` | `InnoSetupStubs(byte[] SetupLdr, byte[] Setup, string DefaultMessages, byte[] WizardImage, byte[] WizardSmallImage)` | The parts of an Inno Setup 6.0.x installation an installer is built from: the loader (SetupLdr.e32), the setup program (Setup.e32), the default messages (Default.isl) and the wizard bitmaps. They are native code and Inno Setup's own text, so they are read from the user's installation and never shipped here. |
+| `DefaultMessages` | `string DefaultMessages { get; init; }` |  |
+| `SetupLdr` | `byte[] SetupLdr { get; init; }` |  |
+| `Setup` | `byte[] Setup { get; init; }` |  |
+| `WizardImage` | `byte[] WizardImage { get; init; }` |  |
+| `WizardSmallImage` | `byte[] WizardSmallImage { get; init; }` |  |
+| `Load` | `static InnoSetupStubs Load(string directory = null)` | Reads the stubs from `directory`, else the INNOSETUPDIR environment variable, else the usual install locations ("Inno Setup 6" under Program Files). Null when none is found. |
+
+#### `InnoSetupWriter`
+
+Writes Inno Setup 6.0.x installers: the user's SetupLdr.e32 followed by the file data (setup-1), the setup headers (setup-0) and the setup program, with the loader's offset table resource pointing at them. The installer is not uninstallable, runs without elevation and installs exactly the given files and directories below its installation directory.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Write` | `static void Write(Stream output, InnoSetupStubs stubs, IReadOnlyList<InnoSetupInstallerFile> files, InnoSetupInstallerOptions options = null)` | Writes an installer for `files` built on `stubs`. |
+
+#### `InnoSetupWriterCompression`
+
+How `InnoSetupWriter` stores the files.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Stored` | `0` | Stored. |
+| `Lzma2` | `1` | LZMA2, one chunk per file. |
 
 #### `InnoVersion`
 
