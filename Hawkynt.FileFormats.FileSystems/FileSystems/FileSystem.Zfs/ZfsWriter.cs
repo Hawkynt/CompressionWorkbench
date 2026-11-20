@@ -207,12 +207,21 @@ internal sealed class ZfsWriter {
 
   /// <summary>
   /// Writes a dRAID instead (data and parity columns per redundancy group, every device a child,
-  /// no distributed spare); needs <see cref="Version"/> 5000.
+  /// <see cref="DraidSpares"/> distributed spares); needs <see cref="Version"/> 5000.
   /// </summary>
   public (int Data, int Parity)? Draid {
     get => this._draidLayout;
     set => this._draidLayout = value is null or { Data: >= 1, Parity: >= 1 and <= 3 } ? value
       : throw new ArgumentOutOfRangeException(nameof(value), "ZFS: dRAID takes 1-3 parity and at least one data column.");
+  }
+
+  private int _draidSpares;
+
+  /// <summary>Distributed spares of a <see cref="Draid"/>: each child keeps that many rows per slice free for them.</summary>
+  public int DraidSpares {
+    get => this._draidSpares;
+    set => this._draidSpares = value is >= 0 and <= 100 ? value
+      : throw new ArgumentOutOfRangeException(nameof(value), "ZFS: a dRAID takes 0-100 distributed spares.");
   }
 
   private long AllocatedSize(int size) =>
@@ -807,10 +816,12 @@ internal sealed class ZfsWriter {
       if (this._stripe || this._parity > 0) throw new ArgumentException("ZFS: a dRAID is written on its own, not striped or as RAID-Z.");
       if (!this.Features) throw new ArgumentException("ZFS: a dRAID needs a version 5000 pool.");
       var width = layout.Data + layout.Parity;
-      if (outputs.Count < width) throw new ArgumentException($"ZFS: dRAID{layout.Parity} with {layout.Data} data columns needs at least {width} devices.", nameof(outputs));
+      var spares = this._draidSpares;
+      if (outputs.Count < width + spares)
+        throw new ArgumentException($"ZFS: dRAID{layout.Parity} with {layout.Data} data columns and {spares} spares needs at least {width + spares} devices.", nameof(outputs));
       var groups = 1;
-      while (width * groups % outputs.Count != 0) ++groups;
-      this._draid = new ZfsDraidVdev([.. outputs.Select(_ => (ZfsVdev)new ZfsMissingVdev("draid child"))], layout.Data, layout.Parity, 0, groups, Ashift);
+      while (width * groups % (outputs.Count - spares) != 0) ++groups;
+      this._draid = new ZfsDraidVdev([.. outputs.Select(_ => (ZfsVdev)new ZfsMissingVdev("draid child"))], layout.Data, layout.Parity, spares, groups, Ashift);
     }
     this._devices = outputs.Count;
     this._nexts = new long[this._stripe ? outputs.Count : 1];
@@ -912,7 +923,7 @@ internal sealed class ZfsWriter {
       if (mirror) top.Add("type", "mirror").Add("id", 0UL).Add("guid", topGuid);
       else if (raidz) top.Add("type", "raidz").Add("id", 0UL).Add("guid", topGuid).Add("nparity", (ulong)this._parity);
       else if (draid != null) top.Add("type", "draid").Add("id", 0UL).Add("guid", topGuid).Add("nparity", (ulong)draid.Parity)
-        .Add("draid_ndata", (ulong)draid.Data).Add("draid_nspares", 0UL).Add("draid_ngroups", (ulong)draid.Groups);
+        .Add("draid_ndata", (ulong)draid.Data).Add("draid_nspares", (ulong)draid.Spares).Add("draid_ngroups", (ulong)draid.Groups);
       else if (stripe) top.Add("type", "file").Add("id", (ulong)id).Add("guid", leafGuids[id]).Add("path", $"/dev/{poolName}-{id}");
       else top.Add("type", "file").Add("id", 0UL).Add("guid", topGuid).Add("path", $"/dev/{poolName}");
       top.Add("metaslab_array", arrayObject).Add("metaslab_shift", (ulong)metaslabShift).Add("ashift", (ulong)Ashift)
@@ -946,6 +957,19 @@ internal sealed class ZfsWriter {
     var configBlocks = configBytes.Chunk(ConfigBlock).Select(c => (byte[]?)c).ToList();
     var configObj = Add(this.NewObject(OtPackedNvList, OtPackedNvListSize, configBonus, ConfigBlock, configBlocks));
 
+    // a dRAID's distributed spares: the pool's spare list, a packed nvlist like the config
+    var spareEntries = new List<(string Name, ulong Value)>();
+    if (draid is { Spares: > 0 }) {
+      var list = new NvList().Add("spares", Enumerable.Range(0, draid.Spares).Select(i => new NvList()
+        .Add("type", "dspare").Add("guid", Guid64()).Add("path", $"draid{draid.Parity}-0-{i}").Add("top_guid", topGuid)
+        .Add("spareid", (ulong)i).Add("whole_disk", 1UL).Add("is_spare", 1UL).Add("ashift", (ulong)Ashift)).ToArray());
+      var sparesBytes = XdrNvListWriter.Pack(list);
+      var sparesBonus = new byte[8];
+      BinaryPrimitives.WriteUInt64LittleEndian(sparesBonus, (ulong)sparesBytes.Length);
+      spareEntries.Add(("spares", Add(this.NewObject(OtPackedNvList, OtPackedNvListSize, sparesBonus, ConfigBlock,
+        sparesBytes.Chunk(ConfigBlock).Select(c => (byte[]?)c).ToList()))));
+    }
+
     // feature flags: which are enabled (read / write lists, with their reference counts), their
     // descriptions and the txg each was enabled in. spacemap_histogram counts the space maps; its
     // count is filled in once they are known (it is the first entry of the write list).
@@ -974,6 +998,7 @@ internal sealed class ZfsWriter {
       ("root_dataset", rootDir), ("config", configObj), ("sync_bplist", syncBplist), ("free_bpobj", freeBpobj),
       ("deflate", 1), ("creation_version", this._version),
       .. featureEntries,
+      .. spareEntries,
     ]);
 
     // space maps: one per metaslab the pool's blocks reach, sized for a debug word and runs.

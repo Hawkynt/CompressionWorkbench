@@ -137,8 +137,8 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Writes a new pool (version 28) over <paramref name="devices"/>: one device, or with two or
   /// more an n-way mirror of equally sized devices, each holding every block, or with the option
   /// <c>Layout</c> = <c>raidz1</c>, <c>raidz2</c> or <c>raidz3</c> a RAID-Z (at least parity + 2
-  /// devices), <c>draid&lt;p&gt;:&lt;d&gt;d</c> a dRAID (version 5000; every device a child, no
-  /// distributed spare), or with <c>stripe</c> one top-level vdev per device. Other options as for <see cref="Create"/>.
+  /// devices), <c>draid&lt;p&gt;:&lt;d&gt;d:&lt;c&gt;c:&lt;s&gt;s</c> a dRAID (version 5000; every device a
+  /// child, <c>s</c> of them distributed spare space, <c>c</c> if given the device count), or with <c>stripe</c> one top-level vdev per device. Other options as for <see cref="Create"/>.
   /// </summary>
   public void CreatePool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(devices);
@@ -154,11 +154,15 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
     var layout = options.GetOption("Layout", "mirror").Trim().ToLowerInvariant();
     writer.Stripe = layout == "stripe";
-    // draid<parity>:<data>d, e.g. draid1:2d (every device a child, no distributed spare)
-    if (System.Text.RegularExpressions.Regex.Match(layout, @"^draid([1-3])?(?::(\d+)d)?$") is { Success: true } d) {
+    // draid<parity>:<data>d:<children>c:<spares>s, e.g. draid1:2d:1s (every device a child)
+    if (System.Text.RegularExpressions.Regex.Match(layout, @"^draid([1-3])?(?::(\d+)d)?(?::(\d+)c)?(?::(\d+)s)?$") is { Success: true } d) {
       var parity = d.Groups[1].Success ? int.Parse(d.Groups[1].Value) : 1;
-      var data = d.Groups[2].Success ? int.Parse(d.Groups[2].Value) : Math.Min(8, devices.Count - parity);
+      var spares = d.Groups[4].Success ? int.Parse(d.Groups[4].Value) : 0;
+      if (d.Groups[3].Success && int.Parse(d.Groups[3].Value) != devices.Count)
+        throw new ArgumentException($"ZFS: layout '{layout}' names {d.Groups[3].Value} children for {devices.Count} devices.");
+      var data = d.Groups[2].Success ? int.Parse(d.Groups[2].Value) : Math.Min(8, devices.Count - spares - parity);
       writer.Draid = (data, parity);
+      writer.DraidSpares = spares;
       layout = "mirror";
     }
     writer.Parity = layout switch {
