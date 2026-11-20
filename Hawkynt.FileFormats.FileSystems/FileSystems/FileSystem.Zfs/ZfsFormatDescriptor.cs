@@ -197,6 +197,20 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ZfsPoolEditor.Edit(devices, [], entryNames.Where(n => n is not (MetadataName or FullName)).ToList());
   }
 
+  /// <summary>
+  /// Adds and removes in one transaction group, in a pool on one or more <paramref name="devices"/>,
+  /// with key material for natively encrypted datasets: <paramref name="keys"/> by encryption root
+  /// (<c>pool/fs</c>), else <paramref name="anyKey"/>. Their new blocks are encrypted and
+  /// authenticated as OpenZFS does; an encrypted dataset without its key is refused untouched.
+  /// </summary>
+  public void EditPool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs, string[] removals,
+      ZfsKeyMaterial? anyKey = null, IReadOnlyDictionary<string, ZfsKeyMaterial>? keys = null) {
+    ArgumentNullException.ThrowIfNull(devices);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(removals);
+    ZfsPoolEditor.Edit(devices, Additions(inputs), removals.Where(n => n is not (MetadataName or FullName)).ToList(), anyKey, keys);
+  }
+
   private static List<ZfsPoolEditor.Addition> Additions(IReadOnlyList<ArchiveInputInfo> inputs) =>
     inputs.Select(i => new ZfsPoolEditor.Addition(i.ArchiveName, i.IsDirectory ? null : i.ReadContent(),
       i.Metadata?.LastWriteTimeUtc?.UtcDateTime)).ToList();

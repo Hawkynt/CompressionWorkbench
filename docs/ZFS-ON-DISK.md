@@ -242,6 +242,13 @@ pointers' auth buffers); `os_local_mac` (at 0x2F0) over the flags (little-endian
 user-, group- (and, in a 4 KiB block, project-) used dnodes present — zero when the flags lack
 bit 0 (user accounting complete) or there are no user and group dnodes.
 
+**Writing.** An edit of an encrypted dataset (with its key) protects every new block of the
+object set the same way, bottom-up so each MAC covers the final child pointers: one random
+8-byte salt per edit and a random 12-byte IV per encrypted block; Fletcher-4 folded to two
+words beside the MAC; dnode blocks uncompressed; indirect blocks with their checksum of MACs;
+the object set block with both MACs before its (full) checksum. No block is embedded and at
+most two copies are kept. The DSL crypto key is not touched.
+
 ## ZPL
 
 The master node (object 1 of a ZPL object set) maps `ROOT` to the root directory and,
@@ -541,8 +548,8 @@ feature not known to the editor is. What the active ones ask of an edit:
 - **embedded_data**: freeing an embedded block frees no space; its logical size leaves the
   dataset's uncompressed bytes.
 - hole_birth, large_blocks, large_dnode, the checksum features, head_errlog, zilsaxattr,
-  vdev_zaps_v2, bookmarks and encryption need nothing more; encrypted datasets themselves are not
-  edited.
+  vdev_zaps_v2, bookmarks and encryption need nothing more; encrypted datasets are edited with
+  their key ("Native encryption", "Writing").
 
 ### Snapshots and deadlists
 

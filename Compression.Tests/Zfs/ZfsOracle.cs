@@ -88,9 +88,10 @@ internal static class ZfsOracle {
   /// <summary>
   /// As <see cref="KernelManifest(string, string, string, out string)"/>, running <paramref name="after"/>
   /// (shell, pool imported and mounted) before the export, and with <paramref name="download"/> copying
-  /// the device images back over the staged ones, so OpenZFS's own later writes can be checked too.
+  /// the device images back over the staged ones, so OpenZFS's own later writes can be checked too;
+  /// <paramref name="before"/> runs right after the import (loading keys of encrypted datasets).
   /// </summary>
-  public static Dictionary<string, string> KernelManifest(string dir, string wsl, string pool, out string log, string after, bool download) {
+  public static Dictionary<string, string> KernelManifest(string dir, string wsl, string pool, out string log, string after, bool download, string before = "") {
     var images = Directory.GetFiles(dir, "*.img").Select(f => Path.GetFileName(f)!).Order(StringComparer.Ordinal).ToList();
     var uploads = string.Concat(images.Select(f => $"upload {f} /out/{f}\\n"));
     var downloads = download ? string.Concat(images.Select(f => $"download /out/{f} {f}\\n")) : "";
@@ -98,6 +99,7 @@ internal static class ZfsOracle {
       modprobe zfs
       O=/sysroot/out; M=/sysroot/mnt; mkdir -p $M
       zpool import -d $O -N -o altroot=$M {{pool}} || { echo IMPORT-FAILED; exit 1; }
+      {{before}}
       zpool scrub -w {{pool}}
       zpool status -v {{pool}}
       zpool get -H -o property,value all {{pool}} | grep feature@ | while read -r k v; do echo "FEATURE ${k#feature@} $v"; done
