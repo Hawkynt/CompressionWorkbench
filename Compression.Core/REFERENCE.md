@@ -6841,6 +6841,7 @@ sfArk V2 (`.sfArk`): SoundFont 2 banks with the sample data coded losslessly by 
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes an sfArk V2 file to the SoundFont it packs. |
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data, out SfArkInfo info)` | Decodes an sfArk V2 file and reports what its header and text files say. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, string fileName = "sound.sf2")` | Packs a file as sfArk (Fast method). For a SoundFont 2 bank the `smpl` data is coded as audio; any other input is stored as zlib blocks only. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, string fileName, bool turbo)` | Packs a file as sfArk, with the Fast method or, when `turbo` is set, the Turbo method (4096-sample blocks, 0-2 plain integrators chosen per block, 256-sample residual windows). |
 
 #### `SfArkInfo`
 

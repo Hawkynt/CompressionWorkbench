@@ -64,6 +64,34 @@ public class SfArkTests {
     });
   }
 
+  [TestCaseSource(nameof(SampleSets)), Category("RoundTrip")]
+  public void SoundFont_RoundTripsWithTheTurboMethod(short[] samples) {
+    var sf2 = Sf2Builder.Build(samples);
+    var decoded = SfArkCodec.Decode(SfArkCodec.Encode(sf2, "bank.sf2", turbo: true), out var info);
+    Assert.Multiple(() => {
+      Assert.That(decoded, Is.EqualTo(sf2));
+      Assert.That(info.Method, Is.EqualTo(4));
+    });
+  }
+
+  /// <summary>Blocks that want no, one and two integrators, so the Turbo history moves unevenly.</summary>
+  internal static short[] TurboMix() {
+    var rnd = new Random(5);
+    return [
+      .. new short[5000],
+      .. Sf2Builder.Tone(9000, 11),
+      .. Enumerable.Range(0, 4096).Select(i => (short)(i * i / 50)),
+      .. Enumerable.Range(0, 4096).Select(_ => (short)rnd.Next(short.MinValue, short.MaxValue + 1)),
+      .. Sf2Builder.Tone(3333, 12),
+    ];
+  }
+
+  [Test, Category("RoundTrip")]
+  public void TurboMix_RoundTrips() {
+    var sf2 = Sf2Builder.Build(TurboMix());
+    Assert.That(SfArkCodec.Decode(SfArkCodec.Encode(sf2, "mix.sf2", turbo: true)), Is.EqualTo(sf2));
+  }
+
   public static IEnumerable<TestCaseData> OtherData() {
     yield return new TestCaseData(Array.Empty<byte>()).SetName("Empty");
     yield return new TestCaseData("not a soundfont"u8.ToArray()).SetName("Text");
@@ -206,6 +234,25 @@ public class SfArkReferenceTests {
       var r = FsInteropToolbox.RunWsl($"sfarkxtc {FsInteropToolbox.WinToWsl(packed)} ours.sf2");
       Assert.That(r.ExitCode, Is.EqualTo(0), r.StdOut + r.StdErr);
       Assert.That(File.ReadAllBytes(output), Is.EqualTo(sf2));
+    } finally {
+      try { Directory.Delete(dir, true); } catch { /* best effort */ }
+    }
+  }
+
+  [Test]
+  public void OurTurboFile_IsDecodedBySfarkxtc() {
+    if (Setup.Value is { } error) Assert.Ignore(error);
+    var dir = NewDir();
+    try {
+      var sf2 = Sf2Builder.Build(SfArkTests.TurboMix());
+      var packed = Path.Combine(dir, "turbo.sfArk");
+      var output = Path.Combine(dir, "turbo.sf2");
+      File.WriteAllBytes(packed, SfArkCodec.Encode(sf2, "turbo.sf2", turbo: true));
+      var r = FsInteropToolbox.RunWsl($"sfarkxtc {FsInteropToolbox.WinToWsl(packed)} turbo.sf2");
+      Assert.That(r.ExitCode, Is.EqualTo(0), r.StdOut + r.StdErr);
+      Assert.That(File.ReadAllBytes(output), Is.EqualTo(sf2));
+      Assert.That(SfArkCodec.Decode(File.ReadAllBytes(packed), out var info), Is.EqualTo(sf2));
+      Assert.That(info.Method, Is.EqualTo(4));
     } finally {
       try { Directory.Delete(dir, true); } catch { /* best effort */ }
     }

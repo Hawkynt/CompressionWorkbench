@@ -23,7 +23,7 @@ public sealed record SfArkInfo(string FileName, int Method, string CreatorVersio
 /// Implemented from <c>docs/SFARK-ON-DISK.md</c>, which was written from the GPL-3.0 sfArkLib
 /// decoder (sourcing rung 2); no code was carried across. Verified against the sfarkxtc
 /// reference decoder on published files and on files this class writes. The writer uses the
-/// Fast method only; V1 files (methods 0-2) are refused, as the reference refuses them.
+/// Fast or the Turbo method; V1 files (methods 0-2) are refused, as the reference refuses them.
 /// </remarks>
 public static class SfArkCodec {
 
@@ -571,7 +571,14 @@ public static class SfArkCodec {
   /// Packs a file as sfArk (Fast method). For a SoundFont 2 bank the <c>smpl</c> data is coded
   /// as audio; any other input is stored as zlib blocks only.
   /// </summary>
-  public static byte[] Encode(ReadOnlySpan<byte> data, string fileName = "sound.sf2") {
+  public static byte[] Encode(ReadOnlySpan<byte> data, string fileName = "sound.sf2") => Encode(data, fileName, turbo: false);
+
+  /// <summary>
+  /// Packs a file as sfArk, with the Fast method or, when <paramref name="turbo"/> is set, the
+  /// Turbo method (4096-sample blocks, 0-2 plain integrators chosen per block, 256-sample
+  /// residual windows).
+  /// </summary>
+  public static byte[] Encode(ReadOnlySpan<byte> data, string fileName, bool turbo) {
     var (audioStart, audioEnd) = FindSampleData(data);
     var w = new BitWriter();
     uint check = 0;
@@ -589,7 +596,10 @@ public static class SfArkCodec {
     }
 
     NonAudio(data[..audioStart]);
-    if (audioEnd > audioStart) {
+    if (audioEnd > audioStart && turbo) {
+      EncodeTurbo(w, data[audioStart..audioEnd], ref check);
+      NonAudio(data[audioEnd..]);
+    } else if (audioEnd > audioStart) {
       short history = 0, fix = 8;
       var loops = 0;
       var samples = new short[EncoderBlock];
@@ -622,12 +632,54 @@ public static class SfArkCodec {
     header[20] = 20;
     "2.15 "u8.CopyTo(header.AsSpan(21));
     Signature.CopyTo(header.AsSpan(SignatureOffset));
-    header[31] = MethodFast;
+    header[31] = turbo ? (byte)MethodTurbo : (byte)MethodFast;
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(34), (uint)audioStart);
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(38), (uint)audioEnd);
     name.CopyTo(header.AsSpan(FixedHeaderSize));
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(16), Adler(0, header));
     return [.. header, .. body];
+  }
+
+  /// <summary>
+  /// Turbo audio: per 4096-sample block the integrator count k (0-2, the one whose residuals are
+  /// smallest), then the k-th differences in 256-sample windows. Difference j starts from the
+  /// history value h[j] the decoder keeps, which only blocks with more than j integrators move;
+  /// the file check covers the first differences, as the decoder sees them before its last
+  /// integration.
+  /// </summary>
+  private static void EncodeTurbo(BitWriter w, ReadOnlySpan<byte> audio, ref uint check) {
+    const int Block = 4096, MaxLoops = 2;
+    Span<short> history = stackalloc short[MaxLoops];
+    var levels = new short[MaxLoops + 1][];
+    for (var j = 0; j <= MaxLoops; ++j) levels[j] = new short[Block];
+    short fix = 8;
+    var loops = 0;
+    for (var at = 0; at < audio.Length; at += 2 * Block) {
+      var n = Math.Min(Block, (audio.Length - at) / 2);
+      for (var i = 0; i < n; ++i)
+        levels[0][i] = BinaryPrimitives.ReadInt16LittleEndian(audio[(at + 2 * i)..]);
+      // levels[j + 1] = differences of levels[j], from history[j]
+      var best = 0;
+      var bestCost = long.MaxValue;
+      for (var j = 0; j <= MaxLoops; ++j) {
+        if (j > 0)
+          for (var i = 0; i < n; ++i)
+            levels[j][i] = (short)(levels[j - 1][i] - (i == 0 ? history[j - 1] : levels[j - 1][i - 1]));
+        var cost = 0L;
+        for (var i = 0; i < n; ++i) cost += Math.Abs((int)levels[j][i]);
+        if (cost < bestCost) {
+          bestCost = cost;
+          best = j;
+        }
+      }
+      w.Delta(loops, best);
+      loops = best;
+      for (var s = 0; s < n; s += TurboResidualWindow)
+        fix = WriteResidualWindow(w, levels[best].AsSpan(s, Math.Min(TurboResidualWindow, n - s)), fix);
+      if (best > 0) check = AudioCheck(check, levels[1].AsSpan(0, n));
+      for (var j = 0; j < best; ++j)
+        history[j] = levels[j][n - 1];
+    }
   }
 
   private static short WriteResidualWindow(BitWriter w, ReadOnlySpan<short> values, short previousFix) {
