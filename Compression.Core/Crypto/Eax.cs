@@ -40,7 +40,7 @@ public sealed class Eax {
 
   /// <summary>EAX with AES under a 16-, 24- or 32-byte key.</summary>
   public static Eax WithAes(ReadOnlySpan<byte> key, ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> header = default) {
-    var aes = Aes.Create();
+    var aes = ManagedAes.Create();
     aes.Key = key.ToArray();
     return new Eax((input, output) => aes.EncryptEcb(input, output, PaddingMode.None), nonce, header);
   }

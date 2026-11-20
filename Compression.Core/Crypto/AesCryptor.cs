@@ -4,7 +4,7 @@ namespace Compression.Core.Crypto;
 
 /// <summary>
 /// AES-256 encryption and decryption wrapper supporting CBC and CTR modes.
-/// Uses the system-provided AES implementation.
+/// Runs on <see cref="ManagedAes"/>, this library's own AES, not the operating system's.
 /// </summary>
 public static class AesCryptor {
   /// <summary>
@@ -17,7 +17,7 @@ public static class AesCryptor {
   public static byte[] EncryptCbc(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv) {
     ValidateKeyAndIv(key, iv);
 
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key.ToArray();
     aes.IV = iv.ToArray();
     aes.Mode = CipherMode.CBC;
@@ -37,7 +37,7 @@ public static class AesCryptor {
   public static byte[] DecryptCbc(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv) {
     ValidateKeyAndIv(key, iv);
 
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key.ToArray();
     aes.IV = iv.ToArray();
     aes.Mode = CipherMode.CBC;
@@ -56,7 +56,7 @@ public static class AesCryptor {
     if (data.Length % 16 != 0)
       throw new ArgumentException("Data length must be a multiple of 16 bytes for no-padding mode.", nameof(data));
 
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key.ToArray();
     aes.IV = iv.ToArray();
     aes.Mode = CipherMode.CBC;
@@ -75,7 +75,7 @@ public static class AesCryptor {
     if (data.Length % 16 != 0)
       throw new ArgumentException("Data length must be a multiple of 16 bytes for no-padding mode.", nameof(data));
 
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key.ToArray();
     aes.IV = iv.ToArray();
     aes.Mode = CipherMode.CBC;
@@ -104,7 +104,7 @@ public static class AesCryptor {
 
     var result = new byte[data.Length];
 
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key.ToArray();
     aes.Mode = CipherMode.ECB;
     aes.Padding = PaddingMode.None;
@@ -154,7 +154,7 @@ public static class AesCryptor {
     if (data.Length % 16 != 0)
       throw new ArgumentException("Data length must be a multiple of 16 bytes.", nameof(data));
 
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key.ToArray();
     aes.IV = iv.ToArray();
     aes.Mode = CipherMode.CBC;
@@ -175,7 +175,7 @@ public static class AesCryptor {
     if (data.Length % 16 != 0)
       throw new ArgumentException("Data length must be a multiple of 16 bytes.", nameof(data));
 
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key.ToArray();
     aes.IV = iv.ToArray();
     aes.Mode = CipherMode.CBC;

@@ -79,7 +79,7 @@ public abstract class TcBlockCipher : IDisposable {
     }
   }
 
-  private sealed class AesCipher(ReadOnlySpan<byte> key) : FrameworkCipher(Aes.Create(), key) {
+  private sealed class AesCipher(ReadOnlySpan<byte> key) : FrameworkCipher(ManagedAes.Create(), key) {
     public override int BlockSize => 16;
   }
 

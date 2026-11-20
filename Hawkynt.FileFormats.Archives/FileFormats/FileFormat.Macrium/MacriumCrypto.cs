@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using Compression.Core.Crypto;
 
 namespace FileFormat.Macrium;
 
@@ -148,7 +149,7 @@ public static class MacriumCrypto {
     Span<byte> tweakKey = stackalloc byte[32];
     SHA256.HashData(derivedKey, tweakKey);
 
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = tweakKey.ToArray();
     aes.Mode = CipherMode.ECB;
     aes.Padding = PaddingMode.None;
@@ -172,7 +173,7 @@ public static class MacriumCrypto {
     if (iv.Length != AesBlockSize)
       throw new ArgumentException($"iv must be {AesBlockSize} bytes.", nameof(iv));
 
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key.ToArray();
     aes.IV = iv.ToArray();
     aes.Mode = CipherMode.CBC;
@@ -193,7 +194,7 @@ public static class MacriumCrypto {
     if (ciphertext.Length == 0 || ciphertext.Length % AesBlockSize != 0)
       throw new ArgumentException($"ciphertext length must be a positive multiple of {AesBlockSize}.", nameof(ciphertext));
 
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key.ToArray();
     aes.IV = iv.ToArray();
     aes.Mode = CipherMode.CBC;

@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using Compression.Core.Crypto;
 
 namespace FileFormat.BitLocker;
 
@@ -65,7 +66,7 @@ public sealed class BitLockerSectorCipher : IDisposable {
     this._tweakEncrypt = this._tweakAes.CreateEncryptor();
     // A CBC encryptor whose chaining value we steer: its IV is zero, and each sector's first
     // block is pre-XORed with (its IV ⊕ the transform's previous ciphertext block).
-    using (var cbc = Aes.Create()) {
+    using (var cbc = ManagedAes.Create()) {
       cbc.Key = dataKey.ToArray();
       cbc.Mode = CipherMode.CBC;
       cbc.Padding = PaddingMode.None;
@@ -82,7 +83,7 @@ public sealed class BitLockerSectorCipher : IDisposable {
   public int SectorSize => this._sectorSize;
 
   private static Aes NewAes(ReadOnlySpan<byte> key) {
-    var aes = Aes.Create();
+    var aes = ManagedAes.Create();
     aes.Key = key.ToArray();
     aes.Mode = CipherMode.ECB;
     aes.Padding = PaddingMode.None;

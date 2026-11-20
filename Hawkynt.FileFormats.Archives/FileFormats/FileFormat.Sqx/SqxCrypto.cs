@@ -21,7 +21,7 @@ internal static class SqxCrypto {
   }
 
   public static byte[] DecryptData(ReadOnlySpan<byte> data, byte[] key) {
-    using var aes = Aes.Create();
+    using var aes = ManagedAes.Create();
     aes.Key = key;
     return aes.DecryptEcb(data, PaddingMode.None);
   }
