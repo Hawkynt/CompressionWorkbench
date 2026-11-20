@@ -29,5 +29,18 @@ Volume sets, from `/tmp/a2e1_peasrc` (the same four objects) with
 | `vol.000001.pea` … `vol.000003.pea` | 5000 | PCOMPRESS0 | CRC32 | CRC32 | SHA256 |
 | `volz.000001.pea` … `volz.000003.pea` | 200 | PCOMPRESS2 | SHA1 | MD5 | SHA256 |
 
+Encrypted streams, password `password`, from the same four objects with
+`pea PEA <out> 0 <compression> CRC32 <object check> <stream encryption> HIDDEN password NOKEYFILE FROMCL …`:
+
+| File | Compression | Object | Stream encryption |
+| --- | --- | --- | --- |
+| `eax256.pea` | PCOMPRESS2 | CRC32 | EAX256 |
+| `tf256.pea` | PCOMPRESS0 | CRC32 | TF256 |
+| `sp256.pea` | PCOMPRESS1 | CRC64 | SP256 |
+| `eax.pea` | PCOMPRESS2 | CRC32 | EAX |
+| `tf.pea` | PCOMPRESS2 | CRC32 | TF |
+| `sp.pea` | PCOMPRESS2 | CRC32 | SP |
+| `hmac.pea` | PCOMPRESS2 | CRC32 | HMAC |
+
 `pea UNPEA <archive> <dir>/ RESETDATE RESETATTR EXTRACT2DIR HIDDEN "" ""` extracts them under
 `<dir>/<archive name>/`, relative to the objects' common directory.

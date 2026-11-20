@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Compression.Registry;
 using System.Security.Cryptography;
 using System.Text;
 using Compression.Core.Deflate;
@@ -23,6 +24,8 @@ public sealed class PeaEntry {
   public DateTime? LastModified { get; init; }
   /// <summary>Gets the decoded content (empty for directories).</summary>
   public byte[] Data { get; init; } = [];
+  /// <summary>Gets whether the archive's stream is encrypted.</summary>
+  public bool IsEncrypted { get; init; }
 }
 
 /// <summary>
@@ -32,8 +35,10 @@ public sealed class PeaEntry {
 /// objects (name, time, attributes, size, data) and an end-of-archive trigger. A volume set is
 /// that byte stream cut into <c>name.000001.pea</c>, <c>name.000002.pea</c>, …, each volume
 /// ending with the volume check over its own bytes. This covers single archives and volume sets
-/// with any of the hash or checksum controls; encrypted streams (EAX, HMAC, Twofish, Serpent and
-/// their cascades) are refused.
+/// with any of the hash or checksum controls, and streams encrypted with one cipher (AES, Twofish
+/// or Serpent in EAX mode, 128- or 256-bit, or AES-128 with HMAC), which encrypt everything after
+/// a 16-byte salt-and-verifier subheader and end the stream with a 16-byte tag; the triple
+/// cascades are refused.
 /// </summary>
 /// <remarks>
 /// Layout from the public-domain PEA file format specification and PeaZip's pea_utils.pas /
@@ -74,6 +79,20 @@ public static class PeaArchive {
     Blake2s = 0x18,
     /// <summary>BLAKE2b-512.</summary>
     Blake2b = 0x19,
+    /// <summary>Stream only: AES-128 CTR with HMAC-SHA-1, keys by PBKDF2-HMAC-SHA-1 (pea's HMAC).</summary>
+    AesHmac = 0x30,
+    /// <summary>Stream only: AES-128 EAX, keys by PBKDF2-HMAC-SHA-1 (pea's EAX).</summary>
+    AesEax = 0x31,
+    /// <summary>Stream only: Twofish-128 EAX, keys by PBKDF2-HMAC-SHA-1 (pea's TF).</summary>
+    TwofishEax = 0x32,
+    /// <summary>Stream only: Serpent-128 EAX, keys by PBKDF2-HMAC-SHA-1 (pea's SP).</summary>
+    SerpentEax = 0x33,
+    /// <summary>Stream only: AES-256 EAX, keys by PBKDF2-HMAC-Whirlpool (pea's EAX256, PeaZip's default).</summary>
+    Aes256Eax = 0x41,
+    /// <summary>Stream only: Twofish-256 EAX, keys by PBKDF2-HMAC-Whirlpool (pea's TF256).</summary>
+    Twofish256Eax = 0x42,
+    /// <summary>Stream only: Serpent-256 EAX, keys by PBKDF2-HMAC-Whirlpool (pea's SP256).</summary>
+    Serpent256Eax = 0x43,
   }
 
   private static int TagSize(byte algo) => algo switch {
@@ -84,9 +103,15 @@ public static class PeaArchive {
     0x11 or 0x12 => 20,
     0x13 or 0x16 or 0x18 => 32,
     0x14 or 0x15 or 0x17 or 0x19 => 64,
-    >= 0x30 => throw new NotSupportedException($"PEA stream control algorithm 0x{algo:X2} is encryption, which is not supported."),
+    _ when PeaStreamCipher.Handles(algo) => PeaStreamCipher.TagSize,
+    _ when PeaStreamCipher.Encrypts(algo) => throw new NotSupportedException($"PEA stream encryption 0x{algo:X2} (a triple cascade) is not supported."),
     _ => throw new InvalidDataException($"PEA check algorithm 0x{algo:X2} is unknown."),
   };
+
+  /// <summary>The tag size of an object or volume check, which never encrypts.</summary>
+  private static int CheckTagSize(byte algo) => PeaStreamCipher.Encrypts(algo)
+    ? throw new InvalidDataException($"PEA check algorithm 0x{algo:X2} encrypts, which only the stream does.")
+    : TagSize(algo);
 
   private static byte[] Tag(byte algo, ReadOnlySpan<byte> data) => algo switch {
     0x00 => [],
@@ -184,15 +209,18 @@ public static class PeaArchive {
   /// Reads and verifies a PEA archive. A file stream named like a volume (<c>name.000001.pea</c>)
   /// is read together with the volumes beside it, starting from volume 1.
   /// </summary>
+  /// <param name="stream">The archive, or one of its volumes.</param>
+  /// <param name="password">The password of an encrypted stream; ignored otherwise.</param>
   /// <exception cref="InvalidDataException">Not a PEA archive, a volume is missing, or a check fails.</exception>
-  /// <exception cref="NotSupportedException">Encrypted stream, newer revision, or unsupported compression.</exception>
-  public static List<PeaEntry> Read(Stream stream) {
+  /// <exception cref="ArchivePasswordException">The stream is encrypted and the password is missing or wrong.</exception>
+  /// <exception cref="NotSupportedException">Cascade encryption, newer revision, or unsupported compression.</exception>
+  public static List<PeaEntry> Read(Stream stream, string? password = null) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream is FileStream { Name: { Length: > 0 } name } && VolumeSetBase(name) is not null) {
       var paths = VolumePaths(name);
-      return ReadVolumes(paths.Select(p => string.Equals(Path.GetFullPath(p), Path.GetFullPath(name), StringComparison.Ordinal) ? ReadAll(stream) : File.ReadAllBytes(p)));
+      return ReadVolumes(paths.Select(p => string.Equals(Path.GetFullPath(p), Path.GetFullPath(name), StringComparison.Ordinal) ? ReadAll(stream) : File.ReadAllBytes(p)), password);
     }
-    return ReadVolumes([ReadAll(stream)]);
+    return ReadVolumes([ReadAll(stream)], password);
   }
 
   private static byte[] ReadAll(Stream stream) {
@@ -207,9 +235,12 @@ public static class PeaArchive {
   /// volume check over that volume's bytes; the archive is the volumes' contents, checks removed,
   /// joined.
   /// </summary>
+  /// <param name="volumes">The volumes, from volume 1 on.</param>
+  /// <param name="password">The password of an encrypted stream; ignored otherwise.</param>
   /// <exception cref="InvalidDataException">Not a PEA archive, a volume is missing or damaged, or a check fails.</exception>
-  /// <exception cref="NotSupportedException">Encrypted stream, newer revision, or unsupported compression.</exception>
-  public static List<PeaEntry> ReadVolumes(IEnumerable<byte[]> volumes) {
+  /// <exception cref="ArchivePasswordException">The stream is encrypted and the password is missing or wrong.</exception>
+  /// <exception cref="NotSupportedException">Cascade encryption, newer revision, or unsupported compression.</exception>
+  public static List<PeaEntry> ReadVolumes(IEnumerable<byte[]> volumes, string? password = null) {
     ArgumentNullException.ThrowIfNull(volumes);
     var joined = new MemoryStream();
     var volumeAlgo = (byte)0;
@@ -221,7 +252,7 @@ public static class PeaArchive {
         if (v.Length < 10 || v[0] != Magic) throw new InvalidDataException("Not a PEA archive.");
         if (v[1] > 1 || v[1] == 1 && v[2] > 6) throw new NotSupportedException($"PEA format {v[1]}.{v[2]} is newer than this reader.");
         volumeAlgo = v[3];
-        volumeTag = TagSize(volumeAlgo);
+        volumeTag = CheckTagSize(volumeAlgo);
       }
       var content = v.Length - volumeTag;
       if (content <= 0) throw new InvalidDataException($"PEA volume {count} is truncated.");
@@ -234,14 +265,14 @@ public static class PeaArchive {
     if (b.Length >= 20) {
       // an encrypted or unknown stream is refused as such, not as the damage its unknown layout looks like
       _ = TagSize(b[18]);
-      _ = TagSize(b[19]);
+      _ = CheckTagSize(b[19]);
     }
     if (failedVolume != 0)
       throw new InvalidDataException($"PEA volume check fails for volume {failedVolume} (damaged, or a volume of the set is missing).");
-    return ReadJoined(b);
+    return ReadJoined(b, password);
   }
 
-  private static List<PeaEntry> ReadJoined(byte[] b) {
+  private static List<PeaEntry> ReadJoined(byte[] b, string? password) {
     if (b.Length < 20 || !b.AsSpan(10, 6).SequenceEqual((ReadOnlySpan<byte>)[0, 0, (byte)'P', (byte)'O', (byte)'D', 0]))
       throw new InvalidDataException("PEA stream header is missing.");
     var timeEncoding = b[6];
@@ -249,10 +280,23 @@ public static class PeaArchive {
     var streamAlgo = b[18];
     var objAlgo = b[19];
     if (compression > 3) throw new NotSupportedException($"PEA compression {compression} is not supported.");
-    int streamTag = TagSize(streamAlgo), objTag = TagSize(objAlgo);
+    int streamTag = TagSize(streamAlgo), objTag = CheckTagSize(objAlgo);
     var end = b.Length;
 
     var p = 20;
+    var encrypted = PeaStreamCipher.Encrypts(streamAlgo);
+    if (encrypted) {
+      // salt-and-verifier subheader, then everything up to the tag is one authenticated ciphertext
+      if (b.Length < 20 + PeaStreamCipher.SubheaderSize + PeaStreamCipher.TagSize) throw new InvalidDataException("PEA archive is truncated.");
+      var cipher = PeaStreamCipher.Open(streamAlgo, password, b.AsSpan(0, 20), b.AsSpan(20, PeaStreamCipher.SubheaderSize));
+      p += PeaStreamCipher.SubheaderSize;
+      end -= PeaStreamCipher.TagSize;
+      cipher.Decrypt(b.AsSpan(p, end - p));
+      if (!CryptographicOperations.FixedTimeEquals(cipher.Tag(), b.AsSpan(end, PeaStreamCipher.TagSize)))
+        throw new InvalidDataException("PEA stream authentication fails (the archive is damaged).");
+      streamAlgo = 0; // authenticated: no stream check follows the end-of-archive trigger
+      streamTag = 0;
+    }
     var blockSize = 0;
     if (compression != 0) {
       blockSize = (int)ReadU32(b, ref p, end);
@@ -335,6 +379,7 @@ public static class PeaArchive {
       Attributes = r.Attr,
       LastModified = Time(r.Time, timeEncoding),
       Data = r.Data,
+      IsEncrypted = encrypted,
     }).ToList();
   }
 
@@ -422,16 +467,27 @@ public static class PeaArchive {
   /// <param name="volumeSize">The size of every volume but the last, check included; 0 writes one volume.
   /// Volumes are named <c>name.000001.pea</c>, <c>name.000002.pea</c>, … (see <see cref="VolumePath"/>).</param>
   /// <param name="openVolume">Opens volume <c>n</c> (2, 3, …) for writing; the stream is disposed after it.</param>
+  /// <param name="password">The password, required exactly when <paramref name="streamCheck"/> encrypts
+  /// (<see cref="Check.Aes256Eax"/> is what PeaZip picks by default).</param>
   public static void Write(Stream output, IEnumerable<Input> inputs, int compression = 2,
       Check objectCheck = Check.Crc32, Check streamCheck = Check.Sha256, Check volumeCheck = Check.Crc32,
-      long volumeSize = 0, Func<int, Stream>? openVolume = null) {
+      long volumeSize = 0, Func<int, Stream>? openVolume = null, string? password = null) {
     ArgumentNullException.ThrowIfNull(output);
     if (compression is < 0 or > 3) throw new ArgumentOutOfRangeException(nameof(compression));
     ArgumentOutOfRangeException.ThrowIfNegative(volumeSize);
-    var ms = new MemoryStream();
+    if (PeaStreamCipher.Encrypts((byte)objectCheck) || PeaStreamCipher.Encrypts((byte)volumeCheck))
+      throw new ArgumentException("Only the stream check encrypts; object and volume checks are hashes or checksums.");
+    var encrypted = PeaStreamCipher.Encrypts((byte)streamCheck);
+    if (encrypted != !string.IsNullOrEmpty(password))
+      throw new ArgumentException(encrypted
+        ? $"PEA stream encryption {streamCheck} needs a password."
+        : $"A password needs an encrypting stream check ({Check.Aes256Eax} and the like), not {streamCheck}.", nameof(password));
     // archive header: magic, version 1, revision 6, volume check, ECC 0, OS (Linux), time encoding (Unix), ANSI, CPU, iterations
-    ms.Write([Magic, 1, 6, (byte)volumeCheck, 0, 0x33, 0x30, 0x01, 0x21, 0x00]);
-    ms.Write([0, 0, (byte)'P', (byte)'O', (byte)'D', 0, (byte)compression, 0, (byte)streamCheck, (byte)objectCheck]);
+    byte[] headers = [
+      Magic, 1, 6, (byte)volumeCheck, 0, 0x33, 0x30, 0x01, 0x21, 0x00,
+      0, 0, (byte)'P', (byte)'O', (byte)'D', 0, (byte)compression, 0, (byte)streamCheck, (byte)objectCheck,
+    ];
+    var ms = new MemoryStream(); // everything after the headers (and the crypto subheader)
     if (compression != 0) ms.Write(Le32(WriteBlockSize));
     var level = compression switch { 1 => DeflateCompressionLevel.Fast, 3 => DeflateCompressionLevel.Maximum, _ => DeflateCompressionLevel.Default };
 
@@ -488,8 +544,21 @@ public static class PeaArchive {
       ms.Write(Tag((byte)objectCheck, objCheck.ToArray()));
     }
     ms.Write([0, 0, (byte)'E', (byte)'O', (byte)'A', 0]);
-    ms.Write(Tag((byte)streamCheck, ms.GetBuffer().AsSpan(0, (int)ms.Length)));
-    WriteVolumes(output, ms.GetBuffer().AsSpan(0, (int)ms.Length), volumeCheck, volumeSize, openVolume);
+    var body = ms.GetBuffer().AsSpan(0, (int)ms.Length);
+    var archive = new MemoryStream();
+    archive.Write(headers);
+    if (encrypted) {
+      // the headers are bound into the key; the stream check becomes the cipher's tag
+      var cipher = PeaStreamCipher.Create((byte)streamCheck, password!, headers, out var subheader);
+      archive.Write(subheader);
+      cipher.Encrypt(body);
+      archive.Write(body);
+      archive.Write(cipher.Tag());
+    } else {
+      archive.Write(body);
+      archive.Write(Tag((byte)streamCheck, archive.GetBuffer().AsSpan(0, (int)archive.Length)));
+    }
+    WriteVolumes(output, archive.GetBuffer().AsSpan(0, (int)archive.Length), volumeCheck, volumeSize, openVolume);
   }
 
   /// <summary>

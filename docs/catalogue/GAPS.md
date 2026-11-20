@@ -95,7 +95,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 | 6 | StuffIt | PARTIAL | 2 | Method 8 and segmented sets; method 14 is read and verified with unar; classic DES and StuffIt 5 RC4 reads and writes are proven. Rung 1: XADMaster (LGPL); oracle: unar. |
 | 7 | StuffIt X | PARTIAL | 2 | Darkhorse, Blend, Deflate, method 7, preprocessors, encryption; no writer. Rung 1: XADMaster (LGPL); oracle: unar. |
 | 8 | ALZip | PARTIAL | 2 | Split archives and method 3 need samples; ALZip is the oracle. |
-| 9 | PEA | PARTIAL | 2 | Encryption; volume sets are read and written and verified with pea. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
+| 9 | PEA | PARTIAL | 2 | The triple cascades (TRI*/SRI*/HRI*: PBKDF2 at 125,000+ iterations or scrypt). Volume sets and single-cipher encryption are read and written and verified with pea. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
 | 10 | PAK (NoGate) | MISSING | 2 | Rung 1: XADMaster's Crushed method (BB_ArcDistill already covers Distilled). Needs a real sample; PAK 2.51 under DOSBox is the oracle. |
 | 11 | 7-Zip-zstd coders in 7z | PARTIAL | 2 | Write Zstandard, Brotli and LZ4 (the encoders exist); decode LZ5 and Lizard (BB_Lizard exists). Oracle: 7-Zip-zstd. |
 | 12 | ASPack | PARTIAL (read-only) | 2 | The read side is real; creating packed executables is not a goal. |
