@@ -776,6 +776,39 @@ public class UharcWriterTests {
     Assert.That(filtered, Is.EqualTo(image));
   }
 
+  [TestCaseSource(nameof(Executables))]
+  [Category("RoundTrip")]
+  public void GivenAnExecutable_WhenThePpmFilterWithTheOperandSwapIsAppliedAndRestored_ThenItIsUnchanged(byte[] image) {
+    var filtered = image.ToArray();
+    Assert.That(UharcExecutableFilter.Apply(filtered, out var encodable, swapOperandBytes: true), Is.True);
+    Assert.That(encodable, Is.True);
+    UharcExecutableFilter.Restore(filtered, swapOperandBytes: true);
+    Assert.That(filtered, Is.EqualTo(image));
+  }
+
+  [Test, Category("Boundary")]
+  public void GivenOperandsTheFilterLeavesAlone_WhenTheSwappingFilterIsApplied_ThenOnlyThoseWhoseSwapIsATargetAreSwapped() {
+    // Beyond 64 KiB the high half 0xFFFE is trivial: such an operand is otherwise left as it is.
+    // 0xFFFE00FF swaps to 0xFFFF00FE, a target 0xFF02 bytes back, so it is stored swapped (the
+    // restore swaps it back); 0xFFFE1234 swaps to no target and stays as it is.
+    var image = new byte[0x10100];
+    image[0] = (byte)'M';
+    image[1] = (byte)'Z';
+    image[0x10010] = 0xE8;
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x10011), 0xFFFE_00FF);
+    image[0x10030] = 0xE9;
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x10031), 0xFFFE_1234);
+    var filtered = image.ToArray();
+    UharcExecutableFilter.Apply(filtered, out var encodable, swapOperandBytes: true);
+    Assert.Multiple(() => {
+      Assert.That(encodable, Is.True);
+      Assert.That(filtered.AsSpan(0x10011, 4).ToArray(), Is.EqualTo(new byte[] { 0xFE, 0x00, 0xFF, 0xFF }));
+      Assert.That(filtered.AsSpan(0x10031, 4).ToArray(), Is.EqualTo(image.AsSpan(0x10031, 4).ToArray()));
+    });
+    UharcExecutableFilter.Restore(filtered, swapOperandBytes: true);
+    Assert.That(filtered, Is.EqualTo(image));
+  }
+
   [TestCase(1023)]
   [TestCase(0)]
   [Category("Boundary")]

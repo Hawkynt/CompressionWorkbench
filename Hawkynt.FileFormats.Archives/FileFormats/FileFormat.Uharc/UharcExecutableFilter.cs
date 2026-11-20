@@ -34,13 +34,18 @@ internal static class UharcExecutableFilter {
   }
 
   /// <summary>
-  /// The writer's inverse of <see cref="Restore"/> (without the PPM operand swap): applies the
-  /// preprocessing in place so that the restore gives the file back. Returns whether the file is
-  /// one the restore will touch; a file it cannot express is left alone and reported through
-  /// <paramref name="encodable"/> (the restore would then damage it, so the caller must not set
-  /// the filter bit).
+  /// The writer's inverse of <see cref="Restore"/>: applies the preprocessing in place so that
+  /// the restore gives the file back. Returns whether the file is one the restore will touch; a
+  /// file it cannot express is left alone and reported through <paramref name="encodable"/> (the
+  /// restore would then damage it, so the caller must not set the filter bit).
   /// </summary>
-  public static bool Apply(Span<byte> data, out bool encodable) {
+  /// <param name="data">One file, as it will be packed.</param>
+  /// <param name="encodable">False when an operand cannot be expressed.</param>
+  /// <param name="swapOperandBytes">
+  /// 0.6 PPM streams: store an operand with its bytes 0 and 2 swapped exactly when the restore
+  /// swaps it back, that is when the value or its swap is a target.
+  /// </param>
+  public static bool Apply(Span<byte> data, out bool encodable, bool swapOperandBytes = false) {
     encodable = true;
     if (data.Length < MinimumLength || !Classify(data, out var withRelocations, out var start))
       return false;
@@ -56,7 +61,7 @@ internal static class UharcExecutableFilter {
       start = table + size;
     }
 
-    if (!ApplyBranches(copy, start)) {
+    if (!ApplyBranches(copy, start, swapOperandBytes)) {
       encodable = false;
       return true;
     }
@@ -85,8 +90,12 @@ internal static class UharcExecutableFilter {
   /// it is, and otherwise the low half as an index into the recent targets or as itself (an
   /// original low half that looks like an index is reached through a chain of the list's
   /// entries). False when an operand cannot be expressed.
+  /// With <paramref name="swapOperandBytes"/> each stored value then has its bytes 0 and 2
+  /// swapped whenever it or its swap is a target (the same condition for both, so the restore
+  /// swaps exactly those back), and an operand that is otherwise left alone advances the walk by
+  /// 5 when it is swapped, as the restore steps past it.
   /// </summary>
-  private static bool ApplyBranches(Span<byte> data, int start) {
+  private static bool ApplyBranches(Span<byte> data, int start, bool swapOperandBytes) {
     var limit = data.Length;
     Span<ushort> recent = stackalloc ushort[128];
     for (var k = 0; k < recent.Length; ++k)
@@ -109,25 +118,28 @@ internal static class UharcExecutableFilter {
       var absolute = (long)original + i;
       if (absolute > 0 && absolute < limit) {
         BinaryPrimitives.WriteInt32LittleEndian(operand, (int)absolute);
+        SwapForPpm(operand, i);
         i += 5;
         continue;
       }
 
       if (original == -i) {
         BinaryPrimitives.WriteInt32LittleEndian(operand, i);
+        SwapForPpm(operand, i);
         i += 5;
         continue;
       }
 
       if (original < limit && (long)original >= (long)limit - i) {
         BinaryPrimitives.WriteInt32LittleEndian(operand, original - limit);
+        SwapForPpm(operand, i);
         i += 5;
         continue;
       }
 
       var high = BinaryPrimitives.ReadUInt16LittleEndian(operand[2..]);
       if (high == 0 || high == (ushort)((limit - 1) >> 16) || high == (ushort)(-i >> 16)) {
-        i += 4;
+        i += SwapForPpm(operand, i) ? 5 : 4;
         continue;
       }
 
@@ -138,6 +150,7 @@ internal static class UharcExecutableFilter {
         BinaryPrimitives.WriteUInt16LittleEndian(operand, (ushort)(0x8000 | found));
         recent[..found].CopyTo(recent[1..(found + 1)]);
         recent[0] = target;
+        SwapForPpm(operand, i);
         i += 4;
         continue;
       }
@@ -160,11 +173,26 @@ internal static class UharcExecutableFilter {
         recent[0] = target;
       }
 
+      SwapForPpm(operand, i);
       i += 4;
     }
 
     return true;
+
+    // Swaps the stored value's bytes 0 and 2 when the PPM restore will swap them back.
+    bool SwapForPpm(Span<byte> operand, int position) {
+      if (!swapOperandBytes)
+        return false;
+      var value = BinaryPrimitives.ReadUInt32LittleEndian(operand);
+      var swapped = SwapBytes02(value);
+      if (!IsTarget((int)value, position, limit) && !IsTarget((int)swapped, position, limit))
+        return false;
+      BinaryPrimitives.WriteUInt32LittleEndian(operand, swapped);
+      return true;
+    }
   }
+
+  private static uint SwapBytes02(uint value) => (value & 0xFF00FF00) | ((value & 0xFF) << 16) | ((value >> 16) & 0xFF);
 
   private static bool Classify(ReadOnlySpan<byte> data, out bool withRelocations, out int start) {
     withRelocations = false;
@@ -297,7 +325,7 @@ internal static class UharcExecutableFilter {
 
       var step = 4;
       if (swapOperandBytes) {
-        var swapped = (value & 0xFF00FF00) | ((value & 0xFF) << 16) | ((value >> 16) & 0xFF);
+        var swapped = SwapBytes02(value);
         if (IsTarget((int)value, i, limit) || IsTarget((int)swapped, i, limit)) {
           BinaryPrimitives.WriteUInt32LittleEndian(operand, swapped);
           value = swapped;

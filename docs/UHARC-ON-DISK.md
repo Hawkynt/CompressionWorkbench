@@ -530,15 +530,18 @@ before packing: bit 7 when any file is a fax page, which is then stored as bands
 (store included), and bit 1 in the LZP and LZ78 modes when a file is a BMP, WAV or VOC the
 multimedia filter recognises, which is then delta-coded (the restore run forward: each byte
 less the byte one stride back, negated while its phase's sign is flipped). Bit 0, in the LZP,
-LZ78 and ALZ modes (0.4 and 0.3: PPM too, whose restore swaps nothing there), when executables
-are present: each file the restore will treat gets the inverse transform. The relocation table
+LZ78, PPM and ALZ modes, when executables are present: each file the restore will treat gets
+the inverse transform. The relocation table
 is delta-coded per word against the word four bytes back and split into four byte planes; the
 operand walk follows the restore's own path and step, storing a target inside the file as its
 absolute address (−*i* as *i*), one just past the end as the negative distance, a trivial high
 half unchanged, and otherwise the low half as `0x8000 + index` when its target is in the recent
 list (which then moves it to the front) or as itself — except that a low half which itself looks
 like an index is stored as the start of a chain through the list that the restore follows back
-to it — the new target entering the list as the restore will enter it. The bit is all or
+to it — the new target entering the list as the restore will enter it. Under 0.6's PPM each
+stored value then has its bytes 0 and 2 swapped exactly when it or its swap is a target: the
+restore tests the same pair, so it swaps those back and no others, and an operand it swaps but
+otherwise leaves alone moves the walk on by 5, which the writer's walk follows. The bit is all or
 nothing: were one file inexpressible, no file would get the filter. The 0.4 and 0.3 writers apply
 the same filters the same way; `UHARC.EXE`, `UHARC04.EXE` and `uharc_u.exe` extract such
 archives of the fixture sets, of generated executables dense with every kind of operand, and of
@@ -553,7 +556,8 @@ cascade is replayed exactly. It writes a binary stream (the stream kind is a uni
 no word transform has to be inverted) with each block's multimedia class (below). A predicted copy is taken when
 the bytes it would produce match the input past the length floor, only whole (the full match,
 or 255 for a run) and never past a reset point, for the reason given for ALZ. On the 39 MB set
-the stream is 12.3 MB against UHARC's 10.9 MB; `UHARC.EXE x` and `UNUHARC.EXE x` extract it,
+the archive is 11.5 MB (12.3 MB without the executable filter) against UHARC's 10.9 MB;
+`UHARC.EXE x` and `UNUHARC.EXE x` extract it,
 every fixture input set, the minimal PPM inputs above and the Canterbury files byte for byte, at
 the fitted window and at 1 KiB.
 
@@ -1263,8 +1267,7 @@ window, and unuharc_recon's unpacker accepts them.
 
 ## What is not derived
 
-- **Writing** text PPM streams (in 0.6, 0.4 and 0.3 alike), 0.3's ALZ literal groups 1..5, and
-  the executable filter under 0.6's PPM (whose restore also swaps operand bytes).
+- **Writing** text PPM streams (in 0.6, 0.4 and 0.3 alike) and 0.3's ALZ literal groups 1..5.
 
 ## Sources
 
