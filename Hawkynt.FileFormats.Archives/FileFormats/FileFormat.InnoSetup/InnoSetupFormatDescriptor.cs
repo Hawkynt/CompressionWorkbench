@@ -31,7 +31,7 @@ public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveForma
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description => "Inno Setup installer: the files of its [Files] section, checksum-verified; " +
-    "written as an Inno Setup 6.0 installer on the stubs of an installed Inno Setup 6.0.x";
+    "written on the stubs of an installed Inno Setup 6.0 to 7.1.1, in that release's setup data layout";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     InnoSetupReader reader;
@@ -59,13 +59,14 @@ public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveForma
   }
 
   /// <summary>
-  /// Writes an Inno Setup 6.0 installer that installs every input below its installation directory.
+  /// Writes an Inno Setup installer that installs every input below its installation directory.
   /// The method is "lzma2" (the default) or "stored". The loader, setup program, messages and
-  /// wizard bitmaps come from an installed Inno Setup 6.0.x: <c>FormatSpecific["innodir"]</c>, the
-  /// INNOSETUPDIR environment variable, or "Inno Setup 6" under Program Files
+  /// wizard bitmaps come from an installed Inno Setup 6.0 to 7.1.1, whose setup data layout the installer
+  /// then uses: <c>FormatSpecific["innodir"]</c>, the
+  /// INNOSETUPDIR environment variable, or "Inno Setup 7" or "Inno Setup 6" under Program Files
   /// (<see cref="InnoSetupStubs.Load"/>); <c>FormatSpecific["name"]</c> sets the application name.
   /// </summary>
-  /// <exception cref="InvalidOperationException">No Inno Setup 6.0.x installation is available.</exception>
+  /// <exception cref="InvalidOperationException">No Inno Setup 6.0 to 7.1.1 installation is available.</exception>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -78,7 +79,7 @@ public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveForma
       var other => throw new NotSupportedException($"Inno Setup installers are written stored or LZMA2-compressed, not '{other}'."),
     };
     var stubs = InnoSetupStubs.Load(options.FormatSpecific.GetValueOrDefault("innodir"))
-      ?? throw new InvalidOperationException("Creating an Inno Setup installer needs an installed Inno Setup 6.0.x (SetupLdr.e32, " +
+      ?? throw new InvalidOperationException("Creating an Inno Setup installer needs an installed Inno Setup 6.0 to 7.1.1 (SetupLdr.e32, " +
         "Setup.e32, Default.isl): install it, set INNOSETUPDIR, or pass FormatSpecific[\"innodir\"].");
     var files = inputs.Select(i => new InnoSetupInstallerFile(i.ArchiveName, i.IsDirectory ? null : i.ReadContent(),
       i.Metadata?.LastWriteTimeUtc?.UtcDateTime)).ToList();

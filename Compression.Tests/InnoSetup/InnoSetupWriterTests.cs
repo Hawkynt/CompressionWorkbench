@@ -5,7 +5,7 @@ using FileFormat.InnoSetup;
 namespace Compression.Tests.InnoSetup;
 
 /// <summary>
-/// The Inno Setup writer, built on the stubs of an installed Inno Setup 6.0.x (INNOSETUPDIR, or
+/// The Inno Setup writer, built on the stubs of an installed Inno Setup (INNOSETUPDIR, or
 /// "Inno Setup 6" under Program Files). Oracles: the installer itself, run with
 /// <c>/VERYSILENT /DIR=</c> (under wine when CWB_INNO_WINEPREFIX names a WSL wine prefix, natively
 /// only when CWB_INNO_RUN_NATIVE=1, otherwise skipped), innoextract, and our reader.
@@ -14,7 +14,7 @@ namespace Compression.Tests.InnoSetup;
 public class InnoSetupWriterTests {
   private static readonly DateTime When = new(2021, 3, 4, 5, 6, 8, DateTimeKind.Utc);
 
-  private static List<InnoSetupInstallerFile> Payload() {
+  internal static List<InnoSetupInstallerFile> Payload() {
     var noise = new byte[70_000];
     new Random(5).NextBytes(noise);
     return [
@@ -28,15 +28,15 @@ public class InnoSetupWriterTests {
     ];
   }
 
-  private static Dictionary<string, byte[]> Expected()
+  internal static Dictionary<string, byte[]> ExpectedFiles()
     => Payload().Where(f => f.Data != null).ToDictionary(f => f.Path, f => f.Data!);
 
   private static InnoSetupStubs Stubs() {
     var stubs = InnoSetupStubs.Load();
     if (stubs == null) {
       if (Environment.GetEnvironmentVariable("CWB_REQUIRE_INNO_STUBS") == "1")
-        Assert.Fail("Inno Setup 6.0.x is required (CWB_REQUIRE_INNO_STUBS=1) but none was found.");
-      Assert.Ignore("No Inno Setup 6.0.x installation (set INNOSETUPDIR).");
+        Assert.Fail("An Inno Setup installation is required (CWB_REQUIRE_INNO_STUBS=1) but none was found.");
+      Assert.Ignore("No Inno Setup installation (set INNOSETUPDIR).");
     }
     return stubs!;
   }
@@ -99,7 +99,7 @@ public class InnoSetupWriterTests {
     => Assert.That(() => new InnoSetupFormatDescriptor().Create(new MemoryStream(), [ArchiveInputInfo.InMemory("a", [1])], new FormatCreateOptions { Password = "x" }),
       Throws.InstanceOf<NotSupportedException>());
 
-  // ── with Inno Setup 6.0.x ─────────────────────────────────────────────────────
+  // ── with an installed Inno Setup ─────────────────────────────────────────────────────
 
   [TestCase(InnoSetupWriterCompression.Stored)]
   [TestCase(InnoSetupWriterCompression.Lzma2)]
@@ -109,7 +109,7 @@ public class InnoSetupWriterTests {
     var reader = new InnoSetupReader(new MemoryStream(installer), null);
     Assert.That(reader.AppName, Is.EqualTo("CWB Test"));
     var got = reader.Entries.ToDictionary(e => e.FileName, reader.Extract);
-    var expected = Expected().ToDictionary(kv => "app/" + kv.Key, kv => kv.Value);
+    var expected = ExpectedFiles().ToDictionary(kv => "app/" + kv.Key, kv => kv.Value);
     Assert.That(got.Keys, Is.EquivalentTo(expected.Keys));
     foreach (var (name, data) in expected)
       Assert.That(got[name], Is.EqualTo(data), name);
@@ -133,7 +133,10 @@ public class InnoSetupWriterTests {
   [TestCase(InnoSetupWriterCompression.Lzma2)]
   [Category("ExternalInterop")]
   public void GivenOurInstaller_WhenInnoextractExtractsIt_ThenEveryFileMatches(InnoSetupWriterCompression compression) {
-    var installer = Build(Stubs(), compression);
+    var stubs = Stubs();
+    if (InnoSetupWriter.Identify(stubs).Layout > InnoSetupWriter.Layout.V600)
+      Assert.Ignore("innoextract 1.9 reads setup data up to Inno Setup 6.0.");
+    var installer = Build(stubs, compression);
     if (OperatingSystem.IsWindows() && !FsInteropToolbox.WslAvailable) Assert.Ignore("WSL is not available.");
     if (!FsInteropToolbox.WslHasTool("innoextract")) Assert.Ignore("innoextract is not installed.");
     var tmp = Path.Combine(Path.GetTempPath(), $"cwb_innow_{Guid.NewGuid():N}");
@@ -154,8 +157,15 @@ public class InnoSetupWriterTests {
   [TestCase(InnoSetupWriterCompression.Stored)]
   [TestCase(InnoSetupWriterCompression.Lzma2)]
   [Category("EndToEnd")]
-  public void GivenOurInstaller_WhenRunVerySilently_ThenItInstallsExactlyTheFiles(InnoSetupWriterCompression compression) {
-    var installer = Build(Stubs(), compression);
+  public void GivenOurInstaller_WhenRunVerySilently_ThenItInstallsExactlyTheFiles(InnoSetupWriterCompression compression)
+    => RunAndCheck(Build(Stubs(), compression), "the installer");
+
+  /// <summary>
+  /// Runs <paramref name="installer"/> with /VERYSILENT /DIR= (under wine when CWB_INNO_WINEPREFIX is
+  /// set, on this machine only when CWB_INNO_RUN_NATIVE=1) and checks that it installed exactly
+  /// <see cref="Payload"/>.
+  /// </summary>
+  internal static void RunAndCheck(byte[] installer, string who) {
     var tmp = Path.Combine(Path.GetTempPath(), $"cwb_innorun_{Guid.NewGuid():N}");
     try {
       Directory.CreateDirectory(tmp);
@@ -172,7 +182,7 @@ public class InnoSetupWriterTests {
           "d=$(winepath -w \"$t/target\"); " +
           "timeout 300 wine \"$t/setup.exe\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART \"/DIR=$d\" < /dev/null; " +
           $"echo exit=$?; [ -d \"$t/target\" ] && cp -r \"$t/target\" '{linuxTarget}'; cd /; rm -rf \"$t\"; wineserver -k");
-        Assert.That(run.StdOut, Does.Contain("exit=0"), $"the installer failed under wine:\n{run.StdOut}\n{run.StdErr}");
+        Assert.That(run.StdOut, Does.Contain("exit=0"), $"{who} failed under wine:\n{run.StdOut}\n{run.StdErr}");
       } else {
         // the setup program is third-party native code: it runs on the host only when asked to
         if (Environment.GetEnvironmentVariable("CWB_INNO_RUN_NATIVE") != "1")
@@ -185,9 +195,9 @@ public class InnoSetupWriterTests {
           p.Kill(entireProcessTree: true);
           Assert.Fail("The installer did not finish within five minutes.");
         }
-        Assert.That(p.ExitCode, Is.Zero, "installer exit code");
+        Assert.That(p.ExitCode, Is.Zero, $"{who}: exit code");
       }
-      AssertInstalled(target, "the installer");
+      AssertInstalled(target, who);
     } finally {
       try { Directory.Delete(tmp, true); } catch { /* best effort */ }
     }
@@ -198,7 +208,7 @@ public class InnoSetupWriterTests {
     Assert.That(Directory.Exists(root), Is.True, $"{who} created no installation directory");
     var files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
       .ToDictionary(f => Path.GetRelativePath(root, f).Replace('\\', '/'), File.ReadAllBytes);
-    var expected = Expected();
+    var expected = ExpectedFiles();
     Assert.That(files.Keys, Is.EquivalentTo(expected.Keys), $"{who}: files");
     foreach (var (name, data) in expected)
       Assert.That(files[name], Is.EqualTo(data), $"{who}: {name}");
