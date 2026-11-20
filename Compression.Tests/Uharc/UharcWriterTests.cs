@@ -66,11 +66,79 @@ public class UharcWriterTests {
   public void GivenAMethodTheWriterDoesNotProduce_WhenWritten_ThenItIsRefused(string method)
     => Assert.That(() => Create(method), Throws.TypeOf<NotSupportedException>());
 
-  [Test, Category("ErrorHandling")]
-  public void GivenAPassword_WhenWritten_ThenItIsRefused() {
+  internal static byte[] CreateWith(FormatCreateOptions options, IReadOnlyList<ArchiveInputInfo>? inputs = null) {
     using var output = new MemoryStream();
-    Assert.That(() => new UharcFormatDescriptor().Create(output, SampleInputs(), new FormatCreateOptions { Password = "secret" }),
-      Throws.TypeOf<NotSupportedException>());
+    new UharcFormatDescriptor().Create(output, inputs ?? SampleInputs(), options);
+    return output.ToArray();
+  }
+
+  [TestCase(null)]
+  [TestCase("store")]
+  [TestCase("rle")]
+  [TestCase("lz78")]
+  [Category("HappyPath"), Category("RoundTrip")]
+  public void GivenAPassword_WhenWrittenAndReadWithIt_ThenEverythingComesBack(string? method) {
+    var inputs = SampleInputs();
+    var reader = new UharcReader(new MemoryStream(CreateWith(new FormatCreateOptions(method) { Password = "secret" }, inputs)), "secret");
+    Assert.That(reader.IsEncrypted, Is.True);
+    foreach (var input in inputs.Where(i => !i.IsDirectory))
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == input.ArchiveName)), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenAPasswordArchive_WhenOpenedWithoutOrWithAnotherPassword_ThenItIsRejected() {
+    var archive = CreateWith(new FormatCreateOptions { Password = "secret" });
+    Assert.Multiple(() => {
+      Assert.That(() => new UharcReader(new MemoryStream(archive)), Throws.TypeOf<InvalidOperationException>());
+      Assert.That(() => new UharcReader(new MemoryStream(archive), "Secret"), Throws.InstanceOf<InvalidDataException>());
+    });
+  }
+
+  [TestCase("pässword")]
+  [TestCase("tab\tbed")]
+  [Category("ErrorHandling")]
+  public void GivenAPasswordOutsidePrintableAscii_WhenWritten_ThenItIsRefused(string password)
+    => Assert.That(() => CreateWith(new FormatCreateOptions { Password = password }), Throws.TypeOf<NotSupportedException>());
+
+  [TestCase(255, false)]
+  [TestCase(256, true)]
+  [Category("Boundary")]
+  public void GivenALongPassword_WhenWritten_ThenItIsTakenUpTo255Characters(int length, bool refused) {
+    var password = new string('p', length);
+    if (refused)
+      Assert.That(() => CreateWith(new FormatCreateOptions { Password = password }), Throws.TypeOf<NotSupportedException>());
+    else
+      Assert.That(new UharcReader(new MemoryStream(CreateWith(new FormatCreateOptions { Password = password })), password).Entries, Is.Not.Empty);
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenAnSfxStub_WhenWritten_ThenTheArchiveFollowsTheStubAndReadsBack() {
+    var stub = UharcTests.MinimalPe(0x200, 0x400);
+    var path = Path.Combine(Path.GetTempPath(), "cwb-uharc-stub-" + Guid.NewGuid().ToString("N") + ".exe");
+    File.WriteAllBytes(path, stub);
+    try {
+      var inputs = SampleInputs();
+      var sfx = CreateWith(new FormatCreateOptions { FormatSpecific = { [UharcFormatDescriptor.SfxStubOption] = path } }, inputs);
+      Assert.That(sfx.AsSpan(0, stub.Length).ToArray(), Is.EqualTo(stub));
+      Assert.That(sfx.AsSpan(stub.Length, 4).ToArray(), Is.EqualTo("UHA\x06"u8.ToArray()));
+      var reader = new UharcReader(new MemoryStream(sfx));
+      var input = inputs.First(i => i.ArchiveName == "readme.txt");
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == "readme.txt")), Is.EqualTo(input.InMemoryContent));
+    } finally {
+      File.Delete(path);
+    }
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenAStubThatIsNoPeImage_WhenWritten_ThenItIsRefused() {
+    var path = Path.Combine(Path.GetTempPath(), "cwb-uharc-stub-" + Guid.NewGuid().ToString("N") + ".exe");
+    File.WriteAllBytes(path, [.. UharcTests.MinimalPe(0x200, 0x400), 0x00]);
+    try {
+      Assert.That(() => CreateWith(new FormatCreateOptions { FormatSpecific = { [UharcFormatDescriptor.SfxStubOption] = path } }),
+        Throws.TypeOf<NotSupportedException>());
+    } finally {
+      File.Delete(path);
+    }
   }
 
   [Test, Category("ErrorHandling")]

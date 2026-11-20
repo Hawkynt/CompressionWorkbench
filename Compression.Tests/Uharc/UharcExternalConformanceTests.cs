@@ -147,6 +147,56 @@ public class UharcExternalConformanceTests {
     }
   }
 
+  private static void AssertExtracted(string output, IEnumerable<ArchiveInputInfo> inputs) {
+    foreach (var input in inputs) {
+      var path = Path.Combine(output, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
+      if (input.IsDirectory)
+        Assert.That(Directory.Exists(path), Is.True, input.ArchiveName);
+      else
+        Assert.That(File.ReadAllBytes(path), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+    }
+  }
+
+  [TestCase(null)]
+  [TestCase("store")]
+  [TestCase("rle")]
+  [TestCase("lz78")]
+  public void GivenOurPasswordArchive_WhenUharcExtractsWithThePassword_ThenEveryFileIsByteIdentical(string? method) {
+    var uharc = RequireUharc();
+    var archive = Path.Combine(this._tmp, "ours.uha");
+    var inputs = UharcWriterTests.SampleInputs();
+    File.WriteAllBytes(archive, UharcWriterTests.CreateWith(new FormatCreateOptions(method) { Password = "Open Sesame 42!" }, inputs));
+    var output = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(output);
+    Run(uharc, output, "x", "-y", "-pwOpen Sesame 42!", "-t" + output, archive);
+    AssertExtracted(output, inputs);
+  }
+
+  /// <summary>
+  /// UHARC's own Win32 stub (<c>UHARCSFX.EXE</c> from <c>uharc06b.zip</c>, beside uharc.exe) in
+  /// front of our archive: the self-extractor itself must extract it.
+  /// </summary>
+  [TestCase(null)]
+  [TestCase("secret")]
+  public void GivenOurArchiveBehindUharcsSfxStub_WhenTheSelfExtractorRuns_ThenEveryFileIsByteIdentical(string? password) {
+    var uharc = RequireUharc();
+    var stub = Path.Combine(Path.GetDirectoryName(uharc)!, "UHARCSFX.EXE");
+    if (!File.Exists(stub))
+      Assert.Ignore("UHARCSFX.EXE (from uharc06b.zip) is not beside uharc.exe.");
+
+    var sfx = Path.Combine(this._tmp, "ours.exe");
+    var inputs = UharcWriterTests.SampleInputs();
+    File.WriteAllBytes(sfx, UharcWriterTests.CreateWith(new FormatCreateOptions {
+      Password = password,
+      FormatSpecific = { [UharcFormatDescriptor.SfxStubOption] = stub },
+    }, inputs));
+    var output = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(output);
+    string[] arguments = password == null ? ["x", "-y", "-t" + output] : ["x", "-y", "-pw" + password, "-t" + output];
+    Run(sfx, output, arguments);
+    AssertExtracted(output, inputs);
+  }
+
   /// <summary>Enough varied data to fill LZ78's 32768 phrases several times over.</summary>
   [TestCase("rle")]
   [TestCase("lz78")]

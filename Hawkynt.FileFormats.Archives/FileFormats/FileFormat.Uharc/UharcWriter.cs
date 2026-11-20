@@ -34,9 +34,20 @@ internal static class UharcWriter {
   /// <param name="items">Files and directories, names with '/' separators.</param>
   /// <param name="mode">How the stream is packed; LZP fits its dictionary to the stream.</param>
   /// <param name="now">Archive time stamp.</param>
-  public static void Write(Stream output, IReadOnlyList<Item> items, Mode mode, DateTime now) {
+  /// <param name="password">
+  /// Enciphers the packed stream and the three tables with this password (flags <c>0x06</c>, as
+  /// <c>-pw</c> does); null or empty for none. ASCII, at most 255 characters.
+  /// </param>
+  /// <param name="sfxStub">
+  /// A Win32 self-extractor stub (UHARC's <c>UHARCSFX.EXE</c>) written in front of the archive,
+  /// which then starts where the stub's last PE section ends; null for a plain archive.
+  /// </param>
+  public static void Write(Stream output, IReadOnlyList<Item> items, Mode mode, DateTime now, string? password = null, byte[]? sfxStub = null) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(items);
+    var key = PasswordBytes(password);
+    if (sfxStub != null && UharcHeader.PeImageEnd(sfxStub) != sfxStub.Length)
+      throw new NotSupportedException("UHARC: the self-extractor stub must be a PE image that ends with its last section.");
 
     var directories = new List<string> { string.Empty };
     var directoryIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { [string.Empty] = 0 };
@@ -146,6 +157,8 @@ internal static class UharcWriter {
     var (archiveDate, archiveTime) = ToDos(now);
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(4), archiveTime);
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(6), archiveDate);
+    if (key != null)
+      header[8] = (byte)(UharcHeader.TablesUsePassword | UharcHeader.StreamUsesPassword);
     header[10] = (byte)method;
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(11), (ushort)directories.Count);
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(13), (uint)total);
@@ -160,7 +173,15 @@ internal static class UharcWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(37), check);
     UharcCipher.DescrambleHeader(header, header[37]);
 
-    UharcCipher.Apply(crcs, UharcCipher.DefaultPassword);
+    var tableKey = key ?? UharcCipher.DefaultPassword.ToArray();
+    UharcCipher.Apply(crcs, tableKey);
+    UharcCipher.Apply(packedNames, tableKey);
+    UharcCipher.Apply(packedFiles, tableKey);
+    if (key != null)
+      UharcCipher.Apply(packed, key);
+
+    if (sfxStub != null)
+      output.Write(sfxStub);
     output.Write(header);
     output.Write(packed);
     output.Write(crcs);
@@ -176,10 +197,14 @@ internal static class UharcWriter {
     return UharcMethods.LzpFirst + shift - 10;
   }
 
-  private static byte[] PackTable(byte[] table) {
-    var packed = UharcLzpEncoder.Encode(table, UharcMethods.Table, []);
-    UharcCipher.Apply(packed, UharcCipher.DefaultPassword);
-    return packed;
+  private static byte[] PackTable(byte[] table) => UharcLzpEncoder.Encode(table, UharcMethods.Table, []);
+
+  private static byte[]? PasswordBytes(string? password) {
+    if (string.IsNullOrEmpty(password))
+      return null;
+    if (password.Length > byte.MaxValue || password.Any(c => c is < ' ' or > '~'))
+      throw new NotSupportedException("UHARC: passwords are printable ASCII, at most 255 characters.");
+    return Encoding.ASCII.GetBytes(password);
   }
 
   private static string Normalize(string name) {

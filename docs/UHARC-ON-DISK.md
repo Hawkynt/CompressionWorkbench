@@ -11,8 +11,8 @@ is not covered is listed at the end.
 with its nine multimedia predictors —, the executable and multimedia filters, passwords and SFX
 stubs are established and verified, and so are UHARC 0.2 and the UHARC 0.4 container with its
 store, RLE, LZW, LZP and ALZ modes (see their sections). Archives of 0.3, and 0.4's PPM streams,
-are not, and are refused. The writer produces stored, RLE-, LZ78- and LZP-packed 0.6 archives
-(see Writing).
+are not, and are refused. The writer produces stored, RLE-, LZ78- and LZP-packed 0.6 archives,
+with or without a password and a self-extractor stub (see Writing).
 
 ## Evidence
 
@@ -514,7 +514,15 @@ it (methods 8..23, 1 KiB to 32 MiB), the three tables
 — the name table lists the root as an empty name and every directory with a trailing `\` —
 packed with LZP method 17 and enciphered with the default password, the header scrambled with
 the low byte of its own check. The filters byte is 0: no executable or multimedia filter runs,
-so none is undone. It writes no password-protected archives and no other method.
+so none is undone. It writes no PPM or ALZ stream.
+
+**Passwords** set flags `0x06` and encipher the packed stream and the three tables with the
+password instead of the default one, as `-pw` does; the writer takes printable ASCII up to 255
+characters. **Self-extractors** are the stub followed by the archive, as `UHARC.DOC` describes
+(`COPY /B UHARCSFX.EXE+archive.uha archive.exe`): an `-sfx` archive of UHARC 0.6b is
+`UHARCSFX.EXE` byte for byte followed by the same archive `-sfx` leaves out, which differs only in
+the archive time. The stub is not ours to ship, so the caller names it; the writer checks that it
+is a PE image ending with its last section, where readers look for the archive.
 
 The LZP encoder keeps the decoder's model step for step and answers each prediction with the
 input: a hit with the longest copy the candidate reproduces (255 when it runs on, the rest of
@@ -536,7 +544,9 @@ that fill the 32768-phrase dictionary many times over.
 Every archive written from the fixture inputs, 17 MB of text, 13 MB of DLLs, fonts and media,
 this repository's sources and the mixed text/binary set — stored and packed, up to 400 files and
 a 32 MiB window — is extracted byte for byte by `UHARC.EXE x` and `UNUHARC.EXE x` (0.6b),
-directories and empty files included.
+directories and empty files included. Password archives of every written method are extracted
+by `UHARC.EXE x -pw…`, and our archives behind `UHARCSFX.EXE` by the self-extractor itself, with
+and without a password.
 
 ## UHARC 0.2
 

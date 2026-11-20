@@ -123,21 +123,7 @@ public sealed class UharcReader {
     if (UharcHeader.HasMagic(data) || data.Length < 0x40 || data[0] != 'M' || data[1] != 'Z')
       return 0;
 
-    var pe = BitConverter.ToInt32(data, 0x3C);
-    if (pe <= 0 || pe > data.Length - 24 || data[pe] != 'P' || data[pe + 1] != 'E')
-      return 0;
-
-    var sections = BitConverter.ToUInt16(data, pe + 6);
-    var optional = BitConverter.ToUInt16(data, pe + 20);
-    var table = pe + 24 + optional;
-    var end = 0L;
-    for (var i = 0; i < sections; ++i) {
-      var entry = table + i * 40;
-      if (entry + 40 > data.Length)
-        return 0;
-      end = Math.Max(end, (long)BitConverter.ToUInt32(data, entry + 20) + BitConverter.ToUInt32(data, entry + 16));
-    }
-
+    var end = UharcHeader.PeImageEnd(data);
     return end > 0 && end < data.Length && UharcHeader.HasMagic(data.AsSpan((int)end)) ? (int)end : 0;
   }
 
