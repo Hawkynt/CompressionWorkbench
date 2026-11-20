@@ -4,8 +4,11 @@
 FUSE3 or Dokan receives it. It never delegates source decoding to the host
 filesystem or to an external archive/mount executable.
 
-Path-backed writable mounts can close the source handle and use the file-backed
-stager's verified same-directory replacement and recovery journal. Generic stream
+Path-backed WORM-only writable mounts now prefer an append-only sidecar that
+leaves the source archive untouched. A separate, explicit native export is
+required to publish the changes; see [archive overlay documentation](ARCHIVE-APPEND-OVERLAY.md).
+Other path-backed writable mounts can close the source handle and use the
+file-backed stager's verified same-directory replacement and recovery journal. Generic stream
 mounts retain the qualified native-editor or WORM rebuild path described below;
 named writable ZIP streams additionally support the explicit undo-journalled
 in-place writer. The distinction and durability limits are described in
