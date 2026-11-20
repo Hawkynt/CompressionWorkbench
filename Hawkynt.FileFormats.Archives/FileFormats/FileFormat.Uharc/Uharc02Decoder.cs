@@ -2,10 +2,52 @@ namespace FileFormat.Uharc;
 
 /// <summary>
 /// UHARC 0.2's main coder (methods 8..43, modes <c>-m1</c>..<c>-m3</c>), docs/UHARC-ON-DISK.md,
-/// "UHARC 0.2": LZ77 with literals coded in 256 order-1 frequency contexts, driven by a token
-/// model and a bit-wise range coder.
+/// "UHARC 0.2". The model is <see cref="Uharc02Model{TCoder}"/>, shared with the encoder.
 /// </summary>
-internal sealed class Uharc02Decoder {
+internal static class Uharc02Decoder {
+
+  /// <summary>Decodes <paramref name="unpackedSize"/> bytes.</summary>
+  public static byte[] Decode(byte[] source, int offset, int length, int method, int unpackedSize) {
+    if (method is < 8 or > 43)
+      throw new ArgumentOutOfRangeException(nameof(method));
+
+    var output = new byte[unpackedSize];
+    if (unpackedSize > 0)
+      new Uharc02Model<Uharc02Decoding>(new(new Uharc02RangeDecoder(source, offset, length)), method).Run(output, []);
+    return output;
+  }
+}
+
+/// <summary>
+/// The encoder side of <see cref="Uharc02Decoder"/>: it runs the decoder's model over the input
+/// and answers each step greedily with a copy (a recent distance, distance 1, or a new distance
+/// from a hash chain that the distance classes open at the current history length can express)
+/// or a literal, never switching models or coding byte runs.
+/// </summary>
+internal static class Uharc02Encoder {
+
+  /// <summary>Packs <paramref name="data"/> as main-coder stream <paramref name="method"/> (8..43).</summary>
+  public static byte[] Encode(byte[] data, int method) {
+    if (method is < 8 or > 43)
+      throw new ArgumentOutOfRangeException(nameof(method));
+    if (data.Length == 0)
+      return [];
+
+    var coder = new Uharc02RangeEncoder();
+    var output = new byte[data.Length];
+    new Uharc02Model<Uharc02Encoding>(new(coder), method).Run(output, data);
+    if (!output.AsSpan().SequenceEqual(data))
+      throw new InvalidOperationException("UHARC: 0.2 encoder lost track of its model.");
+    return coder.Finish();
+  }
+}
+
+/// <summary>
+/// UHARC 0.2's main coder model: LZ77 with literals coded in 256 order-1 frequency contexts,
+/// driven by a token model and a bit-wise range coder; written once for both directions
+/// (<see cref="IUharcCoder"/>).
+/// </summary>
+internal sealed class Uharc02Model<TCoder> where TCoder : struct, IUharcCoder {
 
   // Token model: one cumulative row per state, symbols control / run / copy / literal.
   private static readonly ushort[] TokenSeed = [0, 1, 2, 0xC00, 0x2000];
@@ -97,14 +139,12 @@ internal sealed class Uharc02Decoder {
 
   private static readonly byte[] RecentCount = [0, 5, 8, 16];
 
-  private readonly byte[] _source;
-  private readonly int _end;
-  private int _position;
-  private int _bitMask;
-  private byte _currentByte;
+  private TCoder _coder;
 
-  private uint _code;
-  private uint _range;
+  // Encoding only: the input, its match search and the choice for the current step.
+  private byte[] _input = [];
+  private UharcMatchFinder? _finder;
+  private UharcAlzChoice _choice;
 
   private readonly ushort[] _tree = new ushort[256 * 256];
   private readonly ushort[] _frequency = new ushort[256 * 256];
@@ -139,13 +179,11 @@ internal sealed class Uharc02Decoder {
   private uint _outputHistory = 0xFFFFFFFF;
   private uint _counter;
 
-  private readonly byte[] _output;
+  private byte[] _output = [];
   private int _written;
 
-  private Uharc02Decoder(byte[] source, int offset, int length, int method, int unpackedSize) {
-    this._source = source;
-    this._position = offset;
-    this._end = offset + length;
+  public Uharc02Model(TCoder coder, int method) {
+    this._coder = coder;
     var group = method < 20 ? 1 : method < 32 ? 2 : 3;
     this._recentCount = RecentCount[group];
     this._olderCount = RecentCount[group] - 3;
@@ -157,75 +195,21 @@ internal sealed class Uharc02Decoder {
       this._token[i] = (ushort[])TokenSeed.Clone();
     Array.Fill(this._recent, uint.MaxValue);
     this.ResetLiterals();
-    this._output = new byte[unpackedSize];
   }
 
-  /// <summary>Decodes <paramref name="unpackedSize"/> bytes.</summary>
-  public static byte[] Decode(byte[] source, int offset, int length, int method, int unpackedSize) {
-    if (method is < 8 or > 43)
-      throw new ArgumentOutOfRangeException(nameof(method));
-
-    var decoder = new Uharc02Decoder(source, offset, length, method, unpackedSize);
-    if (unpackedSize > 0)
-      decoder.Run();
-    return decoder._output;
-  }
-
-  // ── Bit-wise range coder ───────────────────────────────────────────────
-
-  private int Bit() {
-    if (this._bitMask == 0) {
-      if (this._position >= this._end) {
-        // A few bits past the end are normal while the coder drains.
-        if (this._position++ > this._end + 8)
-          throw new InvalidDataException("UHARC: packed stream ends before the decoder finished.");
-        this._currentByte = 0;
-      } else
-        this._currentByte = this._source[this._position++];
-      this._bitMask = 0x80;
-    }
-
-    var bit = (this._currentByte & this._bitMask) != 0 ? 1 : 0;
-    this._bitMask >>= 1;
-    return bit;
-  }
-
-  private uint Target(uint total) {
-    if (total == 0 || this._range == 0)
-      throw new InvalidDataException("UHARC: empty frequency table.");
-    return (uint)((((ulong)this._code + 1) * total - 1) / this._range);
-  }
-
-  private void Narrow(uint low, uint high, uint total) {
-    var from = (uint)((ulong)low * this._range / total);
-    var to = (uint)((ulong)high * this._range / total);
-    this._code -= from;
-    var span = to - from;
-    while (span <= 0x8000) {
-      span <<= 1;
-      this._code = (this._code << 1) + (uint)this.Bit();
-    }
-
-    this._range = span;
-  }
-
-  private uint Uniform(uint total) {
-    var value = this.Target(total);
-    if (value >= total)
-      throw new InvalidDataException("UHARC: range coder left its interval.");
-    this.Narrow(value, value + 1, total);
-    return value;
-  }
+  private uint Uniform(uint total, uint value) => this._coder.Uniform(total, value);
 
   /// <summary>The highest symbol whose cumulative start the target reaches, in <c>[0, last)</c>.</summary>
-  private int Cumulative(ushort[] model, int last) {
+  private int Cumulative(ushort[] model, int last, int wanted) {
     var total = model[last];
-    var target = this.Target(total);
+    if (TCoder.Encoding && (wanted < 0 || wanted >= last || model[wanted + 1] == model[wanted]))
+      throw new InvalidOperationException("UHARC: 0.2 symbol has no share of its model.");
+    var target = this._coder.Count(total, TCoder.Encoding ? model[wanted] : 0u);
     var symbol = last;
     do
       --symbol;
     while (symbol > 0 && target < model[symbol]);
-    this.Narrow(model[symbol], model[symbol + 1], total);
+    this._coder.Consume(model[symbol], (uint)(model[symbol + 1] - model[symbol]));
     return symbol;
   }
 
@@ -269,10 +253,18 @@ internal sealed class Uharc02Decoder {
   }
 
   /// <summary>Decodes a byte from the context tree; <paramref name="upper"/> restricts it to 0x80..0xFF.</summary>
-  private int DecodeFromTree(int context, bool upper) {
+  private int DecodeFromTree(int context, bool upper, int wanted) {
     var tree = this._tree.AsSpan(context * 256, 256);
     uint total = upper ? (ushort)(tree[0] - tree[128]) : tree[0];
-    var target = this.Target(total);
+    var slot = 0u;
+    if (TCoder.Encoding) {
+      // Symbols lie from the top down: what the symbols above the wanted one take.
+      var frequencies = this._frequency.AsSpan(context * 256, 256);
+      for (var s = 255; s > wanted; --s)
+        slot += frequencies[s];
+    }
+
+    var target = this._coder.Count(total, slot);
     uint above = total;
     var index = 0;
     var symbol = 0;
@@ -311,7 +303,7 @@ internal sealed class Uharc02Decoder {
       low = value;
     }
 
-    this.Narrow(low, above, total);
+    this._coder.Consume(low, above - low);
     return symbol;
   }
 
@@ -391,14 +383,21 @@ internal sealed class Uharc02Decoder {
 
   // ── Steps ──────────────────────────────────────────────────────────────
 
-  private void Run() {
-    for (var i = 0; i < 16; ++i)
-      this._code = (this._code << 1) | (uint)this.Bit();
-    this._range = 0x10000;
+  /// <summary>
+  /// Codes the whole stream into <paramref name="output"/>; when encoding,
+  /// <paramref name="input"/> is the data to code.
+  /// </summary>
+  public void Run(byte[] output, byte[] input) {
+    this._output = output;
+    this._input = input;
+    if (TCoder.Encoding)
+      this._finder = new UharcMatchFinder(input, this._windowSize);
 
     while (this._written < this._output.Length) {
+      if (TCoder.Encoding)
+        this._choice = this.Choose();
       var row = this._token[this._state];
-      var token = this.Cumulative(row, 4);
+      var token = this.Cumulative(row, 4, this._choice.Token == 4 ? 3 : 2);
       if (token >= 2) {
         if (token == 2)
           row[3] += 64;
@@ -427,11 +426,90 @@ internal sealed class Uharc02Decoder {
           this.Literal();
           break;
       }
+
+      if (TCoder.Encoding)
+        this._finder!.Insert(this._written);
     }
   }
 
+  /// <summary>The encoder's step: the best copy by a simple score, else a literal.</summary>
+  private UharcAlzChoice Choose() {
+    var data = this._input;
+    var position = this._written;
+    var best = new UharcAlzChoice(4, 0, 0, 0, data[position]);
+    if (position == 0)
+      return best;
+
+    var reach = Math.Min(this._history + 1, (uint)position);
+    var bestScore = 0.0;
+    for (var index = 0; index < this._recentCount; ++index) {
+      var distance = this._recent[index];
+      if (distance == uint.MaxValue || distance == 0 || distance > reach)
+        continue;
+      var length = MatchLength(data, position, distance);
+      var score = length - (index == 0 ? 0.6 : 1.4);
+      if (length >= 2 && score > bestScore) {
+        best = new(3, 0, index, length, 0);
+        bestScore = score;
+      }
+    }
+
+    var near = MatchLength(data, position, 1);
+    if (near >= 3 && near - 1.5 > bestScore) {
+      best = new(1, 1, 0, near, 0);
+      bestScore = near - 1.5;
+    }
+
+    foreach (var distance in this._finder!.Distances(position, reach)) {
+      if (distance < 2 || !this.CanCodeDistance(distance))
+        continue;
+      var length = MatchLength(data, position, distance);
+      var score = length - 2.0 - Math.Log2(distance) / 6;
+      if (length >= 3 && score > bestScore) {
+        best = new(1, distance, 0, length, 0);
+        bestScore = score;
+      }
+    }
+
+    return best;
+  }
+
+  private static int MatchLength(byte[] data, int position, uint distance) {
+    var source = position - (int)distance;
+    var cap = Math.Min(255, data.Length - position);
+    var length = 0;
+    while (length < cap && data[source + length] == data[position + length])
+      ++length;
+    return length;
+  }
+
+  private static int ClassOf(uint distance) {
+    var cls = 0;
+    while (DistanceBase[cls] > distance)
+      ++cls;
+    return cls;
+  }
+
+  /// <summary>Whether a new distance's class is open at the current history length and its offset fits the narrowed class.</summary>
+  private bool CanCodeDistance(uint distance) {
+    var cls = ClassOf(distance);
+    if (cls < OpenAt.Length - 1 && this._history < OpenAt[cls + 1])
+      return false;
+    var span = DistanceSpan[cls];
+    if (DistanceBase[cls] + span - 1 > this._history)
+      span = this._history - DistanceBase[cls] + 1;
+    return distance - DistanceBase[cls] < Math.Max(span, 1u);
+  }
+
+  private static int LengthClassOf(int length) {
+    var lengthClass = 0;
+    while (LengthBase[lengthClass] > length)
+      ++lengthClass;
+    return lengthClass;
+  }
+
   private void Control() {
-    var command = (int)this.Uniform(12);
+    var command = (int)this.Uniform(12, 0);
     switch (command) {
       case <= 5:
         this._mode = command;
@@ -458,11 +536,13 @@ internal sealed class Uharc02Decoder {
   }
 
   private void Literal() {
+    // The encoder keeps mode 0, where the model symbol is the complemented byte.
+    var wanted = (byte)~this._choice.Literal;
     int symbol;
     if (this._rawLiterals)
-      symbol = (int)this.Uniform(256);
+      symbol = (int)this.Uniform(256, wanted);
     else
-      symbol = this.DecodeFromTree(this._context, this._upperLiterals);
+      symbol = this.DecodeFromTree(this._context, this._upperLiterals, wanted);
 
     this.CountLiteral((byte)symbol);
     this.StoreInWindow(this.EmitLiteral(symbol));
@@ -477,7 +557,11 @@ internal sealed class Uharc02Decoder {
       RescaleCumulative(this._distance, 44, 0);
     }
 
-    var cls2 = this.Cumulative(this._distance, 44);
+    var choice = this._choice;
+    var wantedClass = !TCoder.Encoding ? 0
+      : choice.Token == 1 ? choice.Distance == 1 ? 40 : ClassOf(choice.Distance)
+      : choice.Slot == 0 ? 43 : choice.Slot < 3 ? 42 : 41;
+    var cls2 = this.Cumulative(this._distance, 44, wantedClass);
     for (var a = cls2 + 1; a < 44; ++a)
       this._distance[a] += 0x20;
     this._distance[44] += 0x20;
@@ -494,20 +578,20 @@ internal sealed class Uharc02Decoder {
         distance = position;
         break;
       case 41: {
-        var slot = this._olderCount - 1 - this.DecodeOlder();
+        var slot = this._olderCount - 1 - this.DecodeOlder(this._olderCount - 1 - (choice.Slot - 3));
         position += (uint)slot;
         repeat = true;
         break;
       }
       case 42:
-        position += (uint)(1 - this.DecodeRecent3());
+        position += (uint)(1 - this.DecodeRecent3(2 - choice.Slot));
         repeat = true;
         break;
       case 43:
         repeat = true;
         break;
       default:
-        position = this.RefineDistance(cls2, position);
+        position = this.RefineDistance(cls2, position, choice.Distance);
         repeat = false;
         break;
     }
@@ -531,8 +615,9 @@ internal sealed class Uharc02Decoder {
 
     var lengths = repeat ? this._lengthRecent : this._lengthNew;
     var last = repeat ? 22 : 21;
-    var lengthClass = this.Cumulative(lengths, last);
-    var extra = LengthExtra[lengthClass] != 0 ? this.Uniform(LengthExtra[lengthClass]) : 0;
+    var wantedLength = TCoder.Encoding ? LengthClassOf(choice.Length) : 0;
+    var lengthClass = this.Cumulative(lengths, last, wantedLength);
+    var extra = LengthExtra[lengthClass] != 0 ? this.Uniform(LengthExtra[lengthClass], (uint)(choice.Length - LengthBase[wantedLength])) : 0;
     for (var a = lengthClass + 1; a < last; ++a)
       lengths[a] += 0x40;
     lengths[last] += 0x40;
@@ -540,6 +625,8 @@ internal sealed class Uharc02Decoder {
       RescaleCumulative(lengths, last, 0);
 
     var length = LengthBase[lengthClass] + (int)extra;
+    if (TCoder.Encoding && (length != choice.Length || distance != (choice.Token == 1 ? choice.Distance : this._recent[0])))
+      throw new InvalidOperationException("UHARC: 0.2 copy cannot be coded as chosen.");
     if (length < 2)
       throw new InvalidDataException("UHARC: copy shorter than two bytes.");
 
@@ -552,7 +639,8 @@ internal sealed class Uharc02Decoder {
     }
   }
 
-  private uint RefineDistance(int cls, uint position) {
+  private uint RefineDistance(int cls, uint position, uint target) {
+    var offset = TCoder.Encoding ? target - position : 0;
     var span = DistanceSpan[cls];
     if (position + span - 1 > this._history)
       span = this._history - position + 1;
@@ -561,40 +649,30 @@ internal sealed class Uharc02Decoder {
 
     if (span > 0x1000) {
       var blocks = ((span - 1) >> 12) + 1;
-      var block = this.Uniform(blocks);
+      var block = this.Uniform(blocks, offset >> 12);
       position += block << 12;
       span = block + 1 == blocks ? span - (block << 12) : 0x1000;
+      offset -= block << 12;
     }
 
     if (span >= 2)
-      position += this.Uniform(span);
+      position += this.Uniform(span, offset);
     return position;
   }
 
   /// <summary>Slot among the older recent distances; the model has <see cref="_olderCount"/> symbols.</summary>
-  private int DecodeOlder() {
-    var model = this._older;
-    var count = this._olderCount;
-    var total = model[count];
-    var target = this.Target(total);
-    var symbol = count;
-    do
-      --symbol;
-    while (symbol > 0 && target < model[symbol]);
-    this.Narrow(model[symbol], model[symbol + 1], total);
-    return symbol;
-  }
+  private int DecodeOlder(int wanted) => this.Cumulative(this._older, this._olderCount, wanted);
 
   /// <summary>One of the three newest distances: model entries 1..3 over a fixed base 0.</summary>
-  private int DecodeRecent3() {
+  private int DecodeRecent3(int wanted) {
     var model = this._recent3;
     var total = model[3];
-    var target = this.Target(total);
+    var target = this._coder.Count(total, TCoder.Encoding ? model[wanted + 1] : 0u);
     var symbol = 2;
     do
       --symbol;
     while (symbol > 0 && target < model[symbol + 1]);
-    this.Narrow(model[symbol + 1], model[symbol + 2], total);
+    this._coder.Consume(model[symbol + 1], (uint)(model[symbol + 2] - model[symbol + 1]));
     return symbol;
   }
 
@@ -632,7 +710,7 @@ internal sealed class Uharc02Decoder {
   }
 
   private void ByteRun() {
-    var cls = this.Cumulative(this._runLength, 3);
+    var cls = this.Cumulative(this._runLength, 3, 0);
     var m = this._runLength;
     if (cls == 0)
       m[1] += 64;
@@ -644,11 +722,11 @@ internal sealed class Uharc02Decoder {
 
     long length = 0x100;
     if (cls == 2)
-      length += (long)this.Uniform(256) << 16;
+      length += (long)this.Uniform(256, 0) << 16;
     if (cls >= 1)
-      length += (long)this.Uniform(256) << 8;
-    length += this.Uniform(256);
-    var value = (byte)this.Uniform(256);
+      length += (long)this.Uniform(256, 0) << 8;
+    length += this.Uniform(256, 0);
+    var value = (byte)this.Uniform(256, 0);
 
     for (var i = 0; i < 255; ++i)
       this.StoreInWindow(value);

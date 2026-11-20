@@ -102,6 +102,44 @@ internal static class UharcExecutableFilter {
     }
   }
 
+  /// <summary>
+  /// The inverse of <see cref="RestoreLegacy"/>, for the 0.2 writer: walks the file as the
+  /// restore will and stores each operand so that the restore's choice of branch, and with it the
+  /// next position it looks at, gives back the original. An operand <c>o</c> at position <c>i</c>
+  /// within the file (<c>0 &lt; o + i &lt; size</c>) is stored as <c>o + i</c>, <c>−i</c> as <c>i</c>,
+  /// one reaching just past the end (<c>size − i ≤ o &lt; size</c>) as <c>o − size</c>; every other
+  /// operand is left as it is, which the restore skips.
+  /// </summary>
+  public static void ApplyLegacy(Span<byte> data) {
+    if (data.Length < MinimumLength || BinaryPrimitives.ReadUInt16LittleEndian(data) is not (0x5A4D or 0x4D5A))
+      return;
+
+    var limit = data.Length;
+    var end = data.Length - Tail;
+    var i = 0;
+    while (i < end) {
+      if (data[i] is not (0xE8 or 0xE9)) {
+        ++i;
+        continue;
+      }
+
+      var operand = data.Slice(i + 1, 4);
+      var original = BinaryPrimitives.ReadInt32LittleEndian(operand);
+      var absolute = (long)original + i;
+      if (original != 0 && absolute > 0 && absolute < limit) {
+        BinaryPrimitives.WriteInt32LittleEndian(operand, (int)absolute);
+        i += 5;
+      } else if (original == -i && i > 0) {
+        BinaryPrimitives.WriteInt32LittleEndian(operand, i);
+        i += 5;
+      } else if (original < limit && (long)original >= (long)limit - i) {
+        BinaryPrimitives.WriteInt32LittleEndian(operand, original - limit);
+        i += 5;
+      } else
+        i += 4;
+    }
+  }
+
   private static bool IsTarget(int value, int position, int limit) => value >= -position && value < limit;
 
   private static void RestoreBranches(Span<byte> data, int start, bool swapOperandBytes) {
