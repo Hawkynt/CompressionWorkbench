@@ -61,8 +61,8 @@ internal static class UharcWriter {
     ArgumentNullException.ThrowIfNull(items);
     if (version is not (2 or 3 or 4 or 6))
       throw new NotSupportedException($"UHARC: the writer writes versions 0.2, 0.3, 0.4 and 0.6, not {version}.");
-    if (version == 2 && mode is not (Mode.Store or Mode.Lz78 or Mode.Alz))
-      throw new NotSupportedException($"UHARC: the 0.2 writer writes store, LZW and its main coder, not {mode}.");
+    if (version == 2 && mode is not (Mode.Store or Mode.Rle or Mode.Lz78 or Mode.Alz))
+      throw new NotSupportedException($"UHARC: the 0.2 writer writes store, RLE, LZW and its main coder, not {mode}.");
     if (version == 2 && !string.IsNullOrEmpty(password))
       throw new NotSupportedException("UHARC: 0.2 archives have no password.");
     if (version != 6 && mode is Mode.Ppm)
@@ -126,6 +126,7 @@ internal static class UharcWriter {
 
     var method = total == 0 ? UharcMethods.Store : version == 2 ? mode switch {
       Mode.Store => UharcMethods.Store,
+      Mode.Rle => UharcMethods.Rle,
       Mode.Lz78 => UharcMethods.Lz78Last,
       _ => 20 + Math.Min(LzpMethodFor(total, dictionaryLimit) - UharcMethods.LzpFirst, 11),
     } : version == 3 ? mode switch {
@@ -146,6 +147,7 @@ internal static class UharcWriter {
     };
     var packed = version == 2 ? method switch {
       UharcMethods.Store => stream,
+      UharcMethods.Rle => UharcRleEncoder.Encode(stream, byteFirst: true),
       >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => Uharc02LzwEncoder.Encode(stream, method),
       _ => Uharc02Encoder.Encode(stream, method),
     } : version == 3 ? method switch {

@@ -280,6 +280,7 @@ public class UharcExternalConformanceTests {
   /// we write; the files are compared. The executable exercises the 0.2 executable filter.
   /// </summary>
   [TestCase("store", 0L)]
+  [TestCase("rle", 0L)]
   [TestCase("lz78", 0L)]
   [TestCase("alz", 0L)]
   [TestCase("alz", 1024L)]
@@ -294,6 +295,8 @@ public class UharcExternalConformanceTests {
     var random = new Random(1997);
     var noise = new byte[60000];
     random.NextBytes(noise);
+    for (var i = 0; i < noise.Length; i += 1000)
+      noise.AsSpan(i, random.Next(300)).Fill((byte)(0xED + i % 2));
     var program = UharcTests.MinimalPe(0x200, 0x2000);
     for (var i = 0x200; i < program.Length - 5; i += 7) {
       program[i] = 0xE8;
