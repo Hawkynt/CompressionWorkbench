@@ -59,6 +59,9 @@ public class NowCompressTests {
     Assert.That(forks, Is.GreaterThan(0), "no resource fork found in the samples");
   }
 
+  /// <summary>How long unar may take for one sample; each takes well under a second.</summary>
+  private const int UnarSeconds = 90;
+
   [Test, Category("ExternalInterop")]
   public void GivenLocalSampleArchives_WhenUnarCanExtractThem_ThenEveryDataForkMatches() {
     if (OperatingSystem.IsWindows() && !FsInteropToolbox.WslAvailable) Assert.Ignore("WSL is not available.");
@@ -71,7 +74,13 @@ public class NowCompressTests {
         var raw = Path.Combine(tmp, Path.GetFileName(file) + ".now");
         File.WriteAllBytes(raw, bytes[offset..]);
         var outDir = Path.Combine(tmp, Path.GetFileName(file) + ".out");
-        var r = FsInteropToolbox.RunWsl($"unar -q -f -k hidden -D -o '{FsInteropToolbox.WinToWsl(outDir)}' '{FsInteropToolbox.WinToWsl(raw)}'");
+        // unar reports every failed file; that output once filled a pipe the harness was not reading and
+        // hung the run, so the call is now bounded on both sides of WSL and its streams are drained.
+        var r = FsInteropToolbox.RunWsl(
+          $"timeout -k 5 {UnarSeconds} unar -q -f -k hidden -D -o {FsInteropToolbox.WinToWsl(outDir)} {FsInteropToolbox.WinToWsl(raw)}",
+          TimeSpan.FromSeconds(UnarSeconds + 30));
+        if (r.TimedOut || r.ExitCode == 124)
+          Assert.Fail($"unar did not finish {Path.GetFileName(file)} within {UnarSeconds} s.");
         if (r.ExitCode != 0) continue; // Older unar 1.10.1 stops on these samples with "read more data than was available"
         foreach (var e in NowCompressArchive.Read(new MemoryStream(bytes, offset, bytes.Length - offset)).Where(x => !x.IsDirectory && x.DataSize > 0)) {
           var theirs = Path.Combine(outDir, e.Path.Replace('/', Path.DirectorySeparatorChar));
