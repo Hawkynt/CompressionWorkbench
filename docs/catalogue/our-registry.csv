@@ -688,6 +688,7 @@ format,WordPerfect,WordPerfect,Archive,,.wpd;.wp;.wp5;.wp6;.wp7,Y,Y,,
 format,Woz,Apple II WOZ,Archive,,.woz,Y,Y,Y,Y
 format,Wrapster,Wrapster,Archive,,,Y,Y,Y,
 format,WwiseBnk,Wwise SoundBank,Archive,,.bnk,Y,Y,,
+format,Wwpack,WWPACK (DOS exe),Archive,,,Y,Y,,
 format,Xa,CD-XA audio (.xa),Audio,,.xa,Y,Y,Y,
 format,Xar,XAR,Archive,,.xar,Y,Y,Y,Y
 format,Xenix,Xenix FS,Archive,Y,.xnx;.xenix,Y,Y,Y,Y

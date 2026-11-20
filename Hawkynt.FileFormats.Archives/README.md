@@ -460,7 +460,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [UPX](https://en.wikipedia.org/wiki/UPX) | `Upx` |  | R | Signature/evidence detection plus in-process NRV payload decompression | [GitHub](https://github.com/upx/upx) |
 | [ASPack](https://en.wikipedia.org/wiki/ASPack) | `AsPack` |  | R |  | [aspack.com](http://www.aspack.com) |
 | ASProtect | `AsProtect` |  | R |  | [aspack.com](http://www.aspack.com) |
-| aPACK (DOS exe) | `Apack` |  | R | Restores aPACK 1.00 programs (standard, `-s` and tiny stubs) by running the stub in the built-in 8086 emulator; image, relocations and registers equal the original programs | [ibsensoftware.com](https://ibsensoftware.com/products_aPACK.html) |
+| aPACK (DOS exe) | `Apack` |  | R | Restores aPACK 1.00 programs (standard, `-s`, `-m` and tiny stubs) by running the stub in the built-in 8086 emulator; image, relocations and registers equal the original programs | [ibsensoftware.com](https://ibsensoftware.com/products_aPACK.html) |
 | AXE (DOS exe) | `Axe` |  | R | Restores AXE 2.2 programs by emulating the stub; equal to the originals except SP two lower, as AXE starts them (UNP 4.11 agrees) | [Archive Team](http://fileformats.archiveteam.org/wiki/AXE) |
 | bzexe | `Bzexe` |  | R |  | [sourceware.org](https://sourceware.org/bzip2/) |
 | Crinkler | `Crinkler` |  | R |  | [GitHub](https://github.com/runestubbe/Crinkler) |
@@ -484,6 +484,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Silent_Packer | `SilentPacker` |  | R |  | [GitHub](https://github.com/SilentVoid13/Silent_Packer) |
 | [Themida](https://en.wikipedia.org/wiki/Themida) | `Themida` |  | R |  | [oreans.com](https://www.oreans.com/themida.php) |
 | TINYPROG (DOS exe) | `TinyProg` |  | R | Restores TINYPROG 3.x programs by emulating the stub; image, relocations and registers equal the original programs | [Archive Team](http://fileformats.archiveteam.org/wiki/TINYPROG) |
+| WWPACK (DOS exe) | `Wwpack` |  | R | Restores WWPACK 3.05 programs (P command) by emulating the stub; image, relocations and registers equal the original programs | [Archive Team](http://fileformats.archiveteam.org/wiki/WWPACK) |
 | [VMProtect](https://en.wikipedia.org/wiki/VMProtect) | `VmProtect` |  | R |  | [vmpsoft.com](https://vmpsoft.com) |
 | Yoda's Crypter | `YodaCrypter` |  | R |  | [sourceforge.net](https://sourceforge.net/projects/yodap/) |
 
@@ -507,7 +508,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | WinUpack | Unpack | Upack's LZMA-idiom range coder plus call/jump filter, driven by the loader's parameter block; both container shapes decode. |
 | Yoda's Crypter | Unpack | Stub walker replays the per-build byte cipher and restores the original entry point; 129 of 130 corpus samples decrypt. |
 | LZEXE / PKLITE / EXEPACK / DIET (DOS) | Unpack | Stubs walked, LZ77 / run-length images decoded, relocation tables and headers rebuilt; checked against UNP 4.11 and `pklite -x` on files the real packers made (see `Compression.Tests/ExePackers/DosVectors`). |
-| aPACK / ExeLITE / TINYPROG / AXE (DOS) | Unpack | The packer's own stub runs in a built-in 8086/80186 emulator under a minimal DOS until the original program starts; relocations come from two runs at different load segments. Checked against the original programs those packers were given. |
+| aPACK / ExeLITE / TINYPROG / AXE / WWPACK (DOS) | Unpack | The packer's own stub runs in a built-in 8086/80186 emulator under a minimal DOS until the original program starts; relocations come from two runs at different load segments. Checked against the original programs those packers were given. |
 | GZEXE / BZEXE | Unpack | Shell wrappers with embedded gzip / bzip2 payload; the original executable is restored statically. |
 | Papaw | Unpack | ELF wrapper with obfuscated XZ/LZMA2 payload; appended original restored. |
 | GoPacker | Unpack | Appended Zstandard executable payload restored. |

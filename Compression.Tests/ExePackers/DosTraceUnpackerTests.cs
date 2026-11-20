@@ -15,6 +15,8 @@ public class DosTraceUnpackerTests {
     foreach (var (file, original, variant, sp) in new[] {
       ("apack.P1.EXE", "T1.EXE", "1.00", 0), ("apack.P2.EXE", "T2.EXE", "1.00", 0), ("apack.P6.EXE", "T6.EXE", "1.00", 0),
       ("apack-s.P1.EXE", "T1.EXE", "1.00 (-s)", 0), ("apack-t.P1.EXE", "T1.EXE", "1.00 (tiny, -t)", 0),
+      ("apack-m.P1.EXE", "T1.EXE", "1.00 (no code mover, -m)", 0), ("apack-m.P2.EXE", "T2.EXE", "1.00 (no code mover, -m)", 0),
+      ("wwpack.P1.EXE", "T1.EXE", "3.0x", 0), ("wwpack.P2.EXE", "T2.EXE", "3.0x", 0), ("wwpack.P7.EXE", "T7.EXE", "3.0x", 0),
       ("exelite.P1.EXE", "T1.EXE", "2.00", 0), ("exelite.P2.EXE", "T2.EXE", "2.00", 0), ("exelite.P6.EXE", "T6.EXE", "2.00", 0),
       ("tinyprog.P1.EXE", "T1.EXE", "3.x", 0), ("tinyprog.P2.EXE", "T2.EXE", "3.x", 0),
       ("axe.P1.EXE", "T1.EXE", "2.2", 2), ("axe.P2.EXE", "T2.EXE", "2.2", 2),
@@ -23,7 +25,8 @@ public class DosTraceUnpackerTests {
   }
 
   private static IDosExeUnpacker For(string file) => file.Split('.')[0] switch {
-    "apack" or "apack-s" or "apack-t" => ApackUnpacker.Instance,
+    "apack" or "apack-s" or "apack-t" or "apack-m" => ApackUnpacker.Instance,
+    "wwpack" => WwpackUnpacker.Instance,
     "exelite" => ExeLiteUnpacker.Instance,
     "tinyprog" => TinyProgUnpacker.Instance,
     _ => AxeUnpacker.Instance,
@@ -102,6 +105,7 @@ public class DosTraceUnpackerTests {
       Assert.That(ExeLiteUnpacker.Instance.Detect(file), Is.Null);
       Assert.That(TinyProgUnpacker.Instance.Detect(file), Is.Null);
       Assert.That(AxeUnpacker.Instance.Detect(file), Is.Null);
+      Assert.That(WwpackUnpacker.Instance.Detect(file), Is.Null);
     });
   }
 
@@ -140,6 +144,34 @@ public class DosTraceUnpackerTests {
     yield return new TestCaseData("ELITE", "copy T{0}.EXE P{0}.EXE > NUL\r\nELITE a P{0}.EXE", 0).SetName("Live_ExeLite");
     yield return new TestCaseData("TINYPROG", "TINYPROG T{0}.EXE P{0}.EXE", 0).SetName("Live_TinyProg");
     yield return new TestCaseData("AXE", "copy T{0}.EXE P{0}.EXE > NUL\r\nAXE P{0}.EXE B{0}.EXE -f", 2).SetName("Live_Axe");
+    yield return new TestCaseData("APACK", "APACK -m T{0}.EXE P{0}.EXE", 0).SetName("Live_ApackNoCodeMover");
+  }
+
+  /// <summary>
+  /// WWPACK 3.05's own output for two of the test programs (T6, and one more measured) does not
+  /// run under DOSBox and does not finish in the emulator either, so it gets its own live test on
+  /// the programs it packs correctly.
+  /// </summary>
+  [Test]
+  [Category("ExternalInterop")]
+  public void Given_TheRealWwpack_When_ItPacksTheTestPrograms_Then_TheTraceRestoresThem() {
+    RequireDosTools("WWPACK");
+    var drive = TempDrive("wwpack");
+    try {
+      File.Copy(Tool("WWPACK")!, Path.Combine(drive, "WWPACK.EXE"));
+      var lines = new List<string>();
+      foreach (var n in new[] { "1", "2", "7" }) {
+        File.WriteAllBytes(Path.Combine(drive, $"P{n}.EXE"), Load($"T{n}.EXE"));
+        lines.AddRange([$"WWPACK P P{n}.EXE > NUL", $"P{n}.EXE > R{n}.TXT"]);
+      }
+      RunDos(drive, lines);
+      foreach (var n in new[] { "1", "2", "7" }) {
+        Assert.That(ReadText(Path.Combine(drive, $"R{n}.TXT")), Does.StartWith("OK"), $"packed T{n} did not run");
+        AssertSameProgram(Load($"T{n}.EXE"), WwpackUnpacker.Instance.Unpack(File.ReadAllBytes(Path.Combine(drive, $"P{n}.EXE"))).Executable, $"WWPACK T{n}");
+      }
+    } finally {
+      try { Directory.Delete(drive, true); } catch (IOException) { }
+    }
   }
 
   /// <summary>

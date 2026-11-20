@@ -46,10 +46,19 @@ CS:IP, SS:SP). UNP 4.11 does not recognise aPACK, ExeLITE or WWPACK 3.05 files.
 |---|---|---|
 | `apack.P1/P2/P6.EXE` | aPACK 1.00, `APACK T<n>.EXE P<n>.EXE` | sac.sk `apack100.zip` (`b81b7de2…ac9f4054`) |
 | `apack-s.P1.EXE`, `apack-t.P1.EXE` | same, options `-s` and `-t` | same |
+| `apack-m.P1/P2.EXE` | same, option `-m` (no code mover: the stub sits below the image and jumps forward into it) | same |
+| `wwpack.P1/P2/P7.EXE` | WWPACK 3.05 beta 5 shareware, `WWPACK P P<n>.EXE` on a copy | sac.sk `wwp305b5.zip` |
 | `exelite.P1/P2/P6.EXE` | ExeLITE (ELITE.EXE), `ELITE a P<n>.EXE` on a copy | sac.sk `elite.zip` (`07ccdaad…1434b344`) |
 | `tinyprog.P1/P2.EXE` | TINYPROG 3.9, `TINYPROG T<n>.EXE P<n>.EXE` | sac.sk `tinyp39.zip` (`eaf138cf…d268192f`) |
 | `axe.P1/P2.EXE` | AXE 2.2, `AXE P<n>.EXE B<n>.EXE -f` on a copy | sac.sk `axe.zip` (`aedc292c…ae2af466`) |
 | `axe.U1/U2.EXE` | UNP 4.11's restoration of `axe.P<n>.EXE` | |
+
+`T7.EXE` (`NREL=10 NTEXT=77 NRAND=3333 SEED=5 NFAR=3 CSV=1 ENTRYPAD=37`) gives WWPACK a third
+image length. WWPACK 3.05's output for T6 and for one further measured program
+(`NREL=120 NTEXT=13 NRAND=9999 SEED=31337 NFAR=9 ENTRYPAD=3`) hangs under DOSBox and never
+reaches the program in the emulator either; those files are not committed. Its stub unpacks a
+relocation routine right behind the image with one data byte in front of it, at image lengths
+of 8, 0 and another paragraph offset alike.
 
 AXE starts the program with SP two below the original (UNP's restoration has the same SP).
 UNP 4.11 restores TINYPROG files with a different set of relocation addresses than the

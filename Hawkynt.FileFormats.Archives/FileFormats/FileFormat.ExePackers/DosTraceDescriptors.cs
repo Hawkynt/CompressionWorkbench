@@ -38,6 +38,17 @@ public sealed class TinyProgFormatDescriptor : DosPackedExeDescriptor {
   protected override string MetadataSection => "tinyprog";
 }
 
+/// <summary>WWPACK-packed DOS executables: lists the restored program (8086 emulation of the stub).</summary>
+public sealed class WwpackFormatDescriptor : DosPackedExeDescriptor {
+  public override string Id => "Wwpack";
+  public override string DisplayName => "WWPACK (DOS exe)";
+  public override string Description =>
+    "WWPACK-packed DOS executable (P command): lists the restored program, recovered by running " +
+    "the stub in an 8086 emulator.";
+  protected override IDosExeUnpacker Unpacker => WwpackUnpacker.Instance;
+  protected override string MetadataSection => "wwpack";
+}
+
 /// <summary>AXE-packed DOS executables (System Enhancement Associates): lists the restored program (8086 emulation of the stub).</summary>
 public sealed class AxeFormatDescriptor : DosPackedExeDescriptor {
   public override string Id => "Axe";
