@@ -54,8 +54,8 @@ public sealed class AlZipOracleWriteTests {
       Assert.That(got[name], Is.EqualTo(Convert.ToHexStringLower(SHA256.HashData(data))), name);
   }
 
-  private static FormatCreateOptions Options(string? method, string? volumes, string? password = null) {
-    var o = new FormatCreateOptions(method) { Password = password };
+  private static FormatCreateOptions Options(string? method, string? volumes, string? password = null, string? cipher = null) {
+    var o = new FormatCreateOptions(method) { Password = password, EncryptionMethod = cipher };
     if (volumes != null) o.FormatSpecific[FormatOptionKeys.VolumeSize] = volumes;
     return o;
   }
@@ -82,6 +82,27 @@ public sealed class AlZipOracleWriteTests {
     var dir = Write(new AlZipFormatDescriptor(), "ours.alz", Options("deflate", "64k", "secret42"), files);
     try {
       AssertAlzipConExtracts(dir, "ours.alz", files, "secret42");
+    } finally {
+      Directory.Delete(dir, true);
+    }
+  }
+
+  [TestCase("bzip2", null)]
+  [TestCase("lzma", null)]
+  [TestCase("lzma", "zip20")]
+  [TestCase("deflate", "zip20")]
+  [TestCase("deflate", "aes128")]
+  [TestCase("bzip2", "aes256")]
+  [TestCase("deflate", "lea128")]
+  [TestCase("lzma", "lea256")]
+  public void GivenOurEggWithAMethodOrCipher_WhenAlzipConExtractsIt_ThenEveryFileComesBack(string method, string? cipher) {
+    if (!Available.Value) Assert.Ignore("ALZip is not installed in its wine prefix (see alzipcon-extract.sh).");
+    var files = Inputs();
+    var options = Options(method, cipher != null ? "64k" : null, cipher != null ? "secret42" : null, cipher);
+    var first = cipher != null ? "ours.vol1.egg" : "ours.egg";
+    var dir = Write(new EggFormatDescriptor(), first, options, files);
+    try {
+      AssertAlzipConExtracts(dir, first, files, cipher != null ? "secret42" : null);
     } finally {
       Directory.Delete(dir, true);
     }

@@ -71,7 +71,7 @@ public class EggTests {
       Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
         "rebuild-backed add/remove is not advertised as genuine in-place R/W");
       Assert.That(d.MagicSignatures[0].Bytes, Is.EqualTo("EGGA"u8.ToArray()).AsCollection);
-      Assert.That(d.Methods.Select(method => method.Name), Is.EquivalentTo(new[] { "store", "deflate" }));
+      Assert.That(d.Methods.Select(method => method.Name), Is.EquivalentTo(new[] { "store", "deflate", "bzip2", "lzma" }));
     });
   }
 
@@ -259,7 +259,12 @@ public class EggTests {
     Assert.That(
       () => new EggFormatDescriptor().Create(encrypted,
         [ArchiveInputInfo.InMemory("file.bin", new byte[] { 1 })],
-        new FormatCreateOptions { Password = "secret" }),
+        new FormatCreateOptions { Password = "secret", EncryptionMethod = "des" }),
+      Throws.TypeOf<NotSupportedException>());
+    Assert.That(
+      () => new EggFormatDescriptor().Create(encrypted,
+        [ArchiveInputInfo.InMemory("file.bin", new byte[] { 1 })],
+        new FormatCreateOptions("azo")),
       Throws.TypeOf<NotSupportedException>());
   }
 }
