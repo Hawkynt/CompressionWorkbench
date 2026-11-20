@@ -14977,7 +14977,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `DvdisasterEccFormatDescriptor`
 
-dvdisaster error-correction file (`.ecc`): the parity a disc image is repaired from; RS01 files are created by `DvdisasterEccWriter`. It holds no files, so the view is its header as `metadata.ini` and, for the RS01 method, the per-sector CRC table and the Reed-Solomon parity layers; RS03 files list their header and raw data. Test checks the ecc MD5 the header records. References: `https://dvdisaster.jcea.es/` — dvdisaster documentation, RS01/RS03 methods and the ecc header
+dvdisaster error-correction file (`.ecc`): the parity a disc image is repaired from; RS01 and RS03 files are created by `DvdisasterEccWriter`. It holds no files, so the view is its header as `metadata.ini` and, for RS01, the per-sector CRC table and the Reed-Solomon parity; for RS03, the CRC layer and the parity layers. Test checks the ecc MD5 the header records (RS01) or the header's and CRC blocks' self CRCs (RS03). References: `https://dvdisaster.jcea.es/` — dvdisaster documentation, RS01/RS03 methods and the ecc header
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
 
@@ -15035,7 +15035,9 @@ Writes dvdisaster RS01 error-correction files as `docs/DVDISASTER-ECC-ON-DISK.md
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DefaultRoots` | `const int DefaultRoots` | Parity bytes per codeword when none are asked for (dvdisaster's "normal" redundancy). |
+| `Rs03NeededVersion` | `const int Rs03NeededVersion` | The version RS03 files require (0.79). |
 | `CreateRs01` | `static byte[] CreateRs01(ReadOnlySpan<byte> image, int roots = 32, int? creatorVersion = null)` | Creates the RS01 ecc file of the image `image`. |
+| `CreateRs03` | `static byte[] CreateRs03(ReadOnlySpan<byte> image, int roots = 32, int? creatorVersion = null, bool developmentBuild = false)` | Creates the RS03 ecc file of the image `image` (docs/DVDISASTER-ECC-ON-DISK.md, RS03): the 4 KiB header, the CRC layer and `roots` parity layers. |
 
 ### Namespace `FileFormat.DxArchive`
 
