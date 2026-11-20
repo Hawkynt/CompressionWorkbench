@@ -182,7 +182,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Serpent`](#serpent) · [`Twofish`](#twofish)
+[`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`BlockEncryptor128`](#blockencryptor128) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`Eax`](#eax) · [`Eax.SpanAction`](#eaxspanaction) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Serpent`](#serpent) · [`Twofish`](#twofish)
 
 #### `AesCryptor`
 
@@ -223,6 +223,14 @@ Argon2 (version 0x13) memory-hard key derivation, implemented from RFC 9106 and 
 | `Argon2i` | `1` |  |
 | `Argon2id` | `2` |  |
 
+#### `BlockEncryptor128`
+
+Encrypts 128-bit blocks in ECB fashion: `output` receives the encryption of every 16-byte block of `input` (same length, a multiple of 16).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockEncryptor128` | `void BlockEncryptor128(ReadOnlySpan<byte> input, Span<byte> output)` | Encrypts 128-bit blocks in ECB fashion: `output` receives the encryption of every 16-byte block of `input` (same length, a multiple of 16). |
+
 #### `Blowfish`
 
 Blowfish symmetric block cipher. 64-bit block size, 1–56 byte key, 16-round Feistel network. Initial P-array and S-box values are the hexadecimal digits of pi.
@@ -259,6 +267,30 @@ The CAST-128 (CAST5) block cipher (Carlisle Adams), 64-bit blocks and keys of 40
 | `Decrypt` | `void Decrypt(Span<byte> block)` | Decrypts one 8-byte block in place. |
 | `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 8-byte block in place. |
 
+#### `Eax`
+
+EAX authenticated encryption (Bellare, Rogaway and Wagner, "The EAX Mode of Operation", FSE 2004) over any 128-bit block cipher: CTR encryption started at the OMAC of the nonce, and a 16-byte tag that is the XOR of the OMACs of nonce, header and ciphertext. Data may arrive in pieces of any length; the result equals one call over their concatenation.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Eax` | `Eax(BlockEncryptor128 encrypt, ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> header = null)` | Starts an EAX message under `encrypt` with the given nonce and header (associated data). |
+| `BlockSize` | `const int BlockSize` | The block and tag size in bytes. |
+| `Decrypt` | `void Decrypt(Span<byte> data)` | Feeds `data` (ciphertext) to the tag and decrypts it in place. |
+| `Encrypt` | `void Encrypt(Span<byte> data)` | Encrypts `data` in place and feeds the ciphertext to the tag. |
+| `InPlace` | `static BlockEncryptor128 InPlace(SpanAction encryptBlock)` | Adapts a cipher that encrypts one block in place. |
+| `Tag` | `byte[] Tag()` | The 16-byte tag over everything encrypted or decrypted so far; ends the message. |
+| `WithAes` | `static Eax WithAes(ReadOnlySpan<byte> key, ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> header = null)` | EAX with AES under a 16-, 24- or 32-byte key. |
+| `WithSerpent` | `static Eax WithSerpent(ReadOnlySpan<byte> key, ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> header = null)` | EAX with Serpent under a 16-, 24- or 32-byte key. |
+| `WithTwofish` | `static Eax WithTwofish(ReadOnlySpan<byte> key, ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> header = null)` | EAX with Twofish under a 16-, 24- or 32-byte key. |
+
+#### `Eax.SpanAction`
+
+Encrypts one block in place.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SpanAction` | `void Eax.SpanAction(Span<byte> block)` | Encrypts one block in place. |
+
 #### `KeyDerivation`
 
 Key derivation functions for password-based encryption.
@@ -267,6 +299,7 @@ Key derivation functions for password-based encryption.
 | --- | --- | --- |
 | `Pbkdf2Sha1` | `static byte[] Pbkdf2Sha1(string password, ReadOnlySpan<byte> salt, int iterations, int keyLength)` | Derives a key using PBKDF2 with HMAC-SHA1. Used by older ZIP encryption and WinZip AE-1. |
 | `Pbkdf2Sha256` | `static byte[] Pbkdf2Sha256(string password, ReadOnlySpan<byte> salt, int iterations, int keyLength)` | Derives a key using PBKDF2 with HMAC-SHA256. Used by ZIP AES encryption (WinZip AE-1/AE-2). |
+| `Pbkdf2` | `static byte[] Pbkdf2(Func<byte[], byte[]> hash, int blockSize, ReadOnlySpan<byte> password, ReadOnlySpan<byte> salt, int iterations, int keyLength)` | PBKDF2 (RFC 8018, section 5.2) over HMAC (RFC 2104) with any hash function, for the hashes the platform does not offer (Whirlpool, RIPEMD-160, …). |
 | `Rar3DeriveKey` | `static ValueTuple<byte[], byte[]> Rar3DeriveKey(string password, ReadOnlySpan<byte> salt)` | Derives a 16-byte AES-128 key and 16-byte IV for RAR3/4 decryption. RAR3 iterates SHA-1 262144 times over (password_utf16le + salt + 3-byte counter); the IV takes byte 19 of every 16384th intermediate digest and the key is the first four digest words with their bytes reversed. |
 | `Rar5DeriveKey` | `static byte[] Rar5DeriveKey(string password, ReadOnlySpan<byte> salt, int iterations)` | Derives a key using the RAR5 key derivation (PBKDF2-HMAC-SHA256 with specific parameters). |
 | `Rar5DeriveKeys` | `static ValueTuple<byte[], byte[], byte[]> Rar5DeriveKeys(string password, ReadOnlySpan<byte> salt, int kdfLog)` | The three RAR 5 keys of one password and salt: one PBKDF2-HMAC-SHA256 chain run for 2^`kdfLog` iterations gives the AES-256 key, 16 more the key that tweaks checksums (encryption flag 0x0002), 16 more the password check value, folded to 8 bytes. |

@@ -206,11 +206,12 @@ public class PeaTests {
       Assert.That(File.ReadAllBytes(Path.Combine(root, input.Path.Replace('/', Path.DirectorySeparatorChar))), Is.EqualTo(input.Data), input.Path);
   }
 
-  private static (byte[] First, List<byte[]> Others) WriteSet(List<PeaArchive.Input> inputs, int compression, PeaArchive.Check volume, long volumeSize) {
+  private static (byte[] First, List<byte[]> Others) WriteSet(List<PeaArchive.Input> inputs, int compression, PeaArchive.Check volume, long volumeSize,
+      PeaArchive.Check stream = PeaArchive.Check.Sha256, string? password = null) {
     var rest = new SortedDictionary<int, MemoryStream>();
     using var first = new MemoryStream();
-    PeaArchive.Write(first, inputs, compression, PeaArchive.Check.Crc32, PeaArchive.Check.Sha256, volume,
-      volumeSize, n => rest[n] = new MemoryStream());
+    PeaArchive.Write(first, inputs, compression, PeaArchive.Check.Crc32, stream, volume,
+      volumeSize, n => rest[n] = new MemoryStream(), password);
     Assert.That(rest.Keys, Is.EqualTo(Enumerable.Range(2, rest.Count)), "volumes open in order from 2");
     return (first.ToArray(), rest.Values.Select(m => m.ToArray()).ToList());
   }
@@ -256,12 +257,154 @@ public class PeaTests {
     Assert.That(() => PeaArchive.Read(new MemoryStream(bytes)), Throws.InstanceOf<InvalidDataException>());
   }
 
-  [Test, Category("Exception")]
-  public void GivenEncryptedStreamHeader_WhenRead_ThenRefusedAsUnsupported() {
+  [TestCase(0x44)] // TRIATS
+  [TestCase(0x4C)] // HRISAT
+  [Category("Exception")]
+  public void GivenCascadeEncryptedStreamHeader_WhenRead_ThenRefusedAsUnsupported(int algo) {
     var bytes = LoadVector("deflate6.pea");
-    bytes[18] = 0x31; // EAX
-    Assert.That(() => PeaArchive.Read(new MemoryStream(bytes)), Throws.InstanceOf<NotSupportedException>());
+    bytes[18] = (byte)algo;
+    Assert.That(() => PeaArchive.Read(new MemoryStream(bytes), "password"), Throws.InstanceOf<NotSupportedException>());
   }
+
+  // ── encryption ──────────────────────────────────────────────────────
+
+  [TestCase("eax256.pea")] // AES-256 EAX, PCOMPRESS2
+  [TestCase("tf256.pea")]  // Twofish-256 EAX, PCOMPRESS0
+  [TestCase("sp256.pea")]  // Serpent-256 EAX, PCOMPRESS1, CRC-64 objects
+  [TestCase("eax.pea")]    // AES-128 EAX
+  [TestCase("tf.pea")]     // Twofish-128 EAX
+  [TestCase("sp.pea")]     // Serpent-128 EAX
+  [TestCase("hmac.pea")]   // AES-128 CTR + HMAC-SHA-1
+  [Category("ThemVsUs")]
+  public void GivenEncryptedArchiveWrittenByPeaZip_WhenReadWithItsPassword_ThenEveryObjectDecrypts(string vector) {
+    var entries = PeaArchive.Read(new MemoryStream(LoadVector(vector)), "password");
+
+    AssertSmallTree(entries);
+    Assert.That(entries, Is.All.Matches<PeaEntry>(e => e.IsEncrypted));
+  }
+
+  [TestCase("eax256.pea", "Password")]
+  [TestCase("tf256.pea", "passwor")]
+  [TestCase("sp256.pea", "password ")]
+  [TestCase("eax.pea", "x")]
+  [TestCase("hmac.pea", "wrong")]
+  [Category("Exception")]
+  public void GivenEncryptedArchiveWrittenByPeaZip_WhenReadWithAWrongPassword_ThenRefusedBeforeDecrypting(string vector, string password)
+    => Assert.That(() => PeaArchive.Read(new MemoryStream(LoadVector(vector)), password),
+      Throws.InstanceOf<ArchivePasswordException>().With.Property(nameof(ArchivePasswordException.PasswordWasSupplied)).True);
+
+  [TestCase(null)]
+  [TestCase("")]
+  [Category("Exception")]
+  public void GivenEncryptedArchive_WhenReadWithoutAPassword_ThenAPasswordIsAskedFor(string? password)
+    => Assert.That(() => PeaArchive.Read(new MemoryStream(LoadVector("eax256.pea")), password),
+      Throws.InstanceOf<ArchivePasswordException>().With.Property(nameof(ArchivePasswordException.PasswordWasSupplied)).False);
+
+  [Test, Category("Exception")]
+  public void GivenEncryptedArchiveWithAFlippedCiphertextByte_WhenRead_ThenTheTagRefusesIt() {
+    var bytes = LoadVector("eax256.pea");
+    bytes[60] ^= 0x01;
+    // keep the volume check right, so the stream tag is what catches it
+    BitConverterLe(Compression.Core.Checksums.Crc32.Compute(bytes.AsSpan(0, bytes.Length - 4))).CopyTo(bytes, bytes.Length - 4);
+    Assert.That(() => PeaArchive.Read(new MemoryStream(bytes), "password"),
+      Throws.InstanceOf<InvalidDataException>().With.Message.Contains("authentication"));
+  }
+
+  [TestCase(PeaArchive.Check.Aes256Eax, 2)]
+  [TestCase(PeaArchive.Check.Twofish256Eax, 0)]
+  [TestCase(PeaArchive.Check.Serpent256Eax, 3)]
+  [TestCase(PeaArchive.Check.AesEax, 1)]
+  [TestCase(PeaArchive.Check.TwofishEax, 2)]
+  [TestCase(PeaArchive.Check.SerpentEax, 2)]
+  [TestCase(PeaArchive.Check.AesHmac, 0)]
+  [Category("RoundTrip")]
+  public void GivenPassword_WhenWrittenAndRead_ThenEveryByteRoundTripsAndTheWrongPasswordIsRefused(PeaArchive.Check encryption, int compression) {
+    using var ms = new MemoryStream();
+    PeaArchive.Write(ms, Inputs(), compression, streamCheck: encryption, password: "pässwörd");
+
+    var entries = PeaArchive.Read(new MemoryStream(ms.ToArray()), "pässwörd");
+    foreach (var input in Inputs())
+      Assert.That(entries.Single(e => e.Path == input.Path).Data, Is.EqualTo(input.Data), input.Path);
+    Assert.That(ms.ToArray()[18], Is.EqualTo((byte)encryption));
+    Assert.That(ms.ToArray().AsSpan().IndexOf("The quick"u8), Is.EqualTo(-1), "plain text must not show");
+    Assert.That(() => PeaArchive.Read(new MemoryStream(ms.ToArray()), "passwörd"), Throws.InstanceOf<ArchivePasswordException>());
+  }
+
+  [Test, Category("RoundTrip")]
+  public void GivenPasswordAndVolumeSize_WhenWritten_ThenTheEncryptedSetRoundTrips() {
+    var (first, others) = WriteSet(SmallInputs(), 0, PeaArchive.Check.Crc32, 1000, PeaArchive.Check.Aes256Eax, "secret");
+    var entries = PeaArchive.ReadVolumes([first, .. others], "secret");
+    Assert.That(entries.Single(e => e.Path == "dir/fox.txt").Data, Is.EqualTo(Fox));
+  }
+
+  [Test, Category("EdgeCase")]
+  public void GivenTheSamePasswordTwice_WhenWritten_ThenTheSaltDiffers() {
+    using var a = new MemoryStream();
+    using var b = new MemoryStream();
+    PeaArchive.Write(a, SmallInputs(), streamCheck: PeaArchive.Check.Aes256Eax, password: "p");
+    PeaArchive.Write(b, SmallInputs(), streamCheck: PeaArchive.Check.Aes256Eax, password: "p");
+    Assert.That(a.ToArray().AsSpan(22, 12).SequenceEqual(b.ToArray().AsSpan(22, 12)), Is.False);
+  }
+
+  [TestCase(PeaArchive.Check.Aes256Eax, null)]
+  [TestCase(PeaArchive.Check.Sha256, "p")]
+  [Category("Exception")]
+  public void GivenPasswordAndStreamCheckThatDisagree_WhenWritten_ThenRefused(PeaArchive.Check streamCheck, string? password)
+    => Assert.That(() => PeaArchive.Write(new MemoryStream(), SmallInputs(), streamCheck: streamCheck, password: password), Throws.ArgumentException);
+
+  [Test, Category("Exception")]
+  public void GivenEncryptionAsObjectCheck_WhenWritten_ThenRefused()
+    => Assert.That(() => PeaArchive.Write(new MemoryStream(), SmallInputs(), objectCheck: PeaArchive.Check.AesEax), Throws.ArgumentException);
+
+  [TestCase(null, PeaArchive.Check.Aes256Eax)]
+  [TestCase("tf256", PeaArchive.Check.Twofish256Eax)]
+  [TestCase("Serpent", PeaArchive.Check.Serpent256Eax)]
+  [TestCase("HMAC", PeaArchive.Check.AesHmac)]
+  [Category("HappyPath")]
+  public void GivenPassword_WhenCreatedThroughTheDescriptor_ThenTheChosenEncryptionIsWritten(string? method, PeaArchive.Check expected) {
+    using var ms = new MemoryStream();
+    new PeaFormatDescriptor().Create(ms, [ArchiveInputInfo.InMemory("a.txt", Hello)], new FormatCreateOptions { Password = "pw", EncryptionMethod = method });
+    Assert.That(ms.ToArray()[18], Is.EqualTo((byte)expected));
+    Assert.That(new PeaFormatDescriptor().ExtractEntryToMemory(new MemoryStream(ms.ToArray()), "a.txt", "pw"), Is.EqualTo(Hello));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenUnknownEncryptionMethod_WhenCreated_ThenRefused()
+    => Assert.That(() => new PeaFormatDescriptor().Create(new MemoryStream(), [ArchiveInputInfo.InMemory("a", [1])],
+      new FormatCreateOptions { Password = "pw", EncryptionMethod = "zipcrypto" }), Throws.InstanceOf<NotSupportedException>());
+
+  [TestCase(PeaArchive.Check.Aes256Eax, "EAX256")]
+  [TestCase(PeaArchive.Check.Twofish256Eax, "TF256")]
+  [TestCase(PeaArchive.Check.Serpent256Eax, "SP256")]
+  [TestCase(PeaArchive.Check.AesEax, "EAX")]
+  [TestCase(PeaArchive.Check.TwofishEax, "TF")]
+  [TestCase(PeaArchive.Check.SerpentEax, "SP")]
+  [TestCase(PeaArchive.Check.AesHmac, "HMAC")]
+  [Category("ExternalInterop")]
+  public void GivenOurEncryptedArchive_WhenPeaZipExtractsIt_ThenEveryFileMatchesAndAWrongPasswordFails(PeaArchive.Check encryption, string peaName) {
+    var pea = RequirePea();
+    var path = Path.Combine(this._tmpDir, $"enc_{peaName}.pea");
+    using (var f = File.Create(path))
+      PeaArchive.Write(f, Inputs(), 2, streamCheck: encryption, password: "s3cret pass");
+
+    var wrongDir = Path.Combine(this._tmpDir, "wrong");
+    Directory.CreateDirectory(wrongDir);
+    // pea stops at its wrong-password error (and waits there for a click, hence the short timeout)
+    var wrong = FsInteropToolbox.RunWsl($"timeout 15 xvfb-run -a '{pea}' UNPEA '{FsInteropToolbox.WinToWsl(path)}' '{FsInteropToolbox.WinToWsl(wrongDir)}/' RESETDATE RESETATTR EXTRACT2DIR HIDDEN 'not it' NOKEYFILE");
+    Assert.That(wrong.ExitCode, Is.Not.Zero, "pea must not accept a wrong password");
+    Assert.That(Directory.EnumerateFiles(wrongDir, "*", SearchOption.AllDirectories).Where(p => new FileInfo(p).Length > 0), Is.Empty,
+      $"a wrong password must not extract anything (pea exit {wrong.ExitCode})");
+
+    var outDir = Path.Combine(this._tmpDir, "out");
+    Directory.CreateDirectory(outDir);
+    var r = FsInteropToolbox.RunWsl($"timeout 120 xvfb-run -a '{pea}' UNPEA '{FsInteropToolbox.WinToWsl(path)}' '{FsInteropToolbox.WinToWsl(outDir)}/' RESETDATE RESETATTR EXTRACT2DIR HIDDEN 's3cret pass' NOKEYFILE");
+    Assert.That(r.ExitCode, Is.EqualTo(0), $"pea UNPEA failed:\n{r.StdOut}\n{r.StdErr}");
+    var root = Directory.GetDirectories(outDir).Single();
+    foreach (var input in Inputs())
+      Assert.That(File.ReadAllBytes(Path.Combine(root, input.Path.Replace('/', Path.DirectorySeparatorChar))), Is.EqualTo(input.Data), input.Path);
+  }
+
+  private static byte[] BitConverterLe(uint v) => [(byte)v, (byte)(v >> 8), (byte)(v >> 16), (byte)(v >> 24)];
 
   [Test, Category("Exception")]
   public void GivenNotPea_WhenRead_ThenRefused()
@@ -289,11 +432,6 @@ public class PeaTests {
       Assert.That(entries.Single(e => e.Path == input.Path).Data, Is.EqualTo(input.Data), input.Path);
     Assert.That(entries.Where(e => e.IsDirectory).Select(e => e.Path), Is.EquivalentTo(new[] { "dir", "dir/deep" }));
   }
-
-  [Test, Category("Exception")]
-  public void GivenPassword_WhenCreated_ThenRefused()
-    => Assert.That(() => new PeaFormatDescriptor().Create(new MemoryStream(), [ArchiveInputInfo.InMemory("a", [1])], new FormatCreateOptions { Password = "x" }),
-      Throws.InstanceOf<NotSupportedException>());
 
   [Test, Category("ExternalInterop")]
   public void GivenOurArchive_WhenPeaZipExtractsIt_ThenEveryFileMatches() {

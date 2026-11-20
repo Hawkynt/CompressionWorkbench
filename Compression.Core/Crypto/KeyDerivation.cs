@@ -45,6 +45,47 @@ public static class KeyDerivation {
   }
 
   /// <summary>
+  /// PBKDF2 (RFC 8018, section 5.2) over HMAC (RFC 2104) with any hash function, for the hashes
+  /// the platform does not offer (Whirlpool, RIPEMD-160, …).
+  /// </summary>
+  /// <param name="hash">The hash function: whole message in, digest out.</param>
+  /// <param name="blockSize">The hash's block size in bytes (64 for SHA-1, SHA-256, Whirlpool, RIPEMD-160).</param>
+  /// <param name="password">The password bytes.</param>
+  /// <param name="salt">The salt.</param>
+  /// <param name="iterations">The iteration count (at least 1).</param>
+  /// <param name="keyLength">The number of bytes to derive (at least 1).</param>
+  public static byte[] Pbkdf2(Func<byte[], byte[]> hash, int blockSize, ReadOnlySpan<byte> password, ReadOnlySpan<byte> salt, int iterations, int keyLength) {
+    ArgumentNullException.ThrowIfNull(hash);
+    ArgumentOutOfRangeException.ThrowIfLessThan(blockSize, 1);
+    ArgumentOutOfRangeException.ThrowIfLessThan(iterations, 1);
+    ArgumentOutOfRangeException.ThrowIfLessThan(keyLength, 1);
+
+    var key = password.Length > blockSize ? hash(password.ToArray()) : password.ToArray();
+    var inner = new byte[blockSize];
+    var outer = new byte[blockSize];
+    for (var i = 0; i < blockSize; ++i) {
+      var k = i < key.Length ? key[i] : (byte)0;
+      inner[i] = (byte)(k ^ 0x36);
+      outer[i] = (byte)(k ^ 0x5C);
+    }
+    byte[] Hmac(ReadOnlySpan<byte> message) => hash([.. outer, .. hash([.. inner, .. message])]);
+
+    var result = new byte[keyLength];
+    for (int block = 1, offset = 0; offset < keyLength; ++block) {
+      var u = Hmac([.. salt, (byte)(block >> 24), (byte)(block >> 16), (byte)(block >> 8), (byte)block]);
+      var t = (byte[])u.Clone();
+      for (var n = 1; n < iterations; ++n) {
+        u = Hmac(u);
+        for (var i = 0; i < t.Length; ++i) t[i] ^= u[i];
+      }
+      var take = Math.Min(t.Length, keyLength - offset);
+      t.AsSpan(0, take).CopyTo(result.AsSpan(offset));
+      offset += take;
+    }
+    return result;
+  }
+
+  /// <summary>
   /// Derives a key using the 7z AES key derivation (SHA-256 iterated).
   /// 7z uses: key = SHA256^(2^numCyclesPower)(salt + password_utf16le)
   /// </summary>

@@ -27447,16 +27447,16 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 #### `PeaArchive`
 
-PEA (PeaZip's own format, version 1 revision 6): a 10-byte archive header, one stream with a 10-byte header naming the compression (stored or zlib at level 3/6/9 in independent 1 MiB blocks) and three integrity checks — per object, for the stream and for the volume — then objects (name, time, attributes, size, data) and an end-of-archive trigger. A volume set is that byte stream cut into `name.000001.pea`, `name.000002.pea`, …, each volume ending with the volume check over its own bytes. This covers single archives and volume sets with any of the hash or checksum controls; encrypted streams (EAX, HMAC, Twofish, Serpent and their cascades) are refused.
+PEA (PeaZip's own format, version 1 revision 6): a 10-byte archive header, one stream with a 10-byte header naming the compression (stored or zlib at level 3/6/9 in independent 1 MiB blocks) and three integrity checks — per object, for the stream and for the volume — then objects (name, time, attributes, size, data) and an end-of-archive trigger. A volume set is that byte stream cut into `name.000001.pea`, `name.000002.pea`, …, each volume ending with the volume check over its own bytes. This covers single archives and volume sets with any of the hash or checksum controls, and streams encrypted with one cipher (AES, Twofish or Serpent in EAX mode, 128- or 256-bit, or AES-128 with HMAC), which encrypt everything after a 16-byte salt-and-verifier subheader and end the stream with a 16-byte tag; the triple cascades are refused.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ReadVolumes` | `static List<PeaEntry> ReadVolumes(IEnumerable<byte[]> volumes)` | Reads and verifies a PEA archive from its volumes in order. Each volume ends with its own volume check over that volume's bytes; the archive is the volumes' contents, checks removed, joined. |
-| `Read` | `static List<PeaEntry> Read(Stream stream)` | Reads and verifies a PEA archive. A file stream named like a volume (`name.000001.pea`) is read together with the volumes beside it, starting from volume 1. |
+| `ReadVolumes` | `static List<PeaEntry> ReadVolumes(IEnumerable<byte[]> volumes, string password = null)` | Reads and verifies a PEA archive from its volumes in order. Each volume ends with its own volume check over that volume's bytes; the archive is the volumes' contents, checks removed, joined. |
+| `Read` | `static List<PeaEntry> Read(Stream stream, string password = null)` | Reads and verifies a PEA archive. A file stream named like a volume (`name.000001.pea`) is read together with the volumes beside it, starting from volume 1. |
 | `VolumePath` | `static string VolumePath(string baseName, int number)` | The file name of volume `number` (1-based) of the set named `baseName`: `base.000001.pea`, `base.000002.pea`, … (at least six digits). |
 | `VolumePaths` | `static List<string> VolumePaths(string path)` | Every volume of the set `path` belongs to, in order from volume 1 while the next file exists; just `path` when it is not named like a volume. |
 | `VolumeSetBase` | `static string VolumeSetBase(string path)` | The set name of a volume path (`dir/base.000003.pea` gives `dir/base`), or null when `path` is not named like a volume. |
-| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, int compression = 2, Check objectCheck = 2, Check streamCheck = 19, Check volumeCheck = 2, long volumeSize = 0, Func<int, Stream> openVolume = null)` | Writes a PEA 1.6 archive the way PeaZip does on Unix: names are stored as absolute paths under `/`, times as Unix seconds, zlib blocks of 1 MiB (a block that does not shrink is stored), with the given object, stream and volume checks. |
+| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, int compression = 2, Check objectCheck = 2, Check streamCheck = 19, Check volumeCheck = 2, long volumeSize = 0, Func<int, Stream> openVolume = null, string password = null)` | Writes a PEA 1.6 archive the way PeaZip does on Unix: names are stored as absolute paths under `/`, times as Unix seconds, zlib blocks of 1 MiB (a block that does not shrink is stored), with the given object, stream and volume checks. |
 
 #### `PeaArchive.Check`
 
@@ -27478,6 +27478,13 @@ A check algorithm by its PEA id.
 | `Sha3_512` | `23` | SHA3-512. |
 | `Blake2s` | `24` | BLAKE2s-256. |
 | `Blake2b` | `25` | BLAKE2b-512. |
+| `AesHmac` | `48` | Stream only: AES-128 CTR with HMAC-SHA-1, keys by PBKDF2-HMAC-SHA-1 (pea's HMAC). |
+| `AesEax` | `49` | Stream only: AES-128 EAX, keys by PBKDF2-HMAC-SHA-1 (pea's EAX). |
+| `TwofishEax` | `50` | Stream only: Twofish-128 EAX, keys by PBKDF2-HMAC-SHA-1 (pea's TF). |
+| `SerpentEax` | `51` | Stream only: Serpent-128 EAX, keys by PBKDF2-HMAC-SHA-1 (pea's SP). |
+| `Aes256Eax` | `65` | Stream only: AES-256 EAX, keys by PBKDF2-HMAC-Whirlpool (pea's EAX256, PeaZip's default). |
+| `Twofish256Eax` | `66` | Stream only: Twofish-256 EAX, keys by PBKDF2-HMAC-Whirlpool (pea's TF256). |
+| `Serpent256Eax` | `67` | Stream only: Serpent-256 EAX, keys by PBKDF2-HMAC-Whirlpool (pea's SP256). |
 
 #### `PeaArchive.Input`
 
@@ -27502,6 +27509,7 @@ One object of a PEA archive.
 | `Attributes` | `uint Attributes { get; init; }` | Gets the file attributes as stored. |
 | `Data` | `byte[] Data { get; init; }` | Gets the decoded content (empty for directories). |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Gets whether the object is a directory. |
+| `IsEncrypted` | `bool IsEncrypted { get; init; }` | Gets whether the archive's stream is encrypted. |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Gets the modification time, when the archive's time encoding is known. |
 | `Path` | `string Path { get; init; }` | Gets the path relative to the archive's common root, '/'-separated. |
 | `Size` | `long Size { get; init; }` | Gets the uncompressed size. |
