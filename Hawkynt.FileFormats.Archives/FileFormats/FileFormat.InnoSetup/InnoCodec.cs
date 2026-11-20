@@ -16,8 +16,9 @@ internal static class InnoCodec {
   /// <summary>
   /// Reads one setup-0 block at the stream's position: a CRC'd header, then the payload split
   /// into 4096-byte CRC'd sub-blocks, compressed as a whole. Leaves the stream after the block.
+  /// <paramref name="decrypt"/> (Encryption=full) decrypts each sub-block once its CRC checks.
   /// </summary>
-  public static byte[] ReadHeaderBlock(Stream stream, InnoVersion version) {
+  public static byte[] ReadHeaderBlock(Stream stream, InnoVersion version, Action<Span<byte>>? decrypt = null) {
     Span<byte> h = stackalloc byte[9];
     stream.ReadExactly(h[..4]);
     var expectedCrc = BinaryPrimitives.ReadUInt32LittleEndian(h);
@@ -61,6 +62,7 @@ internal static class InnoCodec {
       var chunk = raw.AsSpan(p + 4, len);
       if (Crc32.Compute(chunk) != crc)
         throw new InvalidDataException("Inno Setup sub-block CRC mismatch.");
+      decrypt?.Invoke(chunk);
       payload.Write(chunk);
       p += 4 + len;
     }
