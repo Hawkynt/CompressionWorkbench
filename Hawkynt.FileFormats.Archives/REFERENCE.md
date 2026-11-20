@@ -15550,7 +15550,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 ### Namespace `FileFormat.Egg`
 
-[`EggCompressionMethod`](#eggcompressionmethod) · [`EggEntry`](#eggentry) · [`EggFormatDescriptor`](#eggformatdescriptor) · [`EggReader`](#eggreader) · [`EggVolumes`](#eggvolumes) · [`EggWriter`](#eggwriter)
+[`EggCompressionMethod`](#eggcompressionmethod) · [`EggEncryptionMethod`](#eggencryptionmethod) · [`EggEntry`](#eggentry) · [`EggFormatDescriptor`](#eggformatdescriptor) · [`EggReader`](#eggreader) · [`EggVolumes`](#eggvolumes) · [`EggWriter`](#eggwriter)
 
 #### `EggCompressionMethod`
 
@@ -15561,6 +15561,20 @@ Compression methods that the native EGG writer can emit.
 | `Auto` | `-1` | Try raw DEFLATE and keep it only when it beats Store. |
 | `Store` | `0` | Store payload bytes verbatim. |
 | `Deflate` | `1` | Compress with raw RFC 1951 DEFLATE. |
+| `Bzip2` | `2` | Compress with bzip2 (a complete .bz2 stream), as ALZip's "-m4" does. |
+| `Lzma` | `4` | Compress with LZMA behind EGG's 9-byte header, as ALZip's "-m3" does. |
+
+#### `EggEncryptionMethod`
+
+Member encryption the EGG writer can apply.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Zip20` | `0` | ZIP 2.0 ("standard") encryption. |
+| `Aes128` | `1` | AES-128, WinZip-style key derivation, CTR and HMAC-SHA1. |
+| `Aes256` | `2` | AES-256, WinZip-style key derivation, CTR and HMAC-SHA1. |
+| `Lea128` | `5` | LEA-128 in CTR mode with the same key derivation. |
+| `Lea256` | `6` | LEA-256 in CTR mode with the same key derivation. |
 
 #### `EggEntry`
 
@@ -15580,7 +15594,7 @@ A file entry parsed from an EGG (ALZip) archive.
 
 #### `EggFormatDescriptor`
 
-EGG (ALZip) archive — ESTsoft's native container for newer ALZip versions, with Unicode filenames, per-file algorithm selection, solid/split modes, and optional encryption. The native implementation reads Store/Deflate and creates non-solid, single-volume Store/Deflate archives; unsupported methods are listed honestly and rejected on extraction rather than returning incorrect data. References: `https://github.com/alkegi/docs/blob/master/egg.md` — CC0 EGG Archive Format Specification`http://justsolve.archiveteam.org/wiki/EGG_(ALZip)` — ArchiveTeam format summary and historical references`EGG Format Specification, Version 1.0` (ESTsoft Corp.) — original published layout
+EGG (ALZip) archive — ESTsoft's native container for newer ALZip versions, with Unicode filenames, per-file algorithm selection, solid/split modes, and optional encryption. The native implementation reads every method, cipher, solid and split archive, and creates non-solid store/deflate/bzip2/LZMA archives, optionally encrypted and split, which ALZip 12.38 extracts; AZO and solid are read only. References: `https://github.com/alkegi/docs/blob/master/egg.md` — CC0 EGG Archive Format Specification`http://justsolve.archiveteam.org/wiki/EGG_(ALZip)` — ArchiveTeam format summary and historical references`EGG Format Specification, Version 1.0` (ESTsoft Corp.) — original published layout
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
@@ -15600,7 +15614,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a single-volume, non-solid EGG archive using Store/Deflate. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a non-solid EGG archive (store, deflate, bzip2 or LZMA; optionally encrypted; split with VolumeSize). |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -15636,13 +15650,13 @@ EGG split sets: `name.vol1.egg`, `name.vol2.egg`, …. Each volume has its own E
 
 #### `EggWriter`
 
-Creates EGG 1.0 archives using the published tagged-record layout. The writer deliberately limits itself to the two methods that the native reader can also decode: Store and raw DEFLATE. AZO, Bzip2, LZMA, encryption, solid mode, and split volumes are not advertised or synthesized.
+Creates EGG 1.0 archives using the published tagged-record layout. Writes stored, deflate, bzip2 and LZMA blocks, optionally encrypted (ZIP 2.0, AES or LEA); split sets come from `Split`. AZO and solid mode are not written.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EggWriter` | `EggWriter(Stream stream, bool leaveOpen = false, uint headerId = 1)` | Creates a writer over a writable stream. |
+| `EggWriter` | `EggWriter(Stream stream, bool leaveOpen = false, uint headerId = 1, string password = null, EggEncryptionMethod encryption = 2)` | Creates a writer over a writable stream. |
 | `AddDirectory` | `void AddDirectory(string path, DateTime? lastModifiedUtc = null)` | Adds an explicit directory entry. Parent directories are inferred for conflict checking. |
 | `AddEntry` | `void AddEntry(string path, byte[] data, EggCompressionMethod method = -1, DeflateCompressionLevel level = 6, DateTime? lastModifiedUtc = null)` | Adds a regular file. |
 | `Dispose` | `void Dispose()` |  |

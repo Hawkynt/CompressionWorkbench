@@ -65,6 +65,23 @@ public sealed class AlZipEggSplitWriteTests {
     Assert.That(r.Extract(r.Entries.Single(e => e.Name == "b/c.bin")), Is.EqualTo(Data(2, 30000)));
   }
 
+  [TestCase(EggCompressionMethod.Bzip2, EggEncryptionMethod.Zip20)]
+  [TestCase(EggCompressionMethod.Lzma, EggEncryptionMethod.Aes128)]
+  [TestCase(EggCompressionMethod.Deflate, EggEncryptionMethod.Aes256)]
+  [TestCase(EggCompressionMethod.Store, EggEncryptionMethod.Lea128)]
+  [TestCase(EggCompressionMethod.Lzma, EggEncryptionMethod.Lea256)]
+  public void GivenAnEncryptedEgg_WhenRead_ThenItNeedsThePasswordAndReadsBack(EggCompressionMethod method, EggEncryptionMethod cipher) {
+    var text = System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("compressible text, ", 2000)));
+    using var ms = new MemoryStream();
+    using (var w = new EggWriter(ms, leaveOpen: true, password: "pw", encryption: cipher))
+      w.AddEntry("t.txt", text, method);
+    using var r = new EggReader(new MemoryStream(ms.ToArray()));
+    var e = r.Entries.Single();
+    Assert.That(e.IsEncrypted, Is.True);
+    Assert.That(r.Extract(e, "pw"), Is.EqualTo(text));
+    Assert.That(() => r.Extract(e, "wrong"), Throws.InstanceOf<InvalidDataException>());
+  }
+
   [Test]
   public void GivenAnEggThatFitsOneVolume_WhenSplit_ThenItStaysOne() {
     var archive = Egg();

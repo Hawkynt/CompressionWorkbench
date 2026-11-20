@@ -12,18 +12,37 @@ public enum EggCompressionMethod {
   Store = 0,
   /// <summary>Compress with raw RFC 1951 DEFLATE.</summary>
   Deflate = 1,
+  /// <summary>Compress with bzip2 (a complete .bz2 stream), as ALZip's "-m4" does.</summary>
+  Bzip2 = 2,
+  /// <summary>Compress with LZMA behind EGG's 9-byte header, as ALZip's "-m3" does.</summary>
+  Lzma = 4,
+}
+
+/// <summary>Member encryption the EGG writer can apply.</summary>
+public enum EggEncryptionMethod {
+  /// <summary>ZIP 2.0 ("standard") encryption.</summary>
+  Zip20 = 0,
+  /// <summary>AES-128, WinZip-style key derivation, CTR and HMAC-SHA1.</summary>
+  Aes128 = 1,
+  /// <summary>AES-256, WinZip-style key derivation, CTR and HMAC-SHA1.</summary>
+  Aes256 = 2,
+  /// <summary>LEA-128 in CTR mode with the same key derivation.</summary>
+  Lea128 = 5,
+  /// <summary>LEA-256 in CTR mode with the same key derivation.</summary>
+  Lea256 = 6,
 }
 
 /// <summary>
 /// Creates EGG 1.0 archives using the published tagged-record layout.
-/// The writer deliberately limits itself to the two methods that the native reader
-/// can also decode: Store and raw DEFLATE. AZO, Bzip2, LZMA, encryption, solid mode,
-/// and split volumes are not advertised or synthesized.
+/// Writes stored, deflate, bzip2 and LZMA blocks, optionally encrypted (ZIP 2.0, AES or LEA);
+/// split sets come from <see cref="EggVolumes.Split"/>. AZO and solid mode are not written.
 /// </summary>
 public sealed class EggWriter : IDisposable {
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
   private readonly uint _headerId;
+  private readonly string? _password;
+  private readonly EggEncryptionMethod _encryption;
   private readonly List<PendingEntry> _entries = [];
   private readonly HashSet<string> _filePaths = new(StringComparer.Ordinal);
   private readonly HashSet<string> _directoryPaths = new(StringComparer.Ordinal);
@@ -35,7 +54,12 @@ public sealed class EggWriter : IDisposable {
   /// <param name="stream">Destination stream.</param>
   /// <param name="leaveOpen">Whether disposing the writer leaves the destination open.</param>
   /// <param name="headerId">Non-zero archive/volume identifier. A deterministic value is useful for reproducible builds.</param>
-  public EggWriter(Stream stream, bool leaveOpen = false, uint headerId = 1) {
+  /// <param name="password">Encrypts every member's data when set.</param>
+  /// <param name="encryption">The cipher used with <paramref name="password"/>.</param>
+  public EggWriter(Stream stream, bool leaveOpen = false, uint headerId = 1, string? password = null,
+      EggEncryptionMethod encryption = EggEncryptionMethod.Aes256) {
+    this._password = string.IsNullOrEmpty(password) ? null : password;
+    this._encryption = encryption;
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanWrite)
       throw new ArgumentException("Stream must be writable.", nameof(stream));
@@ -101,12 +125,20 @@ public sealed class EggWriter : IDisposable {
       WriteFilename(writer, entry.Path);
       if (entry.IsDirectory || entry.LastModifiedUtc.HasValue)
         WriteWindowsInfo(writer, entry.LastModifiedUtc, entry.IsDirectory);
-      writer.Write(EggReader.EndMarker); // end of file sub-headers
 
       // ALZip writes no block for a directory or an empty file, and readers (EggDotNet among them)
       // only look for blocks when the file header announces a non-zero size.
-      if (!entry.IsDirectory && entry.Data.Length > 0)
-        WriteBlock(writer, entry.Data, entry.Method, entry.Level);
+      var hasBlock = !entry.IsDirectory && entry.Data.Length > 0;
+      var (method, packed) = hasBlock ? Pack(entry.Data, entry.Method, entry.Level) : (EggCompressionMethod.Store, []);
+      var crc = Crc32.Compute(entry.Data);
+      if (hasBlock && this._password != null) {
+        var (field, cipher) = EggEncryption.Encrypt((byte)this._encryption, packed, this._password, crc);
+        WriteExtraField(writer, EggReader.EncryptMagic, 0, field);
+        packed = cipher;
+      }
+      writer.Write(EggReader.EndMarker); // end of file sub-headers
+      if (hasBlock)
+        WriteBlock(writer, entry.Data.Length, method, packed, crc);
     }
 
     writer.Write(EggReader.EndMarker); // end of archive
@@ -153,36 +185,39 @@ public sealed class EggWriter : IDisposable {
     WriteExtraField(writer, EggReader.WindowsInfoMagic, 0, data);
   }
 
-  private static void WriteBlock(
-      BinaryWriter writer,
-      byte[] plain,
-      EggCompressionMethod requested,
-      DeflateCompressionLevel level) {
-    var actual = requested;
-    byte[] packed;
-
-    if (requested == EggCompressionMethod.Store) {
-      packed = plain;
-    } else {
-      var deflated = DeflateCompressor.Compress(plain, level);
-      if (requested == EggCompressionMethod.Deflate || deflated.Length < plain.Length) {
-        actual = EggCompressionMethod.Deflate;
-        packed = deflated;
-      } else {
-        actual = EggCompressionMethod.Store;
-        packed = plain;
+  /// <summary>Compresses one member; Auto keeps deflate only when it beats storing.</summary>
+  private static (EggCompressionMethod Method, byte[] Packed) Pack(byte[] plain, EggCompressionMethod requested, DeflateCompressionLevel level) {
+    switch (requested) {
+      case EggCompressionMethod.Store:
+        return (requested, plain);
+      case EggCompressionMethod.Bzip2: {
+        using var ms = new MemoryStream();
+        using (var bz = new FileFormat.Bzip2.Bzip2Stream(ms, Compression.Core.Streams.CompressionStreamMode.Compress, leaveOpen: true))
+          bz.Write(plain);
+        return (requested, ms.ToArray());
+      }
+      case EggCompressionMethod.Lzma: {
+        var encoder = new Compression.Core.Dictionary.Lzma.LzmaEncoder();
+        using var ms = new MemoryStream();
+        ms.Write([0x04, 0x41, 0x05, 0x00]); // version and property size, as ALZip writes them
+        ms.Write(encoder.Properties);
+        encoder.Encode(ms, plain, writeEndMarker: false);
+        return (requested, ms.ToArray());
       }
     }
+    var deflated = DeflateCompressor.Compress(plain, level);
+    return requested == EggCompressionMethod.Deflate || deflated.Length < plain.Length
+      ? (EggCompressionMethod.Deflate, deflated)
+      : (EggCompressionMethod.Store, plain);
+  }
 
-    var crc = new Crc32();
-    crc.Update(plain);
-
+  private static void WriteBlock(BinaryWriter writer, int plainLength, EggCompressionMethod method, byte[] packed, uint crc) {
     writer.Write(EggReader.BlockHeaderMagic);
-    writer.Write((byte)actual);
+    writer.Write((byte)method);
     writer.Write((byte)0); // compression hint is reserved/unused
-    writer.Write(checked((uint)plain.Length));
+    writer.Write(checked((uint)plainLength));
     writer.Write(checked((uint)packed.Length));
-    writer.Write(crc.Value);
+    writer.Write(crc);
     writer.Write(EggReader.EndMarker); // end of block sub-headers
     writer.Write(packed);
   }
@@ -239,8 +274,9 @@ public sealed class EggWriter : IDisposable {
   }
 
   private static void ValidateMethod(EggCompressionMethod method) {
-    if (method is not EggCompressionMethod.Auto and not EggCompressionMethod.Store and not EggCompressionMethod.Deflate)
-      throw new ArgumentOutOfRangeException(nameof(method), method, "Native EGG creation supports Auto, Store, and Deflate.");
+    if (method is not (EggCompressionMethod.Auto or EggCompressionMethod.Store or EggCompressionMethod.Deflate
+        or EggCompressionMethod.Bzip2 or EggCompressionMethod.Lzma))
+      throw new ArgumentOutOfRangeException(nameof(method), method, "Native EGG creation supports Auto, Store, Deflate, Bzip2 and LZMA.");
   }
 
   private void EnsureNotFinished() {
