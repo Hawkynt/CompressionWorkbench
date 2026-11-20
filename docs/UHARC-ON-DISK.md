@@ -366,7 +366,12 @@ pass `Order4Threshold`/`Order2Threshold` for their escape count.
 neighbours) and follows the most frequent below 256; two marker counters detect interleaved
 16-bit text, which then uses alternate bytes as context; binary streams remember for each byte
 whether it occurred in the last 64 window positions (text streams do not, and the single-symbol
-order-2 decision never asks).
+order-2 decision never asks). Four context slots remember the byte that last followed them,
+keyed by byte pairs of the history (*hₖ* the *k*-th last byte): `h4·256 + h8`,
+`0x10000 + h3·256 + h2`, `0x20000 + h3·256 + h1` and `0x30000 + h1·256 + h5`. Before each
+literal the bytes the current slots remember are marked, and a marked byte sets a flag in the
+probability cells. The history starts as zero bytes and the slots are keyed on it from the first
+byte on, so a byte that followed the empty history is marked again when its key recurs.
 
 **Text transform.** In a text stream the output of every symbol below *L* is `~symbol`, except
 that complemented values from 0x80 stand for strings (`TransformString*`), a capital-letter
@@ -384,7 +389,8 @@ when either the stored value or the swapped one is a target within the file; und
 then proceed as for the other methods.
 
 Fixtures `basic-mx` (text, switching to binary after 15 bytes), `reset-mx` and `reset-mx1`
-(reset points; a 1 KiB window wrapping hundreds of times), `exe-mx` and `mm-mx` pin the stream;
+(reset points; a 1 KiB window wrapping hundreds of times), `exe-mx`, `mm-mx` and `slots-mx-a`/`-b`
+(the context slots at the start of a binary stream) pin the stream;
 all archives packed here — 17 MB of text, 13 MB of DLLs, fonts and media, the source and
 documentation of this repository, mixed text and binary sets, dictionaries from 1 KiB to 16 MiB
 — decode exactly, and so does the real-world sample `D3X.UHA` (45 files).
@@ -394,7 +400,10 @@ documentation of this repository, mixed text and binary sets, dictionaries from 
   17 MB text packed as binary at 38 450 (order-4) and a DLL set at 536 014 (order-2); the
   thresholds 5 and 7, 11 and 13 break other corpora;
 - the recency flag in the single-symbol order-2 decision of a text stream: breaks a 1 KiB
-  window text archive at 3 931, where the window position returns to 0.
+  window text archive at 3 931, where the window position returns to 0;
+- context slots that are first keyed after the first byte: the first byte is then remembered
+  under key 0 of all four slots, and the six bytes `03 02 FF 03 FF 45` (fixture `slots-mx-a`)
+  break at byte 5; a 1 MB record file broke at 413 523 the same way.
 
 ## ALZ (methods 40..87)
 

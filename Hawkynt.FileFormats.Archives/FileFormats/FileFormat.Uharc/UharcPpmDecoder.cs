@@ -89,6 +89,8 @@ internal sealed partial class UharcPpmDecoder {
 
     this.InitializeContexts();
     this.InitializeRanks();
+    // The context slots are keyed on the empty history before the first byte, not after it.
+    this.ComputeRecentSlots();
   }
 
   /// <summary>Decodes <paramref name="unpackedSize"/> bytes of a PPM stream.</summary>
