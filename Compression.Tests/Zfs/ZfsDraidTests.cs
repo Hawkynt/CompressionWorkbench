@@ -27,6 +27,42 @@ public sealed class ZfsDraidTests {
     Assert.That(rows.Sum(r => r.Where(c => c.IsData).Sum(c => c.Size)), Is.EqualTo(4096));
   }
 
+  private static XdrNvList SpareSlot(string? resilverOn, string key = "resilver_txg") {
+    XdrNvListWriter.NvList Part(string type, string name) {
+      var l = new XdrNvListWriter.NvList().Add("type", type).Add("guid", 7UL);
+      if (type == "file") l.Add("faulted", 1UL);
+      if (resilverOn == name) l.Add(key, 42UL);
+      return l;
+    }
+    var spare = new XdrNvListWriter.NvList().Add("type", "spare");
+    if (resilverOn == "spare") spare.Add(key, 42UL);
+    spare.Add("children", new[] { Part("file", "original"), Part("dspare", "dspare") });
+    return XdrNvList.Decode(XdrNvListWriter.Pack(spare));
+  }
+
+  [Test]
+  public void Given_ARebuiltDistributedSpare_When_TheEditorTakesItsSlot_Then_ItNamesTheOriginalAndTheSpare() {
+    var (original, spare) = ZfsPoolEditor.DraidSpareSlot(SpareSlot(null), 2);
+    Assert.That(original.String("type"), Is.EqualTo("file"));
+    Assert.That(spare.String("type"), Is.EqualTo("dspare"));
+  }
+
+  [TestCase("dspare", "resilver_txg"), TestCase("dspare", "rebuild_txg"), TestCase("original", "resilver_txg"), TestCase("spare", "rebuild_txg")]
+  public void Given_ADistributedSpareStillBeingRebuilt_When_TheEditorTakesItsSlot_Then_ItIsRefused(string on, string key) {
+    var e = Assert.Throws<NotSupportedException>(() => ZfsPoolEditor.DraidSpareSlot(SpareSlot(on, key), 2));
+    Assert.That(e!.Message, Does.Contain("still being rebuilt"));
+  }
+
+  [Test]
+  public void Given_ADraidChildThatIsNeitherADeviceNorARebuiltSpare_When_TheEditorTakesItsSlot_Then_ItIsRefused() {
+    var replacing = XdrNvList.Decode(XdrNvListWriter.Pack(new XdrNvListWriter.NvList().Add("type", "replacing")
+      .Add("children", new[] { new XdrNvListWriter.NvList().Add("type", "file"), new XdrNvListWriter.NvList().Add("type", "file") })));
+    Assert.Throws<NotSupportedException>(() => ZfsPoolEditor.DraidSpareSlot(replacing, 1));
+    var lone = XdrNvList.Decode(XdrNvListWriter.Pack(new XdrNvListWriter.NvList().Add("type", "spare")
+      .Add("children", new[] { new XdrNvListWriter.NvList().Add("type", "dspare") })));
+    Assert.Throws<NotSupportedException>(() => ZfsPoolEditor.DraidSpareSlot(lone, 1));
+  }
+
   public static IEnumerable<TestCaseData> Layouts() {
     yield return new TestCaseData("draid1:2d:1s:5c", 5).SetName("Given_ADraid1PoolTheKernelWrote_When_Read_Then_EveryFileMatches");
     yield return new TestCaseData("draid2:3d:0s:6c", 6).SetName("Given_ADraid2PoolTheKernelWrote_When_Read_Then_EveryFileMatches");
