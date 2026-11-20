@@ -525,8 +525,14 @@ RLE (method 1), with LZ78 (method 7, 32768 phrases), or with LZP, PPM or ALZ:2 a
 window that holds it (methods 8..23, 24..39 and 56..71, 1 KiB to 32 MiB), the three tables
 — the name table lists the root as an empty name and every directory with a trailing `\` —
 packed with LZP method 17 and enciphered with the default password, the header scrambled with
-the low byte of its own check. The filters byte is 0: no executable or multimedia filter runs,
-so none is undone.
+the low byte of its own check. The filters byte holds what the writer applied, file by file
+before packing: bit 7 when any file is a fax page, which is then stored as bands in every mode
+(store included), and bit 1 in the LZP and LZ78 modes when a file is a BMP, WAV or VOC the
+multimedia filter recognises, which is then delta-coded (the restore run forward: each byte
+less the byte one stride back, negated while its phase's sign is flipped). The executable
+filter is not applied. The 0.4 and 0.3 writers apply the same two filters the same way;
+`UHARC.EXE`, `UHARC04.EXE` and `uharc_u.exe` extract such archives of the fixture sets and the
+39 MB mixed set byte for byte in every mode.
 
 The PPM encoder is the decoder's model too, made generic over the coder direction like ALZ's
 (decoding the 39 MB set below takes as long as before: best 19.6 s against 20.0 s). Every
@@ -988,7 +994,7 @@ The writer produces 0.4 archives (format option `version` 4) in store, RLE, LZW,
 header above with its own check, the stream, the stored CRC table, the name table as 0.4 LZP
 method 17, the dates-then-times table as LZW method 2 and the size table as LZW method 7, each
 table enciphered with the default password or, with a password, all of them and the stream with
-it (flags `0x02`). The filters byte is 0. The LZW encoder codes the longest phrase the decoder
+it (flags `0x02`). The filters byte is 0.6's (see Writing). The LZW encoder codes the longest phrase the decoder
 knows and restarts a full dictionary with code 256 followed by a plain byte: coding on past a
 full dictionary, which our decoder follows, crashes `UHARC04.EXE` (a 513 216-byte fax page with
 long zero runs fills the 32768-code dictionary). The 0.4 LZP encoder is the decoder's model
@@ -1241,8 +1247,8 @@ window, and unuharc_recon's unpacker accepts them.
 
 ## What is not derived
 
-- **Writing** 0.6's executable and multimedia filters, the multimedia ALZ/PPM classes and text
-  PPM streams (likewise for 0.4/0.3 PPM).
+- **Writing** the executable filter, the multimedia ALZ/PPM classes and text PPM streams (in
+  0.6, 0.4 and 0.3 alike).
 
 ## Sources
 

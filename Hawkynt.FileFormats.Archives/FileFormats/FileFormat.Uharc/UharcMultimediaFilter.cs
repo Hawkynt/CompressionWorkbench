@@ -25,23 +25,8 @@ internal static class UharcMultimediaFilter {
   ];
 
   public static void Restore(Span<byte> data) {
-    if (data.Length < 1024)
-      return;
-
-    int stride;
-    if (Matches(data, Bitmap))
-      stride = 3;
-    else if (Matches(data, Wave)) {
-      stride = data[22];
-      if (stride is not (1 or 2))
-        return;
-      if (data[34] == 16)
-        stride *= 2;
-      else if (data[34] != 8)
-        return;
-    } else if (Matches(data, Voice))
-      stride = 1;
-    else
+    var stride = StrideOf(data);
+    if (stride == 0)
       return;
 
     Span<bool> negate = stackalloc bool[4];
@@ -57,6 +42,50 @@ internal static class UharcMultimediaFilter {
       data[i] = (byte)(delta + (history >> shift));
       history = (history << 8) | data[i];
     }
+  }
+
+  /// <summary>
+  /// The writer's inverse of <see cref="Restore"/>: delta-codes a recognised file in place.
+  /// Returns whether the file was recognised (and so changed).
+  /// </summary>
+  public static bool Apply(Span<byte> data) {
+    var stride = StrideOf(data);
+    if (stride == 0)
+      return false;
+
+    Span<bool> negate = stackalloc bool[4];
+    negate.Clear();
+    var shift = stride * 8 - 8;
+    var history = 0u;
+    for (var i = HeaderLength; i < data.Length; ++i) {
+      var phase = i % stride;
+      var original = data[i];
+      var delta = (byte)(original - (history >> shift));
+      var raw = negate[phase] ? (byte)-delta : delta;
+      if (raw >= 0x80)
+        negate[phase] = !negate[phase];
+      data[i] = raw;
+      history = (history << 8) | original;
+    }
+
+    return true;
+  }
+
+  /// <summary>The delta stride of a recognised BMP, WAV or VOC file; 0 for any other.</summary>
+  private static int StrideOf(ReadOnlySpan<byte> data) {
+    if (data.Length < 1024)
+      return 0;
+    if (Matches(data, Bitmap))
+      return 3;
+    if (Matches(data, Voice))
+      return 1;
+    if (!Matches(data, Wave) || data[22] is not (1 or 2))
+      return 0;
+    return data[34] switch {
+      16 => data[22] * 2,
+      8 => data[22],
+      _ => 0,
+    };
   }
 
   private static bool Matches(ReadOnlySpan<byte> data, int[] template) {

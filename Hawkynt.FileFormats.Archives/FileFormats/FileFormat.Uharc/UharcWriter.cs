@@ -110,14 +110,26 @@ internal static class UharcWriter {
     if (n >= 1 << 24)
       throw new NotSupportedException("UHARC: too many files.");
 
+    // 0.3/0.4/0.6 filters: a fax page is stored as bands whenever one is present (in every mode),
+    // and LZP/LZ78 delta-code recognised BMP/WAV/VOC files; the reader undoes both per file.
+    byte filters = 0;
+    if (version != 2 && files.Any(f => f.Data.Length == UharcFaxFilter.PageSize))
+      filters |= UharcHeader.FaxFilter;
+    var multimedia = version != 2 && mode is Mode.Lzp or Mode.Lz78;
+
     var stream = new byte[total];
     var fileEnds = new List<long>(n);
     long offset = 0;
     foreach (var f in files) {
       f.Data.CopyTo(stream, offset);
+      var slice = stream.AsSpan((int)offset, f.Data.Length);
       // UHARC 0.2 undoes its executable filter on every packed MZ file, so it is applied here.
       if (version == 2 && mode != Mode.Store)
-        UharcExecutableFilter.ApplyLegacy(stream.AsSpan((int)offset, f.Data.Length));
+        UharcExecutableFilter.ApplyLegacy(slice);
+      else if ((filters & UharcHeader.FaxFilter) != 0 && slice.Length == UharcFaxFilter.PageSize)
+        UharcFaxFilter.Apply(slice);
+      else if (multimedia && UharcMultimediaFilter.Apply(slice))
+        filters |= UharcHeader.MultimediaFilter;
       offset += f.Data.LongLength;
       fileEnds.Add(offset);
     }
@@ -209,7 +221,7 @@ internal static class UharcWriter {
     }
 
     if (version != 6) {
-      WriteVersion4(output, version, now, key, method, directories.Count, total, packed, crcs, nameTable, fileTable, n);
+      WriteVersion4(output, version, now, key, filters, method, directories.Count, total, packed, crcs, nameTable, fileTable, n);
       return;
     }
 
@@ -232,6 +244,7 @@ internal static class UharcWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(6), archiveDate);
     if (key != null)
       header[8] = (byte)(UharcHeader.TablesUsePassword | UharcHeader.StreamUsesPassword);
+    header[9] = filters;
     header[10] = (byte)method;
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(11), (ushort)directories.Count);
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(13), (uint)total);
@@ -365,7 +378,7 @@ internal static class UharcWriter {
   /// version's LZP method 17, the dates-then-times table as LZW method 2 and the size table
   /// (directory planes, size-delta planes, attributes) as LZW method 7.
   /// </summary>
-  private static void WriteVersion4(Stream output, int version, DateTime now, byte[]? key, int method, int directoryCount, long total, byte[] packed,
+  private static void WriteVersion4(Stream output, int version, DateTime now, byte[]? key, byte filters, int method, int directoryCount, long total, byte[] packed,
     byte[] crcs, byte[] nameTable, byte[] fileTable, int n) {
     // The 0.6 file table holds the same planes: dates, times, directory, size delta, attribute.
     var dates = fileTable.AsSpan(0, 4 * n).ToArray();
@@ -392,6 +405,7 @@ internal static class UharcWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(6), archiveDate);
     if (key != null)
       header[8] = Uharc04Header.UsesPassword;
+    header[9] = filters;
     header[10] = (byte)method;
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(11), (ushort)directoryCount);
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(13), (uint)total);
