@@ -8802,13 +8802,13 @@ ALZip split sets: `name.alz`, `name.a00`, `name.a01`, …. Every volume starts w
 
 #### `AlZipWriter`
 
-Writes single-volume ALZip archives as ALZip 8 lays them out: the "ALZ\x01" header with version 0x0A, one "BLZ\x01" local header per member (stored or deflated, size fields as narrow as the sizes allow, CP949 names, optional ZipCrypto), then the "CLZ\x01" and "CLZ\x02" end records.
+Writes single-volume ALZip archives as ALZip 8 lays them out: the "ALZ\x01" header with version 0x0A, one "BLZ\x01" local header per member (stored, deflated or ALZ-bzip2'd, size fields as narrow as the sizes allow, CP949 names, optional ZipCrypto), then the "CLZ\x01" and "CLZ\x02" end records.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AlZipWriter` | `AlZipWriter(Stream stream, bool leaveOpen = false, string password = null, bool store = false)` |  |
+| `AlZipWriter` | `AlZipWriter(Stream stream, bool leaveOpen = false, string password = null, bool store = false, bool bzip2 = false)` |  |
 | `AddDirectory` | `void AddDirectory(string dirName, DateTime? modified = null)` |  |
 | `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? modified = null)` |  |
 | `Dispose` | `void Dispose()` |  |

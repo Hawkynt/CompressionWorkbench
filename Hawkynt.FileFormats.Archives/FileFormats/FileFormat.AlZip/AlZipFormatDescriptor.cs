@@ -37,7 +37,7 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<string> Extensions => [".alz"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [new("ALZ\x01"u8.ToArray(), Confidence: 0.95)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate"), new("store", "Store")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate"), new("store", "Store"), new("bzip2", "ALZ bzip2")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description => "Korean ALZip archive (stored, deflate and ALZ-bzip2 members; ZipCrypto)";
@@ -83,6 +83,11 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var volumeSize = ParseVolumeSize(options.GetString(FormatOptionKeys.VolumeSize));
     if (volumeSize > 0) {
+      // ALZip writes no ALZ bzip2 itself (its -m1 and -m2 both give deflate), and its console
+      // (12.38) cut short the member that followed an ALZ bzip2 member across a volume boundary,
+      // so such a set is not known to be readable by ALZip.
+      if (options.MethodName == "bzip2")
+        throw new NotSupportedException("ALZip cannot read ALZ bzip2 members in split sets; write bzip2 single-volume or split with deflate.");
       var path = OutputFilePath(output) ?? throw new ArgumentException("An ALZip split set must be written to a file, so its other volumes can go beside it.");
       if (!Path.GetExtension(path).Equals(".alz", StringComparison.OrdinalIgnoreCase))
         throw new ArgumentException($"The first volume of an ALZip split set is named name.alz; '{Path.GetFileName(path)}' is not.");
@@ -97,7 +102,7 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   }
 
   private static void WriteArchive(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    using var w = new AlZipWriter(output, leaveOpen: true, password: options.Password, store: options.MethodName == "store");
+    using var w = new AlZipWriter(output, leaveOpen: true, password: options.Password, store: options.MethodName == "store", bzip2: options.MethodName == "bzip2");
     foreach (var input in inputs) {
       if (string.IsNullOrEmpty(input.ArchiveName)) continue;
       var modified = input.Metadata?.LastWriteTimeUtc?.LocalDateTime

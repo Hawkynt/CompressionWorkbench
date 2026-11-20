@@ -76,6 +76,26 @@ public sealed class AlZipOracleWriteTests {
   }
 
   [Test]
+  public void GivenOurAlzBzip2_WhenAlzipConExtractsIt_ThenEveryFileComesBack() {
+    if (!Available.Value) Assert.Ignore("ALZip is not installed in its wine prefix (see alzipcon-extract.sh).");
+    var files = Inputs();
+    var dir = Write(new AlZipFormatDescriptor(), "ours.alz", Options("bzip2", null), files);
+    try {
+      using (var r = AlZipReader.Open(File.OpenRead(Path.Combine(dir, "ours.alz"))))
+        Assert.That(r.Entries.Single(e => e.FileName == "text.txt").Method, Is.EqualTo(1), "written as ALZ bzip2");
+      AssertAlzipConExtracts(dir, "ours.alz", files);
+    } finally {
+      Directory.Delete(dir, true);
+    }
+  }
+
+  /// <summary>ALZipCon cut short the member after an ALZ bzip2 member in a split set, so we refuse to write one.</summary>
+  [Test]
+  public void GivenBzip2AndAVolumeSize_WhenAnAlzIsCreated_ThenItIsRefused() =>
+    Assert.Throws<NotSupportedException>(() =>
+      new AlZipFormatDescriptor().Create(new MemoryStream(), [ArchiveInputInfo.InMemory("a", [1, 2, 3])], Options("bzip2", "64k")));
+
+  [Test]
   public void GivenOurEncryptedSplitAlz_WhenAlzipConExtractsItWithThePassword_ThenEveryFileComesBack() {
     if (!Available.Value) Assert.Ignore("ALZip is not installed in its wine prefix (see alzipcon-extract.sh).");
     var files = Inputs();

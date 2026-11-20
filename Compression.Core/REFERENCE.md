@@ -10169,6 +10169,7 @@ ALZip's bzip2 variant (ALZ compression method 1): no "BZh" stream header, each b
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Encodes `data` as an ALZ bzip2 stream (900k blocks), the inverse of `Decompress`. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, long expectedSize)` | Decodes an ALZ bzip2 stream; stops at the end marker or once `expectedSize` bytes are out. |
 
 #### `Bzip2BuildingBlock`
