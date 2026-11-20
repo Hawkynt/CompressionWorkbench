@@ -19,7 +19,12 @@ internal enum ZfsChecksumResult {
 /// The block checksums the reader verifies (<c>docs/ZFS-ON-DISK.md</c>, "Digests as stored").
 /// </summary>
 internal static class ZfsChecksum {
-  public static ZfsChecksumResult Verify(byte algorithm, ReadOnlySpan<byte> data, ReadOnlySpan<byte> expected) {
+  /// <summary>
+  /// Checks <paramref name="data"/>. A <paramref name="protectedBlock"/> (native encryption, not an
+  /// object set) keeps only two words of checksum — the other two are its MAC — and a weak
+  /// checksum (one not fit for dedup: Fletcher, Edon-R) folds its last two words into them.
+  /// </summary>
+  public static ZfsChecksumResult Verify(byte algorithm, ReadOnlySpan<byte> data, ReadOnlySpan<byte> expected, bool protectedBlock = false) {
     Span<byte> actual = stackalloc byte[32];
     switch (algorithm) {
       case ZfsConstants.ChecksumOff or ZfsConstants.ChecksumNoParity:
@@ -40,7 +45,17 @@ internal static class ZfsChecksum {
       default:
         return ZfsChecksumResult.NotVerified;
     }
-    return actual.SequenceEqual(expected) ? ZfsChecksumResult.Match : ZfsChecksumResult.Mismatch;
+    if (!protectedBlock)
+      return actual.SequenceEqual(expected) ? ZfsChecksumResult.Match : ZfsChecksumResult.Mismatch;
+    Truncate(algorithm, actual);
+    return actual[..16].SequenceEqual(expected[..16]) ? ZfsChecksumResult.Match : ZfsChecksumResult.Mismatch;
+  }
+
+  /// <summary>A protected block's two checksum words: weak checksums XOR words 2 and 3 into 0 and 1.</summary>
+  public static void Truncate(byte algorithm, Span<byte> checksum) {
+    if (algorithm is not (ZfsConstants.ChecksumFletcher2 or ZfsConstants.ChecksumFletcher4 or ZfsConstants.ChecksumEdonR)) return;
+    BinaryPrimitives.WriteUInt64LittleEndian(checksum, BinaryPrimitives.ReadUInt64LittleEndian(checksum) ^ BinaryPrimitives.ReadUInt64LittleEndian(checksum[16..]));
+    BinaryPrimitives.WriteUInt64LittleEndian(checksum[8..], BinaryPrimitives.ReadUInt64LittleEndian(checksum[8..]) ^ BinaryPrimitives.ReadUInt64LittleEndian(checksum[24..]));
   }
 
   /// <summary>Fletcher-4 over little-endian <c>u32</c> words, four <c>u64</c> sums.</summary>

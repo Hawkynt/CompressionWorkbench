@@ -19,7 +19,9 @@ run
 mkfs ext4 /dev/sda
 mount /dev/sda /
 upload "$here/generate-inner.sh" /inner.sh
+upload "$here/generate-crypt-inner.sh" /crypt-inner.sh
 debug sh "sh /sysroot/inner.sh > /sysroot/log.txt 2>&1; echo rc=\$? >> /sysroot/log.txt"
+debug sh "sh /sysroot/crypt-inner.sh >> /sysroot/log.txt 2>&1; echo rc=\$? >> /sysroot/log.txt"
 download /log.txt $work/out/shell.txt
 download /out/log.txt $work/out/log.txt
 EOF

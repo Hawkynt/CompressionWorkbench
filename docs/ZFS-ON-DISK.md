@@ -194,8 +194,53 @@ at 32. Children whose names start with `$` (`$MOS`, `$FREE`, `$ORIGIN`) or conta
 
 In a DSL dataset's bonus (`dsl_dataset_phys_t`): snapshot-name ZAP at 32, and the
 object set's block pointer at 128. A dataset whose object-set pointer has the
-encrypted bit set uses native encryption; its names and contents are ciphertext and
-the reader lists the dataset's mount point without contents.
+encrypted bit set uses native encryption ("Native encryption"); without its key its
+names and contents are ciphertext and the reader lists its mount point only.
+
+## Native encryption
+
+**Keys.** An encrypted dataset's DSL directory is a ZAP (type `0xC4`) whose
+`com.datto:crypto_key_obj` names its DSL crypto key, a ZAP of: `DSL_CRYPTO_SUITE` (3-5
+AES-128/192/256-CCM, 6-8 AES-128/192/256-GCM), `DSL_CRYPTO_GUID`, `DSL_CRYPTO_VERSION`
+(1; absent = 0), `DSL_CRYPTO_ROOT_DDOBJ` (the encryption root's directory),
+`DSL_CRYPTO_REFCOUNT`, and byte arrays `DSL_CRYPTO_IV` (12), `DSL_CRYPTO_MAC` (16),
+`DSL_CRYPTO_MASTER_KEY_1` (32; the suite's key length counts) and `DSL_CRYPTO_HMAC_KEY_1`
+(64). The encryption root's key object also holds `keyformat` (1 raw, 2 hex, 3 passphrase),
+`pbkdf2salt` and `pbkdf2iters`. The wrapping key (32 bytes) is the raw key, the decoded 64
+hex digits, or PBKDF2-HMAC-SHA-1 of the passphrase with the salt's 8 little-endian bytes and
+the iterations. The master and HMAC keys are their concatenation sealed with the wrapping key
+in the suite's mode (AES-256 for the 32-byte wrapping key), the IV and MAC above, and as
+associated data the guid, suite and version as little-endian `u64`s (the guid alone in
+version 0). Every dataset of an encryption root has its own crypto key, all sealed with the
+root's wrapping key.
+
+**Blocks.** In a protected object set every block pointer has bit 61 set and at most two
+DVAs. Checksum words 0-1 check the stored bytes; words 2-3 are a MAC — for a weak checksum
+(Fletcher, Edon-R) words 0-1 hold the checksum's words 0-1 XOR 2-3. Level-0 blocks of the
+object types OpenZFS encrypts (legacy types 9, 10, 18-20, 22, 23, 25, 26, 33-35, 38, 39,
+44-47, 49; new-style types with bit `0x20`) are encrypted after compression: AES-GCM/CCM
+over the physical bytes, no associated data, the key HKDF-SHA-512 of the master key (no HKDF
+salt, the block's 8-byte salt as info, the suite's key length), the salt in DVA[2] word 0,
+the 12-byte IV in DVA[2] word 1 and the upper half of the fill count, the 16-byte tag as the
+MAC. Other level-0 blocks are plain, their MAC the first 16 bytes of HMAC-SHA-512 (HMAC key)
+of the physical bytes. An indirect block's MAC is the first 16 bytes of SHA-512 over each
+child pointer's auth buffer: the properties word (little-endian) with dedup (62) and checksum
+(40-47) cleared, above level 0 also byte order, compression and physical size (as 512);
+all zero for a hole — then the child's MAC and (version 1) 8 zero bytes.
+
+**Dnode blocks** are not compressed. Only the bonus buffers of dnodes in use whose bonus type
+is encrypted and whose bonus length is not 0 are encrypted, each from the bonus start to the
+dnode's end (or its spill pointer), as one stream in dnode order; the associated data is,
+per dnode slot group: its first 64 bytes with flags masked to the spill bit (4) and the used
+bytes zeroed, the auth buffers of its block pointers and spill pointer, and its bonus buffer
+when that is not encrypted. With nothing to encrypt the tag still covers the associated data.
+
+**Object set blocks** are plain with a full checksum and carry two MACs: `os_portable_mac`
+(at 0x2D0) the first 32 bytes of HMAC-SHA-512 over the type as a big-endian `u64`, 8 zero
+bytes (no portable flags) and the meta-dnode (its first 64 bytes masked as above, then its
+pointers' auth buffers); `os_local_mac` (at 0x2F0) over the flags (little-endian) and the
+user-, group- (and, in a 4 KiB block, project-) used dnodes present — zero when the flags lack
+bit 0 (user accounting complete) or there are no user and group dnodes.
 
 ## ZPL
 

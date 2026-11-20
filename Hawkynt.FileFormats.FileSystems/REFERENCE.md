@@ -21161,7 +21161,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 ### Namespace `FileSystem.Zfs`
 
-[`ZfsDataset`](#zfsdataset) · [`ZfsEntry`](#zfsentry) · [`ZfsFilesystemDriverAdapter`](#zfsfilesystemdriveradapter) · [`ZfsFormatDescriptor`](#zfsformatdescriptor) · [`ZfsReader`](#zfsreader)
+[`ZfsDataset`](#zfsdataset) · [`ZfsEntry`](#zfsentry) · [`ZfsFilesystemDriverAdapter`](#zfsfilesystemdriveradapter) · [`ZfsFormatDescriptor`](#zfsformatdescriptor) · [`ZfsKeyMaterial`](#zfskeymaterial) · [`ZfsReader`](#zfsreader)
 
 #### `ZfsDataset`
 
@@ -21241,6 +21241,15 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`
 | `RemoveFromPool` | `void RemoveFromPool(IReadOnlyList<Stream> devices, string[] entryNames)` | Removes files and directories from a pool spread over `devices`, in place. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files and directories (with everything beneath them) from an existing pool, in place. |
 
+#### `ZfsKeyMaterial`
+
+Key material for a natively encrypted ZFS dataset, as `zfs load-key` reads it from its key location: a passphrase, 64 hexadecimal digits, or 32 raw bytes — which one the dataset's `keyformat` says.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FromBytes` | `static ZfsKeyMaterial FromBytes(ReadOnlySpan<byte> bytes)` | Key material given as bytes (a raw key, or a key file's contents). |
+| `FromText` | `static ZfsKeyMaterial FromText(string text)` | Key material given as text (a passphrase, or a hex key). |
+
 #### `ZfsReader`
 
 Reads OpenZFS storage pools: one or more vdev images, every dataset, snapshot and file in them, with all of ZFS's block compressions, gang and embedded blocks, holes, ditto copies, mirrors and RAID-Z. Written from `docs/ZFS-ON-DISK.md`.
@@ -21249,7 +21258,9 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `ZfsReader` | `ZfsReader(IReadOnlyList<Stream> devices, ZfsKeyMaterial anyKey, IReadOnlyDictionary<string, ZfsKeyMaterial> keys, bool leaveOpen = true)` | Opens the pool with key material for its natively encrypted datasets: `keys` by encryption root (`pool/fs`), else `anyKey`. A dataset whose key is missing or wrong is listed in `Datasets` as refused. |
 | `ZfsReader` | `ZfsReader(IReadOnlyList<Stream> devices, bool leaveOpen = true)` | Opens the pool spread over `devices` (mirror, RAID-Z or striped vdevs). |
+| `ZfsReader` | `ZfsReader(Stream stream, ZfsKeyMaterial anyKey, IReadOnlyDictionary<string, ZfsKeyMaterial> keys = null, bool leaveOpen = true)` | Opens the pool on a single device image, with key material for its encrypted datasets. |
 | `ZfsReader` | `ZfsReader(Stream stream, bool leaveOpen = true)` | Opens the pool on a single device image. |
 | `Datasets` | `IReadOnlyList<ZfsDataset> Datasets { get; }` | Every dataset and snapshot found, listed or refused. |
 | `Entries` | `IReadOnlyList<ZfsEntry> Entries { get; }` | Every file, directory and symbolic link, parents before children. |
