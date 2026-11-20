@@ -9,9 +9,8 @@ is not covered is listed at the end.
 
 **Status: read, write-once.** Container, ciphers, every 0.6 mode — store, RLE, LZ78, LZP, PPM and ALZ
 with its nine multimedia predictors —, the executable and multimedia filters, passwords and SFX
-stubs are established and verified, and so are UHARC 0.2, the UHARC 0.4 container with its
-store, RLE, LZW, LZP, PPM and ALZ modes, and the UHARC 0.3 container with its store, RLE, LZW,
-LZP and ALZ modes (see their sections). 0.3's PPM streams are not, and are refused. The writer
+stubs are established and verified, and so are UHARC 0.2, and the UHARC 0.4 and 0.3 containers
+with their store, RLE, LZW, LZP, PPM and ALZ modes (see their sections). The writer
 produces 0.6 archives in every method — store, RLE, LZ78, LZP, PPM and ALZ — with or without a
 password and a self-extractor stub (see Writing), 0.4 and 0.3 archives in store, RLE, LZW, LZP
 and ALZ (see Writing UHARC 0.4 and Writing UHARC 0.3), and 0.2 archives in store, RLE, LZW and its main
@@ -1027,13 +1026,13 @@ Methods, in bands of 14 dictionary sizes (`2^((m − 8) mod 14 + 10)`, 1 KiB to 
 | 1 | `-mr` | 0.6's RLE |
 | 2..7 | `-mw` | 0.2's LZW, `2^(m+8)` codes |
 | 8..21 | `-mz` | 0.3 LZP |
-| 22..35 | `-mx` | 0.3 PPM — refused |
+| 22..35 | `-mx` | 0.3 PPM |
 | 36..49, 50..63, 64..77 (78, 79) | `-m1`, `-m2`, `-m3` | 0.3 ALZ |
 
 Measured: `-m1`/`-m2`/`-m3` of the 9.7 KB basic set give 40, 54 and 68, `-mx` 26, `-mz` 12, and
 `-md1` the first method of each band.
 
-**Range decoder** (LZP and ALZ). The stream's first byte carries no information. A 32-bit
+**Range decoder** (LZP, PPM and ALZ). The stream's first byte carries no information. A 32-bit
 `code` starts as the second byte shifted right by one, `range = 0x80`, and that byte is kept as
 *carry*. Before every decode, while `range ≤ 2²³`: read byte *b*,
 `code = code << 8 | (carry & 1) << 7 | b >> 1`, `range <<= 8`, `carry = b`. Decoding against a
@@ -1141,6 +1140,79 @@ window and only five the predictor history; the rest are counted with the fifth 
 Fixtures `v03-basic-m1`, `v03-basic-m2`, `v03-basic-m3`, `v03-basic-m2-pw`, `v03-reset-m2`,
 `v03-reset-m21`, `v03-exe-m2`, `v03-mm-m1` and `v03-runs-m2` decode byte for byte.
 
+### UHARC 0.3 PPM (methods 22..35)
+
+0.4's PPM (see there) on the 0.3 range decoder: the same stream kind and text length, reset
+points, record file, text transform, cost table and multimedia classes, with these differences.
+
+**Copies.** The deep hash is `h(c₀) ^ h(c₁)·16 ^ h(c₂)·64` (mod 2¹⁸) with `h(x) = x ^ x >> 15`
+over the three history words, *c₀* the newest. The kinds are 17 for a deep match of at least 12
+symbols, 9 for the last distance in an agreeing context, and otherwise 1: the hash slot's
+position when the slot holds the current context, else the last-distance candidate anyway (a
+candidate more than the window less 256 back is never offered). The decision is one of 48 cumulative rows
+`[0, 1, seed, 0x1000]`, numbered the kind less one, +24 when the hash slot remembers no length,
+plus a three-bit history of outcomes (start 7, `history = (2·history + miss) mod 8`): `[0, 1)`
+selects a new multimedia class (a uniform value of 10) and the decision is coded again, `[1,
+seed)` is a hit, the rest a miss. A hit adds 64 to the seed and the total, a miss 64 to the total;
+at 16384 both widths halve, rounding up. A byte excluded by the last copy that equals the
+candidate's next byte makes a miss without coding anything. Seeds by row:
+
+    1024  512  640  512  768  512  640  512  512  256  320  256  384  256  320  256
+    2048 1024 1280 1024 1536 1024 1280 1024  512  256  320  256  384  256  320  256
+     256  128  160  128  192  128  160  128 1024  512  640  512  768  512  640  512
+
+There are no runs. The length is a symbol of row 0x2FB, or 0x2FC when the copy does not repeat
+the last distance and the slot remembers a length of 16 or more, with the uniform row 0x30A
+behind them. The exclusions are 0.4's with their own floors, by `q = (record hits·4)/total`:
+`F[q] + 3` for a repeated distance and `F[16 + q] + 7` less the stream kind otherwise (3 and 7
+while the total is 0; 29 when the strong hits exceed the total; doubled in the marker state),
+
+    F = 0 0 0 0 2 4 6 8 8 8 8 8 8 8 8 8   1 1 1 1 2 3 4 5 5 5 5 5 5 5 5 5
+
+Length 0 copies 256 bytes, 255 a plain 255; lengths 7..254 exclude the byte after the copy from
+the next literal. The marker counters see the last eight bytes of a copy (and the first of a
+256-byte one). The record statistics start at 0.
+
+**Literals.** The count pairs form one table of 64, reset to (1, 1) at every reset point: 16 for
+single-symbol order-2 records, 16 for single-symbol order-4 records, 32 for the binary predictor.
+
+1. **Order-4 record**: all eight banks are searched (an empty bank does not end the search).
+   It is skipped under 0.4's condition without the long rank. There are no escape pairs: the
+   counts are decoded against the record's total less the excluded slot, the escape taking the
+   rest. A record whose total is at most 8 and whose escapes and first count make that total is
+   a count-pair decision, pair `(escapes/2)·4 + count/2`.
+2. **Order-2 record**: no escape pairs and no bonus; one symbol with at most 16 left after the
+   exclusions is a count-pair decision, pair `(escapes/4)·4 + count/4` (an index past the 16
+   pairs reads on into the order-4 pairs). **Binary predictor**: the pairs are per table for 2
+   misses with 3 or 4 hits and for 3 misses with 4 or 5 hits; a guess already excluded is
+   neither coded nor learned from; text streams never update it.
+3. **Frequency rows**: 0x30B rows — 0x2FB/0x2FC copy lengths, the fallbacks 0x2FD (literals),
+   0x2FE/0x2FF (order-0 of the class and literal paths), 0x300 + class and 0x30A (lengths); the
+   rest, steps and choices as 0.4's.
+
+**Updates.** A new order-4 record (over the first empty bank, else the least confident) holds
+escape 1 and count 1; a new symbol adds 2 to its escapes and takes the first free slot (count 2)
+while its count is below 6. Quartering empties a record left without counts, and nothing moves
+up the banks. The order-2 updates are 0.4's without the bonus.
+
+**Rank and stride.** One rank table: slot `248 + 4k + n mod k` for a stride *k* up to 4, else
+*k*. The candidate distances keep a ranked list (slot 0 its head; at a reset each entry's
+upward link is the next lower distance). A counted distance other than the stride gains a hit
+and, while its hits are at least those of the entry above, trades places with it — only the two
+entries' own links change; reaching the head makes it the stride (and the last stride above 1).
+After 256 counted distances the hits halve and the count restarts at their sum. The last
+positions start at 2³² − 1.
+
+**Resets.** As 0.4's, but the count pairs return to (1, 1), the rows halved are 0x203..0x2FC,
+and the rules that clear order-4 records clear the whole table. The end of a text stream clears
+the length rows 0x2FB and 0x2FC.
+
+Fixtures `v03-basic-mx`, `v03-reset-mx`, `v03-reset-mx1`, `v03-exe-mx`, `v03-mm-mx`,
+`v03-fax-mx`, `v03-runs-mx`, `v03-sizes-mx-a`/`-b` and `v03-slots-mx` decode byte for byte (the
+two size fixtures fail without the rules), and so does the 39 MB mixed set (record file, fax page
+and multimedia included) packed at 1 KiB, 4 MiB and 8 MiB windows. `uharc_u.exe` `x` reproduces
+every input of each, and unuharc_recon's unpacker accepts them.
+
 ### Writing UHARC 0.3
 
 The writer produces 0.3 archives (format option `version` 3) in store, RLE, LZW, LZP and ALZ:2,
@@ -1160,7 +1232,6 @@ accepts them.
 
 ## What is not derived
 
-- **UHARC 0.3's PPM streams** (`-mx`): the container reads, the stream is refused.
 - **Writing** 0.6's executable and multimedia filters, the multimedia ALZ/PPM classes and text
   PPM streams, and 0.4/0.3 PPM.
 
