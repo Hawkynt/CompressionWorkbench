@@ -181,6 +181,34 @@ public class UharcExternalConformanceTests {
     AssertExtracted(output, inputs);
   }
 
+  /// <summary>
+  /// A BMP and WAV files of each kind, one per archive so that each block gets its multimedia
+  /// class (3, 5, 7, 8, 9): the tool of each version extracts our ALZ and PPM archives.
+  /// </summary>
+  [TestCase("6", "alz")]
+  [TestCase("6", "ppm")]
+  [TestCase("4", "alz")]
+  [TestCase("4", "ppm")]
+  [TestCase("3", "ppm")]
+  public void GivenMediaFiles_WhenWeWriteThemWithTheirClasses_ThenTheVersionsToolExtractsThem(string version, string method) {
+    var tool = version switch { "4" => RequireUharc04(), "3" => RequireUharc03(), _ => RequireUharc() };
+    byte[][] media = [
+      UharcWriterTests.Bitmap24(240, 180), UharcWriterTests.Wave(60000, 1, 8), UharcWriterTests.Wave(40000, 2, 8),
+      UharcWriterTests.Wave(40000, 1, 16), UharcWriterTests.Wave(30000),
+    ];
+    for (var k = 0; k < media.Length; ++k) {
+      var inputs = new[] { ArchiveInputInfo.InMemory($"media{k}.bin", media[k]) };
+      var archive = Path.Combine(this._tmp, $"media{k}.uha");
+      File.WriteAllBytes(archive, UharcWriterTests.CreateWith(new FormatCreateOptions(method) {
+        FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version },
+      }, inputs));
+      var output = Path.Combine(this._tmp, $"out{k}");
+      Directory.CreateDirectory(output);
+      Run(tool, output, version == "6" ? ["x", "-y", "-t" + output, archive] : ["x", "-y", archive]);
+      AssertExtracted(output, inputs);
+    }
+  }
+
   private static void AssertExtracted(string output, IEnumerable<ArchiveInputInfo> inputs) {
     foreach (var input in inputs) {
       var path = Path.Combine(output, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));

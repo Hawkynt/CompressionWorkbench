@@ -73,6 +73,15 @@ internal sealed class Uharc04AlzModel<TCoder> where TCoder : struct, IUharcCoder
   private readonly IReadOnlyList<long> _fileEnds;
   private readonly long _size;
   private long _blockEnd;
+  private long _blockStart;
+
+  // Encoding only: the input, from which each block's multimedia group is chosen.
+  private byte[] _source = [];
+
+  /// <summary>The input the encoding instantiation codes; each block's group is chosen from it.</summary>
+  public byte[] Source {
+    set => this._source = value;
+  }
   private int _nextFile;
   private readonly UharcAlzSideModel _side = new();
   private readonly byte[] _window;
@@ -159,6 +168,7 @@ internal sealed class Uharc04AlzModel<TCoder> where TCoder : struct, IUharcCoder
     while (this._nextFile < this._fileEnds.Count && this._fileEnds[this._nextFile] < target)
       ++this._nextFile;
     this._blockEnd = this._nextFile < this._fileEnds.Count ? this._fileEnds[this._nextFile] : this._size;
+    this._blockStart = position;
     this.StartBlock();
   }
 
@@ -204,7 +214,7 @@ internal sealed class Uharc04AlzModel<TCoder> where TCoder : struct, IUharcCoder
     this._orderZeroCost = 0;
     this._contextCost = 0;
     this._costSlot = 255;
-    this.SwitchGroup((int)this._coder.Uniform(11, 0));
+    this.SwitchGroup((int)this._coder.Uniform(11, TCoder.Encoding ? (uint)UharcMediaClass.ForBlock(this._source, this._fileEnds, this._blockStart, this._blockEnd) : 0u));
   }
 
   private void SwitchGroup(int group) {

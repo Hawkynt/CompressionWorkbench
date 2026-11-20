@@ -5,7 +5,7 @@ namespace FileFormat.Uharc;
 /// decoder's <see cref="UharcPpmModel{TCoder}"/> over the input, which then answers every coding
 /// decision from the byte that comes next — a predicted copy is taken when it reproduces the
 /// input past its length floor, every literal stage codes the byte or escapes. It writes a binary
-/// stream (no word transform) with multimedia class 0.
+/// stream (no word transform) with each block's multimedia class (<see cref="UharcMediaClass"/>).
 /// </summary>
 internal static class UharcPpmEncoder {
 

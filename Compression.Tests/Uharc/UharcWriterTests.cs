@@ -670,27 +670,51 @@ public class UharcWriterTests {
     return page;
   }
 
-  /// <summary>A PCM WAV file (16-bit stereo) of a slow sine, header included.</summary>
-  internal static byte[] Wave(int samples) {
-    var data = new byte[44 + samples * 4];
+  /// <summary>A PCM WAV file of a slow sine (16-bit stereo unless told otherwise), header included.</summary>
+  internal static byte[] Wave(int frames, int channels = 2, int bits = 16) {
+    var block = channels * bits / 8;
+    var data = new byte[44 + frames * block];
     "RIFF"u8.CopyTo(data);
     System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(4), data.Length - 8);
     "WAVEfmt "u8.CopyTo(data.AsSpan(8));
     data[16] = 16;
     data[20] = 1;
-    data[22] = 2;
+    data[22] = (byte)channels;
     System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(24), 22050);
-    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(28), 22050 * 4);
-    data[32] = 4;
-    data[34] = 16;
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(28), 22050 * block);
+    data[32] = (byte)block;
+    data[34] = (byte)bits;
     "data"u8.CopyTo(data.AsSpan(36));
-    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(40), samples * 4);
-    for (var i = 0; i < samples; ++i) {
-      var value = (short)(Math.Sin(i / 20.0) * 12000);
-      System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(44 + i * 4), value);
-      System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(46 + i * 4), (short)-value);
-    }
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(40), frames * block);
+    for (var i = 0; i < frames; ++i)
+      for (var c = 0; c < channels; ++c) {
+        var value = Math.Sin(i / (20.0 + 7 * c)) * 0.4;
+        var at = 44 + i * block + c * bits / 8;
+        if (bits == 8)
+          data[at] = (byte)(128 + value * 250);
+        else
+          System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(at), (short)(value * 30000));
+      }
 
+    return data;
+  }
+
+  /// <summary>An uncompressed 24-bit BMP of smooth gradients.</summary>
+  internal static byte[] Bitmap24(int width, int height, int bits = 24) {
+    var row = (width * bits / 8 + 3) & ~3;
+    var data = new byte[54 + row * height];
+    data[0] = (byte)'B';
+    data[1] = (byte)'M';
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(2), data.Length);
+    data[10] = 54;
+    data[14] = 40;
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(18), width);
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(22), height);
+    data[26] = 1;
+    data[28] = (byte)bits;
+    for (var y = 0; y < height; ++y)
+      for (var x = 0; x < width * bits / 8; ++x)
+        data[54 + y * row + x] = (byte)(x * 2 + y + (x % 3) * 40);
     return data;
   }
 
@@ -781,6 +805,49 @@ public class UharcWriterTests {
     var reader = new UharcReader(new MemoryStream(CreateWith(new FormatCreateOptions(method) { FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version } }, inputs)));
     foreach (var input in inputs.Where(i => !i.IsDirectory))
       Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == input.ArchiveName)), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+  }
+
+  private static IEnumerable<TestCaseData> MediaFiles() {
+    yield return new TestCaseData(Bitmap24(200, 150), 3).SetName("MediaClass_Bmp24");
+    yield return new TestCaseData(Bitmap24(200, 150, bits: 8), 0).SetName("MediaClass_Bmp8IsNone");
+    yield return new TestCaseData(Wave(40000, 1, 8), 5).SetName("MediaClass_Wave8Mono");
+    yield return new TestCaseData(Wave(30000, 2, 8), 7).SetName("MediaClass_Wave8Stereo");
+    yield return new TestCaseData(Wave(30000, 1, 16), 8).SetName("MediaClass_Wave16Mono");
+    yield return new TestCaseData(Wave(20000), 9).SetName("MediaClass_Wave16Stereo");
+    yield return new TestCaseData(Wave(20000, 4, 16), 0).SetName("MediaClass_Wave4ChannelsIsNone");
+    yield return new TestCaseData(Wave(10)[..43], 0).SetName("MediaClass_ShortWaveIsNone");
+    yield return new TestCaseData("plain text, not media"u8.ToArray(), 0).SetName("MediaClass_TextIsNone");
+  }
+
+  [TestCaseSource(nameof(MediaFiles))]
+  [Category("HappyPath"), Category("Boundary")]
+  public void GivenAFile_WhenItsMediaClassIsChosen_ThenItMatchesItsFormat(byte[] file, int selector)
+    => Assert.That(UharcMediaClass.Of(file), Is.EqualTo(selector));
+
+  [TestCase(0, 100, 9)]
+  [TestCase(90, 130, 0)]
+  [TestCase(100, 130, 0)]
+  [TestCase(50, 140, 9)]
+  [TestCase(50, 50, 0)]
+  [Category("Boundary")]
+  public void GivenABlock_WhenItsMediaClassIsChosen_ThenTheFileCoveringHalfOrMoreDecides(long start, long end, int selector) {
+    var stream = new byte[140];
+    Wave(20000).AsSpan(0, 100).CopyTo(stream);
+    Assert.That(UharcMediaClass.ForBlock(stream, [100, 140], start, end), Is.EqualTo(selector));
+  }
+
+  [TestCase("alz", "6")]
+  [TestCase("ppm", "6")]
+  [TestCase("alz", "4")]
+  [TestCase("ppm", "4")]
+  [TestCase("ppm", "3")]
+  [Category("HappyPath"), Category("RoundTrip")]
+  public void GivenMediaFiles_WhenWrittenWithTheirClasses_ThenEveryFileComesBack(string method, string version) {
+    foreach (var data in MediaFiles().Select(c => (byte[])c.Arguments[0]!)) {
+      var inputs = new[] { ArchiveInputInfo.InMemory("media.bin", data) };
+      var reader = new UharcReader(new MemoryStream(CreateWith(new FormatCreateOptions(method) { FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version } }, inputs)));
+      Assert.That(reader.Extract(reader.Entries.Single()), Is.EqualTo(data));
+    }
   }
 
   [Test, Category("RoundTrip")]

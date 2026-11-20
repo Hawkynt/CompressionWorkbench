@@ -550,7 +550,7 @@ coding decision names its outcome from the next input byte — a copy class hit 
 length, an order-4 or order-2 slot or its escape, a binary-predictor hit, the order-1 row's
 predicted byte, a row slot or escape, a uniform byte — so the decoder's own path through the
 cascade is replayed exactly. It writes a binary stream (the stream kind is a uniform choice, so
-no word transform has to be inverted) with multimedia class 0. A predicted copy is taken when
+no word transform has to be inverted) with each block's multimedia class (below). A predicted copy is taken when
 the bytes it would produce match the input past the length floor, only whole (the full match,
 or 255 for a run) and never past a reset point, for the reason given for ALZ. On the 39 MB set
 the stream is 12.3 MB against UHARC's 10.9 MB; `UHARC.EXE x` and `UNUHARC.EXE x` extract it,
@@ -558,8 +558,14 @@ every fixture input set, the minimal PPM inputs above and the Canterbury files b
 the fitted window and at 1 KiB.
 
 The ALZ encoder runs the decoder's model step for step (one model, generic over the coder
-direction, so the decoding instantiation stays as fast as before) with selector 0 — no
-multimedia predictor. Each step takes the best of: a copy at one of the recent distances that
+direction, so the decoding instantiation stays as fast as before) with each block's
+multimedia class as its selector. **Classes**: at every model reset the ALZ and PPM encoders (0.6,
+and 0.4's; 0.3's PPM too) code the class of the file that covers at least half of the block up to
+the next reset point — 3 for a 24-bit BMP, 5, 7, 8 and 9 for PCM WAV of 8-bit mono, 8-bit
+stereo, 16-bit mono and 16-bit stereo — and 0 otherwise; the model then codes the block's
+literals through that predictor. The extractors of each version take such archives of single BMP
+and WAV files of every kind. (unuharc_recon's unpacker rejects a 0.6 PPM archive of a 24-bit BMP,
+ours and `UHARC.EXE`'s own alike.) Each step takes the best of: a copy at one of the recent distances that
 holds a value, a new distance from a 3-byte hash chain (48 deep) that the slot coding can express
 at this position (narrowed slots and the low-bit halving leave some odd offsets out) and that is
 at least *c* + 3 bytes long, or a literal. A copy is always taken whole — the full match, or 255
@@ -1009,14 +1015,14 @@ knows and restarts a full dictionary with code 256 followed by a plain byte: cod
 full dictionary, which our decoder follows, crashes `UHARC04.EXE` (a 513 216-byte fax page with
 long zero runs fills the 32768-code dictionary). The 0.4 LZP encoder is the decoder's model
 (generic over the coder direction, as for 0.6) answering each prediction with the full match
-when its first byte matches. The 0.4 ALZ encoder is likewise the decoder's model, run with group
-0 and the 0.6 ALZ encoder's choices (whole copies at a recent or hashed distance, within the
+when its first byte matches. The 0.4 ALZ encoder is likewise the decoder's model, run with each
+block's multimedia class as its group (see Writing) and the 0.6 ALZ encoder's choices (whole copies at a recent or hashed distance, within the
 window less 255, never past a block end), every length at least 2 and a new distance at least 3.
 One rule is 0.4's own: a copy whose length the model would take from a per-byte-pair prediction
 of full confidence (0, so no decision is coded) is only taken when that prediction is its length
 symbol. The recent distances start empty here too. The 0.4 PPM encoder is likewise the decoder's
-model; it writes a binary stream (no word transform) with multimedia class 0 at every reset
-point and answers each decision from the input: a record or the binary predictor codes the
+model; it writes a binary stream (no word transform) with the block's multimedia class at
+every reset point (see Writing) and answers each decision from the input: a record or the binary predictor codes the
 byte or escapes, the rows code it (or its difference in the class path) with the escape where
 the row lacks it. A predicted copy is taken for the length its candidate reproduces (at most 255,
 never past the next reset point), cut to a codable length — not 3 outside a repeated distance,
@@ -1249,7 +1255,7 @@ encoder answers as 0.4's does. The ALZ encoder stays in literal group 0, never s
 or codes long runs, and takes the best of a recent distance, a new distance whose slot is open
 at the current history length and whose offset the narrowed slot holds, or a literal; 0.3
 excludes no byte after a copy, so its copies need not be whole. The PPM encoder is 0.4's (see
-Writing UHARC 0.4) on the 0.3 model: a binary stream with class 0, copies cut to a codable length
+Writing UHARC 0.4) on the 0.3 model: a binary stream with each block's class, copies cut to a codable length
 from 4 bytes on, and copies of 7 to 254 ending where the match does; 255 is a plain copy here
 and need not. `uharc_u.exe` (0.3 BETA) `x` extracts our archives of every fixture input set and
 the 39 MB mixed set byte for byte in all six modes, with and without a password and at a 1 KiB
@@ -1257,8 +1263,8 @@ window, and unuharc_recon's unpacker accepts them.
 
 ## What is not derived
 
-- **Writing** the multimedia ALZ/PPM classes and text PPM streams (in 0.6, 0.4 and 0.3 alike),
-  and the executable filter under 0.6's PPM (whose restore also swaps operand bytes).
+- **Writing** text PPM streams (in 0.6, 0.4 and 0.3 alike), 0.3's ALZ literal groups 1..5, and
+  the executable filter under 0.6's PPM (whose restore also swaps operand bytes).
 
 ## Sources
 

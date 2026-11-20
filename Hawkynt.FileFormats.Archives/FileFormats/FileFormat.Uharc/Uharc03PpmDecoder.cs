@@ -34,7 +34,7 @@ internal static class Uharc03PpmDecoder {
 /// The encoder side of the 0.3 PPM stream (docs/UHARC-ON-DISK.md, "Writing UHARC 0.3"): it runs
 /// the decoder's <see cref="Uharc03PpmModel{TCoder}"/> over the input, which then answers every
 /// coding decision from the byte that comes next. It writes a binary stream (no word transform)
-/// with multimedia class 0.
+/// with each block's multimedia class (<see cref="UharcMediaClass"/>).
 /// </summary>
 internal static class Uharc03PpmEncoder {
 
@@ -278,7 +278,7 @@ internal sealed partial class Uharc03PpmModel<TCoder> where TCoder : struct, IUh
 
     reset.Advance(this);
     this.ApplyFileSizeRules(reset, written);
-    this.SelectClass((int)this._coder.Uniform(10, 0));
+    this.SelectClass((int)this._coder.Uniform(10, TCoder.Encoding ? (uint)UharcMediaClass.ForBlock(this._source, reset.Ends, written, reset.Next) : 0u));
   }
 
   /// <summary>
