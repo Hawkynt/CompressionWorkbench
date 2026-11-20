@@ -6,9 +6,11 @@ namespace Compression.Tests.Zfs;
 
 /// <summary>
 /// dRAID pools written by <see cref="ZfsFormatDescriptor.CreatePool"/> (version 5000; draid1 with
-/// two data columns on five devices, draid2 with three on six), then edited: the reader reads
-/// them; OpenZFS checks them — <c>zdb -bcc</c>, <c>zdb -d</c>, the kernel importing and scrubbing
-/// them whole and with a device missing, serving exactly the files.
+/// two data columns on five devices, draid2 with three on six, draid1 with a distributed spare),
+/// then edited: the reader reads them; OpenZFS checks them — <c>zdb -bcc</c>, <c>zdb -d</c>, the
+/// kernel importing and scrubbing them whole and with a device missing, serving exactly the files.
+/// The kernel puts the distributed spare of a written pool to use for a faulted device; the pool
+/// then reads and edits with the spare standing in, and the kernel accepts the result.
 /// </summary>
 [TestFixture]
 public sealed class ZfsDraidWriteTests {
@@ -48,6 +50,59 @@ public sealed class ZfsDraidWriteTests {
   public static IEnumerable<TestCaseData> Layouts() {
     yield return new TestCaseData("draid1:2d", 5);
     yield return new TestCaseData("draid2:3d", 6);
+    yield return new TestCaseData("draid1:2d:1s", 5);
+    yield return new TestCaseData("draid2:2d:5c:1s", 5);
+  }
+
+  [Test]
+  public void Given_ALayoutNamingTheWrongChildCountOrTooManySpares_When_Written_Then_ItIsRefused() {
+    Assert.Throws<ArgumentException>(() => Written("draid1:2d:6c:1s", 5));
+    Assert.Throws<ArgumentException>(() => Written("draid1:2d:3s", 5));
+  }
+
+  [Test]
+  public void Given_ADraidPoolWithSpares_When_Written_Then_TheSpareListNamesEachDistributedSpare() {
+    var images = Written("draid1:2d:2s", 6).Select(s => s.ToArray()).ToList();
+    using var reader = new ZfsReader(images.Select(i => (Stream)new MemoryStream(i, writable: false)).ToList());
+    Assert.That(reader.Topology.Single(), Does.StartWith("draid1:2d:6c:2s"));
+    Assert.That(Read(images), Is.EquivalentTo(Expected(Files)));
+  }
+
+  [Test, Category("Slow"), Category("ExternalTool"), NonParallelizable]
+  public void Given_AWrittenDraidPool_When_TheKernelPutsItsSpareToUse_Then_ItReadsEditsAndStaysClean() {
+    ZfsOracle.RequireZdb();
+    ZfsOracle.RequireAppliance();
+    var streams = Written("draid1:2d:1s", 5);
+    var (dir, wsl) = ZfsOracle.Stage(streams.Select((s, i) => ($"d{i}.img", s.ToArray())).ToList());
+    List<byte[]> used;
+    Dictionary<string, string> expected;
+    try {
+      ZfsOracle.AssertNoLeaks(wsl, "cwbdraidw");
+      // device 1 faulted, the spare rebuilt in its place, then the kernel writes on
+      var served = ZfsOracle.KernelManifest(dir, wsl, "cwbdraidw", out var log,
+        after: "zpool offline -f cwbdraidw $O/d1.img && zpool replace cwbdraidw $O/d1.img draid1-0-0 || echo REPLACE-FAILED\n" +
+          "zpool wait -t resilver cwbdraidw; zpool wait -t scrub cwbdraidw; zpool status -v cwbdraidw\n" +
+          "seq 1 40000 > $M/kernel.txt; zpool sync cwbdraidw; sha256sum < $M/kernel.txt | sed 's/ .*//; s/^/KERNEL /'", download: true);
+      Assert.That(served, Is.EquivalentTo(Expected(Files)));
+      Assert.That(log, Does.Not.Contain("REPLACE-FAILED").And.Contain("KERNEL "), log);
+      expected = Expected(Files);
+      expected["kernel.txt"] = log.Split('\n').Single(l => l.StartsWith("KERNEL ", StringComparison.Ordinal))[7..].Trim();
+      used = Enumerable.Range(0, 5).Select(i => File.ReadAllBytes(Path.Combine(dir, $"d{i}.img"))).ToList();
+    } finally {
+      ZfsOracle.Cleanup(dir);
+    }
+    Assert.That(Read(used), Is.EquivalentTo(expected), "spare in use");
+    Assert.That(Read(used.Where((_, i) => i != 1)), Is.EquivalentTo(expected), "spare in use, faulted device gone");
+
+    var edit = used.Select(i => { var ms = new MemoryStream(); ms.Write(i); return ms; }).ToList();
+    var added = new (string Path, byte[] Data)[] { ("edit/more.bin", Random(900_000, 11)) };
+    Descriptor.EditPool(edit.Cast<Stream>().ToList(), added.Select(a => ArchiveInputInfo.InMemory(a.Path, a.Data)).ToList(), ["big.bin"]);
+    Assert.That(edit[1].ToArray(), Is.EqualTo(used[1]), "the faulted device is left alone");
+    expected.Remove("big.bin");
+    expected["edit/more.bin"] = ZfsOracle.Sha(added[0].Data);
+    var edited = edit.Select(s => s.ToArray()).ToList();
+    Assert.That(Read(edited), Is.EquivalentTo(expected), "edited");
+    Check(edited, expected, degraded: false);
   }
 
   [TestCaseSource(nameof(Layouts))]

@@ -742,9 +742,29 @@ columns ending in zero sectors (scrubs read and check them). Allocations are who
 start on group-width boundaries; a metaslab's range starts at the first stripe boundary at or
 after `m << metaslab_shift` and keeps whole stripes (its space map counts from that start). The
 deflate ratio is `2^17 / (allocated sectors of a 128 KiB block)`. A new dRAID pool (version 5000,
-`org.openzfs:draid` active, read list and label) uses no distributed spare and the smallest G
-with W × G divisible by N; its `asize` is the children's whole 16 MiB rows after the labels and a
-32 MiB reserve, times N, rounded down to whole groups.
+`org.openzfs:draid` active, read list and label) uses the smallest G with W × G divisible by N;
+its `asize` is the children's whole 16 MiB rows after the labels and a 32 MiB reserve, times N,
+rounded down to whole groups.
+
+**Distributed spares.** The spares are not in the labels or the MOS config: the MOS directory
+entry `spares` names a packed-nvlist object (type 3, bonus type 4 holding the packed size, 16 KiB
+blocks like the config) whose nvlist has `spares` = one entry per spare {`type` "dspare", `guid`,
+`path` "draid<P>-<top id>-<spare id>", `top_guid` (the dRAID's guid), `spareid`, `whole_disk` 1,
+`is_spare` 1, `ashift`}. Spare s owns, in each slice of `device slice size = W × 16 MiB × G / N`
+bytes per child, the column `C - 1 - s` of the slice's permutation: at offset o it lies on child
+`(perm[(p mod (nperms × C)) / C][C - 1 - s] + (p mod C)) mod C` with p = o / slice size, at the
+same offset o (recursively, should that child itself be a spare in use).
+
+A spare in use replaces a child with a vdev {`type` "spare", `children` [the original device,
+the `dspare` entry with `path`, `top_guid`, `spareid`, `is_spare` 1]}; a device put out of service
+carries `faulted` (or `removed`, `offline`) and `aux_state`. While the spare is still being
+filled the children carry `resilver_txg` or `rebuild_txg`. Reads of the slot go to the spare
+(the out-of-service device misses later writes). Writes go to every in-service child of the
+slot, the spare's bytes to the child its mapping names. The out-of-service device stays as it
+was, but its dirty time log (the leaf's `DTL`: a space map of txgs, unit 1, start 0, without
+histogram) gains each txg written past it, so the resilver that later brings it back covers
+those txgs; leaving the txg out of it leaves the returning device stale, which a scrub reports as
+checksum errors on it.
 
 ## RAID-Z
 
@@ -783,5 +803,5 @@ units × the vdev's deflate ratio `2^17 / (asize of a 128 KiB block in 512-byte 
 division; 512 on plain and mirror vdevs, where `dsize` = `asize`). Dnodes' `dn_used` counts the
 same `dsize`.
 
-Mirror, replacing and spare vdevs hold full copies on every child. dRAID and indirect
-(removed) vdevs are refused.
+Mirror, replacing and spare vdevs hold full copies on every child. Indirect (removed) vdevs are
+refused; dRAID is described above.

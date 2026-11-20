@@ -80,6 +80,24 @@ internal sealed class ZfsDraidVdev : ZfsVdev {
     return perms;
   }
 
+  /// <summary>Bytes of one permutation's slice on each disk.</summary>
+  public long DeviceSliceSize => this.GroupSize * this.Groups / this.Disks;
+
+  /// <summary>
+  /// The child holding distributed spare <paramref name="spareId"/> at <paramref name="offset"/>: the
+  /// slice's permutation, read from its end (spare 0 is the last column).
+  /// </summary>
+  public int SpareChild(int spareId, long offset) {
+    var perm = offset / this.DeviceSliceSize;
+    var permIndex = perm % ((long)this.PermutationCount * this.Children);
+    var baseRow = (int)(permIndex / this.Children) * this.Children;
+    var iter = permIndex % this.Children;
+    return (int)((this._perms[baseRow + this.Children - 1 - spareId] + iter) % this.Children);
+  }
+
+  /// <summary>Reads from child <paramref name="child"/> directly (a distributed spare's backing space).</summary>
+  internal byte[] ReadChild(int child, long offset, int length) => this._children[child].Read(offset, length);
+
   /// <summary>Space a block of <paramref name="physicalSize"/> bytes takes: whole rows of the group width.</summary>
   public long AllocatedSize(long physicalSize) {
     var rows = ((physicalSize - 1) / ((long)this.Data << this.Ashift)) + 1;
@@ -178,4 +196,22 @@ internal sealed class ZfsDraidVdev : ZfsVdev {
 
   public override string Describe() =>
     $"draid{this.Parity}:{this.Data}d:{this.Children}c:{this.Spares}s({string.Join(", ", this._children.Select(c => c.Describe()))})";
+}
+
+/// <summary>Lets a distributed spare reach the dRAID it belongs to, which is built after its children.</summary>
+internal sealed class ZfsDraidHolder {
+  public ZfsDraidVdev? Draid { get; set; }
+}
+
+/// <summary>
+/// A distributed spare in use: what it holds at an offset lies on the dRAID child its permutation
+/// names there, at the same offset.
+/// </summary>
+internal sealed class ZfsDraidSpareVdev(ZfsDraidHolder holder, int spareId, string name) : ZfsVdev {
+  public override byte[] Read(long offset, int length) {
+    var draid = holder.Draid ?? throw new InvalidDataException($"ZFS: distributed spare {name} outside a dRAID.");
+    return draid.ReadChild(draid.SpareChild(spareId, offset), offset, length);
+  }
+
+  public override string Describe() => $"dspare {name}";
 }

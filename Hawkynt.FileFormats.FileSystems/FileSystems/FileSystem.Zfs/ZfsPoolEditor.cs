@@ -158,6 +158,29 @@ internal static partial class ZfsPoolEditor {
 
     /// <summary>The dRAID layout of a dRAID top-level vdev (its parity is not RAID-Z's).</summary>
     public ZfsDraidVdev? Draid;
+    /// <summary>Per dRAID child: its device among <see cref="Children"/> (-1: none in service) and the distributed spare standing in (-1: none).</summary>
+    public (int Device, int Spare)[]? DraidSlots;
+    /// <summary>Devices given for this vdev that are out of service and left untouched.</summary>
+    public int Ignored;
+    /// <summary>The dirty time logs of out-of-service devices: each txg written misses them.</summary>
+    public List<ulong> StaleDtls = [];
+
+    /// <summary>The devices (indices into <see cref="Children"/>) that hold dRAID child <paramref name="child"/>'s bytes at <paramref name="offset"/>.</summary>
+    public List<int> Targets(int child, long offset) {
+      var targets = new List<int>();
+      for (var guard = 0; guard < 8; ++guard) {
+        if (this.DraidSlots == null) {
+          targets.Add(child);
+          return targets;
+        }
+        var (device, spare) = this.DraidSlots[child];
+        if (device >= 0) targets.Add(device);
+        if (spare < 0) return targets;
+        // a distributed spare keeps its bytes on the child its permutation names, same offset
+        child = this.Draid!.SpareChild(spare, offset);
+      }
+      throw new InvalidDataException("ZFS: distributed spares nest too deeply.");
+    }
 
     public long AllocatedSize(int size) =>
       this.Draid != null ? this.Draid.AllocatedSize(size)
@@ -309,7 +332,7 @@ internal static partial class ZfsPoolEditor {
     /// debug entries skipped; offsets and runs in units of <c>2^shift</c> from <paramref name="start"/>.
     /// Returns the bytes the map's header says are allocated.
     /// </summary>
-    private long ReplayMap(ulong obj, long start, long limit, int shift, Action<int, long, long, bool> apply) {
+    public long ReplayMap(ulong obj, long start, long limit, int shift, Action<int, long, long, bool> apply) {
       var mos = this.Pool.Mos;
       var map = mos.RequireDnode(obj, "space map");
       if (map.Bonus.Length < 24) throw new InvalidDataException("ZFS: space map header truncated.");
@@ -371,7 +394,7 @@ internal static partial class ZfsPoolEditor {
       var used = 0;
       foreach (var tree in trees.OrderBy(t => t.UInt64("id") ?? 0)) {
         var top = BuildTop(tree, byGuid, this.Tops.Count);
-        used += top.Children.Length;
+        used += top.Children.Length + top.Ignored;
         top.Base = this.Tops.Sum(t => t.MetaslabCount);
         this.Tops.Add(top);
       }
@@ -421,9 +444,44 @@ internal static partial class ZfsPoolEditor {
         throw new InvalidDataException("ZFS: the top-level vdev ids are not 0, 1, 2, ….");
       var type = tree.String("type");
       Stream[] children;
+      (int Device, int Spare)[]? slots = null;
+      var ignored = 0;
+      var staleDtls = new List<ulong>();
       if (type is "disk" or "file") {
         children = [Device(byGuid, tree, $"device {id}")];
-      } else if (type is "mirror" or "raidz" or "draid") {
+      } else if (type == "draid") {
+        // each child a device, or a spare vdev: the device it stands in for (left alone once out of
+        // service) and the distributed spare that took over
+        var leaves = tree.Lists("children");
+        var list = new List<Stream>();
+        slots = new (int, int)[leaves.Length];
+        for (var i = 0; i < leaves.Length; ++i) {
+          var leaf = leaves[i];
+          var leafType = leaf.String("type");
+          if (leafType is "disk" or "file") {
+            list.Add(Device(byGuid, leaf, $"device {i} of vdev {id} (draid)"));
+            slots[i] = (list.Count - 1, -1);
+            continue;
+          }
+          var parts = leafType == "spare" ? leaf.Lists("children") : [];
+          var dspare = parts.FirstOrDefault(c => c.String("type") == "dspare");
+          var original = parts.FirstOrDefault(c => c.String("type") is "disk" or "file");
+          if (dspare == null || original == null || parts.Length != 2)
+            throw new NotSupportedException($"ZFS: child {i} of the dRAID is a '{leafType}' this editor does not edit.");
+          if (parts.Any(c => c.UInt64("resilver_txg") != null || c.UInt64("rebuild_txg") != null))
+            throw new NotSupportedException("ZFS: a distributed spare is still being rebuilt; the pool is not edited.");
+          var device = -1;
+          if (ZfsVdev.IsOutOfService(original)) {
+            if (byGuid.ContainsKey(original.UInt64("guid") ?? 0)) ++ignored;            // given, but not written
+            if (original.UInt64("DTL") is { } dtl and not 0) staleDtls.Add(dtl);
+          } else {
+            list.Add(Device(byGuid, original, $"device {i} of vdev {id} (draid)"));
+            device = list.Count - 1;
+          }
+          slots[i] = (device, (int)(dspare.UInt64("spareid") ?? 0));
+        }
+        children = [.. list];
+      } else if (type is "mirror" or "raidz") {
         var leaves = tree.Lists("children");
         if (leaves.Any(c => c.String("type") is not ("disk" or "file")))
           throw new NotSupportedException($"ZFS: a {type} with nested, replacing or spare children is not edited.");
@@ -432,7 +490,7 @@ internal static partial class ZfsPoolEditor {
         throw new NotSupportedException($"ZFS: a '{type}' top-level vdev is not edited; plain devices, mirrors, RAID-Z and dRAID are.");
       }
       var top = new TopVdev {
-        Id = id, Children = children, Tree = tree, IsMirror = type == "mirror",
+        Id = id, Children = children, Tree = tree, IsMirror = type == "mirror", DraidSlots = slots, Ignored = ignored, StaleDtls = staleDtls,
         Ashift = (int)(tree.UInt64("ashift") ?? throw new InvalidDataException("ZFS: a vdev has no ashift.")),
         MetaslabShift = (int)(tree.UInt64("metaslab_shift") ?? throw new InvalidDataException("ZFS: a vdev has no metaslab_shift.")),
         MetaslabArray = tree.UInt64("metaslab_array") ?? throw new InvalidDataException("ZFS: a vdev has no metaslab array."),
@@ -442,7 +500,7 @@ internal static partial class ZfsPoolEditor {
         top.DeflateRatio = ZfsRaidzVdev.DeflateRatio(children.Length, top.Parity, top.Ashift);
       } else if (type == "draid") {
         // the layout alone: mapping needs no reads
-        top.Draid = new ZfsDraidVdev([.. children.Select(_ => (ZfsVdev)new ZfsMissingVdev("draid child"))],
+        top.Draid = new ZfsDraidVdev([.. slots!.Select(_ => (ZfsVdev)new ZfsMissingVdev("draid child"))],
           (int)(tree.UInt64("draid_ndata") ?? 0), (int)(tree.UInt64("nparity") ?? 0),
           (int)(tree.UInt64("draid_nspares") ?? 0), (int)(tree.UInt64("draid_ngroups") ?? 0), top.Ashift);
         top.DeflateRatio = (1L << 17) / (top.Draid.AllocatedSize(1L << 17) >> ZfsConstants.SectorShift);
@@ -1682,6 +1740,7 @@ internal static partial class ZfsPoolEditor {
       this.FlushBpobjAppends();
       if (this._emptyBpobjDelta != 0) this.AdjustEmptyBpobj();
       this.TouchDirChain(this.MosDirectory());
+      this.PlanStaleDtls();
 
       // space maps: every metaslab the guess names is rewritten whole
       foreach (var (g, count) in this._guess.OrderBy(g => g.Key)) {
@@ -1738,6 +1797,47 @@ internal static partial class ZfsPoolEditor {
     }
 
     private int _newMaps;
+
+    /// <summary>A dirty time log rewritten: its txg ranges as words (a debug entry first) and how many txgs they cover.</summary>
+    private readonly List<(ulong Object, Dnode Dnode, NewBlock[] Blocks, List<ulong> Words, long Total)> _dtls = [];
+
+    /// <summary>
+    /// An out-of-service device misses every txg written past it: its dirty time log (a space map
+    /// of txgs, unit 1, from 0) gains this txg, so a resilver that brings it back covers it too.
+    /// </summary>
+    private void PlanStaleDtls() {
+      var mos = this._mos;
+      foreach (var obj in this._s.Tops.SelectMany(t => t.StaleDtls)) {
+        var ranges = new SortedDictionary<long, long>();
+        this._s.ReplayMap(obj, 0, long.MaxValue, 0, (_, from, run, alloc) => {
+          if (!alloc) throw new NotSupportedException("ZFS: a dirty time log that frees ranges is not edited.");
+          ranges[from] = Math.Max(ranges.GetValueOrDefault(from), from + run);
+        });
+        ranges[(long)this.Txg] = Math.Max(ranges.GetValueOrDefault((long)this.Txg), (long)this.Txg + 1);
+        var merged = new List<(long From, long To)>();
+        foreach (var (from, to) in ranges)
+          if (merged.Count > 0 && from <= merged[^1].To) merged[^1] = (merged[^1].From, Math.Max(merged[^1].To, to));
+          else merged.Add((from, to));
+        var words = new List<ulong> { 2UL << 62 | 1UL << 50 | this.Txg };      // debug: ALLOC, pass 1, txg
+        foreach (var (from, to) in merged)
+          for (var at = from; at < to;) {
+            var run = Math.Min(to - at, SmRunMax);
+            words.Add((ulong)at << 16 | (ulong)(run - 1));
+            at += run;
+          }
+        var d = this.Load(mos, obj);
+        mos.Dirty.Add(obj);
+        this.FreeTree(mos, d, spill: false);
+        var count = Math.Max(1, (int)((words.Count * 8L + d.DataBlockSize - 1) / d.DataBlockSize));
+        var blocks = new NewBlock[count];
+        var changes = new Dictionary<ulong, NewBlock?>();
+        for (var i = 0; i < count; ++i)
+          changes[(ulong)i] = blocks[i] = this.AllocBlock(mos, d, d.DataBlockSize, OtSpaceMap, 0);
+        this.SetBlocks(mos, d, changes);
+        this._dtls.Add((obj, d, blocks, words, merged.Sum(r => r.To - r.From)));
+      }
+    }
+
     private const byte OtBpobj = 5, OtBpobjHeader = 6;
     private const int BpobjBlock = 128 * 1024;
 
@@ -2264,6 +2364,16 @@ internal static partial class ZfsPoolEditor {
           ZfsWriter.SpaceMapHistogram(bonus[64..], top.MetaslabStart(m), top.MetaslabEnd(m), this._allocated[g].Ranges, top.Ashift);
         }
       }
+      foreach (var (obj, d, blocks, words, total) in this._dtls) {
+        var blockSize = d.DataBlockSize;
+        var bytes = new byte[blocks.Length * blockSize];
+        for (var i = 0; i < words.Count; ++i) W64(bytes, i * 8, words[i]);
+        for (var i = 0; i < blocks.Length; ++i)
+          blocks[i].Data = bytes.AsSpan(i * blockSize, blockSize).ToArray();
+        W64(d.Bonus, 0, obj);
+        W64(d.Bonus, 8, (ulong)(words.Count * 8));
+        W64(d.Bonus, 16, (ulong)total);
+      }
       if (this._logSpacemap is { } log) {
         var bonus = log.Bonus;
         bonus.Clear();
@@ -2303,7 +2413,8 @@ internal static partial class ZfsPoolEditor {
             for (var c = 0; c < columns.Length; ++c) {
               var stripe = new byte[width];
               encoded[c].CopyTo(stripe, 0);
-              commit.Blocks.Add((first[block.Vdev] + columns[c].Child, ZfsConstants.DataStart + columns[c].Offset, stripe));
+              foreach (var target in top.Targets(columns[c].Child, columns[c].Offset))
+                commit.Blocks.Add((first[block.Vdev] + target, ZfsConstants.DataStart + columns[c].Offset, stripe));
             }
           }
         } else if (top.Parity > 0) {
