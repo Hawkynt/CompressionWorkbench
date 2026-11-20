@@ -4942,6 +4942,8 @@ Shared utility methods for format descriptors (path sanitization, filtering, etc
 | `FlatFiles` | `static IEnumerable<ValueTuple<string, byte[]>> FlatFiles(IReadOnlyList<ArchiveInputInfo> inputs)` | Flattens all entries to root level (filename only) with their data. For formats without path support. |
 | `MatchesFilter` | `static bool MatchesFilter(string name, string[] filters)` | Returns true if `name` matches any of the `filters` by exact name, trailing path segment, or filename-only comparison. |
 | `MethodWithEffort` | `static string MethodWithEffort(FormatCreateOptions options, string method = null)` | The method name to hand a writer that reads its own effort tier out of the name, with the "+" run the caller asked for restored. |
+| `OutputFilePath` | `static string OutputFilePath(Stream output)` | The path an archive is being written to, when `output` is a file: the target behind an atomic-write temp name (`name.tmp.xxxxxxxx`) is what further volumes are named after. Null for any other stream. |
+| `ParseVolumeSize` | `static long ParseVolumeSize(string text)` | A volume size as the `VolumeSize` option carries it: bytes, or a number with a k/m/g/t suffix (powers of 1024); empty means 0, one file. |
 | `WriteFile` | `static void WriteFile(string baseDir, string entryName, byte[] data)` | Sanitizes an entry name and writes its data to disk under `baseDir`. Prevents path traversal attacks. |
 
 #### `FormatMethodInfo`
@@ -27445,12 +27447,16 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 #### `PeaArchive`
 
-PEA (PeaZip's own format, version 1 revision 6): a 10-byte archive header, one stream with a 10-byte header naming the compression (stored or zlib at level 3/6/9 in independent 1 MiB blocks) and three integrity checks — per object, for the stream and for the volume — then objects (name, time, attributes, size, data) and an end-of-archive trigger. This covers single-volume archives with any of the hash or checksum controls; encrypted streams (EAX, HMAC, Twofish, Serpent and their cascades) are refused.
+PEA (PeaZip's own format, version 1 revision 6): a 10-byte archive header, one stream with a 10-byte header naming the compression (stored or zlib at level 3/6/9 in independent 1 MiB blocks) and three integrity checks — per object, for the stream and for the volume — then objects (name, time, attributes, size, data) and an end-of-archive trigger. A volume set is that byte stream cut into `name.000001.pea`, `name.000002.pea`, …, each volume ending with the volume check over its own bytes. This covers single archives and volume sets with any of the hash or checksum controls; encrypted streams (EAX, HMAC, Twofish, Serpent and their cascades) are refused.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Read` | `static List<PeaEntry> Read(Stream stream)` | Reads and verifies a single-volume PEA archive. |
-| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, int compression = 2, Check objectCheck = 2, Check streamCheck = 19, Check volumeCheck = 2)` | Writes a single-volume PEA 1.6 archive the way PeaZip does on Unix: names are stored as absolute paths under `/`, times as Unix seconds, zlib blocks of 1 MiB (a block that does not shrink is stored), with the given object, stream and volume checks. |
+| `ReadVolumes` | `static List<PeaEntry> ReadVolumes(IEnumerable<byte[]> volumes)` | Reads and verifies a PEA archive from its volumes in order. Each volume ends with its own volume check over that volume's bytes; the archive is the volumes' contents, checks removed, joined. |
+| `Read` | `static List<PeaEntry> Read(Stream stream)` | Reads and verifies a PEA archive. A file stream named like a volume (`name.000001.pea`) is read together with the volumes beside it, starting from volume 1. |
+| `VolumePath` | `static string VolumePath(string baseName, int number)` | The file name of volume `number` (1-based) of the set named `baseName`: `base.000001.pea`, `base.000002.pea`, … (at least six digits). |
+| `VolumePaths` | `static List<string> VolumePaths(string path)` | Every volume of the set `path` belongs to, in order from volume 1 while the next file exists; just `path` when it is not named like a volume. |
+| `VolumeSetBase` | `static string VolumeSetBase(string path)` | The set name of a volume path (`dir/base.000003.pea` gives `dir/base`), or null when `path` is not named like a volume. |
+| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, int compression = 2, Check objectCheck = 2, Check streamCheck = 19, Check volumeCheck = 2, long volumeSize = 0, Func<int, Stream> openVolume = null)` | Writes a PEA 1.6 archive the way PeaZip does on Unix: names are stored as absolute paths under `/`, times as Unix seconds, zlib blocks of 1 MiB (a block that does not shrink is stored), with the given object, stream and volume checks. |
 
 #### `PeaArchive.Check`
 
@@ -27505,7 +27511,7 @@ One object of a PEA archive.
 
 PEA archive (.pea), PeaZip's native format.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -27521,6 +27527,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |

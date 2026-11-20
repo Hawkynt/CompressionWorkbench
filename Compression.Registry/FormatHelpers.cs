@@ -122,6 +122,33 @@ public static class FormatHelpers {
     => inputs.Where(i => !i.IsDirectory).Select(i => (Path.GetFileName(i.ArchiveName), i.ReadContent()));
 
   /// <summary>
+  /// A volume size as the <see cref="FormatOptionKeys.VolumeSize"/> option carries it: bytes, or a
+  /// number with a k/m/g/t suffix (powers of 1024); empty means 0, one file.
+  /// </summary>
+  /// <exception cref="ArgumentException">The text is not a size.</exception>
+  public static long ParseVolumeSize(string? text) {
+    if (string.IsNullOrWhiteSpace(text)) return 0;
+    var t = text.Trim();
+    var shift = char.ToLowerInvariant(t[^1]) switch { 'k' => 10, 'm' => 20, 'g' => 30, 't' => 40, 'b' => 0, _ => -1 };
+    if (shift >= 0) t = t[..^1];
+    else shift = 0;
+    if (!long.TryParse(t, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var v) || v > long.MaxValue >> shift)
+      throw new ArgumentException($"Volume size '{text}' is not a size.");
+    return v << shift;
+  }
+
+  /// <summary>
+  /// The path an archive is being written to, when <paramref name="output"/> is a file: the
+  /// target behind an atomic-write temp name (<c>name.tmp.xxxxxxxx</c>) is what further volumes
+  /// are named after. Null for any other stream.
+  /// </summary>
+  public static string? OutputFilePath(Stream output) {
+    if (output is not FileStream { Name: { Length: > 0 } name }) return null;
+    var m = System.Text.RegularExpressions.Regex.Match(name, @"^(?<t>.+)\.tmp\.[0-9a-fA-F]{8}$");
+    return m.Success ? m.Groups["t"].Value : name;
+  }
+
+  /// <summary>
   /// The method name to hand a writer that reads its own effort tier out of the
   /// name, with the "+" run the caller asked for restored.
   /// </summary>

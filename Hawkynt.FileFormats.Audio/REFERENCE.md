@@ -4942,6 +4942,8 @@ Shared utility methods for format descriptors (path sanitization, filtering, etc
 | `FlatFiles` | `static IEnumerable<ValueTuple<string, byte[]>> FlatFiles(IReadOnlyList<ArchiveInputInfo> inputs)` | Flattens all entries to root level (filename only) with their data. For formats without path support. |
 | `MatchesFilter` | `static bool MatchesFilter(string name, string[] filters)` | Returns true if `name` matches any of the `filters` by exact name, trailing path segment, or filename-only comparison. |
 | `MethodWithEffort` | `static string MethodWithEffort(FormatCreateOptions options, string method = null)` | The method name to hand a writer that reads its own effort tier out of the name, with the "+" run the caller asked for restored. |
+| `OutputFilePath` | `static string OutputFilePath(Stream output)` | The path an archive is being written to, when `output` is a file: the target behind an atomic-write temp name (`name.tmp.xxxxxxxx`) is what further volumes are named after. Null for any other stream. |
+| `ParseVolumeSize` | `static long ParseVolumeSize(string text)` | A volume size as the `VolumeSize` option carries it: bytes, or a number with a k/m/g/t suffix (powers of 1024); empty means 0, one file. |
 | `WriteFile` | `static void WriteFile(string baseDir, string entryName, byte[] data)` | Sanitizes an entry name and writes its data to disk under `baseDir`. Prevents path traversal attacks. |
 
 #### `FormatMethodInfo`

@@ -208,27 +208,9 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Volume size from the <see cref="FormatOptionKeys.VolumeSize"/> option: bytes, or a number with a
   /// k/m/g suffix (powers of 1024), as rar's <c>-v</c> takes it; 0 or absent means one file.
   /// </summary>
-  internal static long ParseVolumeSize(string? text) {
-    if (string.IsNullOrWhiteSpace(text)) return 0;
-    var t = text.Trim();
-    var shift = char.ToLowerInvariant(t[^1]) switch { 'k' => 10, 'm' => 20, 'g' => 30, 't' => 40, 'b' => 0, _ => -1 };
-    if (shift >= 0) t = t[..^1];
-    else shift = 0;
-    if (!long.TryParse(t, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var v) || v > long.MaxValue >> shift)
-      throw new ArgumentException($"RAR volume size '{text}' is not a size.");
-    return v << shift;
-  }
+  internal static long ParseVolumeSize(string? text) => FormatHelpers.ParseVolumeSize(text);
 
-  /// <summary>
-  /// The path the first volume is being written to, when <paramref name="output"/> is a file:
-  /// the target behind an atomic-write temp name (<c>name.tmp.xxxxxxxx</c>) is what the
-  /// other volumes are named after.
-  /// </summary>
-  private static string? OutputPath(Stream output) {
-    if (output is not FileStream { Name: { Length: > 0 } name }) return null;
-    var m = System.Text.RegularExpressions.Regex.Match(name, @"^(?<t>.+)\.tmp\.[0-9a-fA-F]{8}$");
-    return m.Success ? m.Groups["t"].Value : name;
-  }
+  private static string? OutputPath(Stream output) => OutputFilePath(output);
 
   private void CreateCore(Stream output, IReadOnlyList<StreamingArchiveInput> inputs, FormatCreateOptions options) {
     var target = ResolveCompatibility(options);

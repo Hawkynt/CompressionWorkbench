@@ -29,9 +29,11 @@ public sealed class PeaEntry {
 /// PEA (PeaZip's own format, version 1 revision 6): a 10-byte archive header, one stream with a
 /// 10-byte header naming the compression (stored or zlib at level 3/6/9 in independent 1 MiB
 /// blocks) and three integrity checks — per object, for the stream and for the volume — then
-/// objects (name, time, attributes, size, data) and an end-of-archive trigger. This covers
-/// single-volume archives with any of the hash or checksum controls; encrypted streams (EAX,
-/// HMAC, Twofish, Serpent and their cascades) are refused.
+/// objects (name, time, attributes, size, data) and an end-of-archive trigger. A volume set is
+/// that byte stream cut into <c>name.000001.pea</c>, <c>name.000002.pea</c>, …, each volume
+/// ending with the volume check over its own bytes. This covers single archives and volume sets
+/// with any of the hash or checksum controls; encrypted streams (EAX, HMAC, Twofish, Serpent and
+/// their cascades) are refused.
 /// </summary>
 /// <remarks>
 /// Layout from the public-domain PEA file format specification and PeaZip's pea_utils.pas /
@@ -138,32 +140,117 @@ public static class PeaArchive {
     return Encoding.GetEncoding(1252); // the format's "ANSI" character encoding (byte 7 = 1)
   });
 
-  /// <summary>Reads and verifies a single-volume PEA archive.</summary>
-  /// <exception cref="InvalidDataException">Not a PEA archive, or a check fails.</exception>
+  private static readonly System.Text.RegularExpressions.Regex VolumeName =
+    new(@"^(?<base>.+)\.(?<n>[0-9]{6,})\.pea$", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+  /// <summary>
+  /// The file name of volume <paramref name="number"/> (1-based) of the set named <paramref name="baseName"/>:
+  /// <c>base.000001.pea</c>, <c>base.000002.pea</c>, … (at least six digits).
+  /// </summary>
+  public static string VolumePath(string baseName, int number) {
+    ArgumentOutOfRangeException.ThrowIfLessThan(number, 1);
+    return $"{baseName}.{number.ToString("D6", System.Globalization.CultureInfo.InvariantCulture)}.pea";
+  }
+
+  /// <summary>
+  /// The set name of a volume path (<c>dir/base.000003.pea</c> gives <c>dir/base</c>), or null when
+  /// <paramref name="path"/> is not named like a volume.
+  /// </summary>
+  public static string? VolumeSetBase(string path) {
+    var m = VolumeName.Match(path);
+    return m.Success ? m.Groups["base"].Value : null;
+  }
+
+  /// <summary>
+  /// Every volume of the set <paramref name="path"/> belongs to, in order from volume 1 while the
+  /// next file exists; just <paramref name="path"/> when it is not named like a volume.
+  /// </summary>
+  public static List<string> VolumePaths(string path) {
+    ArgumentNullException.ThrowIfNull(path);
+    var setBase = VolumeSetBase(path);
+    if (setBase is null) return [path];
+    var paths = new List<string>();
+    for (var n = 1; ; ++n) {
+      var candidate = n == 1 && Path.GetFileName(path).Equals(Path.GetFileName(VolumePath(setBase, 1)), StringComparison.OrdinalIgnoreCase)
+        ? path : VolumePath(setBase, n);
+      if (!File.Exists(candidate)) break;
+      paths.Add(candidate);
+    }
+    if (paths.Count == 0) throw new FileNotFoundException($"PEA volume set '{Path.GetFileName(setBase)}' has no first volume.", VolumePath(setBase, 1));
+    return paths;
+  }
+
+  /// <summary>
+  /// Reads and verifies a PEA archive. A file stream named like a volume (<c>name.000001.pea</c>)
+  /// is read together with the volumes beside it, starting from volume 1.
+  /// </summary>
+  /// <exception cref="InvalidDataException">Not a PEA archive, a volume is missing, or a check fails.</exception>
   /// <exception cref="NotSupportedException">Encrypted stream, newer revision, or unsupported compression.</exception>
   public static List<PeaEntry> Read(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
+    if (stream is FileStream { Name: { Length: > 0 } name } && VolumeSetBase(name) is not null) {
+      var paths = VolumePaths(name);
+      return ReadVolumes(paths.Select(p => string.Equals(Path.GetFullPath(p), Path.GetFullPath(name), StringComparison.Ordinal) ? ReadAll(stream) : File.ReadAllBytes(p)));
+    }
+    return ReadVolumes([ReadAll(stream)]);
+  }
+
+  private static byte[] ReadAll(Stream stream) {
     if (stream.CanSeek) stream.Position = 0;
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
-    var b = ms.ToArray();
-    if (b.Length < 20 || b[0] != Magic) throw new InvalidDataException("Not a PEA archive.");
-    if (b[1] > 1 || b[1] == 1 && b[2] > 6) throw new NotSupportedException($"PEA format {b[1]}.{b[2]} is newer than this reader.");
-    var volumeAlgo = b[3];
-    var timeEncoding = b[6];
-    if (!b.AsSpan(10, 6).SequenceEqual((ReadOnlySpan<byte>)[0, 0, (byte)'P', (byte)'O', (byte)'D', 0]))
+    return ms.ToArray();
+  }
+
+  /// <summary>
+  /// Reads and verifies a PEA archive from its volumes in order. Each volume ends with its own
+  /// volume check over that volume's bytes; the archive is the volumes' contents, checks removed,
+  /// joined.
+  /// </summary>
+  /// <exception cref="InvalidDataException">Not a PEA archive, a volume is missing or damaged, or a check fails.</exception>
+  /// <exception cref="NotSupportedException">Encrypted stream, newer revision, or unsupported compression.</exception>
+  public static List<PeaEntry> ReadVolumes(IEnumerable<byte[]> volumes) {
+    ArgumentNullException.ThrowIfNull(volumes);
+    var joined = new MemoryStream();
+    var volumeAlgo = (byte)0;
+    var volumeTag = 0;
+    var count = 0;
+    var failedVolume = 0;
+    foreach (var v in volumes) {
+      if (count++ == 0) {
+        if (v.Length < 10 || v[0] != Magic) throw new InvalidDataException("Not a PEA archive.");
+        if (v[1] > 1 || v[1] == 1 && v[2] > 6) throw new NotSupportedException($"PEA format {v[1]}.{v[2]} is newer than this reader.");
+        volumeAlgo = v[3];
+        volumeTag = TagSize(volumeAlgo);
+      }
+      var content = v.Length - volumeTag;
+      if (content <= 0) throw new InvalidDataException($"PEA volume {count} is truncated.");
+      if (failedVolume == 0 && volumeAlgo != 0 && !Tag(volumeAlgo, v.AsSpan(0, content)).AsSpan().SequenceEqual(v.AsSpan(content, volumeTag)))
+        failedVolume = count;
+      joined.Write(v, 0, content);
+    }
+    if (count == 0) throw new InvalidDataException("Not a PEA archive.");
+    var b = joined.ToArray();
+    if (b.Length >= 20) {
+      // an encrypted or unknown stream is refused as such, not as the damage its unknown layout looks like
+      _ = TagSize(b[18]);
+      _ = TagSize(b[19]);
+    }
+    if (failedVolume != 0)
+      throw new InvalidDataException($"PEA volume check fails for volume {failedVolume} (damaged, or a volume of the set is missing).");
+    return ReadJoined(b);
+  }
+
+  private static List<PeaEntry> ReadJoined(byte[] b) {
+    if (b.Length < 20 || !b.AsSpan(10, 6).SequenceEqual((ReadOnlySpan<byte>)[0, 0, (byte)'P', (byte)'O', (byte)'D', 0]))
       throw new InvalidDataException("PEA stream header is missing.");
+    var timeEncoding = b[6];
     var compression = b[16];
     var streamAlgo = b[18];
     var objAlgo = b[19];
     if (compression > 3) throw new NotSupportedException($"PEA compression {compression} is not supported.");
-    int volumeTag = TagSize(volumeAlgo), streamTag = TagSize(streamAlgo), objTag = TagSize(objAlgo);
-
-    // A single-volume archive ends with the volume check; everything before it is checked by it.
-    var end = b.Length - volumeTag;
-    if (end < 20) throw new InvalidDataException("PEA archive is truncated.");
-    if (volumeAlgo != 0 && !Tag(volumeAlgo, b.AsSpan(0, end)).AsSpan().SequenceEqual(b.AsSpan(end, volumeTag)))
-      throw new InvalidDataException("PEA volume check fails (damaged, or not the only volume).");
+    int streamTag = TagSize(streamAlgo), objTag = TagSize(objAlgo);
+    var end = b.Length;
 
     var p = 20;
     var blockSize = 0;
@@ -322,15 +409,25 @@ public static class PeaArchive {
   public readonly record struct Input(string Path, byte[]? Data, DateTime LastModified);
 
   /// <summary>
-  /// Writes a single-volume PEA 1.6 archive the way PeaZip does on Unix: names are stored as
-  /// absolute paths under <c>/</c>, times as Unix seconds, zlib blocks of 1 MiB (a block that
-  /// does not shrink is stored), with the given object, stream and volume checks.
+  /// Writes a PEA 1.6 archive the way PeaZip does on Unix: names are stored as absolute paths
+  /// under <c>/</c>, times as Unix seconds, zlib blocks of 1 MiB (a block that does not shrink is
+  /// stored), with the given object, stream and volume checks.
   /// </summary>
+  /// <param name="output">Receives the archive, or its first volume.</param>
+  /// <param name="inputs">The objects to store.</param>
   /// <param name="compression">0 = stored, 1/2/3 = zlib level 3/6/9.</param>
+  /// <param name="objectCheck">The check after every object.</param>
+  /// <param name="streamCheck">The check over the whole stream.</param>
+  /// <param name="volumeCheck">The check at the end of every volume.</param>
+  /// <param name="volumeSize">The size of every volume but the last, check included; 0 writes one volume.
+  /// Volumes are named <c>name.000001.pea</c>, <c>name.000002.pea</c>, … (see <see cref="VolumePath"/>).</param>
+  /// <param name="openVolume">Opens volume <c>n</c> (2, 3, …) for writing; the stream is disposed after it.</param>
   public static void Write(Stream output, IEnumerable<Input> inputs, int compression = 2,
-      Check objectCheck = Check.Crc32, Check streamCheck = Check.Sha256, Check volumeCheck = Check.Crc32) {
+      Check objectCheck = Check.Crc32, Check streamCheck = Check.Sha256, Check volumeCheck = Check.Crc32,
+      long volumeSize = 0, Func<int, Stream>? openVolume = null) {
     ArgumentNullException.ThrowIfNull(output);
     if (compression is < 0 or > 3) throw new ArgumentOutOfRangeException(nameof(compression));
+    ArgumentOutOfRangeException.ThrowIfNegative(volumeSize);
     var ms = new MemoryStream();
     // archive header: magic, version 1, revision 6, volume check, ECC 0, OS (Linux), time encoding (Unix), ANSI, CPU, iterations
     ms.Write([Magic, 1, 6, (byte)volumeCheck, 0, 0x33, 0x30, 0x01, 0x21, 0x00]);
@@ -392,7 +489,36 @@ public static class PeaArchive {
     }
     ms.Write([0, 0, (byte)'E', (byte)'O', (byte)'A', 0]);
     ms.Write(Tag((byte)streamCheck, ms.GetBuffer().AsSpan(0, (int)ms.Length)));
-    ms.Write(Tag((byte)volumeCheck, ms.GetBuffer().AsSpan(0, (int)ms.Length)));
-    output.Write(ms.GetBuffer(), 0, (int)ms.Length);
+    WriteVolumes(output, ms.GetBuffer().AsSpan(0, (int)ms.Length), volumeCheck, volumeSize, openVolume);
+  }
+
+  /// <summary>
+  /// Cuts the archive into volumes of <paramref name="volumeSize"/> bytes, each ending with the
+  /// volume check over its own bytes (the way pea fills a volume to its size, check included, before
+  /// it opens the next). Volume 1 goes to <paramref name="output"/>, the others to
+  /// <paramref name="openVolume"/>; a volume size of 0 writes one volume.
+  /// </summary>
+  private static void WriteVolumes(Stream output, ReadOnlySpan<byte> archive, Check volumeCheck, long volumeSize, Func<int, Stream>? openVolume) {
+    var tagSize = TagSize((byte)volumeCheck);
+    if (volumeSize <= 0) {
+      output.Write(archive);
+      output.Write(Tag((byte)volumeCheck, archive));
+      return;
+    }
+    // pea raises a volume size below the check size + 10 to that, so volume 1 holds the whole archive header.
+    var payload = (int)Math.Min(Math.Max(volumeSize, tagSize + 10) - tagSize, int.MaxValue);
+    var number = 1;
+    for (var offset = 0; offset < archive.Length; offset += payload, ++number) {
+      var chunk = archive.Slice(offset, Math.Min(payload, archive.Length - offset));
+      if (number == 1) {
+        output.Write(chunk);
+        output.Write(Tag((byte)volumeCheck, chunk));
+        continue;
+      }
+      if (openVolume is null) throw new ArgumentException("A PEA archive larger than one volume needs a way to open its other volumes.", nameof(openVolume));
+      using var volume = openVolume(number);
+      volume.Write(chunk);
+      volume.Write(Tag((byte)volumeCheck, chunk));
+    }
   }
 }

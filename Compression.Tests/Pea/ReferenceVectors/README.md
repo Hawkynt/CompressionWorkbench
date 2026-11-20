@@ -21,5 +21,13 @@ Every archive was made with
 | `misc.pea` | PCOMPRESS2 | RIPEMD160 | WHIRLPOOL | BLAKE2S |
 | `big.pea` | PCOMPRESS2 | CRC32 | CRC32 | SHA256 (input: `big.bin` only; three 1 MiB blocks) |
 
+Volume sets, from `/tmp/a2e1_peasrc` (the same four objects) with
+`pea PEA <out> <volume size> <compression> <volume check> <object check> <stream check> HIDDEN FROMCL …`:
+
+| Files | Volume size | Compression | Volume | Object | Stream |
+| --- | --- | --- | --- | --- | --- |
+| `vol.000001.pea` … `vol.000003.pea` | 5000 | PCOMPRESS0 | CRC32 | CRC32 | SHA256 |
+| `volz.000001.pea` … `volz.000003.pea` | 200 | PCOMPRESS2 | SHA1 | MD5 | SHA256 |
+
 `pea UNPEA <archive> <dir>/ RESETDATE RESETATTR EXTRACT2DIR HIDDEN "" ""` extracts them under
 `<dir>/<archive name>/`, relative to the objects' common directory.

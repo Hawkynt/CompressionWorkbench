@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Pea;
 
 /// <summary>PEA archive (.pea), PeaZip's native format.</summary>
-public sealed class PeaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class PeaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
   /// <inheritdoc />
   public string Id => "Pea";
   /// <inheritdoc />
@@ -33,7 +33,7 @@ public sealed class PeaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <inheritdoc />
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <inheritdoc />
-  public string Description => "PeaZip's PEA archive: zlib blocks with per-object, stream and volume checks";
+  public string Description => "PeaZip's PEA archive: zlib blocks with per-object, stream and volume checks, as one file or a volume set (name.000001.pea, ...)";
 
   /// <inheritdoc />
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
@@ -64,7 +64,27 @@ public sealed class PeaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       "best" or "pcompress3" => 3,
       var m => throw new NotSupportedException($"PEA method '{m}' is not supported."),
     };
+    var volumeSize = ParseVolumeSize(options.GetString(FormatOptionKeys.VolumeSize));
+    Func<int, Stream>? openVolume = null;
+    if (volumeSize > 0) {
+      var path = OutputFilePath(output) ?? throw new ArgumentException("A PEA volume set must be written to a file, so its other volumes can go beside it.");
+      var setBase = PeaArchive.VolumeSetBase(path);
+      if (setBase is null || !Path.GetFileName(path).Equals(Path.GetFileName(PeaArchive.VolumePath(setBase, 1)), StringComparison.OrdinalIgnoreCase))
+        throw new ArgumentException($"The first volume of a PEA volume set is named name.000001.pea; '{Path.GetFileName(path)}' is not.");
+      openVolume = n => File.Create(PeaArchive.VolumePath(setBase, n));
+    }
     PeaArchive.Write(output, inputs.Select(i => new PeaArchive.Input(i.ArchiveName, i.IsDirectory ? null : i.ReadContent(),
-      i.Metadata?.LastWriteTimeUtc?.UtcDateTime ?? DateTime.UtcNow)), compression);
+      i.Metadata?.LastWriteTimeUtc?.UtcDateTime ?? DateTime.UtcNow)), compression, volumeSize: volumeSize, openVolume: openVolume);
   }
+
+  /// <inheritdoc />
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: FormatOptionKeys.VolumeSize,
+      DisplayName: "Volume size",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Split into volumes of this size, volume check included (bytes, or with k/m/g). The target must be named name.000001.pea; name.000002.pea, ... follow beside it. Empty writes one file.",
+      IsOptimizationAxis: false),
+  ];
 }
