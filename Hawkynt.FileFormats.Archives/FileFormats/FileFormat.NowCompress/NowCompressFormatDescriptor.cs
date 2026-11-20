@@ -3,8 +3,11 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.NowCompress;
 
-/// <summary>Now Compress archive (Now Software, Macintosh). Read-only.</summary>
-public sealed class NowCompressFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+/// <summary>
+/// Now Compress archive (Now Software, Macintosh): read in every block method, written with stored
+/// and LZSS blocks (docs/NOW-COMPRESS-ON-DISK.md).
+/// </summary>
+public sealed class NowCompressFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   /// <summary>Suffix under which a file's resource fork is listed and extracted.</summary>
   public const string ResourceForkSuffix = ".rsrc";
 
@@ -16,7 +19,7 @@ public sealed class NowCompressFormatDescriptor : IFormatDescriptor, IArchiveFor
   public FormatCategory Category => FormatCategory.Archive;
   /// <inheritdoc />
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <inheritdoc />
   public string DefaultExtension => ".now";
@@ -36,7 +39,7 @@ public sealed class NowCompressFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// <inheritdoc />
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <inheritdoc />
-  public string Description => "Now Compress Macintosh archive (LZSS / Huffman blocks); MacRoman file names; read-only";
+  public string Description => "Now Compress Macintosh archive (LZSS / Huffman blocks); MacRoman file names; written with stored and LZSS blocks";
 
   private static IEnumerable<(NowCompressEntry Entry, bool Resource, string Name)> Items(List<NowCompressEntry> entries) {
     foreach (var e in entries) {
@@ -59,6 +62,36 @@ public sealed class NowCompressFormatDescriptor : IFormatDescriptor, IArchiveFor
       WriteFile(outputDir, name, resource ? e.Resource : e.Data);
     }
   }
+
+  /// <summary>
+  /// Creates an archive. An input named "x.rsrc" becomes the resource fork of "x" when "x" is also an
+  /// input (or has no data fork of its own); everything else is a data fork.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var byName = inputs.Where(i => !i.IsDirectory)
+      .ToDictionary(i => i.ArchiveName.Replace('\\', '/'), StringComparer.Ordinal);
+    var items = new List<NowCompressInput>();
+    foreach (var input in inputs) {
+      var name = input.ArchiveName.Replace('\\', '/');
+      if (input.IsDirectory) {
+        items.Add(new(name, IsDirectory: true, LastModified: Modified(input)));
+        continue;
+      }
+      if (name.EndsWith(ResourceForkSuffix, StringComparison.Ordinal) && name.Length > ResourceForkSuffix.Length) {
+        var owner = name[..^ResourceForkSuffix.Length];
+        if (!byName.ContainsKey(owner))
+          items.Add(new(owner, Resource: input.ReadContent(), LastModified: Modified(input)));
+        continue; // otherwise attached to its data fork
+      }
+      var resource = byName.TryGetValue(name + ResourceForkSuffix, out var r) ? r.ReadContent() : null;
+      items.Add(new(name, Data: input.ReadContent(), Resource: resource, LastModified: Modified(input)));
+    }
+    NowCompressWriter.Write(output, items);
+  }
+
+  private static DateTime? Modified(ArchiveInputInfo i)
+    => i.Metadata?.LastWriteTimeUtc?.UtcDateTime
+       ?? (i.InMemoryContent == null && File.Exists(i.FullPath) ? File.GetLastWriteTimeUtc(i.FullPath) : null);
 
   /// <inheritdoc />
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {

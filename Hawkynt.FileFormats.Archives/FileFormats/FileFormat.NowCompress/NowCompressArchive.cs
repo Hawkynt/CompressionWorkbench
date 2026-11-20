@@ -34,7 +34,7 @@ public sealed class NowCompressEntry {
 public static class NowCompressArchive {
   private const int RecordSize = 110;
   // Apple Roman mapping: https://www.unicode.org/Public/MAPPINGS/VENDORS/APPLE/ROMAN.TXT
-  private const string MacRomanHigh =
+  internal const string MacRomanHigh =
     "ÄÅÇÉÑÖÜáàâäãåçéèêëíìîïñóòôöõúùûü†°¢£§•¶ß®©™´¨≠ÆØ∞±≤≥¥µ∂∑∏π∫ªºΩæø¿¡¬√ƒ≈∆«»…\u00A0ÀÃÕŒœ–—“”‘’÷◊ÿŸ⁄€‹›ﬁﬂ‡·‚„‰ÂÊÁËÈÍÎÏÌÓÔ\uF8FFÒÚÛÙıˆ˜¯˘˙˚¸˝˛ˇ";
 
   /// <summary>Whether the bytes start like a Now Compress archive (magic, file count, first name, header checksum).</summary>
