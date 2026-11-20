@@ -62,6 +62,9 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     "gang and embedded blocks, ditto copies, mirror and RAID-Z. Creates single-device version 28 pools " +
     "that OpenZFS imports and scrubs clean, and adds and removes files in such pools in place.";
 
+  /// <summary>A password opens every natively encrypted dataset whose key it is (passphrase, hex or raw key as text).</summary>
+  private static ZfsKeyMaterial? Key(string? password) => password == null ? null : ZfsKeyMaterial.FromText(password);
+
   private const string FullName = "FULL.zfs";
   private const string MetadataName = "metadata.ini";
 
@@ -71,7 +74,7 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     try {
-      using var reader = new ZfsReader(stream);
+      using var reader = new ZfsReader(stream, Key(password));
       var entries = reader.Entries.Select((e, i) => new ArchiveEntryInfo(
         i, e.Name, e.Size, e.Size, "zfs", e.IsDirectory, false, e.LastModified,
         IsSymlink: e.IsSymlink, LinkTarget: e.LinkTarget)).ToList();
@@ -91,7 +94,7 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     ZfsReader reader;
     try {
-      reader = new ZfsReader(stream);
+      reader = new ZfsReader(stream, Key(password));
     } catch (Exception e) when (IsReadFailure(e)) {
       if (files is not { Length: > 0 } || MatchesFilter(MetadataName, files))
         WriteFile(outputDir, MetadataName, Encoding.UTF8.GetBytes($"parse_status=partial\nerror={OneLine(e.Message)}\n"));

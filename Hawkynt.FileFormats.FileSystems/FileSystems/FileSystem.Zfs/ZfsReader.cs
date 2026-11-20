@@ -16,8 +16,9 @@ public sealed record ZfsDataset(string Name, string Path, string Kind, string? R
 /// copies, mirrors and RAID-Z. Written from <c>docs/ZFS-ON-DISK.md</c>.
 /// </summary>
 /// <remarks>
-/// Read-only by design. Natively encrypted datasets, volumes (zvols) and big-endian pools
-/// are reported and refused rather than guessed at. Checksums are verified for Fletcher-2,
+/// Read-only by design. Natively encrypted datasets are read with their key material (every
+/// AES-GCM/CCM suite; passphrase, hex and raw keys), every MAC checked; without it, as volumes
+/// (zvols) and big-endian pools, they are reported and refused rather than guessed at. Checksums are verified for Fletcher-2,
 /// Fletcher-4, SHA-256 and SHA-512; the salted ones (Skein, Edon-R, BLAKE3) are read
 /// unverified and named in <see cref="UnverifiedChecksums"/>.
 /// </remarks>
@@ -29,15 +30,32 @@ public sealed class ZfsReader : IDisposable {
   private readonly Dictionary<string, int> _byPath = new(StringComparer.Ordinal);
   private readonly List<ZfsDataset> _datasets = [];
   private readonly List<string> _warnings = [];
+  private readonly ZfsKeyMaterial? _anyKey;
+  private readonly IReadOnlyDictionary<string, ZfsKeyMaterial> _keys;
+  private readonly Dictionary<ulong, string> _dirNames = [];
+  private readonly Dictionary<ulong, (ZfsDatasetKey? Key, string? Refusal)> _datasetKeys = [];
 
   /// <summary>Opens the pool on a single device image.</summary>
   public ZfsReader(Stream stream, bool leaveOpen = true) : this([stream], leaveOpen) { }
 
+  /// <summary>Opens the pool on a single device image, with key material for its encrypted datasets.</summary>
+  public ZfsReader(Stream stream, ZfsKeyMaterial? anyKey, IReadOnlyDictionary<string, ZfsKeyMaterial>? keys = null, bool leaveOpen = true)
+    : this([stream], anyKey, keys, leaveOpen) { }
+
   /// <summary>Opens the pool spread over <paramref name="devices"/> (mirror, RAID-Z or striped vdevs).</summary>
   /// <exception cref="InvalidDataException">No label, uberblock or readable MOS was found.</exception>
   /// <exception cref="NotSupportedException">The pool was written big-endian.</exception>
-  public ZfsReader(IReadOnlyList<Stream> devices, bool leaveOpen = true) {
+  public ZfsReader(IReadOnlyList<Stream> devices, bool leaveOpen = true) : this(devices, null, null, leaveOpen) { }
+
+  /// <summary>
+  /// Opens the pool with key material for its natively encrypted datasets: <paramref name="keys"/>
+  /// by encryption root (<c>pool/fs</c>), else <paramref name="anyKey"/>. A dataset whose key is
+  /// missing or wrong is listed in <see cref="Datasets"/> as refused.
+  /// </summary>
+  public ZfsReader(IReadOnlyList<Stream> devices, ZfsKeyMaterial? anyKey, IReadOnlyDictionary<string, ZfsKeyMaterial>? keys, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(devices);
+    this._anyKey = anyKey;
+    this._keys = keys ?? new Dictionary<string, ZfsKeyMaterial>();
     foreach (var device in devices) {
       ArgumentNullException.ThrowIfNull(device);
       if (device.CanSeek) device.Position = 0;
@@ -89,6 +107,7 @@ public sealed class ZfsReader : IDisposable {
     if (dir.Bonus.Length < 40) throw new InvalidDataException($"ZFS: DSL directory of {name} has no dsl_dir_phys.");
     var head = BinaryPrimitives.ReadUInt64LittleEndian(dir.Bonus.AsSpan(8));
     var children = BinaryPrimitives.ReadUInt64LittleEndian(dir.Bonus.AsSpan(32));
+    this._dirNames[objectId] = name;
 
     if (path.Length > 0) this.AddDirectory(path, name);
     if (head != 0) this.Guarded(name, () => this.LoadDataset(head, name, path, isSnapshot: false));
@@ -121,12 +140,17 @@ public sealed class ZfsReader : IDisposable {
       this._datasets.Add(new(name, path, kind, "the dataset has no object set yet"));
       return;
     }
+    ZfsDatasetKey? key = null;
     if (bp.IsEncrypted) {
-      this._datasets.Add(new(name, path, kind, "native encryption: names and contents are ciphertext and no key is available"));
-      return;
+      var (found, refusal) = this.KeyFor(BinaryPrimitives.ReadUInt64LittleEndian(ds.Bonus));
+      if (found == null) {
+        this._datasets.Add(new(name, path, kind, refusal));
+        return;
+      }
+      key = found;
     }
 
-    var os = this._pool.ReadObjectSet(bp);
+    var os = this._pool.ReadObjectSet(bp, key);
     switch (os.Type) {
       case ZfsConstants.OstZfs:
         this._datasets.Add(new(name, path, kind, null));
@@ -148,6 +172,51 @@ public sealed class ZfsReader : IDisposable {
         this.LoadDataset(snap.Value, name + "@" + snap.Name, snapPath, isSnapshot: true);
       });
     }
+  }
+
+  /// <summary>
+  /// The key of an encrypted dataset's DSL directory: its DSL crypto key (suite, guid, version,
+  /// wrapped master and HMAC keys, IV, MAC) opened with the wrapping key that its encryption
+  /// root's key format, PBKDF2 salt and iterations make of the given key material.
+  /// </summary>
+  private (ZfsDatasetKey? Key, string? Refusal) KeyFor(ulong dir) {
+    if (this._datasetKeys.TryGetValue(dir, out var known)) return known;
+    return this._datasetKeys[dir] = this.OpenKey(dir);
+  }
+
+  private (ZfsDatasetKey? Key, string? Refusal) OpenKey(ulong dir) {
+    var mos = this._pool.Mos;
+    var keyObject = DirField(mos, dir, "com.datto:crypto_key_obj");
+    if (keyObject == 0) return (null, "native encryption: the dataset's directory names no DSL crypto key");
+    var fields = mos.Zap(keyObject, "DSL crypto key").ToDictionary(e => e.Name, StringComparer.Ordinal);
+    ulong Int(Dictionary<string, ZfsZapEntry> f, string field) =>
+      f.TryGetValue(field, out var e) ? e.Value : throw new InvalidDataException($"ZFS: a DSL crypto key has no {field}.");
+    byte[] Bytes(string field) =>
+      fields.TryGetValue(field, out var e) ? e.Values.Select(v => (byte)v).ToArray() : throw new InvalidDataException($"ZFS: a DSL crypto key has no {field}.");
+
+    var rootDir = Int(fields, "DSL_CRYPTO_ROOT_DDOBJ");
+    var rootName = this._dirNames.GetValueOrDefault(rootDir, $"directory {rootDir}");
+    var material = this._keys.TryGetValue(rootName, out var given) ? given : this._anyKey;
+    if (material == null) return (null, $"native encryption: no key given for encryption root {rootName}");
+    var rootFields = rootDir == dir ? fields
+      : mos.Zap(DirField(mos, rootDir, "com.datto:crypto_key_obj"), "DSL crypto key").ToDictionary(e => e.Name, StringComparer.Ordinal);
+    try {
+      var wrapping = ZfsDatasetKey.WrappingKey(Int(rootFields, "keyformat"), material,
+        rootFields.TryGetValue("pbkdf2salt", out var salt) ? salt.Value : 0,
+        rootFields.TryGetValue("pbkdf2iters", out var iters) ? iters.Value : 0);
+      var key = ZfsDatasetKey.Unwrap(wrapping, Int(fields, "DSL_CRYPTO_SUITE"),
+        fields.TryGetValue("DSL_CRYPTO_VERSION", out var version) ? version.Value : 0, Int(fields, "DSL_CRYPTO_GUID"),
+        Bytes("DSL_CRYPTO_MASTER_KEY_1"), Bytes("DSL_CRYPTO_HMAC_KEY_1"), Bytes("DSL_CRYPTO_IV"), Bytes("DSL_CRYPTO_MAC"));
+      return (key, null);
+    } catch (ZfsWrongKeyException e) {
+      return (null, $"native encryption: {e.Message} (encryption root {rootName})");
+    }
+  }
+
+  /// <summary>A field of a DSL directory that is a ZAP (0 when it is none or lacks the field).</summary>
+  private static ulong DirField(ZfsObjectSet mos, ulong dir, string field) {
+    var dnode = mos.RequireDnode(dir, "DSL directory");
+    return dnode.Type != 0xC4 ? 0 : mos.Zap(dnode).FirstOrDefault(e => e.Name == field)?.Value ?? 0;
   }
 
   private void WalkZpl(ZfsObjectSet os, string dataset, string rootPath) {
@@ -233,7 +302,7 @@ public sealed class ZfsReader : IDisposable {
       var values = new Dictionary<string, byte[]>(StringComparer.Ordinal);
       context.Attributes.Parse(dnode.Bonus, values);
       if (dnode.Spill is { } spill)
-        context.Attributes.Parse(context.ObjectSet.Pool.ReadBlock(spill), values);
+        context.Attributes.Parse(context.ObjectSet.ReadBlock(spill), values);
       return new(
         U64(values, "ZPL_MODE"),
         U64(values, "ZPL_SIZE"),
