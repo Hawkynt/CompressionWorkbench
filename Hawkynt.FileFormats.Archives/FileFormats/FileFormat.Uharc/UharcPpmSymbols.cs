@@ -77,6 +77,32 @@ internal sealed class UharcPpmSymbols {
     return new(Complement(data, (int)textLength, symbols), textLength, [.. starts]);
   }
 
+  /// <summary>
+  /// Packs the stream with whichever of a text stream (<see cref="Plan"/>) and a binary one
+  /// (<see cref="Binary"/>) comes out smaller. The leading text files alone are packed both ways
+  /// to decide (an all-text stream is simply packed both ways), so record-like text that a text
+  /// stream codes worse stays binary.
+  /// </summary>
+  /// <param name="data">The stream.</param>
+  /// <param name="fileEnds">Where each file ends in the stream.</param>
+  /// <param name="encode">Packs a stream (with its file ends) from the given symbols.</param>
+  public static byte[] EncodeSmaller(byte[] data, IReadOnlyList<long> fileEnds, Func<byte[], IReadOnlyList<long>, UharcPpmSymbols, byte[]> encode) {
+    var text = Plan(data, fileEnds);
+    if (text.TextLength == 0)
+      return encode(data, fileEnds, text);
+
+    if (text.TextLength == data.Length) {
+      var asText = encode(data, fileEnds, text);
+      var asBinary = encode(data, fileEnds, Binary(data));
+      return asText.Length <= asBinary.Length ? asText : asBinary;
+    }
+
+    var prefix = data[..(int)text.TextLength];
+    var prefixEnds = fileEnds.Where(end => end <= text.TextLength).ToList();
+    var textWins = encode(prefix, prefixEnds, Plan(prefix, prefixEnds)).Length <= encode(prefix, prefixEnds, Binary(prefix)).Length;
+    return encode(data, fileEnds, textWins ? text : Binary(data));
+  }
+
   /// <summary>Whether a file reads as text: no control bytes but tab, line ends, form feed and end-of-file, and few bytes from 0x80.</summary>
   internal static bool IsText(ReadOnlySpan<byte> file) {
     var high = 0;

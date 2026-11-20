@@ -14,18 +14,19 @@ internal static class UharcPpmEncoder {
   /// <summary>Packs <paramref name="data"/> as PPM stream <paramref name="method"/> (24..39).</summary>
   /// <param name="data">The stream.</param>
   /// <param name="method">The PPM method.</param>
-  /// <param name="fileEnds">Where each file ends in the stream; leading text files become a text stream.</param>
-  public static byte[] Encode(byte[] data, int method, IReadOnlyList<long> fileEnds) {
+  /// <param name="fileEnds">Where each file ends in the stream; leading text files become a text stream when that is smaller.</param>
+  public static byte[] Encode(byte[] data, int method, IReadOnlyList<long> fileEnds)
+    => UharcPpmSymbols.EncodeSmaller(data, fileEnds, (d, ends, plan) => Encode(d, method, ends, plan));
+
+  /// <summary>Packs <paramref name="data"/> from the given symbols (a text or a binary stream).</summary>
+  internal static byte[] Encode(byte[] data, int method, IReadOnlyList<long> fileEnds, UharcPpmSymbols plan) {
     if (method is < UharcMethods.PpmFirst or > UharcMethods.PpmLast)
       throw new ArgumentOutOfRangeException(nameof(method));
     if (data.Length == 0)
       return [];
 
     var coder = new UharcRangeEncoder();
-    var model = new UharcPpmModel<UharcEncoding>(new(coder), method) {
-      Source = data,
-      Plan = UharcPpmSymbols.Plan(data, fileEnds),
-    };
+    var model = new UharcPpmModel<UharcEncoding>(new(coder), method) { Source = data, Plan = plan };
     var output = new byte[data.Length];
     model.Run(output, fileEnds);
     if (!output.AsSpan().SequenceEqual(data))
