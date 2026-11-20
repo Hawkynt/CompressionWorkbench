@@ -86,6 +86,20 @@ public class SfArkTests {
     ];
   }
 
+  [TestCase("turbo", 4), TestCase("TURBO", 4), TestCase("fast", 5), TestCase(null, 5), Category("RoundTrip")]
+  public void Descriptor_WritesTheMethodItIsAskedFor(string? method, int expected) {
+    var sf2 = Sf2Builder.Build(Sf2Builder.Tone(6000, 4));
+    using var packed = new MemoryStream();
+    ((IStreamFormatOperations)new FileFormat.SfArk.SfArkFormatDescriptor()).Compress(new MemoryStream(sf2), packed, new FormatCreateOptions(method));
+    Assert.That(SfArkCodec.Decode(packed.ToArray(), out var info), Is.EqualTo(sf2));
+    Assert.That(info.Method, Is.EqualTo(expected));
+  }
+
+  [Test, Category("Exception")]
+  public void Descriptor_RefusesAMethodItDoesNotWrite()
+    => Assert.Throws<ArgumentException>(() => ((IStreamFormatOperations)new FileFormat.SfArk.SfArkFormatDescriptor())
+      .Compress(new MemoryStream(Sf2Builder.Build([1, 2, 3])), new MemoryStream(), new FormatCreateOptions("max")));
+
   [Test, Category("RoundTrip")]
   public void TurboMix_RoundTrips() {
     var sf2 = Sf2Builder.Build(TurboMix());

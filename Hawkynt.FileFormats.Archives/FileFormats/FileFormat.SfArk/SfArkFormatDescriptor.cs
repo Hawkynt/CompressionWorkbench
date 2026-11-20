@@ -24,7 +24,7 @@ public sealed class SfArkFormatDescriptor : IFormatDescriptor, IStreamFormatOper
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new(SfArkCodec.Signature.ToArray(), Offset: SfArkCodec.SignatureOffset, Confidence: 0.85)];
   /// <inheritdoc />
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("fast", "Fast")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("fast", "Fast"), new("turbo", "Turbo")];
   /// <inheritdoc />
   public string? TarCompressionFormatId => null;
   /// <inheritdoc />
@@ -44,5 +44,18 @@ public sealed class SfArkFormatDescriptor : IFormatDescriptor, IStreamFormatOper
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     output.Write(SfArkCodec.Encode(ms.GetBuffer().AsSpan(0, (int)ms.Length)));
+  }
+
+  /// <summary>Packs with the method <paramref name="options"/> names: <c>fast</c> (the default) or <c>turbo</c>.</summary>
+  public void Compress(Stream input, Stream output, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    var turbo = (options.MethodName ?? "fast").ToLowerInvariant() switch {
+      "fast" => false,
+      "turbo" => true,
+      var other => throw new ArgumentException($"sfArk: method '{other}' is not written; fast and turbo are."),
+    };
+    using var ms = new MemoryStream();
+    input.CopyTo(ms);
+    output.Write(SfArkCodec.Encode(ms.GetBuffer().AsSpan(0, (int)ms.Length), "sound.sf2", turbo));
   }
 }
