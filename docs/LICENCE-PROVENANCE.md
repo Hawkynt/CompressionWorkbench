@@ -76,6 +76,7 @@ None open: every class C claim site has been rewritten and is listed under R.
 | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Chfs/` | NetBSD `sys/ufs/chfs/media.h`, `ebh_media.h` (v1.2), fetched 2026-11-06 | BSD-2-Clause | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Chfs/THIRD-PARTY-NOTICE.Chfs.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Lfs/` | NetBSD `lfs.h` v1.222, `lfs_cksum.c`, `make_lfs.c` v1.61, `segwrite.c` v1.50, `pass0.c` and `pass5.c` v1.39, fetched 2026-11-06 | BSD-2-Clause AND BSD-3-Clause | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Lfs/THIRD-PARTY-NOTICE.Lfs.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.PartImage/` | imagebackup `src/imagebackup/partimage.py`, revision `6e96ba74e39abd4329e12c4cc7534b8d44ee06f8` | MIT | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.PartImage/THIRD-PARTY-NOTICE.imagebackup.txt` |
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.EcSbx/EcSbxWriter.cs` | blkar (blockyarchive) 7.2.7, commit `5a5e00fd59366142ede357bdc346bdf93c1cd802`; reed-solomon-erasure 4.0.1 | MIT | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.EcSbx/THIRD-PARTY-NOTICE.blkar.txt` |
 
 ## A — compatible, notice already in place
 

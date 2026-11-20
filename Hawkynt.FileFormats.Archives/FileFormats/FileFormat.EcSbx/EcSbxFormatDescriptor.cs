@@ -11,7 +11,7 @@ namespace FileFormat.EcSbx;
 public sealed record EcSbxContent(int Version, string FileName, DateTime? Modified, int DataShards, int ParityShards, byte[] Data);
 
 /// <summary>
-/// Error-correcting SeqBox (<c>.ecsbx</c>, blkar's SBX versions 17/18/19), read-only. Every block carries its
+/// Error-correcting SeqBox (<c>.ecsbx</c>, blkar's SBX versions 17/18/19); <see cref="EcSbxWriter"/> creates them. Every block carries its
 /// sequence number, so the protected file is reassembled from the data blocks wherever the burst
 /// interleaving put them, and checked against the stored hash. A container whose data blocks are damaged or
 /// missing needs a Reed-Solomon repair, which is refused rather than guessed.
@@ -28,14 +28,14 @@ public sealed record EcSbxContent(int Version, string FileName, DateTime? Modifi
 /// (FNM, SNM, FSZ, FDT, SDT, HSH multihash, RSD/RSP shard counts; 1 + parity copies). Sequence s ≥ 1 belongs to
 /// RS set (s - 1) / (M + N); its first M positions are data, the remaining N parity.
 /// </remarks>
-public sealed class EcSbxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class EcSbxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   private const int HeaderSize = 16;
 
   public string Id => "EcSbx";
   public string DisplayName => "Error-correcting SeqBox";
   public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities => FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+  public FormatCapabilities Capabilities => FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate;
   public string DefaultExtension => ".ecsbx";
   public IReadOnlyList<string> Extensions => [".ecsbx"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -45,7 +45,24 @@ public sealed class EcSbxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<FormatMethodInfo> Methods => [new("rs", "Reed-Solomon parity")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "blkar error-correcting SeqBox (versions 17/18/19): the protected file, hash-checked (read-only, no repair)";
+  public string Description => "blkar error-correcting SeqBox (versions 17/18/19): the protected file, hash-checked (no repair); created with Reed-Solomon parity";
+
+  /// <summary>
+  /// Creates the container of the one input file. Options: <c>Version</c> (17, 18, 19; default 17), <c>DataShards</c>
+  /// (default 10), <c>ParityShards</c> (default 2), <c>Burst</c> (default 12), as blkar's defaults.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    var files = inputs.Where(i => !i.IsDirectory).ToList();
+    if (files.Count != 1)
+      throw new NotSupportedException($"EC-SBX: a container holds exactly one file ({files.Count} given).");
+    int Option(string key, int fallback) => int.Parse(options.GetOption(key, fallback.ToString(System.Globalization.CultureInfo.InvariantCulture)), System.Globalization.CultureInfo.InvariantCulture);
+    var name = Path.GetFileName(files[0].ArchiveName.Replace('\\', '/'));
+    output.Write(EcSbxWriter.Create(files[0].ReadContent(), name, name + ".ecsbx", files[0].Metadata?.LastWriteTimeUtc?.UtcDateTime,
+      Option("Version", 17), Option("DataShards", 10), Option("ParityShards", 2), Option("Burst", 12)));
+  }
 
   public static int BlockSize(int version) => version switch {
     17 => 512, 18 => 128, 19 => 4096,
