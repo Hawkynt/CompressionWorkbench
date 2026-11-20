@@ -135,7 +135,7 @@ internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUhar
     this._wpCost = 0;
 
     this.ApplyFileSizeRules(reset, written);
-    this.SelectClass((int)this._coder.Uniform(10, 0));
+    this.SelectClass((int)this._coder.Uniform(10, TCoder.Encoding ? (uint)UharcMediaClass.ForBlock(this._source, reset.Ends, written, reset.Next) : 0u));
   }
 
   /// <summary>
