@@ -29,6 +29,7 @@ public sealed class SqxReferenceTests {
     ["mixed.bin"] = (35003, "beb2920ee28f81b77e0a3c5feca91437770c6ebb537c6d73b6b11c5aa4500905"),
     ["zeros.bin"] = (200000, "4cbbd9be0cba685835755f827758705db5a413c5494c34262cd25946a73e7582"),
     ["biased.bin"] = (120000, "a2e40523e3bcada46341099904439de3f92970c827d5f9928f216942ad7654c4"),
+    ["records.bin"] = (240000, "632c93fba25d5906d55b1dfb13195e45ecf8e4b5555a912600d65fdb81cb28b7"),
   };
 
   private static IEnumerable<string> Fixtures() => Assembly.GetExecutingAssembly().GetManifestResourceNames()
@@ -75,11 +76,29 @@ public sealed class SqxReferenceTests {
   }
 
   [Test, Category("Exception")]
-  public void GivenAReferenceArchiveInMethod6_WhenExtracted_ThenTheTextMethodIsRefused() {
-    // hello_v2.0_normal.sqx stores hello.txt with method 6 (PPMd), which this reader does not decode.
-    using var reader = new SqxReader(new MemoryStream(Resource("refused.hello_v2.0_normal.sqx")));
+  public void GivenATextArchiveWithACorruptPayload_WhenExtracted_ThenItIsRefused() {
+    var archive = Resource("eng_v2.0_ultra.sqx");
+    archive[archive.Length / 2] ^= 0x20;
+    using var reader = new SqxReader(new MemoryStream(archive));
     Assert.That(reader.Entries[0].Method, Is.EqualTo(6));
-    Assert.Throws<NotSupportedException>(() => reader.ExtractEntry(reader.Entries[0]));
+    Assert.Throws<InvalidDataException>(() => reader.ExtractEntry(reader.Entries[0]));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenATextStreamThatContinuesAMissingModel_WhenDecoded_ThenItIsRefused() {
+    // the first bit set: "continue the model of the file before", with no file before
+    var stream = new byte[16];
+    stream[3] = 0x80;
+    Assert.Throws<InvalidDataException>(() => new SqxPpmdDecoder().Decode(stream, 10));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenAnUltraArchiveWithACorruptPayload_WhenExtracted_ThenItIsRefused() {
+    var archive = Resource("mixed_v2.0_ultra.sqx");
+    archive[archive.Length / 2] ^= 0x20;
+    using var reader = new SqxReader(new MemoryStream(archive));
+    Assert.That(reader.Entries[0].Method, Is.EqualTo(7));
+    Assert.Throws<InvalidDataException>(() => reader.ExtractEntry(reader.Entries[0]));
   }
 
   [Test, Category("Exception")]

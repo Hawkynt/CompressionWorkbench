@@ -3407,7 +3407,7 @@ Decompresses data in the Snappy block format.
 
 ### Namespace `Compression.Core.Dictionary.Sqx`
 
-[`SqxBuildingBlock`](#sqxbuildingblock) · [`SqxLzDecoder`](#sqxlzdecoder) · [`SqxLzEncoder`](#sqxlzencoder) · [`SqxTables`](#sqxtables)
+[`SqxBuildingBlock`](#sqxbuildingblock) · [`SqxLzDecoder`](#sqxlzdecoder) · [`SqxLzEncoder`](#sqxlzencoder) · [`SqxPpmdDecoder`](#sqxppmddecoder) · [`SqxTables`](#sqxtables) · [`SqxUltraDecoder`](#sqxultradecoder)
 
 #### `SqxBuildingBlock`
 
@@ -3442,6 +3442,16 @@ Encoder of SQX methods 1-4, converted from Squeez-c's `create.c`, `enc.c` and `h
 | --- | --- | --- |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, byte format, int dictionarySize, int effort)` | Encodes `data` as one file's stream. |
 
+#### `SqxPpmdDecoder`
+
+SQX 2.0 method 6 ("text"): PPMd var. I driven by SQX's carryless range coder. Each stream starts with a flag bit: 0 opens a new model (8-bit order, 10-bit memory in MiB), 1 continues the model of the file before (solid). Converted from Squeez-c (MIT) src/ppm8.c; the model is `Ppmd8` with the cut-off restore its memory runs out into.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SqxPpmdDecoder` | `SqxPpmdDecoder()` |  |
+| `MaxMemoryMb` | `const int MaxMemoryMb` | The largest model memory this decoder allocates, in MiB. |
+| `Decode` | `byte[] Decode(byte[] packed, long originalSize)` | Decodes one file of `originalSize` bytes. |
+
 #### `SqxTables`
 
 Constants of the SQX LZ77 + Huffman stream (methods 1-4), as Squeez-c's `huff.h`/`huff.c` and `lz.h` define them: symbol alphabets of formats 1.1 and 2.0, length and distance base tables, and match-length thresholds.
@@ -3452,6 +3462,15 @@ Constants of the SQX LZ77 + Huffman stream (methods 1-4), as Squeez-c's `huff.h`
 | `Format20` | `const byte Format20` | Archive format 2.0 (`cArcerExVer` 20). |
 | `DictionaryFlags` | `static ushort DictionaryFlags(int dictionarySize, byte format)` | File header flag bits that announce `dictionarySize`. |
 | `DictionarySize` | `static int DictionarySize(ushort flags, byte format)` | Dictionary size from a file header's flags (bits 8-10, and bit 11 for 2.0's extended sizes). |
+
+#### `SqxUltraDecoder`
+
+SQX 2.0 method 7 ("ultra"): LZ77 whose literals, match flags, lengths and distances are coded with a carryless range coder over adaptive Fenwick-tree frequency models. Converted from Squeez-c (MIT) src/ultra.c. In a solid chain the window and the models carry over from file to file; the match state and repeated distances start afresh with every file.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SqxUltraDecoder` | `SqxUltraDecoder()` | Creates a decoder; its models and window are set up by the first file decoded. |
+| `Decode` | `byte[] Decode(byte[] packed, long originalSize, bool solid, int dictionarySize)` | Decodes one file of `originalSize` bytes. With `solid` the window and models of the file before are kept. |
 
 ### Namespace `Compression.Core.Dictionary.StackerSd4`
 

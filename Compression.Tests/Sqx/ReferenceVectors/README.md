@@ -20,4 +20,10 @@ format 1.1 or 2.0, at the level in the name (`none` stored, `fast` to `maximum` 
 | `mixed_v2.0_normal.sqx` | 2.0 | 2 | `mixed.bin` |
 | `biased_v2.0_normal.sqx` | 2.0 | 2 | `biased.bin` |
 | `empty_v2.0_none.sqx` | 2.0 | 0 | `empty.dat` |
-| `refused.hello_v2.0_normal.sqx` (`hello_v2.0_normal.sqx`) | 2.0 | 6 (PPMd) | `hello.txt`, which this reader refuses |
+| `hello_v2.0_normal.sqx`, `code_v2.0_ultra.sqx`, `eng_v2.0_ultra.sqx` | 2.0 | 6 (PPMd) | `hello.txt`, `code.c`, `eng.txt` |
+| `ppmd_v2.0_order2.sqx`, `ppmd_v2.0_order16.sqx` | 2.0 | 6 (PPMd) | `eng.txt`, written by Squeez-c's own `sqx create --fmt=20 --method=6 --ppm-order=2` (default 32 MiB) and `--ppm-order=16 --ppm-mem=4` |
+| `biased_v2.0_ultra.sqx`, `image_v2.0_ultra.sqx`, `image24_v2.0_ultra.sqx`, `mixed_v2.0_ultra.sqx` | 2.0 | 7 (ultra) | `biased.bin`, `image.raw`, `image24.raw`, `mixed.bin` |
+| `pattern_v2.0_ultra.sqx`, `records_v2.0_ultra.sqx`, `zeros_v2.0_ultra.sqx`, `empty_v2.0_ultra.sqx` | 2.0 | 7 (ultra) | `pattern.bin`, `records.bin`, `zeros.bin`, `empty.dat` |
+
+The `*_ultra.sqx` archives come from the same `packed_corpus` at revision
+`03211cd1e86473da08bc675198f6902e15a28ca3`; `records.bin` (240000 bytes) is in its `corpus`.
