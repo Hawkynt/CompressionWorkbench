@@ -210,6 +210,41 @@ public class UharcExternalConformanceTests {
     }
   }
 
+  /// <summary>
+  /// Text files (written as a text stream with the word transform: strings, capital prefixes,
+  /// escapes, line ends) ahead of binary files: the tool of each version extracts our PPM
+  /// archive, at the fitted window, at 1 KiB and with a password.
+  /// </summary>
+  [TestCase("6", 0L, null)]
+  [TestCase("6", 1024L, null)]
+  [TestCase("6", 0L, "secret")]
+  [TestCase("4", 0L, null)]
+  [TestCase("4", 1024L, null)]
+  [TestCase("4", 0L, "secret")]
+  [TestCase("3", 0L, null)]
+  [TestCase("3", 1024L, null)]
+  [TestCase("3", 0L, "secret")]
+  public void GivenTextFiles_WhenWeWriteTextPpm_ThenTheVersionsToolExtractsThem(string version, long dictionary, string? password) {
+    var tool = version switch { "4" => RequireUharc04(), "3" => RequireUharc03(), _ => RequireUharc() };
+    var inputs = UharcPpmTextTests.TextFiles().Select(f => ArchiveInputInfo.InMemory(f.Name, f.Data)).ToList();
+    var archive = Path.Combine(this._tmp, "ours.uha");
+    File.WriteAllBytes(archive, UharcWriterTests.CreateWith(new FormatCreateOptions("ppm") {
+      Password = password,
+      DictSize = dictionary,
+      FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version },
+    }, inputs));
+    var output = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(output);
+    List<string> arguments = ["x", "-y"];
+    if (password != null)
+      arguments.Add("-pw" + password);
+    if (version == "6")
+      arguments.Add("-t" + output);
+    arguments.Add(archive);
+    Run(tool, output, [.. arguments]);
+    AssertExtracted(output, inputs);
+  }
+
   private static void AssertExtracted(string output, IEnumerable<ArchiveInputInfo> inputs) {
     foreach (var input in inputs) {
       var path = Path.Combine(output, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));

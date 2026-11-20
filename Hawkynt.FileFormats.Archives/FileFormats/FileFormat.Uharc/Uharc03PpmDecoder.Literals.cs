@@ -420,7 +420,7 @@ internal sealed partial class Uharc03PpmModel<TCoder> {
 
   private int DecodeLiteral(byte[] output, int written) {
     if (TCoder.Encoding)
-      this._target = (byte)~this._source[written];
+      this._target = this._plan.Symbols[this._next];
     var binary = this._kind != 0;
     var word = this._markerState == 2
       ? ((this._roll0 >> 8) & 0xFF) | ((this._roll0 >> 16) & 0xFF00) | ((this._roll1 << 8) & 0xFF0000) | (this._roll1 & 0xFF000000)
