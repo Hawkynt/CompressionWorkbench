@@ -7,8 +7,8 @@ namespace Compression.Tests.InnoSetup;
 /// <summary>
 /// The Inno Setup writer, built on the stubs of an installed Inno Setup 6.0.x (INNOSETUPDIR, or
 /// "Inno Setup 6" under Program Files). Oracles: the installer itself, run with
-/// <c>/VERYSILENT /DIR=</c> (natively, or under wine when CWB_INNO_WINEPREFIX names a WSL wine
-/// prefix), innoextract, and our reader.
+/// <c>/VERYSILENT /DIR=</c> (under wine when CWB_INNO_WINEPREFIX names a WSL wine prefix, natively
+/// only when CWB_INNO_RUN_NATIVE=1, otherwise skipped), innoextract, and our reader.
 /// </summary>
 [TestFixture]
 public class InnoSetupWriterTests {
@@ -174,7 +174,10 @@ public class InnoSetupWriterTests {
           $"echo exit=$?; [ -d \"$t/target\" ] && cp -r \"$t/target\" '{linuxTarget}'; cd /; rm -rf \"$t\"; wineserver -k");
         Assert.That(run.StdOut, Does.Contain("exit=0"), $"the installer failed under wine:\n{run.StdOut}\n{run.StdErr}");
       } else {
-        if (!OperatingSystem.IsWindows()) Assert.Ignore("The installer is a Windows program (set CWB_INNO_WINEPREFIX to run it under wine).");
+        // the setup program is third-party native code: it runs on the host only when asked to
+        if (Environment.GetEnvironmentVariable("CWB_INNO_RUN_NATIVE") != "1")
+          Assert.Ignore("Set CWB_INNO_WINEPREFIX to run the installer under wine, or CWB_INNO_RUN_NATIVE=1 to run it on this machine.");
+        if (!OperatingSystem.IsWindows()) Assert.Ignore("The installer is a Windows program.");
         var psi = new ProcessStartInfo(exe) { UseShellExecute = false };
         foreach (var a in (string[])["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=" + target]) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
