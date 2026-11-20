@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Compression.Analysis.ExternalTools;
+using Compression.Registry;
 using FileFormat.Uharc;
 
 namespace Compression.Tests.Uharc;
@@ -126,6 +127,8 @@ public class UharcExternalConformanceTests {
 
   [TestCase(null)]
   [TestCase("store")]
+  [TestCase("rle")]
+  [TestCase("lz78")]
   public void GivenOurArchive_WhenUharcExtracts_ThenEveryFileIsByteIdentical(string? method) {
     var uharc = RequireUharc();
     var archive = Path.Combine(this._tmp, "ours.uha");
@@ -142,6 +145,32 @@ public class UharcExternalConformanceTests {
       else
         Assert.That(File.ReadAllBytes(path), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
     }
+  }
+
+  /// <summary>Enough varied data to fill LZ78's 32768 phrases several times over.</summary>
+  [TestCase("rle")]
+  [TestCase("lz78")]
+  public void GivenALargeMixedInput_WhenWeWriteIt_ThenUharcExtractsIt(string method) {
+    var uharc = RequireUharc();
+    var random = new Random(2005);
+    var words = Enumerable.Range(0, 3000).Select(i => new string((char)('a' + i % 26), 1 + i % 7) + i.ToString("x")).ToArray();
+    var text = System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 120000).Select(i => words[random.Next(words.Length)] + (i % 13 == 0 ? "\r\n" : " "))));
+    var noise = new byte[300000];
+    random.NextBytes(noise);
+    var runs = Enumerable.Range(0, 2000).SelectMany(i => Enumerable.Repeat((byte)(0xE0 + i % 32), i % 300)).ToArray();
+    var inputs = new[] {
+      ArchiveInputInfo.InMemory("text.txt", text),
+      ArchiveInputInfo.InMemory("noise.bin", noise),
+      ArchiveInputInfo.InMemory("runs.bin", runs),
+    };
+    var archive = Path.Combine(this._tmp, "large.uha");
+    File.WriteAllBytes(archive, UharcWriterTests.Create(method, inputs));
+    var output = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(output);
+    Run(uharc, output, "x", "-y", "-t" + output, archive);
+
+    foreach (var input in inputs)
+      Assert.That(File.ReadAllBytes(Path.Combine(output, input.ArchiveName)), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
   }
 
   [Test]
