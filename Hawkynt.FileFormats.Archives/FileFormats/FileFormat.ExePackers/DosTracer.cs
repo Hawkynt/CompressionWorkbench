@@ -30,6 +30,7 @@ internal static class DosTracer {
     public required DosCpu Cpu;
     public ushort Psp;
     public int Base; // linear address of the load image (or of offset 0x100 for COM)
+    public int Floor; // the load address before any child PSP; writes below it are not tracked
     public int AdrSup;
     public bool Done;
     public bool Ended;
@@ -44,6 +45,7 @@ internal static class DosTracer {
     public long FilePos;
     public ushort BlockEnd;
     public ushort NextFree;
+    public ushort Top = MemoryTop; // first paragraph past conventional memory
     // Image-extent bookkeeping for the final phase (since the last long forward jump).
     public long PhaseStart;
     public readonly long[] LastWrite = new long[DosCpu.MemorySize];
@@ -167,6 +169,12 @@ internal static class DosTracer {
     var cpu = new DosCpu();
     var run = new Run { Cpu = cpu, Psp = psp };
     var mem = cpu.Memory;
+    // DOS loads an EXE with zero minimum and maximum allocation at the top of its memory block
+    // (PGMPAK stubs rely on it); the top then moves with the PSP so both runs differ by the
+    // same distance everywhere.
+    var loadHigh = !isCom && DosExe.TryRead(file) is { MinAlloc: 0, MaxAlloc: 0 };
+    if (loadHigh)
+      run.Top = (ushort)(psp - PspB + MemoryTop);
 
     // Interrupt vectors point into the service segment; the vector number is the offset.
     for (var n = 0; n < 256; ++n) {
@@ -182,12 +190,12 @@ internal static class DosTracer {
     // PSP.
     var p = psp * 16;
     mem[p] = 0xCD; mem[p + 1] = 0x20;
-    BinaryPrimitives.WriteUInt16LittleEndian(mem.AsSpan(p + 2), MemoryTop);
+    BinaryPrimitives.WriteUInt16LittleEndian(mem.AsSpan(p + 2), run.Top);
     BinaryPrimitives.WriteUInt16LittleEndian(mem.AsSpan(p + 0x2C), envSeg);
     mem[p + 0x80] = 0;
     mem[p + 0x81] = 0x0D;
-    run.BlockEnd = MemoryTop;
-    run.NextFree = MemoryTop;
+    run.BlockEnd = run.Top;
+    run.NextFree = run.Top;
 
     if (isCom) {
       if (file.Length > 0xFF00)
@@ -203,8 +211,10 @@ internal static class DosTracer {
       var start = (int)exe.StartOfCode;
       var length = (int)Math.Max(0, Math.Min(exe.EndOfCode, file.Length) - start);
       var loadSeg = (ushort)(psp + 0x10);
-      if (loadSeg * 16 + length + exe.MinAlloc * 16 > MemoryTop * 16)
+      if (loadSeg * 16 + length + exe.MinAlloc * 16 > run.Top * 16)
         throw new InvalidDataException("DOS trace: the program does not fit in conventional memory.");
+      if (loadHigh)
+        loadSeg = (ushort)(run.Top - (length + 15) / 16);
       Array.Copy(file, start, mem, loadSeg * 16, length);
       for (var i = 0; i < exe.NumRelocs; ++i) {
         var at = exe.RelocTablePos + 4 * i;
@@ -222,11 +232,12 @@ internal static class DosTracer {
       cpu.IP = exe.RegIP;
       cpu.S[DosCpu.SS] = (ushort)(loadSeg + exe.RegSS);
       cpu.R[DosCpu.SP] = exe.RegSP;
-      run.Base = loadSeg * 16;
+      // A program loaded high unpacks to where a normal load would have put it.
+      run.Base = (psp + 0x10) * 16;
       run.AdrSup = run.Base + length - 1;
     }
 
-    var floor = run.Base;
+    var floor = run.Floor = run.Base;
     Array.Fill(run.LastWrite, -1L);
     cpu.OnWrite = linear => {
       if (cpu.StackWrite || linear < floor)
@@ -258,7 +269,7 @@ internal static class DosTracer {
         // A short jump back still ends the stub when it lands on bytes the stub unpacked in
         // this phase and never ran (aPACK -m keeps its stub right behind a small image).
         var newCode = run.LastWrite[to] >= run.PhaseStart && run.LastRun[to] < run.LastWrite[to];
-        var dosLike = cpu.S[DosCpu.DS] == psp && cpu.S[DosCpu.ES] == psp;
+        var dosLike = cpu.S[DosCpu.DS] == run.Psp && cpu.S[DosCpu.ES] == run.Psp;
         var strong = dosLike && (newIp == 0x100 || from - to >= MinJump);
         if (!strong && !newCode)
           return;
@@ -364,7 +375,8 @@ internal static class DosTracer {
   private static (int Start, int Length) ImageExtent(Run run, bool shifted) {
     // The decompressor fills the image from (near) its start; a stub moving the compressed data
     // out of the way may write more bytes, but higher up.
-    var dominant = (shifted ? null : run.Writers.Values.Where(w => w.Min <= 0x100).MaxBy(w => w.Count))
+    var nearStart = run.Base - run.Floor + 0x100;
+    var dominant = (shifted ? null : run.Writers.Values.Where(w => w.Min <= nearStart).MaxBy(w => w.Count))
       ?? run.Writers.Values.MaxBy(w => w.Count);
     if (dominant == null)
       return (run.Base, 0);
@@ -373,7 +385,7 @@ internal static class DosTracer {
       .ToList();
     var start = helpers.Min(w => w.First);
     var last = helpers.Max(w => w.Last);
-    var lowest = run.Base + helpers.Min(w => w.Min);
+    var lowest = run.Floor + helpers.Min(w => w.Min);
     var origin = shifted ? lowest & ~0xF : run.Base;
     var end = origin;
     while (end < DosCpu.MemorySize && (end < lowest || run.LastWrite[end] >= start))
@@ -411,11 +423,11 @@ internal static class DosTracer {
           case 0x30: cpu.R[DosCpu.AX] = 0x0005; cpu.R[DosCpu.BX] = 0; cpu.R[DosCpu.CX] = 0; break;
           case 0x4A: {
             var want = cpu.R[DosCpu.BX];
-            if (cpu.S[DosCpu.ES] + want <= MemoryTop) {
-              if (cpu.S[DosCpu.ES] == run.Psp) { run.BlockEnd = (ushort)(run.Psp + want); run.NextFree = Math.Max(run.NextFree == MemoryTop ? run.BlockEnd : run.NextFree, run.BlockEnd); }
+            if (cpu.S[DosCpu.ES] + want <= run.Top) {
+              if (cpu.S[DosCpu.ES] == run.Psp) { run.BlockEnd = (ushort)(run.Psp + want); run.NextFree = Math.Max(run.NextFree == run.Top ? run.BlockEnd : run.NextFree, run.BlockEnd); }
               Carry(false);
             } else {
-              cpu.R[DosCpu.BX] = (ushort)(MemoryTop - cpu.S[DosCpu.ES]);
+              cpu.R[DosCpu.BX] = (ushort)(run.Top - cpu.S[DosCpu.ES]);
               cpu.R[DosCpu.AX] = 8;
               Carry(true);
             }
@@ -423,13 +435,13 @@ internal static class DosTracer {
           }
           case 0x48: {
             var want = cpu.R[DosCpu.BX];
-            var free = run.NextFree == MemoryTop ? run.BlockEnd : run.NextFree;
-            if (free + want <= MemoryTop) {
+            var free = run.NextFree == run.Top ? run.BlockEnd : run.NextFree;
+            if (free + want <= run.Top) {
               cpu.R[DosCpu.AX] = free;
               run.NextFree = (ushort)(free + want);
               Carry(false);
             } else {
-              cpu.R[DosCpu.BX] = (ushort)Math.Max(0, MemoryTop - free);
+              cpu.R[DosCpu.BX] = (ushort)Math.Max(0, run.Top - free);
               cpu.R[DosCpu.AX] = 8;
               Carry(true);
             }
@@ -445,6 +457,18 @@ internal static class DosTracer {
             cpu.S[DosCpu.ES] = cpu.Read16(al * 4 + 2);
             break;
           case 0x51: case 0x62: cpu.R[DosCpu.BX] = run.Psp; break;
+          case 0x55: {
+            // Create a child PSP at DX and make it current (PGMPAK runs the program there): the
+            // image is then expected right behind it.
+            var child = cpu.R[DosCpu.DX];
+            if (child * 16 + 0x100 > run.Top * 16 || child < run.Psp) { Stop("DOS function 55h with a PSP outside the program's memory."); return; }
+            Array.Copy(cpu.Memory, run.Psp * 16, cpu.Memory, child * 16, 0x100);
+            BinaryPrimitives.WriteUInt16LittleEndian(cpu.Memory.AsSpan(child * 16 + 2), cpu.R[DosCpu.SI]);
+            BinaryPrimitives.WriteUInt16LittleEndian(cpu.Memory.AsSpan(child * 16 + 0x16), run.Psp);
+            run.Psp = child;
+            run.Base = (child + 0x10) * 16;
+            break;
+          }
           case 0x2F: cpu.S[DosCpu.ES] = run.Psp; cpu.R[DosCpu.BX] = 0x80; break;
           case 0x1A: break;
           case 0x19: cpu.R[DosCpu.AX] = (ushort)(cpu.R[DosCpu.AX] & 0xFF00 | 2); break;

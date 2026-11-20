@@ -20,6 +20,7 @@ public class DosTraceUnpackerTests {
       ("exelite.P1.EXE", "T1.EXE", "2.00", 0), ("exelite.P2.EXE", "T2.EXE", "2.00", 0), ("exelite.P6.EXE", "T6.EXE", "2.00", 0),
       ("tinyprog.P1.EXE", "T1.EXE", "3.x", 0), ("tinyprog.P2.EXE", "T2.EXE", "3.x", 0),
       ("axe.P1.EXE", "T1.EXE", "2.2", 2), ("axe.P2.EXE", "T2.EXE", "2.2", 2),
+      ("pgmpak.P1.EXE", "T1.EXE", "0.15", 0), ("pgmpak.P2.EXE", "T2.EXE", "0.15", 0), ("pgmpak.P7.EXE", "T7.EXE", "0.15", 0),
     })
       yield return new TestCaseData(file, original, variant, sp).SetName($"Traced_{file.Replace('.', '_')}");
   }
@@ -29,6 +30,16 @@ public class DosTraceUnpackerTests {
     "wwpack" => WwpackUnpacker.Instance,
     "exelite" => ExeLiteUnpacker.Instance,
     "tinyprog" => TinyProgUnpacker.Instance,
+    "pgmpak" => PgmpakUnpacker.Instance,
+    _ => AxeUnpacker.Instance,
+  };
+
+  /// <summary>Unpacker for a live packer run, by tool name.</summary>
+  private static IDosExeUnpacker ForTool(string tool) => tool switch {
+    "APACK" => ApackUnpacker.Instance,
+    "ELITE" => ExeLiteUnpacker.Instance,
+    "TINYPROG" => TinyProgUnpacker.Instance,
+    "PGMPAK" => PgmpakUnpacker.Instance,
     _ => AxeUnpacker.Instance,
   };
 
@@ -49,6 +60,25 @@ public class DosTraceUnpackerTests {
     var o = MzView.Parse(Load(original));
     var r = MzView.Parse(ExeLiteUnpacker.Instance.Unpack(Load(file)).Executable);
     Assert.That((r.MinAlloc, r.MaxAlloc), Is.EqualTo((o.MinAlloc, o.MaxAlloc)));
+  }
+
+  /// <summary>
+  /// PGMPAK files load high (allocation 0/0); the restored program gets back the allocation
+  /// PGMPAK stored and no overlay (the packer's trailer is not the program's), so it loads
+  /// exactly like the original.
+  /// </summary>
+  [TestCase("1")]
+  [TestCase("2")]
+  [TestCase("7")]
+  [Category("Oracle")]
+  public void Given_APgmpakFile_When_Unpacked_Then_ItLoadsLikeTheOriginal(string n) =>
+    AssertLoadsLike(Load($"T{n}.EXE"), PgmpakUnpacker.Instance.Unpack(Load($"pgmpak.P{n}.EXE")).Executable, $"PGMPAK T{n}");
+
+  [Test]
+  [Category("Exception")]
+  public void Given_ATruncatedPgmpakFile_When_Unpacked_Then_OnlyInvalidDataIsThrown() {
+    var packed = Load("pgmpak.P2.EXE");
+    Assert.That(() => PgmpakUnpacker.Instance.Unpack(packed[..(packed.Length / 2)]), Throws.InstanceOf<InvalidDataException>());
   }
 
   /// <summary>UNP 4.11 restores AXE files with the same entry registers as the emulator, SP included.</summary>
@@ -106,6 +136,7 @@ public class DosTraceUnpackerTests {
       Assert.That(TinyProgUnpacker.Instance.Detect(file), Is.Null);
       Assert.That(AxeUnpacker.Instance.Detect(file), Is.Null);
       Assert.That(WwpackUnpacker.Instance.Detect(file), Is.Null);
+      Assert.That(PgmpakUnpacker.Instance.Detect(file), Is.Null);
     });
   }
 
@@ -145,6 +176,7 @@ public class DosTraceUnpackerTests {
     yield return new TestCaseData("TINYPROG", "TINYPROG T{0}.EXE P{0}.EXE", 0).SetName("Live_TinyProg");
     yield return new TestCaseData("AXE", "copy T{0}.EXE P{0}.EXE > NUL\r\nAXE P{0}.EXE B{0}.EXE -f", 2).SetName("Live_Axe");
     yield return new TestCaseData("APACK", "APACK -m T{0}.EXE P{0}.EXE", 0).SetName("Live_ApackNoCodeMover");
+    yield return new TestCaseData("PGMPAK", "copy T{0}.EXE P{0}.EXE > NUL\r\nPGMPAK P{0}.EXE", 0).SetName("Live_Pgmpak");
   }
 
   /// <summary>
@@ -194,7 +226,7 @@ public class DosTraceUnpackerTests {
       RunDos(drive, lines);
       foreach (var n in new[] { "1", "2", "6" }) {
         Assert.That(ReadText(Path.Combine(drive, $"R{n}.TXT")), Does.StartWith("OK"), $"packed T{n} did not run");
-        var restored = DosTracer.Unpack(File.ReadAllBytes(Path.Combine(drive, $"P{n}.EXE"))).Executable;
+        var restored = ForTool(tool).Unpack(File.ReadAllBytes(Path.Combine(drive, $"P{n}.EXE"))).Executable;
         AssertSameProgram(Load($"T{n}.EXE"), restored, $"{tool} T{n}", sp);
       }
     } finally {
