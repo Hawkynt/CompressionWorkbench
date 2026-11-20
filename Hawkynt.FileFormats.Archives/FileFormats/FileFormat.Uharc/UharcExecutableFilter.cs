@@ -33,6 +33,139 @@ internal static class UharcExecutableFilter {
     RestoreBranches(data, start, swapOperandBytes);
   }
 
+  /// <summary>
+  /// The writer's inverse of <see cref="Restore"/> (without the PPM operand swap): applies the
+  /// preprocessing in place so that the restore gives the file back. Returns whether the file is
+  /// one the restore will touch; a file it cannot express is left alone and reported through
+  /// <paramref name="encodable"/> (the restore would then damage it, so the caller must not set
+  /// the filter bit).
+  /// </summary>
+  public static bool Apply(Span<byte> data, out bool encodable) {
+    encodable = true;
+    if (data.Length < MinimumLength || !Classify(data, out var withRelocations, out var start))
+      return false;
+
+    var copy = data.ToArray();
+    if (withRelocations) {
+      var table = BinaryPrimitives.ReadUInt16LittleEndian(copy.AsSpan(0x18));
+      var size = BinaryPrimitives.ReadUInt16LittleEndian(copy.AsSpan(6)) * 4;
+      if (table + size > copy.Length - Tail)
+        return false;
+
+      ApplyRelocations(copy.AsSpan(table, size));
+      start = table + size;
+    }
+
+    if (!ApplyBranches(copy, start)) {
+      encodable = false;
+      return true;
+    }
+
+    copy.CopyTo(data);
+    return true;
+  }
+
+  private static void ApplyRelocations(Span<byte> table) {
+    for (var i = table.Length - 2 - (table.Length & 1); i >= 4; i -= 2) {
+      var value = (ushort)(BinaryPrimitives.ReadUInt16LittleEndian(table[i..]) - BinaryPrimitives.ReadUInt16LittleEndian(table[(i - 4)..]));
+      BinaryPrimitives.WriteUInt16LittleEndian(table[i..], value);
+    }
+
+    var interleaved = table.ToArray();
+    var write = 0;
+    for (var plane = 0; plane < 4; ++plane)
+      for (var i = plane; i < table.Length; i += 4)
+        table[write++] = interleaved[i];
+  }
+
+  /// <summary>
+  /// Walks the file as the restore will and stores each operand so that the restore's branch,
+  /// its step and its list of recent targets give back the original: a target inside the file as
+  /// its absolute address, one just past the end as a negative distance, a trivial high half as
+  /// it is, and otherwise the low half as an index into the recent targets or as itself (an
+  /// original low half that looks like an index is reached through a chain of the list's
+  /// entries). False when an operand cannot be expressed.
+  /// </summary>
+  private static bool ApplyBranches(Span<byte> data, int start) {
+    var limit = data.Length;
+    Span<ushort> recent = stackalloc ushort[128];
+    for (var k = 0; k < recent.Length; ++k)
+      recent[k] = (ushort)k;
+    var end = data.Length - Tail;
+    var i = start;
+    while (i < end) {
+      if (data[i] is not (0xE8 or 0xE9)) {
+        ++i;
+        continue;
+      }
+
+      var operand = data.Slice(i + 1, 4);
+      var original = BinaryPrimitives.ReadInt32LittleEndian(operand);
+      if (original == 0) {
+        i += 4;
+        continue;
+      }
+
+      var absolute = (long)original + i;
+      if (absolute > 0 && absolute < limit) {
+        BinaryPrimitives.WriteInt32LittleEndian(operand, (int)absolute);
+        i += 5;
+        continue;
+      }
+
+      if (original == -i) {
+        BinaryPrimitives.WriteInt32LittleEndian(operand, i);
+        i += 5;
+        continue;
+      }
+
+      if (original < limit && (long)original >= (long)limit - i) {
+        BinaryPrimitives.WriteInt32LittleEndian(operand, original - limit);
+        i += 5;
+        continue;
+      }
+
+      var high = BinaryPrimitives.ReadUInt16LittleEndian(operand[2..]);
+      if (high == 0 || high == (ushort)((limit - 1) >> 16) || high == (ushort)(-i >> 16)) {
+        i += 4;
+        continue;
+      }
+
+      var low = BinaryPrimitives.ReadUInt16LittleEndian(operand);
+      var target = (ushort)(low + i);
+      var found = recent.IndexOf(target);
+      if (found >= 0) {
+        BinaryPrimitives.WriteUInt16LittleEndian(operand, (ushort)(0x8000 | found));
+        recent[..found].CopyTo(recent[1..(found + 1)]);
+        recent[0] = target;
+        i += 4;
+        continue;
+      }
+
+      if (low is >= 0x8000 and < 0x8080) {
+        // The restore follows index-looking values through the list: store the start of a chain
+        // that ends in the original.
+        var stored = (ushort)(recent[low - 0x8000] - i);
+        for (var hops = 0; stored is >= 0x8000 and < 0x8080; ++hops) {
+          if (hops == recent.Length)
+            return false;
+          stored = (ushort)(recent[stored - 0x8000] - i);
+        }
+
+        BinaryPrimitives.WriteUInt16LittleEndian(operand, stored);
+      }
+
+      if (target is < 0x8000 or >= 0x8080) {
+        recent[..127].CopyTo(recent[1..]);
+        recent[0] = target;
+      }
+
+      i += 4;
+    }
+
+    return true;
+  }
+
   private static bool Classify(ReadOnlySpan<byte> data, out bool withRelocations, out int start) {
     withRelocations = false;
     start = 0;

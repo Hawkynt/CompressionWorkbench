@@ -529,10 +529,20 @@ the low byte of its own check. The filters byte holds what the writer applied, f
 before packing: bit 7 when any file is a fax page, which is then stored as bands in every mode
 (store included), and bit 1 in the LZP and LZ78 modes when a file is a BMP, WAV or VOC the
 multimedia filter recognises, which is then delta-coded (the restore run forward: each byte
-less the byte one stride back, negated while its phase's sign is flipped). The executable
-filter is not applied. The 0.4 and 0.3 writers apply the same two filters the same way;
-`UHARC.EXE`, `UHARC04.EXE` and `uharc_u.exe` extract such archives of the fixture sets and the
-39 MB mixed set byte for byte in every mode.
+less the byte one stride back, negated while its phase's sign is flipped). Bit 0, in the LZP,
+LZ78 and ALZ modes (0.4 and 0.3: PPM too, whose restore swaps nothing there), when executables
+are present: each file the restore will treat gets the inverse transform. The relocation table
+is delta-coded per word against the word four bytes back and split into four byte planes; the
+operand walk follows the restore's own path and step, storing a target inside the file as its
+absolute address (−*i* as *i*), one just past the end as the negative distance, a trivial high
+half unchanged, and otherwise the low half as `0x8000 + index` when its target is in the recent
+list (which then moves it to the front) or as itself — except that a low half which itself looks
+like an index is stored as the start of a chain through the list that the restore follows back
+to it — the new target entering the list as the restore will enter it. The bit is all or
+nothing: were one file inexpressible, no file would get the filter. The 0.4 and 0.3 writers apply
+the same filters the same way; `UHARC.EXE`, `UHARC04.EXE` and `uharc_u.exe` extract such
+archives of the fixture sets, of generated executables dense with every kind of operand, and of
+the 39 MB mixed set byte for byte in every mode.
 
 The PPM encoder is the decoder's model too, made generic over the coder direction like ALZ's
 (decoding the 39 MB set below takes as long as before: best 19.6 s against 20.0 s). Every
@@ -1247,8 +1257,8 @@ window, and unuharc_recon's unpacker accepts them.
 
 ## What is not derived
 
-- **Writing** the executable filter, the multimedia ALZ/PPM classes and text PPM streams (in
-  0.6, 0.4 and 0.3 alike).
+- **Writing** the multimedia ALZ/PPM classes and text PPM streams (in 0.6, 0.4 and 0.3 alike),
+  and the executable filter under 0.6's PPM (whose restore also swaps operand bytes).
 
 ## Sources
 
