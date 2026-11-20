@@ -25174,7 +25174,7 @@ The NIfTI header revision the file declares.
 
 ### Namespace `FileFormat.NowCompress`
 
-[`NowCompressArchive`](#nowcompressarchive) · [`NowCompressEntry`](#nowcompressentry) · [`NowCompressFormatDescriptor`](#nowcompressformatdescriptor)
+[`NowCompressArchive`](#nowcompressarchive) · [`NowCompressEntry`](#nowcompressentry) · [`NowCompressFormatDescriptor`](#nowcompressformatdescriptor) · [`NowCompressInput`](#nowcompressinput) · [`NowCompressWriter`](#nowcompresswriter)
 
 #### `NowCompressArchive`
 
@@ -25202,9 +25202,9 @@ One file or folder of a Now Compress archive.
 
 #### `NowCompressFormatDescriptor`
 
-Now Compress archive (Now Software, Macintosh). Read-only.
+Now Compress archive (Now Software, Macintosh): read in every block method, written with stored and LZSS blocks (docs/NOW-COMPRESS-ON-DISK.md).
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -25222,9 +25222,34 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates an archive. An input named "x.rsrc" becomes the resource fork of "x" when "x" is also an input (or has no data fork of its own); everything else is a data fork. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `NowCompressInput`
+
+One file or folder to put into a Now Compress archive.
+
+Implements `IEquatable<NowCompressInput>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NowCompressInput` | `NowCompressInput(string Path, bool IsDirectory = false, byte[] Data = null, byte[] Resource = null, DateTime? LastModified = null)` | One file or folder to put into a Now Compress archive. |
+| `Data` | `byte[] Data { get; init; }` | The data fork (ignored for a folder). |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this is a folder. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | The modification time; stored as the creation and modification time. |
+| `Path` | `string Path { get; init; }` | The path inside the archive, '/'-separated; missing parent folders are created. |
+| `Resource` | `byte[] Resource { get; init; }` | The resource fork (ignored for a folder). |
+
+#### `NowCompressWriter`
+
+Writes Now Compress archives (docs/NOW-COMPRESS-ON-DISK.md): the directory of 110-byte records, then one stream per file holding its resource fork and its data fork in 32 KiB blocks, each block stored or packed with the original LZSS, whichever is shorter.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsRepresentableName` | `static bool IsRepresentableName(string name)` | Whether a path component can be stored: 1 to 31 Mac OS Roman bytes, none of them a control character or ':'. |
+| `Write` | `static void Write(Stream output, IEnumerable<NowCompressInput> items, bool compress = true)` | Writes an archive holding `items`, in the given order within each folder. |
 
 ### Namespace `FileFormat.Nrbf`
 

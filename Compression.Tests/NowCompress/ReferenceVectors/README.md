@@ -16,6 +16,15 @@ are in [ROMAN.TXT](https://www.unicode.org/Public/MAPPINGS/VENDORS/APPLE/ROMAN.T
 This guards the former missing `F0` mapping (`U+F8FF`), shifted final entries,
 `FF` index exception, and incorrect space at `CA` (`U+00A0`).
 
+`ours.now` is our `NowCompressWriter`'s output for the inputs in
+`NowCompressWriterTests.OursInputs`: a folder tree, a file with both forks over several 32 KiB
+blocks, a resource-only file, a 1-byte file, a MacRoman name and a trailing empty file. Native
+unar 1.10.7 (the build below, `unar -forks visible -e MacRoman`) extracted it, and
+`unar-ours.txt` lists every fork it wrote as `path|length|sha256`. Resource forks were taken out
+of the AppleDouble files unar writes for them. Each line equals the corresponding input. The test
+pins the writer's bytes to `ours.now`. An archive with every block stored was checked the same
+way and gave the same forks.
+
 `native-oracle-facts.json` captures results from eleven public archives in the
 [dexvert sample collection](https://sembiance.com/fileFormatSamples/archive/nowCompress/).
 The commercial installers and their extracted contents are not redistributed.
