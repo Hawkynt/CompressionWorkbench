@@ -32221,6 +32221,8 @@ How `StuffItXWriter` codes the archive's data stream.
 | --- | --- | --- |
 | `Store` | `0` | Stored (no coding). |
 | `Deflate` | `1` | Method 3, StuffIt X's Deflate (a six-bit distance-code count in dynamic blocks). |
+| `Darkhorse` | `2` | Method 2, Darkhorse: LZ77 with adaptive binary range coding. |
+| `Brimstone` | `3` | Method 0, Brimstone: PPMd variant G (order 8, 16 MiB model). |
 
 #### `StuffItXEntry`
 
@@ -32243,7 +32245,7 @@ One file, directory or resource fork of a StuffIt X (.sitx) archive.
 
 #### `StuffItXFormatDescriptor`
 
-StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro): read, and written stored or Deflate-coded. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver), the reader this one is converted from`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt X
+StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro): read, and written stored, Deflate-, Brimstone- or Darkhorse-coded. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver), the reader this one is converted from`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt X
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 

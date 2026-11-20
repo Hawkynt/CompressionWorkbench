@@ -19,7 +19,16 @@ public class StuffItXWriterTests {
     new("docs/deep/empty.bin", [], When),
     new("docs/empty dir", null, When),
     new("noise.bin", Noise(200_000, 7), When), // more than one 64 KiB block
+    new("twice.bin", Twice(), When), // far matches, repeats and runs longer than one match
   ];
+
+  /// <summary>Noise, the same noise again 70 000 bytes later, runs of one byte and binary values above 127.</summary>
+  private static byte[] Twice() {
+    var noise = Noise(70_000, 9);
+    var run = Enumerable.Repeat((byte)0xC3, 1000).ToArray();
+    var pattern = Enumerable.Range(0, 3000).Select(i => (byte)(i % 7 == 0 ? 0x80 + i % 100 : 'a' + i % 13)).ToArray();
+    return [.. noise, .. run, .. pattern, .. noise, .. pattern, .. run];
+  }
 
   private static byte[] Noise(int n, int seed) {
     var b = new byte[n];
@@ -35,6 +44,8 @@ public class StuffItXWriterTests {
 
   [TestCase(StuffItXCompression.Store)]
   [TestCase(StuffItXCompression.Deflate)]
+  [TestCase(StuffItXCompression.Darkhorse)]
+  [TestCase(StuffItXCompression.Brimstone)]
   [Category("RoundTrip")]
   public void GivenFiles_WhenWrittenAndRead_ThenEveryFileFolderAndDateRoundTrips(StuffItXCompression compression) {
     using var r = new StuffItXReader(new MemoryStream(Write(Inputs(), compression)));
@@ -61,6 +72,17 @@ public class StuffItXWriterTests {
     Assert.That(r.Entries.Single(e => e.FullPath == "hello.txt").Method, Is.EqualTo("Deflate"));
   }
 
+  [TestCase(StuffItXCompression.Darkhorse, "Darkhorse")]
+  [TestCase(StuffItXCompression.Brimstone, "Brimstone")]
+  [Category("HappyPath")]
+  public void GivenAModelCoder_WhenWritten_ThenTheStreamShrinksAndIsNamedForIt(StuffItXCompression compression, string name) {
+    var text = Inputs().Where(i => i.Path.EndsWith(".txt", StringComparison.Ordinal)).ToList();
+    var archive = Write(text, compression);
+    Assert.That(archive.Length, Is.LessThan(Write(text, StuffItXCompression.Store).Length / 2));
+    using var r = new StuffItXReader(new MemoryStream(archive));
+    Assert.That(r.Entries.Single(e => e.FullPath == "hello.txt").Method, Is.EqualTo(name));
+  }
+
   [Test, Category("Exception")]
   public void GivenPassword_WhenCreatedThroughTheDescriptor_ThenRefused()
     => Assert.That(() => new StuffItXFormatDescriptor().Create(new MemoryStream(), [ArchiveInputInfo.InMemory("a", [1])], new FormatCreateOptions { Password = "x" }),
@@ -68,6 +90,8 @@ public class StuffItXWriterTests {
 
   [TestCase("store")]
   [TestCase("deflate")]
+  [TestCase("darkhorse")]
+  [TestCase("brimstone")]
   [Category("HappyPath")]
   public void GivenMethod_WhenCreatedThroughTheDescriptor_ThenTheArchiveReadsBack(string method) {
     using var ms = new MemoryStream();
@@ -79,6 +103,8 @@ public class StuffItXWriterTests {
 
   [TestCase(StuffItXCompression.Store)]
   [TestCase(StuffItXCompression.Deflate)]
+  [TestCase(StuffItXCompression.Darkhorse)]
+  [TestCase(StuffItXCompression.Brimstone)]
   [Category("ExternalInterop")]
   public void GivenOurArchive_WhenUnarExtractsIt_ThenEveryFileMatches(StuffItXCompression compression) {
     var theirs = Unar(Write(Inputs(), compression));

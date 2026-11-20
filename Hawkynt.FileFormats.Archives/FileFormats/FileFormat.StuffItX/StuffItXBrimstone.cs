@@ -46,7 +46,10 @@ internal sealed class StuffItXBrimstone {
   private int _highUnit;
 
   // ── model ────────────────────────────────────────────────────────────────────
-  private readonly StuffItXRangeDecoder _coder;
+  private readonly StuffItXRangeDecoder? _coder;
+  private readonly StuffItXRangeEncoder? _encoder;
+  /// <summary>When encoding: the byte the current step codes; its count steers each coding decision.</summary>
+  private int _symbol;
   private readonly int _maxOrder;
   private readonly byte[] _charMask = new byte[256];
   private readonly ushort[] _binSumm = new ushort[128 * 16];
@@ -68,11 +71,12 @@ internal sealed class StuffItXBrimstone {
   private int _medContext;
   private int _maxContext;
 
-  private StuffItXBrimstone(StuffItXInput input, int heapSize, int maxOrder) {
+  private StuffItXBrimstone(StuffItXInput? input, StuffItXRangeEncoder? encoder, int heapSize, int maxOrder) {
     this._heapSize = heapSize;
     this._heap = new byte[HeapStart + heapSize];
     this._maxOrder = maxOrder;
-    this._coder = new StuffItXRangeDecoder(input, true, 0x10000);
+    if (input != null) this._coder = new StuffItXRangeDecoder(input, true, 0x10000);
+    this._encoder = encoder;
     this._escCount = 1;
     this._seeShift[DummySee] = PeriodBits;
     if (!this.RestartModel()) throw new InvalidDataException("Brimstone model memory is too small for its order.");
@@ -84,7 +88,7 @@ internal sealed class StuffItXBrimstone {
     if (exponent > 30) throw new InvalidDataException($"Brimstone model memory 2^{exponent} is out of range.");
     var order = input.ReadByte();
     if (order < 1) throw new InvalidDataException("Brimstone model order 0 is not valid.");
-    var model = new StuffItXBrimstone(input, 1 << exponent, order);
+    var model = new StuffItXBrimstone(input, null, 1 << exponent, order);
     if (length > int.MaxValue) {
       // unknown length (a preprocessor follows): up to the model's end code
       var grown = new MemoryStream();
@@ -99,6 +103,45 @@ internal sealed class StuffItXBrimstone {
       output[n++] = (byte)b;
     }
     return n == length ? output : output.AsSpan(0, n).ToArray();
+  }
+
+  /// <summary>The model memory <see cref="Encode"/> declares, as a power of two.</summary>
+  public const int EncodeMemoryBits = 24;
+
+  /// <summary>The model order <see cref="Encode"/> declares.</summary>
+  public const int EncodeOrder = 8;
+
+  /// <summary>
+  /// Encodes a Brimstone stream that <see cref="Decode"/> reads back: the memory and order bytes,
+  /// then every byte coded through the same model, which makes each decision the decoder makes.
+  /// There is no end code; the stream's length is known from the archive.
+  /// </summary>
+  public static byte[] Encode(ReadOnlySpan<byte> data) {
+    var encoder = new StuffItXRangeEncoder(0x10000);
+    var model = new StuffItXBrimstone(null, encoder, 1 << EncodeMemoryBits, EncodeOrder);
+    foreach (var b in data) {
+      model._symbol = b;
+      if (model.NextByte() != b)
+        throw new InvalidOperationException("Brimstone: the model could not code a byte (the encoder and decoder disagree).");
+    }
+    var body = encoder.Finish();
+    var result = new byte[body.Length + 2];
+    result[0] = EncodeMemoryBits;
+    result[1] = EncodeOrder;
+    body.CopyTo(result, 2);
+    return result;
+  }
+
+  // ── one coding decision: read from the decoder, or, encoding, steered by the target count ──
+  private uint CurrentCount(uint scale, uint target) {
+    if (this._encoder == null) return this._coder!.CurrentCount(scale);
+    this._encoder.Scale(scale);
+    return target;
+  }
+
+  private void RemoveSubRange(uint low, uint high) {
+    if (this._encoder == null) this._coder!.RemoveSubRange(low, high);
+    else this._encoder.Encode(low, high);
   }
 
   // ── heap field access ────────────────────────────────────────────────────────
@@ -372,7 +415,11 @@ internal sealed class StuffItXBrimstone {
   private void DecodeBinSymbol(int context) {
     var rs = OneState(context);
     var bs = (this.Freq(rs) - 1) * 16 + this._prevSuccess + Ns2BsIndx[this.Lsi(NotNull(this.Suffix(context)))];
-    var bit = this._coder.NextWeightedBit(this._binSumm[bs], BinScale);
+    // a bit that is 0 (the context's one symbol) with probability binSumm / BinScale
+    var weight = (uint)this._binSumm[bs];
+    var bit = this.CurrentCount(BinScale, this.Symbol(rs) == this._symbol ? 0u : weight) < weight ? 0 : 1;
+    if (bit == 0) this.RemoveSubRange(0, weight);
+    else this.RemoveSubRange(weight, BinScale);
     if (bit == 0) {
       this._prevSuccess = 1;
       ++this._runLength;
@@ -393,10 +440,17 @@ internal sealed class StuffItXBrimstone {
     this._scale = (uint)this.SummFreq(context);
     var states = this.States(context);
     var firstCount = this.Freq(states);
-    var count = this._coder.CurrentCount(this._scale);
+    var target = 0u;
+    if (this._encoder != null) {
+      // the count of the target's slot, or (escaping) the sum of every state's frequency
+      var last1 = this.Lsi(context);
+      var i = 0;
+      for (; i <= last1 && this.Symbol(states + 6 * i) != this._symbol; ++i) target += (uint)this.Freq(states + 6 * i);
+    }
+    var count = this.CurrentCount(this._scale, target);
 
     if (count < firstCount) {
-      this._coder.RemoveSubRange(0, (uint)firstCount);
+      this.RemoveSubRange(0, (uint)firstCount);
       if (2 * firstCount > this._scale) {
         this._prevSuccess = 1;
         ++this._runLength;
@@ -415,7 +469,7 @@ internal sealed class StuffItXBrimstone {
       var s = states + 6 * i;
       highCount += (uint)this.Freq(s);
       if (highCount > count) {
-        this._coder.RemoveSubRange(highCount - (uint)this.Freq(s), highCount);
+        this.RemoveSubRange(highCount - (uint)this.Freq(s), highCount);
         this.UpdateContext1(context, s);
         return;
       }
@@ -424,7 +478,7 @@ internal sealed class StuffItXBrimstone {
     // The reference bails out here, without consuming the escape, when no symbol was found yet.
     if (this._foundState == 0) return;
 
-    this._coder.RemoveSubRange(highCount, this._scale);
+    this.RemoveSubRange(highCount, this._scale);
     this._lastMaskIndex = (byte)last;
     this._foundState = 0;
     for (var i = 0; i <= last; ++i) this._charMask[this.Symbol(states + 6 * i)] = this._escCount;
@@ -468,16 +522,24 @@ internal sealed class StuffItXBrimstone {
     }
 
     this._scale += total;
-    var count = this._coder.CurrentCount(this._scale);
+    var target = total; // escaping, unless the target is among the unmasked states
+    if (this._encoder != null) {
+      var before = 0u;
+      for (var i = 0; i < n; ++i) {
+        if (this.Symbol(this._ps[i]) == this._symbol) { target = before; break; }
+        before += (uint)this.Freq(this._ps[i]);
+      }
+    }
+    var count = this.CurrentCount(this._scale, target);
     if (count < total) {
       var k = 0;
       var highCount = (uint)this.Freq(this._ps[0]);
       while (highCount <= count && k + 1 < n) highCount += (uint)this.Freq(this._ps[++k]);
-      this._coder.RemoveSubRange(highCount - (uint)this.Freq(this._ps[k]), highCount);
+      this.RemoveSubRange(highCount - (uint)this.Freq(this._ps[k]), highCount);
       this.UpdateSee(see);
       this.UpdateContext2(context, this._ps[k]);
     } else {
-      this._coder.RemoveSubRange(total, this._scale);
+      this.RemoveSubRange(total, this._scale);
       this._lastMaskIndex = (byte)lsi;
       this._seeSumm[see] = (ushort)(this._seeSumm[see] + this._scale);
       for (var i = 0; i < n; ++i) this._charMask[this.Symbol(this._ps[i])] = this._escCount;
