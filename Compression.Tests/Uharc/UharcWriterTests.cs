@@ -222,9 +222,39 @@ public class UharcWriterTests {
   [Category("RoundTrip")]
   public void GivenData_WhenVersion03AlzEncodedAndDecoded_ThenItIsUnchanged(int method) {
     var data = MixedData(method);
-    var packed = Uharc03AlzEncoder.Encode(data, method);
+    var packed = Uharc03AlzEncoder.Encode(data, method, []);
     Assert.That(Uharc03AlzDecoder.Decode(packed, 0, packed.Length, method, data.Length), Is.EqualTo(data));
   }
+
+  [TestCase(36)]
+  [TestCase(50)]
+  [Category("RoundTrip")]
+  public void GivenMediaBetweenText_WhenVersion03AlzEncodedInTheirGroups_ThenTheStreamIsUnchanged(int method) {
+    // Text, BMP, every WAV kind, an empty file, text again: groups 3, 5, 2, 2, 4 and back to 0.
+    byte[][] files = [
+      MixedData(1)[..3000], Bitmap24(60, 40), Wave(3000, 1, 8), Wave(2000, 2, 8), Wave(2000, 1, 16), Wave(1500), [],
+      MixedData(2)[..3000],
+    ];
+    var data = files.SelectMany(f => f).ToArray();
+    var ends = new List<long>();
+    long end = 0;
+    foreach (var f in files)
+      ends.Add(end += f.Length);
+    var packed = Uharc03AlzEncoder.Encode(data, method, ends);
+    Assert.That(Uharc03AlzDecoder.Decode(packed, 0, packed.Length, method, data.Length), Is.EqualTo(data));
+  }
+
+  [TestCase(3, 0, new[] { 3, 9 })]
+  [TestCase(5, 0, new[] { 5, 9 })]
+  [TestCase(7, 0, new[] { 2, 9 })]
+  [TestCase(8, 0, new[] { 2, 8 })]
+  [TestCase(9, 0, new[] { 4 })]
+  [TestCase(0, 4, new[] { 0, 9 })]
+  [TestCase(0, 0, new int[0])]
+  [TestCase(8, 2, new int[0])]
+  [Category("HappyPath"), Category("Boundary")]
+  public void GivenAMediaClass_WhenTheVersion03AlzSwitchesAreChosen_ThenTheGroupAndStepFollowIt(int mediaClass, int group, int[] switches)
+    => Assert.That(Uharc03AlzEncoder.SwitchesFor(mediaClass, group), Is.EqualTo(switches));
 
   [TestCase(new byte[0])]
   [TestCase(new byte[] { 0x42 })]

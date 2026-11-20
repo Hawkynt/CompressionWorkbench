@@ -185,7 +185,7 @@ internal static class UharcWriter {
       UharcMethods.Store => stream,
       UharcMethods.Rle => UharcRleEncoder.Encode(stream),
       >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => Uharc02LzwEncoder.Encode(stream, method),
-      >= UharcMethods.Alz03First => Uharc03AlzEncoder.Encode(stream, method),
+      >= UharcMethods.Alz03First => Uharc03AlzEncoder.Encode(stream, method, fileEnds),
       >= UharcMethods.Ppm03First => Uharc03PpmEncoder.Encode(stream, method, fileEnds),
       _ => Uharc03LzpEncoder.Encode(stream, method, fileEnds),
     } : version == 4 ? method switch {
