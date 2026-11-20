@@ -93,7 +93,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 | 4 | PECompact | MISSING | 3 | The handler locates the payload. Decode its block series (the aPLib and LZMA cores exist) against the 130 PackingData samples, then wrap it in a descriptor. |
 | 5 | ACE | PARTIAL | 2 | The writer lacks the ACE 2.0 SOUND/PIC modes. Oracle: unace, acefile (BSD-2). |
 | 6 | StuffIt | PARTIAL | 2 | Method 8 and segmented sets; method 14 is read and verified with unar; classic DES and StuffIt 5 RC4 reads and writes are proven. Rung 1: XADMaster (LGPL); oracle: unar. |
-| 7 | StuffIt X | PARTIAL | 2 | Method 7 and encryption: no source and no decoder anywhere, unar refuses them too. Every other coding is read and the writer stores or Deflate-codes, all verified with unar. Rung 1: XADMaster (LGPL); oracle: unar. |
+| 7 | StuffIt X | PARTIAL | 2 | Method 7 and encryption: no source and no decoder anywhere, unar refuses them too. Archives with a recovery record are refused; their layout is measured in [STUFFITX-RECOVERY-ON-DISK](../STUFFITX-RECOVERY-ON-DISK.md). Every other coding is read and the writer stores or Deflate-codes, all verified with unar. Rung 1: XADMaster (LGPL); oracle: unar. |
 | 8 | ALZip | PARTIAL | 2 | Split archives and method 3 need samples; ALZip is the oracle. |
 | 9 | PEA | PARTIAL | 2 | Encryption and volumes. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
 | 10 | PAK (NoGate) | MISSING | 2 | Rung 1: XADMaster's Crushed method (BB_ArcDistill already covers Distilled). Needs a real sample; PAK 2.51 under DOSBox is the oracle. |
