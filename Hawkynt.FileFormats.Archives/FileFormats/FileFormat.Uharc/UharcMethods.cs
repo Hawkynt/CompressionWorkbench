@@ -36,4 +36,37 @@ internal static class UharcMethods {
     >= LzpFirst and <= AlzLast => 1 << ((method - LzpFirst) % 16 + 10),
     _ => 0,
   };
+
+  // UHARC 0.3 numbers its methods in bands of 14 dictionary sizes: 8..21 LZP, 22..35 PPM,
+  // 36..77 ALZ:1..3 (78 and 79 continue the last band), 80 is another code for store.
+
+  /// <summary>First method of 0.3's PPM band.</summary>
+  public const int Ppm03First = 22;
+
+  /// <summary>First method of 0.3's ALZ bands.</summary>
+  public const int Alz03First = 36;
+
+  /// <summary>Last method 0.3 defines.</summary>
+  public const int Alz03Last = 79;
+
+  /// <summary>0.3's second code for the store method.</summary>
+  public const int Store03Alias = 80;
+
+  /// <summary>The name of a UHARC 0.3 stream method.</summary>
+  public static string Name03(int method) => method switch {
+    Store or Store03Alias => "Store",
+    Rle => "RLE",
+    >= Lz78First and <= Lz78Last => "LZW",
+    >= LzpFirst and < Ppm03First => "LZP",
+    >= Ppm03First and < Alz03First => "PPM",
+    >= Alz03First and <= Alz03Last => $"ALZ:{Math.Min((method - Alz03First) / 14, 2) + 1}",
+    _ => $"#{method}",
+  };
+
+  /// <summary>Dictionary size in bytes of a UHARC 0.3 method (LZW: codes), 0 where none applies.</summary>
+  public static int DictionarySize03(int method) => method switch {
+    >= Lz78First and <= Lz78Last => 1 << (method + 8),
+    >= LzpFirst and <= Alz03Last => 1 << ((method - LzpFirst) % 14 + 10),
+    _ => 0,
+  };
 }
