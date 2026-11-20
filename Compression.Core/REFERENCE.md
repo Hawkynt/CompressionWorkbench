@@ -3442,7 +3442,17 @@ Decompresses data in the Snappy block format.
 
 ### Namespace `Compression.Core.Dictionary.Sqx`
 
-[`SqxBuildingBlock`](#sqxbuildingblock) · [`SqxLzDecoder`](#sqxlzdecoder) · [`SqxLzEncoder`](#sqxlzencoder) · [`SqxPpmdDecoder`](#sqxppmddecoder) · [`SqxTables`](#sqxtables) · [`SqxUltraDecoder`](#sqxultradecoder)
+[`SqxAudioDecoder`](#sqxaudiodecoder) · [`SqxBuildingBlock`](#sqxbuildingblock) · [`SqxLzDecoder`](#sqxlzdecoder) · [`SqxLzEncoder`](#sqxlzencoder) · [`SqxPpmdDecoder`](#sqxppmddecoder) · [`SqxTables`](#sqxtables) · [`SqxUltraDecoder`](#sqxultradecoder)
+
+#### `SqxAudioDecoder`
+
+SQX method 5 ("audio"): a WAV file as an 18-byte audio header (skip, tail and sample byte counts, channels, bits per sample), the skipped header bytes raw, the coded samples and the tail bytes raw. Format 1.1 codes 8-bit samples with Huffman-coded deltas behind six adaptively chosen predictors and 16-bit samples in 384-sample frames with polynomial prediction; format 2.0 codes 8-bit samples with a range coder over nibble models and an adaptive delta predictor, and 16-bit samples in 4608-sample frames with polynomial or FIR prediction and fixed-width or adaptive Rice residuals. Converted from Squeez-c (MIT) src/audio.c. The file CRC of an audio member covers the audio header as well as the file.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SqxAudioDecoder` | `SqxAudioDecoder()` |  |
+| `HeaderSize` | `const int HeaderSize` | Bytes of the audio header at the start of every stream. |
+| `Decode` | `ValueTuple<byte[], byte[]> Decode(byte[] packed, long originalSize, int archiveVersion)` | Decodes one file of `originalSize` bytes. |
 
 #### `SqxBuildingBlock`
 
