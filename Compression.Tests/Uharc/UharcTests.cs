@@ -119,6 +119,8 @@ public class UharcTests {
   [TestCase("v03-runs-m2.uha", "runs", null, true)]
   [TestCase("sizes-mx-a.uha", "sizes", null, false)]
   [TestCase("sizes-mx-b.uha", "sizes", null, false)]
+  [TestCase("slots-mx-a.uha", "slots", null, false)]
+  [TestCase("slots-mx-b.uha", "slots", null, false)]
   [TestCase("fax-m2.uha", "fax", null, true)]
   [TestCase("fax-mx.uha", "fax", null, true)]
   [TestCase("v04-fax-mz.uha", "fax", null, true)]

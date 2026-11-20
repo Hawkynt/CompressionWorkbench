@@ -144,6 +144,13 @@ def sized_text(n):
 for name, size in [("a1.txt", 481861), ("a2.txt", 426754), ("b1.txt", 513216), ("b2.txt", 246814)]:
     put("sizes/" + name, sized_text(size))
 
+# slots: binary PPM streams whose bytes repeat what followed the empty history at the start, so
+# the recent-context slots must start keyed on that empty history
+put("slots/first.bin", bytes.fromhex("0302ff03ff45"))
+put("slots/records.bin", bytes.fromhex(
+    "03020e00c12740fefe000003c82713000f00000f45ff03020e0057400700"
+    "0f0000000000000000003c8440fefefe03ff45ffe98800000303fd000003"))
+
 for dirpath, dirs, files in os.walk(root):
     for f in files + dirs:
         os.utime(os.path.join(dirpath, f), (STAMP, STAMP))
