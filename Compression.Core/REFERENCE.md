@@ -182,11 +182,30 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`BlockEncryptor128`](#blockencryptor128) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`Eax`](#eax) · [`Eax.SpanAction`](#eaxspanaction) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Serpent`](#serpent) · [`Twofish`](#twofish)
+[`AesBlockCipher`](#aesblockcipher) · [`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`BlockEncryptor128`](#blockencryptor128) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`Eax`](#eax) · [`Eax.SpanAction`](#eaxspanaction) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`ManagedAes`](#managedaes) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Serpent`](#serpent) · [`Twofish`](#twofish)
+
+#### `AesBlockCipher`
+
+The AES block cipher (FIPS-197): 128-bit blocks and 128-, 192- or 256-bit keys, in this library's own code, so that no AES depends on what the operating system's cryptography offers.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AesBlockCipher` | `AesBlockCipher(ReadOnlySpan<byte> key)` | Expands a 16-, 24- or 32-byte key for both directions. |
+| `BlockSize` | `const int BlockSize` | The block size in bytes. |
+| `IsHardwareAccelerated` | `static bool IsHardwareAccelerated { get; }` | Whether the processor's AES instructions can be used here. |
+| `UsesHardware` | `bool UsesHardware { get; }` | Whether this key runs on the processor's AES instructions. |
+| `DecryptCbc` | `void DecryptCbc(Span<byte> blocks, Span<byte> iv)` | CBC decryption of whole blocks in place; `iv` ends as the last ciphertext block. |
+| `DecryptCfb` | `void DecryptCfb(Span<byte> blocks, Span<byte> iv)` | CFB decryption with 128-bit feedback of whole blocks in place; `iv` ends as the last ciphertext block. |
+| `Decrypt` | `void Decrypt(ReadOnlySpan<byte> input, Span<byte> output)` | Decrypts whole blocks, each on its own (ECB); `output` may be `input`. |
+| `Decrypt` | `void Decrypt(Span<byte> blocks)` | Decrypts whole blocks in place. |
+| `EncryptCbc` | `void EncryptCbc(Span<byte> blocks, Span<byte> iv)` | CBC encryption (SP 800-38A 6.2) of whole blocks in place; `iv` ends as the last ciphertext block. |
+| `EncryptCfb` | `void EncryptCfb(Span<byte> blocks, Span<byte> iv)` | CFB encryption with 128-bit feedback (SP 800-38A 6.3) of whole blocks in place; `iv` ends as the last ciphertext block. |
+| `Encrypt` | `void Encrypt(ReadOnlySpan<byte> input, Span<byte> output)` | Encrypts whole blocks, each on its own (ECB); `output` may be `input`. |
+| `Encrypt` | `void Encrypt(Span<byte> blocks)` | Encrypts whole blocks in place. |
 
 #### `AesCryptor`
 
-AES-256 encryption and decryption wrapper supporting CBC and CTR modes. Uses the system-provided AES implementation.
+AES-256 encryption and decryption wrapper supporting CBC and CTR modes. Runs on `ManagedAes`, this library's own AES, not the operating system's.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -368,6 +387,28 @@ Implements `IDisposable`.
 | `Decrypt` | `void Decrypt(ulong firstSector, Span<byte> data)` | Decrypts whole sectors in place, the first numbered `firstSector`. |
 | `Dispose` | `void Dispose()` |  |
 | `Encrypt` | `void Encrypt(ulong firstSector, Span<byte> data)` | Encrypts whole sectors in place, the first numbered `firstSector`. |
+
+#### `ManagedAes`
+
+`Aes` on this library's own `AesBlockCipher`: a drop-in for `Create` whose ECB, CBC and CFB (8- and 128-bit feedback) work, with every `PaddingMode`, through `ICryptoTransform` and the one-shot `EncryptEcb`/`DecryptCbc`/… methods alike.
+
+Inherits `Aes`. Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ManagedAes` | `ManagedAes()` |  |
+| `CreateDecryptor` | `override ICryptoTransform CreateDecryptor(byte[] rgbKey, byte[] rgbIV)` |  |
+| `CreateEncryptor` | `override ICryptoTransform CreateEncryptor(byte[] rgbKey, byte[] rgbIV)` |  |
+| `Create` | `static ManagedAes Create()` | A new instance with .NET's defaults: a 256-bit key made on first use, CBC, PKCS #7. |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `GenerateIV` | `override void GenerateIV()` |  |
+| `GenerateKey` | `override void GenerateKey()` |  |
+| `TryDecryptCbcCore` | `protected override bool TryDecryptCbcCore(ReadOnlySpan<byte> ciphertext, ReadOnlySpan<byte> iv, Span<byte> destination, PaddingMode paddingMode, out int bytesWritten)` |  |
+| `TryDecryptCfbCore` | `protected override bool TryDecryptCfbCore(ReadOnlySpan<byte> ciphertext, ReadOnlySpan<byte> iv, Span<byte> destination, PaddingMode paddingMode, int feedbackSizeInBits, out int bytesWritten)` |  |
+| `TryDecryptEcbCore` | `protected override bool TryDecryptEcbCore(ReadOnlySpan<byte> ciphertext, Span<byte> destination, PaddingMode paddingMode, out int bytesWritten)` |  |
+| `TryEncryptCbcCore` | `protected override bool TryEncryptCbcCore(ReadOnlySpan<byte> plaintext, ReadOnlySpan<byte> iv, Span<byte> destination, PaddingMode paddingMode, out int bytesWritten)` |  |
+| `TryEncryptCfbCore` | `protected override bool TryEncryptCfbCore(ReadOnlySpan<byte> plaintext, ReadOnlySpan<byte> iv, Span<byte> destination, PaddingMode paddingMode, int feedbackSizeInBits, out int bytesWritten)` |  |
+| `TryEncryptEcbCore` | `protected override bool TryEncryptEcbCore(ReadOnlySpan<byte> plaintext, Span<byte> destination, PaddingMode paddingMode, out int bytesWritten)` |  |
 
 #### `Rar15Cipher`
 
