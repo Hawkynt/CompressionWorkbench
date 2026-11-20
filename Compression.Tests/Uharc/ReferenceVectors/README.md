@@ -70,7 +70,12 @@ The `v04-*` archives were written by **UHARC 0.4 BETA** (`UHARC04.EXE`, Win32, 2
 | `v04-basic-mr.uha` / `v04-runs-mr.uha` | basic / runs | `-mr` | 0.4 RLE (a switch the 0.4 help does not list) |
 | `v04-basic-mw.uha` / `v04-runs-mw.uha` | basic / runs | `-mw` | 0.4 LZW (likewise unlisted) |
 | `v04-reset-mw1.uha` / `v04-exe-mw.uha` | reset / exe | `-mw -md1` / `-mw` | LZW with 1024 codes; the executable filter behind LZW |
-| `v04-basic-mx.uha` | basic | `-mx` | 0.4 PPM, listed but not decoded |
+| `v04-basic-mx.uha` | basic | `-mx` | 0.4 PPM: a binary stream with multimedia class 1 |
+| `v04-reset-mx.uha` / `v04-reset-mx1.uha` | reset | `-mx` / `-mx -md1` | 0.4 PPM reset points; a 1 KiB window wrapping hundreds of times |
+| `v04-exe-mx.uha` / `v04-mm-mx.uha` | exe / mm | `-mx` | 0.4 PPM over executables (strided rows, the binary predictor) and the multimedia set |
+| `v04-fax-mx.uha` / `v04-runs-mx.uha` | fax / runs | `-mx` | 0.4 PPM behind the fax-page transpose; runs and 255-byte copies |
+| `v04-sizes-mx-a.uha` / `v04-sizes-mx-b.uha` | sizes | `-mx`, files `a1.txt a2.txt` / `b1.txt b2.txt` | 0.4 PPM's file-size rules (both fail to decode without them) |
+| `v04-slots-mx.uha` | slots | `-mx` | 0.4 PPM over the short binary inputs |
 | `v04-fax-mz.uha` | fax | `-mz` | the fax-page transpose behind 0.4 LZP |
 
 `UHARC04.EXE t` reports "All files OK" for every `v04-*` archive.
