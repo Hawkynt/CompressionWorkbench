@@ -77,7 +77,8 @@ public static class DvdisasterEccWriter {
     var h = file.AsSpan(0, DvdisasterEccHeader.Size);
     "*dvdisaster*RS01"u8.CopyTo(h);
     h[16] = 1;
-    MD5.HashData(SectorOf(image, FingerprintSector, padded)).CopyTo(h[20..]);
+    if (sectors > FingerprintSector) // an image without the fingerprint sector records no fingerprint
+      MD5.HashData(SectorOf(image, FingerprintSector, padded)).CopyTo(h[20..]);
     MD5.HashData(image).CopyTo(h[36..]);
     MD5.HashData(file.AsSpan(DvdisasterEccHeader.Size)).CopyTo(h[52..]);
     BinaryPrimitives.WriteInt64LittleEndian(h[68..], sectors);
