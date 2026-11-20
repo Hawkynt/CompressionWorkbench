@@ -32325,7 +32325,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.StuffItX`
 
-[`StuffItXCompression`](#stuffitxcompression) · [`StuffItXEntry`](#stuffitxentry) · [`StuffItXFormatDescriptor`](#stuffitxformatdescriptor) · [`StuffItXReader`](#stuffitxreader) · [`StuffItXWriter`](#stuffitxwriter) · [`StuffItXWriter.Input`](#stuffitxwriterinput)
+[`StuffItXCompression`](#stuffitxcompression) · [`StuffItXEntry`](#stuffitxentry) · [`StuffItXFormatDescriptor`](#stuffitxformatdescriptor) · [`StuffItXPreprocess`](#stuffitxpreprocess) · [`StuffItXReader`](#stuffitxreader) · [`StuffItXWriter`](#stuffitxwriter) · [`StuffItXWriter.Input`](#stuffitxwriterinput)
 
 #### `StuffItXCompression`
 
@@ -32340,6 +32340,7 @@ How `StuffItXWriter` codes the archive's data stream.
 | `Cyanide` | `4` | Method 1, Cyanide: Burrows-Wheeler blocks with range-coded "move one from front" ranks. |
 | `Blend` | `5` | Method 4, Blend: 64 KiB segments, each Darkhorse, Cyanide or Brimstone, whichever is smallest. |
 | `Obscured` | `6` | Method 5: the data RC4-obscured under a one-byte key (no compression). |
+| `Iron` | `7` | Method 6, Iron: Burrows-Wheeler blocks whose recency-list runs are coded with adaptive binary weights. |
 
 #### `StuffItXEntry`
 
@@ -32362,7 +32363,7 @@ One file, directory or resource fork of a StuffIt X (.sitx) archive.
 
 #### `StuffItXFormatDescriptor`
 
-StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro): read, and written stored, Deflate-, Brimstone-, Darkhorse-, Cyanide-, Blend- or Obscured-coded, optionally behind the x86 preprocessor. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver), the reader this one is converted from`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt X
+StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro): read, and written stored, Deflate-, Brimstone-, Darkhorse-, Cyanide-, Blend-, Obscured- or Iron-coded, optionally behind the English or x86 preprocessor. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver), the reader this one is converted from`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt X
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
@@ -32385,6 +32386,16 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
+#### `StuffItXPreprocess`
+
+The filter `StuffItXWriter` runs in front of the coder.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` | No filter. |
+| `English` | `1` | Preprocess 0: dictionary words replaced by word numbers, with a sentence-start case model. |
+| `X86` | `2` | Preprocess 2: x86 relative call and jump operands made absolute. |
+
 #### `StuffItXReader`
 
 Reads StuffIt X (.sitx) archives.
@@ -32402,11 +32413,11 @@ Implements `IDisposable`.
 
 #### `StuffItXWriter`
 
-Writes StuffIt X (.sitx) archives: one solid data stream holding every file's data fork, stored or coded (Deflate, Brimstone, Darkhorse, Cyanide, Blend or Obscured, optionally behind the x86 preprocessor) and CRC-32 checked, and a stored catalog of names and dates.
+Writes StuffIt X (.sitx) archives: one solid data stream holding every file's data fork, stored or coded (Deflate, Brimstone, Darkhorse, Cyanide, Blend, Obscured or Iron, optionally behind the English or x86 preprocessor) and CRC-32 checked, and a stored catalog of names and dates.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, StuffItXCompression compression = 1, bool x86 = false)` | Writes a StuffIt X archive of `inputs`. |
+| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, StuffItXCompression compression = 1, StuffItXPreprocess preprocess = 0)` | Writes a StuffIt X archive of `inputs`. |
 
 #### `StuffItXWriter.Input`
 

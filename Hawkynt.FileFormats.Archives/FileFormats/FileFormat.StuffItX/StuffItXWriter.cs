@@ -20,12 +20,24 @@ public enum StuffItXCompression {
   Blend,
   /// <summary>Method 5: the data RC4-obscured under a one-byte key (no compression).</summary>
   Obscured,
+  /// <summary>Method 6, Iron: Burrows-Wheeler blocks whose recency-list runs are coded with adaptive binary weights.</summary>
+  Iron,
+}
+
+/// <summary>The filter <see cref="StuffItXWriter"/> runs in front of the coder.</summary>
+public enum StuffItXPreprocess {
+  /// <summary>No filter.</summary>
+  None,
+  /// <summary>Preprocess 0: dictionary words replaced by word numbers, with a sentence-start case model.</summary>
+  English,
+  /// <summary>Preprocess 2: x86 relative call and jump operands made absolute.</summary>
+  X86,
 }
 
 /// <summary>
 /// Writes StuffIt X (.sitx) archives: one solid data stream holding every file's data fork,
-/// stored or coded (Deflate, Brimstone, Darkhorse, Cyanide, Blend or Obscured, optionally behind the
-/// x86 preprocessor) and CRC-32 checked, and a stored catalog of names and dates.
+/// stored or coded (Deflate, Brimstone, Darkhorse, Cyanide, Blend, Obscured or Iron, optionally behind
+/// the English or x86 preprocessor) and CRC-32 checked, and a stored catalog of names and dates.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -48,8 +60,8 @@ public static class StuffItXWriter {
   public readonly record struct Input(string Path, byte[]? Data, DateTime? LastModified = null);
 
   /// <summary>Writes a StuffIt X archive of <paramref name="inputs"/>.</summary>
-  /// <param name="x86">Run the x86 preprocessor (preprocess id 2) in front of the coder.</param>
-  public static void Write(Stream output, IEnumerable<Input> inputs, StuffItXCompression compression = StuffItXCompression.Deflate, bool x86 = false) {
+  /// <param name="preprocess">The filter run in front of the coder.</param>
+  public static void Write(Stream output, IEnumerable<Input> inputs, StuffItXCompression compression = StuffItXCompression.Deflate, StuffItXPreprocess preprocess = StuffItXPreprocess.None) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var (method, encode) = compression switch {
@@ -60,10 +72,18 @@ public static class StuffItXWriter {
       StuffItXCompression.Cyanide => (1L, static d => StuffItXCyanideEncoder.Encode(d)),
       StuffItXCompression.Blend => (4L, EncodeBlend),
       StuffItXCompression.Obscured => (5L, EncodeObscured),
+      StuffItXCompression.Iron => (6L, static d => StuffItXIronEncoder.Encode(d)),
       _ => throw new ArgumentOutOfRangeException(nameof(compression)),
     };
-    if (x86) WriteCoded(output, inputs, method, 2, d => encode(StuffItXX86.Encode(d)));
-    else WriteCoded(output, inputs, method, -1, encode);
+    // the English filter changes the length, so its coder must end by itself; Brimstone runs to a length
+    if (preprocess == StuffItXPreprocess.English && compression == StuffItXCompression.Brimstone)
+      throw new NotSupportedException("StuffIt X's English preprocessor needs a coder that marks its own end; Brimstone does not.");
+    switch (preprocess) {
+      case StuffItXPreprocess.None: WriteCoded(output, inputs, method, -1, encode); break;
+      case StuffItXPreprocess.English: WriteCoded(output, inputs, method, 0, d => encode(StuffItXEnglishEncoder.Encode(d))); break;
+      case StuffItXPreprocess.X86: WriteCoded(output, inputs, method, 2, d => encode(StuffItXX86.Encode(d))); break;
+      default: throw new ArgumentOutOfRangeException(nameof(preprocess));
+    }
   }
 
   /// <summary>
@@ -264,7 +284,7 @@ public static class StuffItXWriter {
   }
 
   /// <summary>Least-significant-bit-first bit writer with the "P2" number coding.</summary>
-  private sealed class BitWriter {
+  internal sealed class BitWriter {
     private readonly MemoryStream _out = new();
     private int _byte, _count;
 

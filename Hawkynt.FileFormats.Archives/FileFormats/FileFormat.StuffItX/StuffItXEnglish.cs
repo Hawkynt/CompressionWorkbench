@@ -24,7 +24,7 @@ namespace FileFormat.StuffItX;
 /// THIRD-PARTY-NOTICE.XADMaster.txt).</para>
 /// </remarks>
 internal static class StuffItXEnglish {
-  private const int WordCount = 100366;
+  internal const int WordCount = 100366;
   private const int DictionarySize = 881863;
   private const uint DictionaryCrc = 0xFB1DCFD5;
 

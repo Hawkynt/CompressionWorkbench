@@ -5,8 +5,8 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.StuffItX;
 
 /// <summary>
-/// StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro): read, and written stored, Deflate-, Brimstone-, Darkhorse-, Cyanide-, Blend- or Obscured-coded,
-/// optionally behind the x86 preprocessor.
+/// StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro): read, and written stored, Deflate-, Brimstone-, Darkhorse-, Cyanide-, Blend-, Obscured- or Iron-coded,
+/// optionally behind the English or x86 preprocessor.
 ///
 /// References:
 /// <list type="bullet">
@@ -30,6 +30,7 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
     new("deflate", "Deflate (method 3)"), new("brimstone", "Brimstone (method 0, PPMd)"),
     new("darkhorse", "Darkhorse (method 2, LZ77)"), new("cyanide", "Cyanide (method 1, BWT)"),
     new("blend", "Blend (method 4, per-segment choice)"), new("obscured", "Obscured (method 5, RC4)"),
+    new("iron", "Iron (method 6, BWT)"),
     new("store", "Stored"),
   ];
   public string? TarCompressionFormatId => null;
@@ -37,8 +38,8 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public string Description =>
     "StuffIt X archive (Aladdin/Smith Micro): files, folders and resource forks (as .rsrc) from " +
     "Brimstone, Cyanide, Darkhorse, Deflate, Blend, Iron and stored streams, also behind the English " +
-    "and x86 preprocessors, each checked against its CRC-32; written stored, Deflate-, Brimstone-, Darkhorse-, Cyanide-, Blend- or " +
-    "Obscured-coded, optionally behind the x86 preprocessor. Method 7 " +
+    "and x86 preprocessors, each checked against its CRC-32; written stored, Deflate-, Brimstone-, Darkhorse-, Cyanide-, Blend-, " +
+    "Obscured- or Iron-coded, optionally behind the English or x86 preprocessor. Method 7 " +
     "and encrypted streams are listed but not extracted.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -61,8 +62,14 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
     if (!string.IsNullOrEmpty(options.Password))
       throw new NotSupportedException("StuffIt X encryption is not written: its scheme is not known.");
     var name = (options.MethodName ?? "deflate").Trim().ToLowerInvariant();
-    var x86 = name.EndsWith("+x86", StringComparison.Ordinal);
-    if (x86) name = name[..^4];
+    var preprocess = StuffItXPreprocess.None;
+    if (name.EndsWith("+x86", StringComparison.Ordinal)) {
+      preprocess = StuffItXPreprocess.X86;
+      name = name[..^4];
+    } else if (name.EndsWith("+english", StringComparison.Ordinal)) {
+      preprocess = StuffItXPreprocess.English;
+      name = name[..^8];
+    }
     var compression = name switch {
       "" or "deflate" or "sitx" => StuffItXCompression.Deflate,
       "store" or "stored" => StuffItXCompression.Store,
@@ -71,9 +78,10 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
       "cyanide" => StuffItXCompression.Cyanide,
       "blend" => StuffItXCompression.Blend,
       "obscured" or "rc4" => StuffItXCompression.Obscured,
-      var m => throw new NotSupportedException($"StuffIt X method '{m}' is not written (deflate, brimstone, darkhorse, cyanide, blend, obscured, store; append +x86 for the x86 preprocessor)."),
+      "iron" => StuffItXCompression.Iron,
+      var m => throw new NotSupportedException($"StuffIt X method '{m}' is not written (deflate, brimstone, darkhorse, cyanide, blend, obscured, iron, store; append +english or +x86 for a preprocessor)."),
     };
     StuffItXWriter.Write(output, inputs.Select(i => new StuffItXWriter.Input(i.ArchiveName, i.IsDirectory ? null : i.ReadContent(),
-      i.Metadata?.LastWriteTimeUtc?.UtcDateTime)), compression, x86);
+      i.Metadata?.LastWriteTimeUtc?.UtcDateTime)), compression, preprocess);
   }
 }
