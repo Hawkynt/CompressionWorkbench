@@ -497,7 +497,7 @@ exFAT,exfat;fat64;img,filesystem,,,,,,fmt/1609,Y,,2,https://learn.microsoft.com/
 ExtremeFFS,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
 F2FS,f2fs,filesystem,,,,,,,Y,,1,,F2fs,Y,Y,Y,OK,,
 Microsoft Flash File System 2,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,"refused: no published on-disk specification, no maintained reader or writer, and no linear-flash image was found"
-JFFS (v1),,filesystem,,,,,,,Y,,1,https://github.com/ipwndev/DSLinux/blob/master/user/mtd-utils/mkfs.jffs.c,Jffs1,Y,,,READ-ONLY-BUT-SOURCES-WRITE,mkfs.jffs,no reader outside this package to prove a writer
+JFFS (v1),,filesystem,,,,,,,Y,,1,https://github.com/ipwndev/DSLinux/blob/master/user/mtd-utils/mkfs.jffs.c,Jffs1,Y,Y,,OK,mkfs.jffs,writer reproduces mkfs.jffs images byte for byte in both byte orders; device nodes not written
 JFFS2,jffs2,filesystem,,,,R,,,Y,,2,,Jffs2,Y,Y,Y,OK,,
 LSFS,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
 LogFS,logfs,filesystem,,,,D,,,Y,,2,,,,,,MISSING,,

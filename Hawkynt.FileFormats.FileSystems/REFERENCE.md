@@ -13751,7 +13751,7 @@ An El Torito boot entry (the first one is the default entry).
 
 ### Namespace `FileSystem.Jffs1`
 
-[`Jffs1Entry`](#jffs1entry) · [`Jffs1FormatDescriptor`](#jffs1formatdescriptor) · [`Jffs1Reader`](#jffs1reader)
+[`Jffs1Entry`](#jffs1entry) · [`Jffs1FormatDescriptor`](#jffs1formatdescriptor) · [`Jffs1Reader`](#jffs1reader) · [`Jffs1WriteNode`](#jffs1writenode) · [`Jffs1Writer`](#jffs1writer)
 
 #### `Jffs1Entry`
 
@@ -13762,6 +13762,8 @@ Implements `IEquatable<Jffs1Entry>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Jffs1Entry` | `Jffs1Entry(string Path, uint Ino, uint Mode, ushort Uid, ushort Gid, uint MTime, byte[] Data)` | One inode of a JFFS (version 1) image, after replaying its nodes. |
+| `ATime` | `uint ATime { get; init; }` | Gets the access time (UNIX seconds). |
+| `CTime` | `uint CTime { get; init; }` | Gets the status-change time (UNIX seconds). |
 | `Data` | `byte[] Data { get; init; }` | File contents, symlink target, or (device nodes) the raw device number. |
 | `Gid` | `ushort Gid { get; init; }` | Group. |
 | `Ino` | `uint Ino { get; init; }` | Inode number. |
@@ -13777,7 +13779,7 @@ Implements `IEquatable<Jffs1Entry>`.
 
 JFFS version 1 — Axis Communications' Journalling Flash File System (Linux 2.4, removed in 2.6). Magic "1984" in either byte order at offset 0, followed by the root inode 1.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13794,6 +13796,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a little-endian image the way `mkfs.jffs` does: directories 0755, files 0644, owner root, each input's modification time as its access, modification and change time. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
@@ -13811,7 +13814,36 @@ Reads JFFS version 1 (Axis Communications' Journalling Flash File System, Linux 
 | `RootIno` | `const uint RootIno` |  |
 | `BigEndian` | `bool BigEndian { get; }` | True when the image is big-endian. |
 | `Entries` | `IReadOnlyList<Jffs1Entry> Entries { get; }` | Every inode below the root, parents before children. |
+| `Root` | `Jffs1Entry Root { get; }` | Gets the root directory (inode 1, an empty path): its mode, owner and times. |
 | `SkippedNodes` | `int SkippedNodes { get; }` | Raw nodes skipped because their header checksum failed or they were marked obsolete. |
+
+#### `Jffs1WriteNode`
+
+One inode to write: a directory (with children), a regular file or a symbolic link.
+
+Implements `IEquatable<Jffs1WriteNode>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Jffs1WriteNode` | `Jffs1WriteNode(string Name, uint Mode)` | One inode to write: a directory (with children), a regular file or a symbolic link. |
+| `ATime` | `uint ATime { get; init; }` | Gets the access time (UNIX seconds). |
+| `CTime` | `uint CTime { get; init; }` | Gets the status-change time (UNIX seconds). |
+| `Children` | `IReadOnlyList<Jffs1WriteNode> Children { get; init; }` | Gets a directory's entries, written in this order. |
+| `Data` | `byte[] Data { get; init; }` | Gets the file contents or the link target. |
+| `Gid` | `ushort Gid { get; init; }` | Gets the group. |
+| `MTime` | `uint MTime { get; init; }` | Gets the modification time (UNIX seconds). |
+| `Mode` | `uint Mode { get; init; }` | The Unix mode word, file type included (0x4000 directory, 0x8000 file, 0xA000 symlink). |
+| `Name` | `string Name { get; init; }` | The name in its parent directory (Latin-1, 1 to 255 bytes); ignored for the root. |
+| `Uid` | `ushort Uid { get; init; }` | Gets the owner. |
+
+#### `Jffs1Writer`
+
+Writes JFFS version 1 images as `mkfs.jffs` lays them out (docs/JFFS1-ON-DISK.md): the root inode 1, then every inode depth first, numbered in that order, each file's data in nodes of at most 32 KiB, names and data padded to four bytes with 0xFF.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultChunkSize` | `const int DefaultChunkSize` | The largest data node `mkfs.jffs` writes by default (half its default erase size). |
+| `Write` | `static void Write(Stream output, Jffs1WriteNode root, bool bigEndian = false, int chunkSize = 32768)` | Writes the image of the tree under `root`. |
 
 ### Namespace `FileSystem.Jffs2`
 
