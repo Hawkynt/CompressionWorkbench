@@ -10,7 +10,7 @@ namespace FileFormat.Uharc;
 /// </summary>
 /// <remarks>
 /// The directory is always readable; file data decodes for every 0.6 method (store, RLE, LZ78,
-/// LZP, PPM and ALZ), every 0.4 mode but PPM, every 0.3 mode but PPM and every 0.2 mode,
+/// LZP, PPM and ALZ) and every 0.4, 0.3 and 0.2 mode,
 /// and every extracted file is checked against its stored CRC-32.
 /// </remarks>
 public sealed class UharcReader {
@@ -68,7 +68,7 @@ public sealed class UharcReader {
     ? this._legacy.Method is >= 0 and <= 43
     : this._v04 is { Version: 3 }
     ? this._v04.Method is UharcMethods.Store or UharcMethods.Store03Alias or UharcMethods.Rle
-      or >= UharcMethods.Lz78First and < UharcMethods.Ppm03First or >= UharcMethods.Alz03First and <= UharcMethods.Alz03Last
+      or >= UharcMethods.Lz78First and <= UharcMethods.Alz03Last
     : this._v04 != null
     ? this._v04.Method is UharcMethods.Store or UharcMethods.Rle or >= UharcMethods.Lz78First and <= UharcMethods.AlzLast
     : this._header.Method is UharcMethods.Store or UharcMethods.Rle
@@ -537,6 +537,8 @@ public sealed class UharcReader {
         UharcMethods.Rle => UharcRleDecoder.Decode(packed, offset, length, size),
         <= UharcMethods.Lz78Last => Uharc02LzwDecoder.Decode(packed, offset, length, h.Method, size),
         < UharcMethods.Ppm03First when h.Version == 3 => Uharc03LzpDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
+        < UharcMethods.Alz03First when h.Version == 3 => Uharc03PpmDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds,
+          recordModel: (h.Filters & UharcHeader.RecordFileModel) != 0),
         >= UharcMethods.Alz03First when h.Version == 3 => Uharc03AlzDecoder.Decode(packed, offset, length, h.Method, size),
         <= UharcMethods.LzpLast => Uharc04LzpDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
         <= UharcMethods.PpmLast => Uharc04PpmDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds,

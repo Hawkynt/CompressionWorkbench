@@ -96,7 +96,12 @@ It prints nothing; its `x` reproduces every input of every `v03-*` archive:
 | `v03-basic-m1.uha` / `-m2` / `-m3` / `v03-basic-m2-pw.uha` | basic | `-m1`..`-m3` (`-pwsecret`) | 0.3 ALZ:1..3 |
 | `v03-reset-m2.uha` / `v03-reset-m21.uha` | reset | `-m2` / `-m2 -md1` | 0.3 ALZ over 232 KiB; a 1 KiB window |
 | `v03-exe-m2.uha` / `v03-mm-m1.uha` / `v03-runs-m2.uha` | exe / mm / runs | `-m2` / `-m1` / `-m2` | executables, the literal groups 1..5, long runs |
-| `v03-basic-mx.uha` | basic | `-mx` | 0.3 PPM, listed but not decoded |
+| `v03-basic-mx.uha` | basic | `-mx` | 0.3 PPM: a binary stream with multimedia class 1 |
+| `v03-reset-mx.uha` / `v03-reset-mx1.uha` | reset | `-mx` / `-mx -md1` | 0.3 PPM reset points; a 1 KiB window wrapping hundreds of times |
+| `v03-exe-mx.uha` / `v03-mm-mx.uha` | exe / mm | `-mx` | 0.3 PPM over executables (strided rows, the binary predictor) and the multimedia set |
+| `v03-fax-mx.uha` / `v03-runs-mx.uha` | fax / runs | `-mx` | 0.3 PPM behind the fax-page transpose; long copies |
+| `v03-sizes-mx-a.uha` / `v03-sizes-mx-b.uha` | sizes | `-mx`, files `a1.txt a2.txt` / `b1.txt b2.txt` | 0.3 PPM's file-size rules (both fail to decode without them) |
+| `v03-slots-mx.uha` | slots | `-mx` | 0.3 PPM over the short binary inputs |
 
 Every archive here is also tested by the unpacker of unuharc_recon
 (<https://github.com/roytam1/unuharc_recon>, revision

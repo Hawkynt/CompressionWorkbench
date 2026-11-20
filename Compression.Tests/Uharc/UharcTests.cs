@@ -127,6 +127,16 @@ public class UharcTests {
   [TestCase("v03-exe-m2.uha", "exe", null, true)]
   [TestCase("v03-mm-m1.uha", "mm", null, true)]
   [TestCase("v03-runs-m2.uha", "runs", null, true)]
+  [TestCase("v03-basic-mx.uha", "basic", null, true)]
+  [TestCase("v03-reset-mx.uha", "reset", null, true)]
+  [TestCase("v03-reset-mx1.uha", "reset", null, true)]
+  [TestCase("v03-exe-mx.uha", "exe", null, true)]
+  [TestCase("v03-mm-mx.uha", "mm", null, true)]
+  [TestCase("v03-fax-mx.uha", "fax", null, true)]
+  [TestCase("v03-runs-mx.uha", "runs", null, true)]
+  [TestCase("v03-sizes-mx-a.uha", "sizes", null, false)]
+  [TestCase("v03-sizes-mx-b.uha", "sizes", null, false)]
+  [TestCase("v03-slots-mx.uha", "slots", null, true)]
   [TestCase("sizes-mx-a.uha", "sizes", null, false)]
   [TestCase("sizes-mx-b.uha", "sizes", null, false)]
   [TestCase("slots-mx-a.uha", "slots", null, false)]
@@ -203,6 +213,7 @@ public class UharcTests {
   [TestCase("v03-basic-m2.uha", "ALZ:2", 16384)]
   [TestCase("v03-reset-m21.uha", "ALZ:2", 1024)]
   [TestCase("v03-basic-mx.uha", "PPM", 16384)]
+  [TestCase("v03-reset-mx1.uha", "PPM", 1024)]
   [Category("HappyPath")]
   public void GivenEachMode_WhenOpened_ThenModeAndDictionaryAreReported(string archive, string mode, int dictionary) {
     var reader = Open(archive);
@@ -271,6 +282,7 @@ public class UharcTests {
   [TestCase("v04-reset-mx.uha")]
   [TestCase("v03-reset-mz.uha")]
   [TestCase("v03-reset-m2.uha")]
+  [TestCase("v03-reset-mx.uha")]
   [Category("ErrorHandling")]
   public void GivenCorruptedPackedStream_WhenExtracted_ThenNoWrongBytesAreReturned(string archive) {
     var data = Vector(archive);
@@ -455,18 +467,6 @@ public class UharcTests {
   public void GivenVersion03PasswordArchive_WhenOpenedWithTheWrongPassword_ThenItIsRejectedAsAWrongPassword()
     => Assert.That(() => Open("v03-basic-mz-pw.uha", "Secret"),
       Throws.TypeOf<InvalidDataException>().With.Message.Contains("password"));
-
-  [TestCase("v03-basic-mx.uha", "PPM")]
-  [Category("ErrorHandling")]
-  public void GivenVersion03ModeNotDecoded_WhenExtracted_ThenItIsRefusedButListed(string archive, string mode) {
-    var reader = Open(archive);
-    Assert.Multiple(() => {
-      Assert.That(reader.MethodName, Is.EqualTo(mode));
-      Assert.That(reader.CanDecodeMethod, Is.False);
-      Assert.That(reader.Entries.Count(e => !e.IsDirectory), Is.EqualTo(6));
-      Assert.That(() => reader.Extract(reader.Entries.First(e => e.Size > 0)), Throws.TypeOf<NotSupportedException>());
-    });
-  }
 
   [Test, Category("Boundary")]
   public void GivenVersion04InputShorterThanItsHeader_WhenOpened_ThenItIsRejected() {

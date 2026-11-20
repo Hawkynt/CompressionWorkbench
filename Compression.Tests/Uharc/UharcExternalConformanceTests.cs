@@ -335,12 +335,7 @@ public class UharcExternalConformanceTests {
   [TestCase("alz", 0L, null)]
   [TestCase("alz", 1024L, "secret")]
   public void GivenOurVersion03Archive_WhenUharc03Extracts_ThenEveryFileIsByteIdentical(string method, long dictionary, string? password) {
-    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-      Assert.Ignore("uharc_u.exe is a Win32 console program.");
-    var tool = Environment.GetEnvironmentVariable("CWB_TOOL_UHARC03");
-    if (string.IsNullOrEmpty(tool) || !File.Exists(tool))
-      Assert.Ignore("Set CWB_TOOL_UHARC03 to UHARC 0.3 BETA's uharc_u.exe.");
-
+    var tool = RequireUharc03();
     var random = new Random(2000);
     var noise = new byte[150000];
     random.NextBytes(noise);
@@ -355,8 +350,97 @@ public class UharcExternalConformanceTests {
     var output = Path.Combine(this._tmp, "out");
     Directory.CreateDirectory(output);
     string[] arguments = password == null ? ["x", "-y", archive] : ["x", "-y", "-pw" + password, archive];
-    Run(tool!, output, arguments);
+    Run(tool, output, arguments);
     AssertExtracted(output, inputs);
+  }
+
+  private static string RequireUharc03() {
+    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+      Assert.Ignore("uharc_u.exe is a Win32 console program.");
+    var tool = Environment.GetEnvironmentVariable("CWB_TOOL_UHARC03");
+    if (string.IsNullOrEmpty(tool) || !File.Exists(tool))
+      Assert.Ignore("Set CWB_TOOL_UHARC03 to UHARC 0.3 BETA's uharc_u.exe.");
+    return tool!;
+  }
+
+  /// <summary>
+  /// UHARC 0.3 BETA packs the inputs in its PPM mode (<c>-mx</c>), at three window sizes and
+  /// without multimedia detection; our reader extracts every file byte for byte.
+  /// </summary>
+  [TestCase("-mx")]
+  [TestCase("-mx", "-md1")]
+  [TestCase("-mx", "-md64")]
+  [TestCase("-mx", "-mm-")]
+  public void GivenInputsUharc03Packed_WhenOurReaderExtracts_ThenEveryFileIsByteIdentical(params string[] switches) {
+    var tool = RequireUharc03();
+    var input = Path.Combine(this._tmp, "in");
+    Directory.CreateDirectory(input);
+    var expected = WriteInputs(input);
+    var archive = Path.Combine(this._tmp, "test.uha");
+    Run(tool, input, ["a", "-y", "-r", .. switches, archive, "*"]);
+
+    using var stream = File.OpenRead(archive);
+    var reader = new UharcReader(stream);
+    Assert.That(reader.Version, Is.EqualTo(3));
+    var files = reader.Entries.Where(e => !e.IsDirectory).ToList();
+    Assert.That(files.Select(e => e.FileName).Order(), Is.EqualTo(expected.Keys.Order()));
+    foreach (var entry in files)
+      Assert.That(reader.Extract(entry), Is.EqualTo(expected[entry.FileName]), entry.FileName);
+  }
+
+  /// <summary>
+  /// UHARC 0.3 BETA codes <c>kennedy.xls</c> with the record-file model and <c>ptt5</c> as a
+  /// transposed fax page in its PPM mode; <c>CWB_UHARC_CORPUS</c> points at the Canterbury corpus.
+  /// </summary>
+  [Test]
+  public void GivenCanterburyCorpusFiles_WhenUharc03PacksThemWithPpm_ThenOurReaderExtractsThem() {
+    var tool = RequireUharc03();
+    var corpus = Environment.GetEnvironmentVariable("CWB_UHARC_CORPUS");
+    string[] names = ["alice29.txt", "ptt5", "kennedy.xls"];
+    if (string.IsNullOrEmpty(corpus) || names.Any(n => !File.Exists(Path.Combine(corpus, n))))
+      Assert.Ignore("Set CWB_UHARC_CORPUS to a directory holding the Canterbury corpus (alice29.txt, ptt5, kennedy.xls).");
+
+    var input = Path.Combine(this._tmp, "in");
+    Directory.CreateDirectory(input);
+    foreach (var name in names)
+      File.Copy(Path.Combine(corpus!, name), Path.Combine(input, name));
+    var archive = Path.Combine(this._tmp, "corpus.uha");
+    Run(tool, input, ["a", "-y", "-mx", archive, .. names]);
+
+    using var stream = File.OpenRead(archive);
+    var reader = new UharcReader(stream);
+    Assert.That(reader.Entries.Count(e => !e.IsDirectory), Is.EqualTo(names.Length));
+    foreach (var entry in reader.Entries.Where(e => !e.IsDirectory))
+      Assert.That(reader.Extract(entry), Is.EqualTo(File.ReadAllBytes(Path.Combine(input, entry.FileName))), entry.FileName);
+  }
+
+  /// <summary>
+  /// The larger file-size pairs of 0.3's PPM (two of them clear every order-4 record), packed by
+  /// UHARC 0.3 BETA; every byte of both files decodes.
+  /// </summary>
+  [TestCase(587984, 2988578)]
+  [TestCase(1566200, 2934336)]
+  [TestCase(2934336, 438144)]
+  [TestCase(3706306, 1498414)]
+  public void GivenLargerFileSizeRulePairs_WhenUharc03WritesPpm_ThenEveryByteMatches(int previousSize, int currentSize) {
+    var tool = RequireUharc03();
+    var input = Path.Combine(this._tmp, "in");
+    Directory.CreateDirectory(input);
+    var expected = new Dictionary<string, byte[]> {
+      ["a.txt"] = SizedText(previousSize),
+      ["b.txt"] = SizedText(currentSize),
+    };
+    foreach (var (name, bytes) in expected)
+      File.WriteAllBytes(Path.Combine(input, name), bytes);
+    var archive = Path.Combine(this._tmp, "sizes.uha");
+    Run(tool, input, ["a", "-y", "-mx", archive, "a.txt", "b.txt"]);
+
+    using var stream = File.OpenRead(archive);
+    var reader = new UharcReader(stream);
+    var files = reader.Entries.Where(e => !e.IsDirectory).ToArray();
+    Assert.That(files.Select(e => e.FileName), Is.EquivalentTo(expected.Keys));
+    foreach (var entry in files)
+      Assert.That(reader.Extract(entry), Is.EqualTo(expected[entry.FileName]), entry.FileName);
   }
 
   /// <summary>
