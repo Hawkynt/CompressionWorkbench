@@ -25,7 +25,8 @@ public static class SqxLzEncoder {
     if (data.IsEmpty)
       return [];
     var format20 = format >= SqxTables.Format20;
-    var ops = Parse(data, dictionarySize, Math.Clamp(effort, 1, 4), format20, out var litFreq, out var repFreq, out var distFreq);
+    var distTable = SqxTables.DistanceCodes(dictionarySize);
+    var ops = Parse(data, dictionarySize, Math.Clamp(effort, 1, 4), format20, distTable, out var litFreq, out var repFreq, out var distFreq);
     var litCodes = format20 ? SqxTables.LitLenCodes20 : SqxTables.LitLenCodes11;
     var distCodes = format20 ? SqxTables.DistCodes20 : SqxTables.DistCodes11;
 
@@ -60,7 +61,7 @@ public static class SqxLzEncoder {
       WriteTree(writer, repLens, metaCodes, metaLens);
       WriteTree(writer, distLens, metaCodes, metaLens);
       for (var i = first; i < first + count; ++i)
-        WriteOp(writer, ops[i], format20, litCodeWords, litLens, repCodeWords, repLens, distCodeWords, distLens);
+        WriteOp(writer, ops[i], format20, litCodeWords, litLens, repCodeWords, repLens, distCodeWords, distLens, distTable.ExtraBits);
     }
 
     return writer.ToArray();
@@ -73,7 +74,7 @@ public static class SqxLzEncoder {
   }
 
   private static void WriteOp(SqxBitWriter w, Op op, bool format20, ushort[] litCodes, byte[] litLens,
-      ushort[] repCodes, byte[] repLens, ushort[] distCodes, byte[] distLens) {
+      ushort[] repCodes, byte[] repLens, ushort[] distCodes, byte[] distLens, int[] distExtra) {
     w.Write(litCodes[op.Code], litLens[op.Code]);
     var symbol = op.Code;
     if (!format20)
@@ -104,7 +105,7 @@ public static class SqxLzEncoder {
       }
 
       w.Write(distCodes[op.B], distLens[op.B]);
-      var extra = SqxTables.DistExtraBits[(int)op.B];
+      var extra = distExtra[(int)op.B];
       if (extra > 0)
         w.Write(op.C, extra);
     }
@@ -115,7 +116,7 @@ public static class SqxLzEncoder {
   private static uint ToRaw(uint s, bool format20) => !format20 || s <= 256 ? s : s >= 284 ? s + 2 : s + 1;
 
   private static List<Op> Parse(ReadOnlySpan<byte> buf, int dictionarySize, int effort, bool format20,
-      out uint[] litFreq, out uint[] repFreq, out uint[] distFreq) {
+      (uint[] Base, int[] ExtraBits) distTable, out uint[] litFreq, out uint[] repFreq, out uint[] distFreq) {
     var n = buf.Length;
     var ops = new List<Op>(n / 2 + 16);
     litFreq = new uint[SqxTables.LitLenCodes20];
@@ -214,7 +215,7 @@ public static class SqxLzEncoder {
           else if (k == uint.MaxValue)
             bestLen = 0;
           else {
-            var ds = DistanceSymbol(bestDist, out var de);
+            var ds = DistanceSymbol(bestDist, distTable, out var de);
             if (ds == uint.MaxValue)
               bestLen = 0;
             else if (bestLen >= 258) {
@@ -411,11 +412,11 @@ public static class SqxLzEncoder {
     return uint.MaxValue;
   }
 
-  private static uint DistanceSymbol(uint dist, out uint extra) {
+  private static uint DistanceSymbol(uint dist, (uint[] Base, int[] ExtraBits) table, out uint extra) {
     var d = dist - 1;
-    for (var c = 0; c < SqxTables.DistBase.Length; ++c)
-      if (d >= SqxTables.DistBase[c] && d - SqxTables.DistBase[c] < 1u << SqxTables.DistExtraBits[c]) {
-        extra = d - SqxTables.DistBase[c];
+    for (var c = 0; c < table.Base.Length; ++c)
+      if (d >= table.Base[c] && d - table.Base[c] < 1u << table.ExtraBits[c]) {
+        extra = d - table.Base[c];
         return (uint)c;
       }
 

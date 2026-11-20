@@ -41,7 +41,11 @@ public sealed class SqxLzDecoder {
     this._dictionarySize = dictionarySize;
     this._mask = (uint)dictionarySize - 1;
     this._window = new byte[dictionarySize + 0x10000];
+    (this._distBase, this._distExtra) = SqxTables.DistanceCodes(dictionarySize);
   }
+
+  private readonly uint[] _distBase;
+  private readonly int[] _distExtra;
 
   /// <summary>
   /// Decodes one file's stream. <paramref name="solid"/> continues the window and match state of
@@ -248,10 +252,10 @@ public sealed class SqxLzDecoder {
 
   private uint ReadDistance(SqxBitReader reader) {
     var code = this._dist.Decode(reader);
-    if (code >= SqxTables.DistBase.Length)
+    if (code >= this._distBase.Length)
       throw new InvalidDataException($"SQX distance code {code} is not supported.");
-    var dist = SqxTables.DistBase[code];
-    var extra = SqxTables.DistExtraBits[code];
+    var dist = this._distBase[code];
+    var extra = this._distExtra[code];
     if (extra > 0) {
       if (this._format20 && this._have16 && extra >= 4) {
         var high = extra > 4 ? reader.Read(extra - 4) : 0;

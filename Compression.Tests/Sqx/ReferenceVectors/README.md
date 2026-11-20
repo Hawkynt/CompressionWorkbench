@@ -24,6 +24,7 @@ format 1.1 or 2.0, at the level in the name (`none` stored, `fast` to `maximum` 
 | `ppmd_v2.0_order2.sqx`, `ppmd_v2.0_order16.sqx` | 2.0 | 6 (PPMd) | `eng.txt`, written by Squeez-c's own `sqx create --fmt=20 --method=6 --ppm-order=2` (default 32 MiB) and `--ppm-order=16 --ppm-mem=4` |
 | `biased_v2.0_ultra.sqx`, `image_v2.0_ultra.sqx`, `image24_v2.0_ultra.sqx`, `mixed_v2.0_ultra.sqx` | 2.0 | 7 (ultra) | `biased.bin`, `image.raw`, `image24.raw`, `mixed.bin` |
 | `pattern_v2.0_ultra.sqx`, `records_v2.0_ultra.sqx`, `zeros_v2.0_ultra.sqx`, `empty_v2.0_ultra.sqx` | 2.0 | 7 (ultra) | `pattern.bin`, `records.bin`, `zeros.bin`, `empty.dat` |
+| `words300_v1.1_sqc52_normal.sqx`, `words300_v2.0_sqc52_best.sqx` | 1.1, 2.0 | 2, 4 | `words300.txt` (300000 bytes of `word i%977 i*31%1013` lines), written by Squeez CommandLine 5.2 for Linux (`sqc a -ep -fmt SQX1 -m2`, `-fmt SQX2 -m4`; from `sqc_linux.tgz` of https://github.com/wesinator/sqx-compression): matches reach back further than 256 KiB, where the distance codes depend on the dictionary size |
 
 | `Noise_v1.1_none.sqx`, `test_v1.1_normal.sqx` | 1.1 | 5 (audio) | `Noise.wav`, `test.wav` (16-bit mono) |
 | `Noise_v2.0_maximum.sqx` | 2.0 | 5 (audio) | `Noise.wav` (16-bit mono) |

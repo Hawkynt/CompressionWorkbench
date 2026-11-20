@@ -39,6 +39,7 @@ public sealed class SqxReferenceTests {
     ["x_altst16.wav"] = (36908, "f1bec2c4f0f0afaa97555631bf9e7c8e74a7410b6be7127ab4104054c16d0f28"),
     ["x_5003st16.wav"] = (20056, "a97294f56b7eb4c96d1d4705ffb567f460caceec5ada41dcab15bae171479449"),
     ["x_ramp16.wav"] = (18480, "ac4755134fc6f24d871babfeee80378034bc5a4a0e27b91eff3e887f93260d04"),
+    ["words300.txt"] = (300000, "37fddcf0b03c83ddaab72571dab862ae999a340009baf0945dfe31183f835ce3"),
   };
 
   private static IEnumerable<string> Fixtures() => Assembly.GetExecutingAssembly().GetManifestResourceNames()
@@ -59,6 +60,17 @@ public sealed class SqxReferenceTests {
         Assert.That(Convert.ToHexStringLower(SHA256.HashData(data)), Is.EqualTo(Originals[name].Sha256), $"{fixture}: {name} content");
       });
     }
+  }
+
+  // SQX 1.1 format notes, table 3.3
+  [TestCase(32 << 10, 35, 196608u, 16), TestCase(1 << 20, 36, 262144u, 16), TestCase(1 << 20, 47, 983040u, 16),
+   TestCase(2 << 20, 36, 262144u, 17), TestCase(2 << 20, 38, 524288u, 17), TestCase(2 << 20, 49, 1966080u, 17),
+   TestCase(4 << 20, 37, 393216u, 17), TestCase(4 << 20, 38, 524288u, 18), TestCase(4 << 20, 40, 1048576u, 18), TestCase(4 << 20, 51, 3932160u, 18),
+   TestCase(8 << 20, 40, 1048576u, 19), TestCase(8 << 20, 42, 2097152u, 19), TestCase(1 << 20, 4, 4u, 1), TestCase(1 << 20, 3, 3u, 0)]
+  [Category("Boundary")]
+  public void GivenADictionarySize_WhenItsDistanceCodesAreBuilt_ThenTheyMatchTheFormatNotes(int dictionary, int code, uint expectedBase, int expectedExtra) {
+    var (bases, extras) = SqxTables.DistanceCodes(dictionary);
+    Assert.That((bases[code], extras[code]), Is.EqualTo((expectedBase, expectedExtra)));
   }
 
   [Test, Category("HappyPath")]
