@@ -129,6 +129,7 @@ public class UharcExternalConformanceTests {
   [TestCase("store")]
   [TestCase("rle")]
   [TestCase("lz78")]
+  [TestCase("alz")]
   public void GivenOurArchive_WhenUharcExtracts_ThenEveryFileIsByteIdentical(string? method) {
     var uharc = RequireUharc();
     var archive = Path.Combine(this._tmp, "ours.uha");
@@ -161,6 +162,7 @@ public class UharcExternalConformanceTests {
   [TestCase("store")]
   [TestCase("rle")]
   [TestCase("lz78")]
+  [TestCase("alz")]
   public void GivenOurPasswordArchive_WhenUharcExtractsWithThePassword_ThenEveryFileIsByteIdentical(string? method) {
     var uharc = RequireUharc();
     var archive = Path.Combine(this._tmp, "ours.uha");
@@ -198,9 +200,12 @@ public class UharcExternalConformanceTests {
   }
 
   /// <summary>Enough varied data to fill LZ78's 32768 phrases several times over.</summary>
-  [TestCase("rle")]
-  [TestCase("lz78")]
-  public void GivenALargeMixedInput_WhenWeWriteIt_ThenUharcExtractsIt(string method) {
+  [TestCase("rle", 0)]
+  [TestCase("lz78", 0)]
+  [TestCase("alz", 0)]
+  [TestCase("alz", 1024)]
+  [TestCase("lzp", 1024)]
+  public void GivenALargeMixedInput_WhenWeWriteIt_ThenUharcExtractsIt(string method, long dictionary) {
     var uharc = RequireUharc();
     var random = new Random(2005);
     var words = Enumerable.Range(0, 3000).Select(i => new string((char)('a' + i % 26), 1 + i % 7) + i.ToString("x")).ToArray();
@@ -214,7 +219,7 @@ public class UharcExternalConformanceTests {
       ArchiveInputInfo.InMemory("runs.bin", runs),
     };
     var archive = Path.Combine(this._tmp, "large.uha");
-    File.WriteAllBytes(archive, UharcWriterTests.Create(method, inputs));
+    File.WriteAllBytes(archive, UharcWriterTests.CreateWith(new FormatCreateOptions(method) { DictSize = dictionary }, inputs));
     var output = Path.Combine(this._tmp, "out");
     Directory.CreateDirectory(output);
     Run(uharc, output, "x", "-y", "-t" + output, archive);

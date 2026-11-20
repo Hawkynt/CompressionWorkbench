@@ -1,29 +1,78 @@
 namespace FileFormat.Uharc;
 
-/// <summary>
-/// The ALZ literal coder (docs/UHARC-ON-DISK.md, "ALZ literals"): 1056 frequency contexts with
-/// escape weights, a second "escape" context per literal, and a cost tracker that switches
-/// between context coding, an order-0 blend and raw bytes depending on how well the last 256
-/// literals compressed.
-/// </summary>
-internal sealed class UharcAlzLiteralModel {
+/// <summary>Constants and tables of the ALZ literal coder (see <see cref="UharcAlzLiteralModel{TCoder}"/>).</summary>
+internal static class UharcAlzLiteralModel {
 
   public const int ContextCount = 0x420;
   public const int OrderZero = 0x300;
   public const int OrderZeroEscape = 0x402;
-  private const int FirstSideContext = 0x301;
-  private const int FirstEscapeContext = 0x3F9;
-  private const int Limit = 0x4000;
-  private const uint ContextCostThreshold = 0x6D4250;
-  private const uint RawCostThreshold = 0x91ADC0;
-  private const uint CostWrapThreshold = 0xFEFF01;
+  public const int FirstSideContext = 0x301;
+  public const int FirstEscapeContext = 0x3F9;
+  public const int Limit = 0x4000;
+  public const uint ContextCostThreshold = 0x6D4250;
+  public const uint RawCostThreshold = 0x91ADC0;
+  public const uint CostWrapThreshold = 0xFEFF01;
 
   // Cost of coding a symbol of probability i/16384: 65520 - ceil(4680 * log2(i)), 0 for i = 0.
   internal static readonly ushort[] Cost = BuildCostTable();
-  private static readonly ushort[] PrimaryStep = BuildPrimarySteps();
-  private static readonly ushort[] EscapeStep = BuildEscapeSteps();
+  internal static readonly ushort[] PrimaryStep = BuildPrimarySteps();
+  internal static readonly ushort[] EscapeStep = BuildEscapeSteps();
 
-  private readonly UharcRangeDecoder _coder;
+  private static ushort[] BuildCostTable() {
+    var table = new ushort[16385];
+    for (var i = 1; i < table.Length; ++i)
+      table[i] = (ushort)(65520 - (int)Math.Ceiling(4680.0 * Math.Log2(i)));
+    return table;
+  }
+
+  private static ushort[] BuildPrimarySteps() {
+    var steps = new ushort[ContextCount];
+    for (var i = 0; i <= 1008; ++i)
+      steps[i] = 32;
+    for (var i = 1009; i <= 1016; ++i)
+      steps[i] = 10;
+    steps[1017] = 65281;
+    steps[1020] = 256;
+    steps[1021] = 65280;
+    steps[1022] = 2;
+    return steps;
+  }
+
+  private static ushort[] BuildEscapeSteps() {
+    var steps = new ushort[ContextCount];
+    Array.Fill(steps, (ushort)8);
+    for (var i = 512; i <= 992; ++i)
+      steps[i] = 16;
+    steps[768] = 6;
+    for (var i = 1017; i < ContextCount; ++i)
+      steps[i] = 32;
+    return steps;
+  }
+}
+
+/// <summary>
+/// The ALZ literal coder (docs/UHARC-ON-DISK.md, "ALZ literals"): 1056 frequency contexts with
+/// escape weights, a second "escape" context per literal, and a cost tracker that switches
+/// between context coding, an order-0 blend and raw bytes depending on how well the last 256
+/// literals compressed. Written once for both directions (<see cref="IUharcCoder"/>).
+/// </summary>
+internal sealed class UharcAlzLiteralModel<TCoder> where TCoder : struct, IUharcCoder {
+
+  private const int ContextCount = UharcAlzLiteralModel.ContextCount;
+  private const int OrderZero = UharcAlzLiteralModel.OrderZero;
+  private const int OrderZeroEscape = UharcAlzLiteralModel.OrderZeroEscape;
+  private const int FirstSideContext = UharcAlzLiteralModel.FirstSideContext;
+  private const int FirstEscapeContext = UharcAlzLiteralModel.FirstEscapeContext;
+  private const int Limit = UharcAlzLiteralModel.Limit;
+  private const uint ContextCostThreshold = UharcAlzLiteralModel.ContextCostThreshold;
+  private const uint RawCostThreshold = UharcAlzLiteralModel.RawCostThreshold;
+  private const uint CostWrapThreshold = UharcAlzLiteralModel.CostWrapThreshold;
+
+  private static readonly ushort[] Cost = UharcAlzLiteralModel.Cost;
+  private static readonly ushort[] PrimaryStep = UharcAlzLiteralModel.PrimaryStep;
+  private static readonly ushort[] EscapeStep = UharcAlzLiteralModel.EscapeStep;
+
+  private TCoder _coder;
   private readonly ushort[] _frequency = new ushort[ContextCount * 256];
   private readonly ushort[] _total = new ushort[ContextCount];
   private readonly ushort[] _escapeWeight = new ushort[ContextCount];
@@ -37,7 +86,7 @@ internal sealed class UharcAlzLiteralModel {
   private int _costSlot;
   private int _escapeContext;
 
-  public UharcAlzLiteralModel(UharcRangeDecoder coder) {
+  public UharcAlzLiteralModel(TCoder coder) {
     this._coder = coder;
     for (var c = 0; c < ContextCount; ++c) {
       this._escapeWeight[c] = 1;
@@ -99,26 +148,29 @@ internal sealed class UharcAlzLiteralModel {
 
   private ushort F(int context, int symbol) => this._frequency[context * 256 + symbol];
 
-  // ── Decoding ───────────────────────────────────────────────────────────
+  // ── Coding ─────────────────────────────────────────────────────────────
 
-  /// <summary>Decodes one literal from <paramref name="context"/> with <paramref name="escape"/> as its fallback.</summary>
-  public int Decode(int context, int escape) {
+  /// <summary>
+  /// Codes one literal in <paramref name="context"/> with <paramref name="escape"/> as its
+  /// fallback; <paramref name="symbol"/> is what the encoder codes (a difference when a
+  /// predictor is active), ignored when decoding.
+  /// </summary>
+  public int Code(int context, int escape, int symbol) {
     this._escapeContext = escape;
     this._costSlot = (this._costSlot + 1) & 0xFF;
     var window = this._costWindow - this._recentCost[this._costSlot];
     this._costWindow = window;
     this._cost = 0;
     var excluded = this.Excluded;
-    int symbol;
 
     if (window is < ContextCostThreshold or >= CostWrapThreshold) {
-      symbol = this.DecodeFromContexts(context, escape);
+      symbol = this.CodeFromContexts(context, escape, symbol);
       var cost = this._cost;
       this.Update(context, symbol);
       this.Track(cost, window: true, orderZero: true);
     } else if (window < RawCostThreshold) {
       if (this._orderZeroCost >= this._contextCost) {
-        symbol = this.DecodeFromContexts(context, escape);
+        symbol = this.CodeFromContexts(context, escape, symbol);
         var cost = this._cost;
         this._escapeContext = OrderZeroEscape;
         this.Excluded = -1;
@@ -132,16 +184,17 @@ internal sealed class UharcAlzLiteralModel {
       } else {
         this.Excluded = -1;
         this._escapeContext = OrderZeroEscape;
-        symbol = this.DecodeFromContexts(OrderZero, OrderZeroEscape);
+        var value = TCoder.Encoding ? this.Side?.ToByte(symbol) ?? symbol : 0;
+        value = this.CodeFromContexts(OrderZero, OrderZeroEscape, value);
         var cost = this._cost;
         this._recentCost[this._costSlot] = cost;
         this._costWindow += cost;
         this.Excluded = excluded;
         this._escapeContext = escape;
-        var difference = this.Side?.ToDifference(symbol) ?? symbol;
+        var difference = this.Side?.ToDifference(value) ?? value;
         var contextCost = this.Estimate(context, difference);
         this._escapeContext = OrderZeroEscape;
-        this.CountOrderZero(symbol);
+        this.CountOrderZero(value);
         this._orderZeroCost = Decay(this._orderZeroCost) + cost;
         this._escapeContext = escape;
         this.Update(context, difference);
@@ -149,7 +202,7 @@ internal sealed class UharcAlzLiteralModel {
         symbol = difference;
       }
     } else {
-      symbol = (int)(this._coder.GetCount(256) & 0xFF);
+      symbol = (int)(this._coder.Count(256, (uint)symbol & 0xFF) & 0xFF);
       this._coder.Consume((uint)symbol, 1);
       var cost = this.Estimate(context, symbol);
       this.Update(context, symbol);
@@ -174,19 +227,32 @@ internal sealed class UharcAlzLiteralModel {
 
   private void Charge(uint width, uint total) => this._cost += Cost[(int)((width & 0xFFFF) << 14) / (int)total];
 
-  private int DecodeFromContexts(int context, int escape) {
+  /// <summary>The encoder's slot for <paramref name="symbol"/> in <paramref name="context"/>: what lies above it.</summary>
+  private uint SlotOf(int context, int symbol, int excluded) {
+    if (symbol == excluded || this.F(context, symbol) == 0)
+      throw new InvalidOperationException("UHARC: ALZ literal cannot be coded in its context.");
+    var basis = context * 256;
+    var low = 0u;
+    for (var s = 255; s > symbol; --s)
+      if (s != excluded)
+        low += this._frequency[basis + s];
+    return low;
+  }
+
+  private int CodeFromContexts(int context, int escape, int symbol) {
     var excluded = this.Excluded;
     var seen = (uint)(this._total[context] - (excluded >= 0 ? this.F(context, excluded) : 0)) & 0xFFFF;
     if (seen == 0) {
       var fallback = (uint)(this._total[escape] - (excluded >= 0 ? this.F(escape, excluded) : 0)) & 0xFFFF;
-      var target = this._coder.GetCount(fallback);
-      return this.DecodeInside(escape, fallback, target, fallback, excluded);
+      var target = this._coder.Count(fallback, TCoder.Encoding ? this.SlotOf(escape, symbol, excluded) : 0);
+      return this.CodeInside(escape, fallback, target, fallback, excluded);
     }
 
     var withEscape = (seen + this._escapeWeight[context]) & 0xFFFF;
-    var count = this._coder.GetCount(withEscape);
+    var present = TCoder.Encoding && symbol != excluded && this.F(context, symbol) != 0;
+    var count = this._coder.Count(withEscape, !TCoder.Encoding ? 0 : present ? this.SlotOf(context, symbol, excluded) : seen);
     if (count < seen)
-      return this.DecodeInside(context, seen, count, withEscape, excluded);
+      return this.CodeInside(context, seen, count, withEscape, excluded);
 
     this.Charge(withEscape - seen, withEscape);
     this._coder.Consume(seen, withEscape - seen);
@@ -199,7 +265,16 @@ internal sealed class UharcAlzLiteralModel {
         ruledOut += this.F(escape, s);
 
     var remaining = (this._total[escape] - ruledOut) & 0xFFFF;
-    var target2 = this._coder.GetCount(remaining);
+    var slot = 0u;
+    if (TCoder.Encoding) {
+      if (symbol == excluded || this.F(context, symbol) != 0 || this.F(escape, symbol) == 0)
+        throw new InvalidOperationException("UHARC: ALZ literal cannot be coded after the escape.");
+      for (var s = 255; s > symbol; --s)
+        if (this._frequency[basis + s] == 0 && s != excluded)
+          slot = (slot + this.F(escape, s)) & 0xFFFF;
+    }
+
+    var target2 = this._coder.Count(remaining, slot);
     var low = 0u;
     for (var s = 255; s >= 0; --s) {
       if (this._frequency[basis + s] != 0 || s == excluded)
@@ -219,7 +294,7 @@ internal sealed class UharcAlzLiteralModel {
   }
 
   /// <summary>Symbols occupy the interval from the top down: symbol 255 is coded nearest 0.</summary>
-  private int DecodeInside(int context, uint seen, uint count, uint total, int excluded) {
+  private int CodeInside(int context, uint seen, uint count, uint total, int excluded) {
     var basis = context * 256;
     var low = 0u;
     for (var s = 255; s >= 0; --s) {
@@ -330,36 +405,5 @@ internal sealed class UharcAlzLiteralModel {
     }
 
     this._total[context] = (ushort)total;
-  }
-
-  private static ushort[] BuildCostTable() {
-    var table = new ushort[16385];
-    for (var i = 1; i < table.Length; ++i)
-      table[i] = (ushort)(65520 - (int)Math.Ceiling(4680.0 * Math.Log2(i)));
-    return table;
-  }
-
-  private static ushort[] BuildPrimarySteps() {
-    var steps = new ushort[ContextCount];
-    for (var i = 0; i <= 1008; ++i)
-      steps[i] = 32;
-    for (var i = 1009; i <= 1016; ++i)
-      steps[i] = 10;
-    steps[1017] = 65281;
-    steps[1020] = 256;
-    steps[1021] = 65280;
-    steps[1022] = 2;
-    return steps;
-  }
-
-  private static ushort[] BuildEscapeSteps() {
-    var steps = new ushort[ContextCount];
-    Array.Fill(steps, (ushort)8);
-    for (var i = 512; i <= 992; ++i)
-      steps[i] = 16;
-    steps[768] = 6;
-    for (var i = 1017; i < ContextCount; ++i)
-      steps[i] = 32;
-    return steps;
   }
 }

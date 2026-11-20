@@ -30,6 +30,9 @@ internal sealed class UharcModelResets {
     this.Advance();
   }
 
+  /// <summary>The next reset point (the stream size when there is none).</summary>
+  public long Next => this._next;
+
   /// <summary>True when the models must be reset before decoding the byte at <paramref name="position"/>.</summary>
   public bool IsResetPoint(long position) {
     if (position < this._next)
