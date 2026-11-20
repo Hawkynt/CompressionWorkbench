@@ -30493,6 +30493,7 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Compress` | `void Compress(Stream input, Stream output)` |  |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Packs with the method `options` names: `fast` (the default) or `turbo`. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` |  |
 
 ### Namespace `FileFormat.Sfar`
