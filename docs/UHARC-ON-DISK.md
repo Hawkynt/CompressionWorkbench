@@ -1321,8 +1321,9 @@ back and compared before it replaces the old bytes, so any failure leaves them a
 
 - A password archive needs its password; without it, or with a wrong one, the edit is refused and
   the bytes stay as they were.
-- An edit that would leave no file is refused: `UHARC.EXE`, `UHARC04.EXE` and `uharc_u.exe` all
-  stop on an archive of no files ("Not enough memory to allocate contents table").
+- An edit that would leave no file is refused, and so is creating an archive without a file (only
+  directories, or nothing): `UHARC.EXE`, `UHARC04.EXE` and `uharc_u.exe` all stop on an archive of
+  no files ("Not enough memory to allocate contents table").
 - 0.3's second store code 80 is rewritten as 0: `uharc_u.exe` extracts no file from a stream we
   store under 80 (it does create the directories). 0.3 ALZ methods 78 and 79 (1 KiB windows, 79
   with the larger step) are written as they are.

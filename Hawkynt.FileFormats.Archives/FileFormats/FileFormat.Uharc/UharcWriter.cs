@@ -118,6 +118,8 @@ internal static class UharcWriter {
       files = [.. files.Where(f => UharcPpmSymbols.IsText(f.Data)), .. files.Where(f => !UharcPpmSymbols.IsText(f.Data))];
 
     var n = files.Count;
+    if (n == 0)
+      throw new NotSupportedException("UHARC: an archive needs at least one file; UHARC.EXE, UHARC04.EXE and uharc_u.exe refuse an archive of none.");
     long total = 0;
     foreach (var f in files)
       total += f.Data.LongLength;
