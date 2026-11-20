@@ -13,8 +13,8 @@ namespace FileSystem.DriveSpace3;
 /// <para>
 /// Layout (little-endian): MDBPB at sector 0 carries the BPB plus the CVF
 /// geometry substructure — inner-volume base sector @0x27, MDFAT start @0x24,
-/// cluster index base @0x2D, root-dir offset @0x29; sectors/cluster @0x0D = 64;
-/// version_flag @0x33 = 3. The inner FAT16 volume lives at the base sector; file
+/// cluster index base @0x2D, root-dir offset @0x29; sectors/cluster @0x0D = 64.
+/// The inner FAT16 volume lives at the base sector; file
 /// data clusters are located through the 5-byte DRVSP3 MDFAT (102 entries per
 /// sector + 2 pad bytes). Stored clusters (MDFAT flags = used + uncompressed)
 /// are read verbatim; the inner directory's file size truncates the tail.
@@ -60,8 +60,8 @@ public sealed class GenuineDvr3Reader : IDisposable {
   private void Parse() {
     if (this._data.Length < Ss || Encoding.ASCII.GetString(this._data, 3, 8) != "MSDBL6.0")
       throw new InvalidDataException("DriveSpace3 (genuine): missing MSDBL6.0 signature.");
-    if (this._data[0x33] != 3 && this._data[0x0D] <= 16)
-      throw new InvalidDataException("DriveSpace3 (genuine): not a DriveSpace 3 CVF (version/cluster mismatch).");
+    if (this._data[0x0D] <= 16)
+      throw new InvalidDataException("DriveSpace3 (genuine): not a DriveSpace 3 CVF (16 sectors per cluster or fewer).");
 
     this._spc = this._data[0x0D];
     var resv = this.U16(0x0E);
