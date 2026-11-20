@@ -266,6 +266,113 @@ public class PeaTests {
     Assert.That(() => PeaArchive.Read(new MemoryStream(bytes), "password"), Throws.InstanceOf<InvalidDataException>());
   }
 
+  // ── in-place modify ─────────────────────────────────────────────────
+
+  private static readonly byte[] Added = "added by modify\n"u8.ToArray();
+
+  /// <summary>pea's archive, edited: fox.txt removed, hello.txt replaced, new/added.txt added.</summary>
+  private static byte[] Edited(string vector, string? password = null) {
+    using var ms = new MemoryStream();
+    ms.Write(LoadVector(vector));
+    PeaArchive.Modify(ms, [new("hello.txt", Added, SourceTime), new("new/added.txt", Added, SourceTime)], ["fox.txt"], password);
+    return ms.ToArray();
+  }
+
+  private static void AssertEdited(List<PeaEntry> entries) {
+    Assert.That(entries.Select(e => (e.Path, e.IsDirectory)), Is.EquivalentTo(new[] {
+      ("hello.txt", false), ("empty.txt", false), ("sub", true), ("sub/n.txt", false), ("new", true), ("new/added.txt", false) }));
+    Assert.That(entries.Single(e => e.Path == "hello.txt").Data, Is.EqualTo(Added));
+    Assert.That(entries.Single(e => e.Path == "new/added.txt").Data, Is.EqualTo(Added));
+    Assert.That(entries.Single(e => e.Path == "sub/n.txt").Data, Is.EqualTo(Nested));
+  }
+
+  [TestCase("store.pea")]
+  [TestCase("deflate9.pea")] // SHA-1 volume, MD5 objects, SHA-512 stream
+  [TestCase("misc.pea")]     // RIPEMD-160, Whirlpool, BLAKE2s
+  [Category("HappyPath")]
+  public void GivenPeaZipArchive_WhenModified_ThenTheEditLandsAndEverySettingAndKeptObjectStays(string vector) {
+    var before = LoadVector(vector);
+    var after = Edited(vector);
+
+    Assert.That(after.AsSpan(0, 20).ToArray(), Is.EqualTo(before.AsSpan(0, 20).ToArray()), "archive and stream headers");
+    var original = PeaArchive.Read(new MemoryStream(before));
+    var edited = PeaArchive.Read(new MemoryStream(after));
+    AssertEdited(edited);
+    var kept = edited.Single(e => e.Path == "sub/n.txt");
+    var source = original.Single(e => e.Path == "sub/n.txt");
+    Assert.That((kept.StoredName, kept.LastModified, kept.Attributes), Is.EqualTo((source.StoredName, source.LastModified, source.Attributes)));
+    Assert.That(edited.Single(e => e.Path == "new/added.txt").StoredName, Does.StartWith(source.Root));
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenAFolder_WhenRemoved_ThenEverythingBeneathGoesToo() {
+    using var ms = new MemoryStream();
+    ms.Write(LoadVector("deflate6.pea"));
+    new PeaFormatDescriptor().Remove(ms, ["sub"]);
+    Assert.That(PeaArchive.Read(new MemoryStream(ms.ToArray())).Select(e => e.Path), Is.EquivalentTo(new[] { "hello.txt", "fox.txt", "empty.txt" }));
+  }
+
+  [Test, Category("EdgeCase")]
+  public void GivenEveryEntryRemoved_WhenRead_ThenTheArchiveIsEmptyButValid() {
+    using var ms = new MemoryStream();
+    ms.Write(LoadVector("deflate6.pea"));
+    new PeaFormatDescriptor().Remove(ms, ["hello.txt", "fox.txt", "empty.txt", "sub"]);
+    Assert.That(PeaArchive.Read(new MemoryStream(ms.ToArray())), Is.Empty);
+  }
+
+  [TestCase("eax256.pea")]
+  [TestCase("hmac.pea")]
+  [TestCase("triats.pea")]
+  [Category("HappyPath")]
+  public void GivenEncryptedArchive_WhenModifiedWithItsPassword_ThenItStaysEncryptedTheSameWay(string vector) {
+    var before = LoadVector(vector);
+    var after = Edited(vector, "password");
+    Assert.That((after[9], after[18]), Is.EqualTo((before[9], before[18])), "encryption kind and strength");
+    AssertEdited(PeaArchive.Read(new MemoryStream(after), "password"));
+    Assert.That(() => PeaArchive.Read(new MemoryStream(after), "passworD"), Throws.InstanceOf<ArchivePasswordException>());
+  }
+
+  [TestCase(null)]
+  [TestCase("wrong")]
+  [Category("Exception")]
+  public void GivenEncryptedArchive_WhenModifiedWithoutTheRightPassword_ThenRefusedAndUntouched(string? password) {
+    var before = LoadVector("eax256.pea");
+    using var ms = new MemoryStream();
+    ms.Write(before);
+    Assert.That(() => PeaArchive.Modify(ms, [new("x", [1], SourceTime)], [], password), Throws.InstanceOf<ArchivePasswordException>());
+    Assert.That(ms.ToArray(), Is.EqualTo(before));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenAVolumeOfASet_WhenModified_ThenRefused() {
+    var setBase = Path.Combine(this._tmpDir, "set");
+    var volumes = LoadVolumes("vol");
+    for (var i = 0; i < volumes.Count; ++i) File.WriteAllBytes(PeaArchive.VolumePath(setBase, i + 1), volumes[i]);
+    using var f = new FileStream(PeaArchive.VolumePath(setBase, 1), FileMode.Open, FileAccess.ReadWrite);
+    Assert.That(() => new PeaFormatDescriptor().Remove(f, ["fox.txt"]), Throws.InstanceOf<NotSupportedException>());
+  }
+
+  [TestCase("deflate9.pea", null)]
+  [TestCase("eax256.pea", "password")]
+  [TestCase("triats.pea", "password")]
+  [Category("ExternalInterop")]
+  public void GivenEditedPeaZipArchive_WhenPeaZipExtractsIt_ThenTheEditIsWhatComesOut(string vector, string? password) {
+    var pea = RequirePea();
+    var path = Path.Combine(this._tmpDir, "edited.pea");
+    File.WriteAllBytes(path, Edited(vector, password));
+    var outDir = Path.Combine(this._tmpDir, "out");
+    Directory.CreateDirectory(outDir);
+    var credentials = password is null ? "'' ''" : $"'{password}' NOKEYFILE";
+    var r = FsInteropToolbox.RunWsl($"timeout 120 xvfb-run -a '{pea}' UNPEA '{FsInteropToolbox.WinToWsl(path)}' '{FsInteropToolbox.WinToWsl(outDir)}/' RESETDATE RESETATTR EXTRACT2DIR HIDDEN {credentials}");
+    Assert.That(r.ExitCode, Is.EqualTo(0), $"pea UNPEA failed:\n{r.StdOut}\n{r.StdErr}");
+    var root = Directory.GetDirectories(outDir).Single();
+    var files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).ToDictionary(f => Path.GetRelativePath(root, f).Replace('\\', '/'), File.ReadAllBytes);
+    Assert.That(files.Keys, Is.EquivalentTo(new[] { "hello.txt", "empty.txt", "sub/n.txt", "new/added.txt" }));
+    Assert.That(files["hello.txt"], Is.EqualTo(Added));
+    Assert.That(files["new/added.txt"], Is.EqualTo(Added));
+    Assert.That(files["sub/n.txt"], Is.EqualTo(Nested));
+  }
+
   // ── triple cascades ─────────────────────────────────────────────────
 
   [TestCase("triats.pea")]  // AES, Twofish, Serpent; PBKDF2; PCOMPRESS2

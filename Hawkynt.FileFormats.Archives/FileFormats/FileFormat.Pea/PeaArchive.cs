@@ -26,6 +26,12 @@ public sealed class PeaEntry {
   public byte[] Data { get; init; } = [];
   /// <summary>Gets whether the archive's stream is encrypted.</summary>
   public bool IsEncrypted { get; init; }
+  /// <summary>The qualified name's bytes as stored.</summary>
+  internal byte[] RawName { get; init; } = [];
+  /// <summary>The time as the archive encodes it.</summary>
+  internal uint RawTime { get; init; }
+  /// <summary>The directory every stored name of the archive lives under.</summary>
+  internal string Root { get; init; } = "";
 }
 
 /// <summary>
@@ -326,7 +332,7 @@ public static class PeaArchive {
       if (blockSize <= 0) throw new InvalidDataException("PEA compression block size is invalid.");
     }
 
-    var raw = new List<(string Name, uint Time, uint Attr, bool Dir, long Size, byte[] Data)>();
+    var raw = new List<(string Name, byte[] RawName, uint Time, uint Attr, bool Dir, long Size, byte[] Data)>();
     while (true) {
       var objStart = p;
       var nameLength = ReadU16(b, ref p, end);
@@ -339,6 +345,7 @@ public static class PeaArchive {
       }
       Need(b, p, nameLength + 8, end);
       var name = Ansi.Value.GetString(b, p, nameLength);
+      var rawName = b.AsSpan(p, nameLength).ToArray();
       p += nameLength;
       var time = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(p));
       var attr = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(p + 4));
@@ -387,7 +394,7 @@ public static class PeaArchive {
       if (objAlgo != 0 && !Tag(objAlgo, objCheck.ToArray()).AsSpan().SequenceEqual(b.AsSpan(p, objTag)))
         throw new InvalidDataException($"PEA object check fails for '{name}'.");
       p += objTag;
-      raw.Add((name, time, attr, isDir, size, data));
+      raw.Add((name, rawName, time, attr, isDir, size, data));
     }
     if (p + streamTag != end) throw new InvalidDataException("PEA archive has unexpected data after the end of the stream.");
     if (streamAlgo != 0 && !Tag(streamAlgo, b.AsSpan(0, p)).AsSpan().SequenceEqual(b.AsSpan(p, streamTag)))
@@ -403,6 +410,9 @@ public static class PeaArchive {
       LastModified = Time(r.Time, timeEncoding),
       Data = r.Data,
       IsEncrypted = encrypted,
+      RawName = r.RawName,
+      RawTime = r.Time,
+      Root = root,
     }).ToList();
   }
 
@@ -511,9 +521,117 @@ public static class PeaArchive {
       throw new ArgumentException(encrypted
         ? $"PEA stream encryption {streamCheck} needs a password."
         : $"A password needs an encrypting stream check ({Check.Aes256Eax} and the like), not {streamCheck}.", nameof(password));
-    // archive header: magic, version 1, revision 6, volume check, ECC 0, OS (Linux), time encoding (Unix), ANSI, CPU, iterations
+    // Directories first are not required; keep the caller's order, adding parent directories once.
+    var seenDirs = new HashSet<string>(StringComparer.Ordinal);
+    var objects = new List<RawObject>();
+    foreach (var input in inputs) {
+      var path = input.Path.Replace('\\', '/').Trim('/');
+      if (path.Length == 0) continue;
+      var parts = path.Split('/');
+      for (var i = 1; i < parts.Length; ++i) {
+        var dir = string.Join('/', parts[..i]);
+        if (seenDirs.Add(dir)) objects.Add(NewObject("/", dir, null, input.LastModified, UnixTime));
+      }
+      if (input.Data is null) { if (seenDirs.Add(path)) objects.Add(NewObject("/", path, null, input.LastModified, UnixTime)); }
+      else objects.Add(NewObject("/", path, input.Data, input.LastModified, UnixTime));
+    }
+    // OS (Linux), time encoding (Unix), ANSI, CPU: what PeaZip on Linux writes
+    WriteObjects(output, [0x33, UnixTime, 0x01, 0x21], objects, compression, objectCheck, streamCheck, volumeCheck,
+      volumeSize, openVolume, password, cascadeStrength);
+  }
+
+  /// <summary>
+  /// Edits a single-file PEA archive in place: drops the <paramref name="remove"/> paths (a folder
+  /// with everything beneath it), then adds <paramref name="add"/>, replacing files of the same
+  /// path. Everything else stays as it was: the archive's compression, object, stream and volume
+  /// checks, encryption kind and strength (under a fresh salt), system bytes, and every kept
+  /// object's stored name, time and attributes. New objects go under the archive's common folder,
+  /// their times in its encoding.
+  /// </summary>
+  /// <param name="archive">The archive; read, then rewritten from the start.</param>
+  /// <param name="add">Objects to add or replace (null data: a folder).</param>
+  /// <param name="remove">Paths to remove, as <see cref="PeaEntry.Path"/> gives them.</param>
+  /// <param name="password">The password of an encrypted archive.</param>
+  /// <exception cref="NotSupportedException">A volume set: its volumes would all change size.</exception>
+  /// <exception cref="ArchivePasswordException">The archive is encrypted and the password is missing or wrong.</exception>
+  public static void Modify(Stream archive, IEnumerable<Input> add, IEnumerable<string> remove, string? password = null) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(add);
+    ArgumentNullException.ThrowIfNull(remove);
+    if (archive is FileStream { Name: { Length: > 0 } name } && VolumeSetBase(name) is not null)
+      throw new NotSupportedException("A PEA volume set is not edited in place: every volume after the change would move.");
+    var bytes = ReadAll(archive);
+    var entries = ReadVolumes([bytes], password); // verifies every check (and the password) first
+    var compression = bytes[16];
+    var volumeCheck = (Check)bytes[3];
+    var streamCheck = (Check)bytes[18];
+    var objectCheck = (Check)bytes[19];
+    var timeEncoding = bytes[6];
+    var root = entries.Count > 0 ? entries[0].Root : "/";
+
+    static string Clean(string path) => path.Replace('\\', '/').Trim('/');
+    var adds = add.Select(i => i with { Path = Clean(i.Path) }).Where(i => i.Path.Length > 0).ToList();
+    var gone = remove.Select(Clean).Where(p => p.Length > 0).ToList();
+    var replaced = adds.Where(i => i.Data != null).Select(i => i.Path).ToHashSet(StringComparer.Ordinal);
+    bool Dropped(PeaEntry e) => gone.Any(r => e.Path == r || e.Path.StartsWith(r + "/", StringComparison.Ordinal))
+      || !e.IsDirectory && replaced.Contains(e.Path);
+
+    var objects = new List<RawObject>();
+    var dirs = new HashSet<string>(StringComparer.Ordinal);
+    foreach (var e in entries.Where(e => !Dropped(e))) {
+      objects.Add(new RawObject(e.RawName, e.RawTime, e.Attributes, e.IsDirectory ? null : e.Data));
+      if (e.IsDirectory) dirs.Add(e.Path);
+    }
+    foreach (var input in adds) {
+      var parts = input.Path.Split('/');
+      for (var i = 1; i < parts.Length; ++i) {
+        var dir = string.Join('/', parts[..i]);
+        if (dirs.Add(dir)) objects.Add(NewObject(root, dir, null, input.LastModified, timeEncoding));
+      }
+      if (input.Data is null) {
+        if (dirs.Add(input.Path)) objects.Add(NewObject(root, input.Path, null, input.LastModified, timeEncoding));
+      } else objects.Add(NewObject(root, input.Path, input.Data, input.LastModified, timeEncoding));
+    }
+
+    using var rebuilt = new MemoryStream();
+    WriteObjects(rebuilt, bytes.AsSpan(5, 4), objects, compression, objectCheck, streamCheck, volumeCheck,
+      0, null, PeaStreamCipher.Encrypts((byte)streamCheck) ? password : null, PeaStreamCipher.IsCascade((byte)streamCheck) ? bytes[9] : 0);
+    archive.Position = 0;
+    archive.SetLength(0);
+    rebuilt.Position = 0;
+    rebuilt.CopyTo(archive);
+    archive.Flush();
+  }
+
+  private const byte UnixTime = 0x30, DosTimeEncoding = 0x10;
+  private const uint FileAttribute = 0x20, DirectoryAttributes = 0x30;
+
+  /// <summary>One object as stored: its qualified name bytes, time and attributes as the archive encodes them, and data (null for a directory).</summary>
+  private readonly record struct RawObject(byte[] Name, uint Time, uint Attributes, byte[]? Data);
+
+  /// <summary>A new object stored as <paramref name="root"/> + <paramref name="path"/>, its time in the archive's encoding.</summary>
+  private static RawObject NewObject(string root, string path, byte[]? data, DateTime time, byte timeEncoding) {
+    var name = Ansi.Value.GetBytes(root + path + (data is null ? "/" : ""));
+    if (name.Length > ushort.MaxValue) throw new NotSupportedException($"PEA names are at most 65535 bytes ('{path}').");
+    return new RawObject(name, EncodeTime(time, timeEncoding), data is null ? DirectoryAttributes : FileAttribute, data);
+  }
+
+  private static uint EncodeTime(DateTime time, byte encoding) {
+    if (encoding == DosTimeEncoding) {
+      var t = time.Kind == DateTimeKind.Utc ? time.ToLocalTime() : time;
+      if (t.Year < 1980) return 0;
+      return (uint)(((t.Year - 1980) << 25) | (t.Month << 21) | (t.Day << 16) | (t.Hour << 11) | (t.Minute << 5) | (t.Second / 2));
+    }
+    return (uint)Math.Clamp(new DateTimeOffset(time.ToUniversalTime()).ToUnixTimeSeconds(), 0, uint.MaxValue);
+  }
+
+  /// <summary>Writes the archive: headers (with <paramref name="system"/> as header bytes 5-8), objects, trigger, check or tag, volumes.</summary>
+  private static void WriteObjects(Stream output, ReadOnlySpan<byte> system, List<RawObject> objects, int compression,
+      Check objectCheck, Check streamCheck, Check volumeCheck, long volumeSize, Func<int, Stream>? openVolume, string? password, int cascadeStrength) {
+    var encrypted = PeaStreamCipher.Encrypts((byte)streamCheck);
+    // archive header: magic, version 1, revision 6, volume check, ECC 0, OS, time encoding, character set, CPU, iterations
     byte[] headers = [
-      Magic, 1, 6, (byte)volumeCheck, 0, 0x33, 0x30, 0x01, 0x21, (byte)cascadeStrength,
+      Magic, 1, 6, (byte)volumeCheck, 0, system[0], system[1], system[2], system[3], (byte)cascadeStrength,
       0, 0, (byte)'P', (byte)'O', (byte)'D', 0, (byte)compression, 0, (byte)streamCheck, (byte)objectCheck,
     ];
     var ms = new MemoryStream(); // everything after the headers (and the crypto subheader)
@@ -526,30 +644,14 @@ public static class PeaArchive {
     if (compression != 0) ms.Write(Le32(WriteBlockSize));
     var level = compression switch { 1 => DeflateCompressionLevel.Fast, 3 => DeflateCompressionLevel.Maximum, _ => DeflateCompressionLevel.Default };
 
-    // Directories first are not required; keep the caller's order, adding parent directories once.
-    var seenDirs = new HashSet<string>(StringComparer.Ordinal);
-    var objects = new List<Input>();
-    foreach (var input in inputs) {
-      var path = input.Path.Replace('\\', '/').Trim('/');
-      if (path.Length == 0) continue;
-      var parts = path.Split('/');
-      for (var i = 1; i < parts.Length; ++i) {
-        var dir = string.Join('/', parts[..i]);
-        if (seenDirs.Add(dir)) objects.Add(new Input(dir, null, input.LastModified));
-      }
-      if (input.Data is null) { if (seenDirs.Add(path)) objects.Add(input with { Path = path }); }
-      else objects.Add(input with { Path = path });
-    }
-
     foreach (var obj in objects) {
       var isDir = obj.Data is null;
-      var name = Ansi.Value.GetBytes("/" + obj.Path + (isDir ? "/" : ""));
-      if (name.Length > ushort.MaxValue) throw new NotSupportedException($"PEA names are at most 65535 bytes ('{obj.Path}').");
+      var name = obj.Name;
       var header = new MemoryStream();
       header.Write(Le32((uint)name.Length).AsSpan(0, 2));
       header.Write(name);
-      header.Write(Le32((uint)Math.Clamp(new DateTimeOffset(obj.LastModified.ToUniversalTime()).ToUnixTimeSeconds(), 0, uint.MaxValue)));
-      header.Write(Le32(isDir ? 0x30u : 0x20u));
+      header.Write(Le32(obj.Time));
+      header.Write(Le32(obj.Attributes));
       var objCheck = new MemoryStream();
       if (!isDir) header.Write(Le64((ulong)obj.Data!.Length));
       var headerBytes = header.ToArray();
