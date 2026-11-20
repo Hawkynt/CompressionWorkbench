@@ -11,7 +11,7 @@ namespace FileFormat.Uharc;
 /// (<c>-m1</c>..<c>-m3</c>, including the multimedia predictors) modes, password-protected archives
 /// and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP and ALZ modes, with passwords and
 /// the multimedia predictors; and UHARC 0.2 archives. Archives of 0.3, and 0.4 PPM streams, are refused. Creates 0.6
-/// archives, stored or packed with RLE, LZ78, LZP or ALZ, optionally password-protected or behind a self-extractor stub, that <c>uharc.exe</c> extracts; it cannot modify them.
+/// archives in every 0.6 method, optionally password-protected or behind a self-extractor stub, that <c>uharc.exe</c> extracts; it cannot modify them.
 ///
 /// References:
 /// <list type="bullet">
@@ -43,7 +43,7 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     "UHARC 0.6 archive. Lists and extracts the store, RLE, LZ78, LZP, PPM and ALZ modes (with multimedia " +
     "and executable filters, passwords and SFX stubs), UHARC 0.4 store, RLE, LZW, LZP and ALZ archives, and UHARC 0.2 " +
     "archives. 0.3 archives and 0.4 PPM streams are refused. " +
-    "Creates 0.6 archives, stored or packed with RLE, LZ78, LZP or ALZ, with passwords and self-extractor stubs.";
+    "Creates 0.6 archives, stored or packed with any 0.6 method, with passwords and self-extractor stubs.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (TryOpen(stream, password, out var reader, out var image) is { } failure)
@@ -78,7 +78,7 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public const string SfxStubOption = "sfx-stub";
 
   /// <summary>
-  /// Writes a UHARC 0.6 archive: method <c>lzp</c> (the default), <c>alz</c>, <c>lz78</c>,
+  /// Writes a UHARC 0.6 archive: method <c>lzp</c> (the default), <c>ppm</c>, <c>alz</c>, <c>lz78</c>,
   /// <c>rle</c> or <c>store</c>; a password enciphers the stream and the tables as <c>-pw</c> does; the
   /// <see cref="SfxStubOption"/> option puts the named Win32 stub in front, as <c>-sfx</c> does;
   /// <see cref="FormatCreateOptions.DictSize"/> caps the LZP and ALZ window, as <c>-md</c> does.
@@ -100,8 +100,9 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       "lz78" or "lzw" => UharcWriter.Mode.Lz78,
       "rle" => UharcWriter.Mode.Rle,
       "alz" => UharcWriter.Mode.Alz,
+      "ppm" => UharcWriter.Mode.Ppm,
       "store" or "stored" => UharcWriter.Mode.Store,
-      _ => throw new NotSupportedException($"UHARC: the writer packs with 'lzp', 'alz', 'lz78', 'rle' or 'store', not '{options!.MethodName}'."),
+      _ => throw new NotSupportedException($"UHARC: the writer packs with 'lzp', 'ppm', 'alz', 'lz78', 'rle' or 'store', not '{options!.MethodName}'."),
     };
 
     var items = inputs.Select(i => new UharcWriter.Item(

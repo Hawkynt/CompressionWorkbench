@@ -4,7 +4,7 @@ namespace FileFormat.Uharc;
 /// PPM model set-up (docs/UHARC-ON-DISK.md, "PPM", Resets and Switch to binary): the initial state, the reset at
 /// every reset point, and the switch from a text stream to binary coding.
 /// </summary>
-internal sealed partial class UharcPpmDecoder {
+internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUharcCoder {
 
   private void InitializeContexts() {
     for (var row = 0; row <= 0x300; ++row) {
@@ -135,7 +135,7 @@ internal sealed partial class UharcPpmDecoder {
     this._wpCost = 0;
 
     this.ApplyFileSizeRules(reset, written);
-    this.SelectClass((int)this._coder.DecodeUniform(10));
+    this.SelectClass((int)this._coder.Uniform(10, 0));
   }
 
   /// <summary>

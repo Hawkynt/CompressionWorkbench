@@ -130,6 +130,7 @@ public class UharcExternalConformanceTests {
   [TestCase("rle")]
   [TestCase("lz78")]
   [TestCase("alz")]
+  [TestCase("ppm")]
   public void GivenOurArchive_WhenUharcExtracts_ThenEveryFileIsByteIdentical(string? method) {
     var uharc = RequireUharc();
     var archive = Path.Combine(this._tmp, "ours.uha");
@@ -163,6 +164,7 @@ public class UharcExternalConformanceTests {
   [TestCase("rle")]
   [TestCase("lz78")]
   [TestCase("alz")]
+  [TestCase("ppm")]
   public void GivenOurPasswordArchive_WhenUharcExtractsWithThePassword_ThenEveryFileIsByteIdentical(string? method) {
     var uharc = RequireUharc();
     var archive = Path.Combine(this._tmp, "ours.uha");
@@ -205,6 +207,8 @@ public class UharcExternalConformanceTests {
   [TestCase("alz", 0)]
   [TestCase("alz", 1024)]
   [TestCase("lzp", 1024)]
+  [TestCase("ppm", 0)]
+  [TestCase("ppm", 1024)]
   public void GivenALargeMixedInput_WhenWeWriteIt_ThenUharcExtractsIt(string method, long dictionary) {
     var uharc = RequireUharc();
     var random = new Random(2005);

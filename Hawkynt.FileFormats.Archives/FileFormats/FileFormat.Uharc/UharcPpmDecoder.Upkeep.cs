@@ -5,7 +5,7 @@ namespace FileFormat.Uharc;
 /// last position of each byte, a stride detector for record-structured data, two marker
 /// counters for interleaved 16-bit text, and the rank tables the stride drives.
 /// </summary>
-internal sealed partial class UharcPpmDecoder {
+internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUharcCoder {
 
   private readonly uint[] _contextSlots = new uint[4];
   private readonly byte[] _contextBytes = new byte[0x40000];
