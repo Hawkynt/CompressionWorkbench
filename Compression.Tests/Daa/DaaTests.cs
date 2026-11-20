@@ -102,10 +102,74 @@ public class DaaTests {
     Assert.That(Read(archive.ToArray()), Is.EqualTo(iso));
   }
 
-  [Test]
-  public void GivenVersion110_WhenRead_ThenNotSupported() {
-    var daa = Write(SampleIso(5000, 4));
-    BinaryPrimitives.WriteUInt32LittleEndian(daa.AsSpan(0x14), 0x110);
+  // ── version 0x110 images PowerISO 9.5 wrote (ReferenceVectors/make-110.sh) ──────
+
+  private static Dictionary<string, (string Sha, long Size)> Iso110() =>
+    File.ReadAllLines(VectorPath("v110-iso.sha256")).Select(l => l.Split("  "))
+      .ToDictionary(p => p[2], p => (p[0], long.Parse(p[1])));
+
+  [TestCase("v110-better.daa", null)]
+  [TestCase("v110-best.daa", null)]
+  [TestCase("v110-password.daa", "secret42")]
+  [Category("ThirdPartyVector")]
+  public void GivenAVersion110Image_WhenRead_ThenTheIsoIsWhatPowerIsoConvertsItTo(string vector, string? password) {
+    using var s = File.OpenRead(VectorPath(vector));
+    using var image = DaaImage.Read(s, password);
+    Assert.That(image.Version, Is.EqualTo(DaaImage.Version110));
+    using var iso = new MemoryStream();
+    image.CopyIsoTo(s, iso);
+    var (sha, size) = Iso110()[vector];
+    Assert.That(iso.Length, Is.EqualTo(size));
+    Assert.That(Convert.ToHexStringLower(SHA256.HashData(iso.ToArray())), Is.EqualTo(sha));
+  }
+
+  [Test, Category("ThirdPartyVector")]
+  public void GivenTheBetterImage_WhenRead_ThenItHoldsLzmaAndDeflateChunks() {
+    using var s = File.OpenRead(VectorPath("v110-better.daa"));
+    using var image = DaaImage.Read(s);
+    Assert.That(image.ChunkKinds, Does.Contain(DaaChunkKind.Lzma));
+    Assert.That(image.ChunkKinds.Distinct().Count(), Is.GreaterThanOrEqualTo(1));
+  }
+
+  [Test, Category("ThirdPartyVector")]
+  public void GivenAVersion110PasswordImage_WhenReadWithTheWrongPassword_ThenRefused() {
+    using var s = File.OpenRead(VectorPath("v110-password.daa"));
+    Assert.Throws<ArchivePasswordException>(() => DaaImage.Read(s, "wrong"));
+  }
+
+  /// <summary>A split 0x110 set PowerISO 9.5 writes on the spot (too large to commit), read from its first volume.</summary>
+  [Test, Category("ExternalInterop")]
+  public void GivenASplitVersion110Set_WhenReadFromItsFirstVolume_ThenTheIsoIsWhatPowerIsoConvertsItTo() {
+    var script = FsInteropToolbox.WinToWsl(VectorPath("piso-split-110.sh"));
+    if (!FsInteropToolbox.WslAvailable || FsInteropToolbox.RunWsl($"bash {script} --check").ExitCode != 0)
+      Assert.Ignore("PowerISO for Windows is not installed in its wine prefix (see piso-split-110.sh).");
+    var dir = Path.Combine(Path.GetTempPath(), "cwb-daa110-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(dir);
+    try {
+      var run = FsInteropToolbox.RunWsl($"bash {script} {FsInteropToolbox.WinToWsl(dir)}");
+      Assert.That(run.ExitCode, Is.Zero, run.StdErr);
+      var expected = run.StdOut.Trim().Split(' ');
+      var first = Path.Combine(dir, "set.part01.daa");
+      Assert.That(Directory.GetFiles(dir, "set.part*.daa"), Has.Length.GreaterThan(1));
+      using var s = File.OpenRead(first);
+      using var image = DaaImage.Read(s, null, DaaFormatDescriptor.VolumeOpener(first));
+      Assert.That((image.Version, image.VolumeCount > 1), Is.EqualTo((DaaImage.Version110, true)));
+      using var iso = new MemoryStream();
+      image.CopyIsoTo(s, iso);
+      Assert.That(iso.Length, Is.EqualTo(long.Parse(expected[1])));
+      Assert.That(Convert.ToHexStringLower(SHA256.HashData(iso.ToArray())), Is.EqualTo(expected[0]));
+    } finally {
+      Directory.Delete(dir, true);
+    }
+  }
+
+  [TestCase(0x4000u)]     // zlib-compressed chunk table
+  [TestCase(0x8000000u)]  // obfuscated chunk table
+  [TestCase(0x800000u)]   // permuted deflate block types
+  public void GivenAnUnverifiedVersion110Option_WhenRead_ThenNotSupported(uint flag) {
+    var daa = File.ReadAllBytes(VectorPath("v110-better.daa"));
+    var field = BinaryPrimitives.ReadUInt32LittleEndian(daa.AsSpan(0x24));
+    BinaryPrimitives.WriteUInt32LittleEndian(daa.AsSpan(0x24), field | flag);
     BinaryPrimitives.WriteUInt32LittleEndian(daa.AsSpan(0x48), Crc(daa.AsSpan(0, 0x48)));
     Assert.Throws<NotSupportedException>(() => DaaImage.Read(new MemoryStream(daa)));
   }

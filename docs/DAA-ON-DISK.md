@@ -4,6 +4,9 @@
 
 - Images written by PowerISO for Linux 1.3 (`poweriso-1.3.tar.gz`, freeware,
   run as a black box), read field by field.
+- Version 0x110 images written by PowerISO 9.5 for Windows (`piso.exe`, the
+  trial's command line, under wine), read the same way. PowerISO 9.5's own
+  conversion back to ISO is the expected output.
 - Luigi Auriemma's daa2iso 0.1.7e (GPL-2.0). It was read as a description of
   behaviour only; no code was taken from it.
 
@@ -112,14 +115,44 @@ unsupported"). The last chunk decodes to the remainder, or more; only up to the
 ISO size is kept. PowerISO 1.3 writes nothing else: random data is stored in
 deflate's own stored blocks, not as an uncompressed chunk.
 
+## Version 0x110
+
+PowerISO 9.5 writes 0x110 for `-method better` and `-method best`
+(`normal` still gives 0x100). Three header fields change meaning:
+
+| Field | 0x110 meaning |
+| --- | --- |
+| 0x18 data offset | the low 24 bits are the offset; the high byte holds flags |
+| 0x24 chunk size | `(value & 0xFFF) << 14` is the chunk size (`best`: 4 MiB, `better`: 512 KiB); the other bits are flags. `0x100000` means LZMA chunks may occur |
+| 0x38 header data | byte 5: the kind width in bits (low 3 bits) and the length width (high 5 bits, plus 10; 0 means the number of bits needed for the chunk size); byte 6: non-zero for an x86 branch filter behind LZMA; bytes 7-11: the 5 LZMA properties (`5D 00 00 00 01`, lc 3, lp 0, pb 2, 16 MiB dictionary) |
+
+The chunk table is a stream of fields read least-significant bit first: for
+each chunk, the length minus 5 in the length width, then the kind in the kind
+width. Kind 0 is LZMA and kind 1 is raw deflate. A length that reaches the chunk
+size marks a stored chunk.
+
+Every chunk, of any kind, ends with the CRC-32 of the bytes before it, as in
+0x100. LZMA chunks are raw LZMA with the header's properties and no end marker.
+A decoder must stop at the chunk's size: the stream decodes 4 extra bytes from
+the CRC. With the filter flag set, the decoded chunk passes through the x86 BCJ
+decoder (LZMA SDK `x86_Convert`, start offset 0, fresh state per chunk).
+
+Passwords and volumes work as in 0x100. The password descriptor is the same,
+and the cipher covers each chunk's bytes. Volumes are named `name.part01.daa`,
+`name.part02.daa`, and so on.
+
+All of this is measured: `better` images hold LZMA and deflate chunks, `best`
+images one LZMA chunk, split sets also hold stored chunks, and every one
+decodes to the ISO PowerISO 9.5 converts it to.
+
 ## Not supported (refused with a message)
 
-- **Version 0x110.** The chunk table is a bit-packed stream of
-  `(length − 5, type)` pairs. It can be zlib-compressed and XOR-obfuscated, the
-  deflate block-type numbering is permuted, chunks can be LZMA with an x86 BCJ
-  filter, and a chunk whose length reaches the chunk size is stored. No
-  PowerISO build available here writes 0x110, so none of this could be
-  verified. It stays refused rather than guessed.
+- **0x110 options no PowerISO 9.5 image uses:**
+  - a zlib-compressed chunk table (chunk-size flag `0x4000`);
+  - an obfuscated table (`0x8000000`) or obfuscated table bits (`0x20000`);
+  - permuted deflate block types (bits 23-24);
+  - flags `0x80000`, `0x80000000` and `0x10000000`.
+  daa2iso describes them, but no sample could verify them.
 - **gBurner GBI.** It has the same layout, but the chunk table is additionally
   offset by the low byte of the header CRC and XORed with `table length / 4`.
   There is no sample.
