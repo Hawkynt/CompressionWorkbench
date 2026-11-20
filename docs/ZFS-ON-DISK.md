@@ -712,6 +712,31 @@ four checksum words) and Fletcher-4 runs over `nused` rounded up to 4 KiB; for c
 Either way the checksum words are replaced by the block pointer's checksum (the verifier) while
 summing. A written block holds records still to be replayed, so such a dataset is not edited.
 
+## dRAID
+
+A top-level vdev of type `draid` lists its children and `nparity` (1-3), `draid_ndata` (D),
+`draid_nspares` (S) and `draid_ngroups` (G). With C children: group width W = D + P, disks
+N = C - S (the rest is distributed spare space), row height 16 MiB, group size W × 16 MiB of
+logical space. G groups fill W × G / N whole rows per slice.
+
+**Permutations.** For each child count OpenZFS fixes a number of permutation rows (256 below
+32 children, 512 from 32) and a seed (copied table). Row 0 starts from the identity; each row is
+a Fisher-Yates shuffle (j from C-1 down to 1, swap with k = next % (j+1)) of the row before,
+drawing from xoroshiro128++ with state (0xd7a1d5eed, seed). The Fletcher-4 sum (first word)
+over all rows' bytes must equal the table's checksum.
+
+**Mapping** a logical offset o (in a group g = o / group size): group start position
+s = g × W mod N; permutation p = g / G; row
+`p × (W × G / N) + (g mod G) × W / N`; on-disk offset (from the 4 MiB data start)
+`(row × rowSectors + (o / sector mod (rowSectors × W)) / W) × sector`; column i of the group
+(0 … W-1, parity first) is on child `(perm[(p mod (nperms × C)) / C][(s + i) mod N] + (p mod C)) mod C`,
+one row (16 MiB) further down from the column where the group wraps past N. A block of n
+sectors splits like RAID-Z (q = n / D, r = n mod D, the first r + P columns one sector more,
+none if r = 0) but always takes whole stripes: its allocated size is ceil(n / D) × W sectors,
+the short columns padded with zero sectors that the parity covers. A block that reaches past
+its group's end is split: the first part takes what is left of the group (in whole stripes),
+the rest starts the next group. There is no RAID-Z1 column swap.
+
 ## RAID-Z
 
 A RAID-Z vdev of `D` children with `P` parity columns and sector shift `a` maps a

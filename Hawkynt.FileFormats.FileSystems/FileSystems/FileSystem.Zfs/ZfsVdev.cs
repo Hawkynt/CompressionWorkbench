@@ -34,6 +34,10 @@ internal abstract class ZfsVdev {
           throw new InvalidDataException($"ZFS: RAID-Z with {children.Length} children and parity {parity} is malformed.");
         return new ZfsRaidzVdev(children.Select(c => Build(c, leavesByGuid, shift)).ToArray(), parity, shift);
       }
+      case "draid":
+        return new ZfsDraidVdev(children.Select(c => Build(c, leavesByGuid, shift)).ToArray(),
+          (int)(tree.UInt64("draid_ndata") ?? 0), (int)(tree.UInt64("nparity") ?? 0),
+          (int)(tree.UInt64("draid_nspares") ?? 0), (int)(tree.UInt64("draid_ngroups") ?? 0), shift);
       default:
         return new ZfsUnsupportedVdev(type);
     }
@@ -60,7 +64,7 @@ internal sealed class ZfsMissingVdev(string what) : ZfsVdev {
   public override string Describe() => what + " (missing)";
 }
 
-/// <summary>A vdev type the reader does not map (dRAID, indirect after device removal, holes).</summary>
+/// <summary>A vdev type the reader does not map (indirect after device removal, holes).</summary>
 internal sealed class ZfsUnsupportedVdev(string type) : ZfsVdev {
   public override byte[] Read(long offset, int length)
     => throw new NotSupportedException($"ZFS: '{type}' vdevs are not supported.");

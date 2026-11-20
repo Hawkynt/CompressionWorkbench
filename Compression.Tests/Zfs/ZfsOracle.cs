@@ -91,6 +91,25 @@ internal static class ZfsOracle {
   /// the device images back over the staged ones, so OpenZFS's own later writes can be checked too;
   /// <paramref name="before"/> runs right after the import (loading keys of encrypted datasets).
   /// </summary>
+  /// <summary>
+  /// Runs <paramref name="script"/> as root in the appliance (<c>$O</c> = an empty output directory,
+  /// <c>$M</c> = a mount root) and downloads <paramref name="downloads"/> from <c>$O</c> into
+  /// <paramref name="dir"/>; returns the script's output.
+  /// </summary>
+  public static string Appliance(string dir, string wsl, string script, IReadOnlyList<string> downloads) {
+    File.WriteAllText(Path.Combine(dir, "inner.sh"), ("modprobe zfs\nO=/sysroot/out; M=/sysroot/mnt; mkdir -p $O $M\n" + script + "\n").Replace("\r\n", "\n"));
+    var fetch = string.Concat(downloads.Select(f => $"download /out/{f} {f}\\n"));
+    var run = FsInteropToolbox.RunWsl(
+      "export LIBGUESTFS_BACKEND=direct LIBGUESTFS_CACHEDIR=$HOME/cwbzfs-work/cache LIBGUESTFS_MEMSIZE=2048; " +
+      $"mkdir -p $HOME/cwbzfs-work/cache; cd {wsl}; truncate -s 2G scratch.img; " +
+      "printf 'run\\nmkfs ext4 /dev/sda\\nmount /dev/sda /\\nmkdir /out\\nupload inner.sh /inner.sh\\n" +
+      "debug sh \"sh /sysroot/inner.sh > /sysroot/log.txt 2>&1\"\\ndownload /log.txt log.txt\\n" +
+      $"{fetch}' | timeout 600 guestfish -a scratch.img 2>&1");
+    var logPath = Path.Combine(dir, "log.txt");
+    if (!File.Exists(logPath)) Assert.Inconclusive("the appliance did not run:\n" + run.StdOut + run.StdErr);
+    return File.ReadAllText(logPath);
+  }
+
   public static Dictionary<string, string> KernelManifest(string dir, string wsl, string pool, out string log, string after, bool download, string before = "") {
     var images = Directory.GetFiles(dir, "*.img").Select(f => Path.GetFileName(f)!).Order(StringComparer.Ordinal).ToList();
     var uploads = string.Concat(images.Select(f => $"upload {f} /out/{f}\\n"));
