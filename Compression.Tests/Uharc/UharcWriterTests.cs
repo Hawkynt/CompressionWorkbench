@@ -56,10 +56,25 @@ public class UharcWriterTests {
     Assert.That(reader.Entries.Where(e => e.IsDirectory).Select(e => e.FileName).Order(), Is.EqualTo(new[] { "emptydir", "sub", "sub/deeper" }));
   }
 
+  private static IEnumerable<TestCaseData> NoFiles() {
+    yield return new TestCaseData("6", (IReadOnlyList<ArchiveInputInfo>)[]).SetName("NoFiles_v6_Nothing");
+    yield return new TestCaseData("6", (IReadOnlyList<ArchiveInputInfo>)[new("dir", "dir", IsDirectory: true)]).SetName("NoFiles_v6_OnlyADirectory");
+    yield return new TestCaseData("4", (IReadOnlyList<ArchiveInputInfo>)[]).SetName("NoFiles_v4_Nothing");
+    yield return new TestCaseData("3", (IReadOnlyList<ArchiveInputInfo>)[]).SetName("NoFiles_v3_Nothing");
+    yield return new TestCaseData("2", (IReadOnlyList<ArchiveInputInfo>)[]).SetName("NoFiles_v2_Nothing");
+  }
+
+  /// <summary>UHARC.EXE, UHARC04.EXE and uharc_u.exe all stop on an archive of no files, so none is written.</summary>
+  [TestCaseSource(nameof(NoFiles))]
+  [Category("Boundary"), Category("Exceptional")]
+  public void GivenNoFiles_WhenWritten_ThenTheArchiveIsRefused(string version, IReadOnlyList<ArchiveInputInfo> inputs)
+    => Assert.That(() => CreateWith(new FormatCreateOptions { FormatSpecific = { [UharcFormatDescriptor.VersionOption] = version } }, inputs),
+      Throws.TypeOf<NotSupportedException>());
+
   [Test, Category("Boundary")]
-  public void GivenNoInputs_WhenWritten_ThenAnEmptyArchiveReadsBack() {
-    var reader = new UharcReader(new MemoryStream(Create(null, [])));
-    Assert.That(reader.Entries, Is.Empty);
+  public void GivenOneEmptyFile_WhenWritten_ThenItReadsBack() {
+    var reader = new UharcReader(new MemoryStream(Create(null, [ArchiveInputInfo.InMemory("empty.dat", [])])));
+    Assert.That(reader.Entries.Single().Size, Is.Zero);
   }
 
   [TestCase("deflate")]

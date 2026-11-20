@@ -131,8 +131,8 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// </summary>
   /// <exception cref="NotSupportedException">
   /// Another method, a password that is not printable ASCII or longer than 255 characters, a stub
-  /// that is not a PE image ending with its last section, a name longer than 255 bytes or more
-  /// than 4 GiB of data.
+  /// that is not a PE image ending with its last section, a name longer than 255 bytes, more
+  /// than 4 GiB of data, or no file at all (the original tools refuse an archive of none).
   /// </exception>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
