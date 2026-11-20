@@ -12,7 +12,7 @@ namespace FileFormat.Uharc;
 /// and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP and ALZ modes, with passwords and
 /// the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP and ALZ modes; and UHARC 0.2 archives.
 /// 0.4 and 0.3 PPM streams are refused. Creates 0.6
-/// archives in every 0.6 method and 0.4 archives in store, RLE, LZW and LZP, optionally password-protected or behind a self-extractor stub, that <c>uharc.exe</c> extracts; it cannot modify them.
+/// archives in every 0.6 method and 0.4 archives in every method but PPM, optionally password-protected or behind a self-extractor stub, that <c>uharc.exe</c> extracts; it cannot modify them.
 ///
 /// References:
 /// <list type="bullet">
@@ -44,7 +44,7 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     "UHARC 0.6 archive. Lists and extracts the store, RLE, LZ78, LZP, PPM and ALZ modes (with multimedia " +
     "and executable filters, passwords and SFX stubs), UHARC 0.4 store, RLE, LZW, LZP and ALZ archives, UHARC 0.2 " +
     "archives, UHARC 0.3 store, RLE, LZW, LZP and ALZ archives. 0.4 and 0.3 PPM streams are refused. " +
-    "Creates 0.6 archives in every method and 0.4 archives in store, RLE, LZW and LZP, with passwords and self-extractor stubs.";
+    "Creates 0.6 archives in every method and 0.4 archives in every method but PPM, with passwords and self-extractor stubs.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (TryOpen(stream, password, out var reader, out var image) is { } failure)
@@ -87,7 +87,7 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <see cref="SfxStubOption"/> option puts the named Win32 stub in front, as <c>-sfx</c> does;
   /// <see cref="FormatCreateOptions.DictSize"/> caps the LZP and ALZ window, as <c>-md</c> does;
   /// the <see cref="VersionOption"/> option 4 writes a UHARC 0.4 archive (store, RLE, LZW as
-  /// <c>lz78</c>, LZP).
+  /// <c>lz78</c>, LZP, ALZ).
   /// </summary>
   /// <exception cref="NotSupportedException">
   /// Another method, a password that is not printable ASCII or longer than 255 characters, a stub

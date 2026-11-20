@@ -13,7 +13,7 @@ stubs are established and verified, and so are UHARC 0.2 and the UHARC 0.4 conta
 store, RLE, LZW, LZP and ALZ modes, and the UHARC 0.3 container with its store, RLE, LZW, LZP and
 ALZ modes (see their sections). 0.4's and 0.3's PPM streams are not, and are refused. The writer produces 0.6 archives in every method — store, RLE, LZ78, LZP, PPM and ALZ —
 with or without a password and a self-extractor stub (see Writing), and 0.4 archives in store,
-RLE, LZW and LZP (see Writing UHARC 0.4).
+RLE, LZW, LZP and ALZ (see Writing UHARC 0.4).
 
 ## Evidence
 
@@ -981,7 +981,7 @@ Fixtures `v03-basic-m1`, `v03-basic-m2`, `v03-basic-m3`, `v03-basic-m2-pw`, `v03
 
 ### Writing UHARC 0.4
 
-The writer produces 0.4 archives (format option `version` 4) in store, RLE, LZW and LZP: the
+The writer produces 0.4 archives (format option `version` 4) in store, RLE, LZW, LZP and ALZ: the
 header above with its own check, the stream, the stored CRC table, the name table as 0.4 LZP
 method 17, the dates-then-times table as LZW method 2 and the size table as LZW method 7, each
 table enciphered with the default password or, with a password, all of them and the stream with
@@ -990,9 +990,14 @@ knows and restarts a full dictionary with code 256 followed by a plain byte: cod
 full dictionary, which our decoder follows, crashes `UHARC04.EXE` (a 513 216-byte fax page with
 long zero runs fills the 32768-code dictionary). The 0.4 LZP encoder is the decoder's model
 (generic over the coder direction, as for 0.6) answering each prediction with the full match
-when its first byte matches. `UHARC04.EXE x` extracts our archives of every fixture input set
-and the 39 MB mixed set byte for byte in all four modes, with and without a password and at a
-1 KiB window, and unuharc_recon's unpacker accepts them.
+when its first byte matches. The 0.4 ALZ encoder is likewise the decoder's model, run with group
+0 and the 0.6 ALZ encoder's choices (whole copies at a recent or hashed distance, within the
+window less 255, never past a block end), every length at least 2 and a new distance at least 3.
+One rule is 0.4's own: a copy whose length the model would take from a per-byte-pair prediction
+of full confidence (0, so no decision is coded) is only taken when that prediction is its length
+symbol. The recent distances start empty here too. `UHARC04.EXE x` extracts our archives of
+every fixture input set and the 39 MB mixed set byte for byte in all five modes, with and without
+a password and at a 1 KiB window, and unuharc_recon's unpacker accepts them.
 
 ## What is not derived
 

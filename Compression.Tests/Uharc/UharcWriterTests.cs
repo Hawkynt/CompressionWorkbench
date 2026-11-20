@@ -116,6 +116,8 @@ public class UharcWriterTests {
   [TestCase("lz78", "LZW", null)]
   [TestCase(null, "LZP", null)]
   [TestCase("lzp", "LZP", "secret")]
+  [TestCase("alz", "ALZ:2", null)]
+  [TestCase("alz", "ALZ:2", "secret")]
   [Category("HappyPath"), Category("RoundTrip")]
   public void GivenFilesAndDirectories_WhenWrittenAsVersion04AndRead_ThenEverythingComesBack(string? method, string mode, string? password) {
     var inputs = SampleInputs();
@@ -131,7 +133,6 @@ public class UharcWriterTests {
     Assert.That(reader.Entries.Where(e => e.IsDirectory).Select(e => e.FileName).Order(), Is.EqualTo(new[] { "emptydir", "sub", "sub/deeper" }));
   }
 
-  [TestCase("alz")]
   [TestCase("ppm")]
   [Category("ErrorHandling")]
   public void GivenAMethodVersion04CannotWriteYet_WhenWritten_ThenItIsRefused(string method)
@@ -161,6 +162,36 @@ public class UharcWriterTests {
   public void GivenData_WhenLzwEncodedAndDecoded_ThenItIsUnchanged(byte[] data, int method) {
     var packed = Uharc02LzwEncoder.Encode(data, method);
     Assert.That(Uharc02LzwDecoder.Decode(packed, 0, packed.Length, method, data.Length), Is.EqualTo(data));
+  }
+
+  [TestCase(56)]
+  [TestCase(63)]
+  [TestCase(76)]
+  [Category("RoundTrip")]
+  public void GivenData_WhenVersion04AlzEncodedAndDecoded_ThenItIsUnchanged(int method) {
+    var random = new Random(method);
+    var noise = new byte[30000];
+    random.NextBytes(noise);
+    var text = System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 5000).Select(i => $"the {i % 13} quick brown fox {i * 7 % 101}\r\n")));
+    var runs = Enumerable.Range(0, 300).SelectMany(i => Enumerable.Repeat((byte)(i % 5), i % 600)).ToArray();
+    var data = text.Concat(noise).Concat(runs).Concat(text).ToArray();
+    var ends = new List<long> { text.Length, text.Length + noise.Length, data.Length - text.Length, data.Length };
+    var packed = Uharc04AlzEncoder.Encode(data, method, ends);
+    Assert.That(Uharc04AlzDecoder.Decode(packed, 0, packed.Length, method, data.Length, ends), Is.EqualTo(data));
+  }
+
+  [TestCase(2, 0)]
+  [TestCase(13, 11)]
+  [TestCase(14, 12)]
+  [TestCase(16, 13)]
+  [TestCase(254, 22)]
+  [TestCase(255, 23)]
+  [Category("Boundary")]
+  public void GivenACopyLength_WhenItsVersion04SymbolIsChosen_ThenTheSymbolCoversIt(int length, int symbol) {
+    Assert.Multiple(() => {
+      Assert.That(Uharc04AlzModel<UharcEncoding>.LengthSymbol(length), Is.EqualTo(symbol));
+      Assert.That(Uharc04AlzModel<UharcEncoding>.LengthInSymbol(length, symbol), Is.True);
+    });
   }
 
   [TestCase(17)]
