@@ -71,7 +71,7 @@ internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUhar
 
   private int DecodeLiteral(byte[] output, int written) {
     if (TCoder.Encoding)
-      this._target = (byte)~this._source[written];
+      this._target = this._plan.Symbols[this._next];
     if (this._kind == 0)
       return this.DecodeLiteralCore(output, written, out _);
 

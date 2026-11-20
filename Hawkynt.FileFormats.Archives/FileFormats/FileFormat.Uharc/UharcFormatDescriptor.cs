@@ -88,8 +88,9 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <see cref="SfxStubOption"/> option puts the named Win32 stub in front, as <c>-sfx</c> does;
   /// <see cref="FormatCreateOptions.DictSize"/> caps the LZP and ALZ window, as <c>-md</c> does;
   /// the <see cref="VersionOption"/> option 4 or 3 writes a UHARC 0.4 or 0.3 archive (store, RLE,
-  /// LZW as <c>lz78</c>, LZP, ALZ), and 2 a UHARC 0.2 archive (store, LZW as <c>lz78</c>, the main
-  /// coder as <c>alz</c>, RLE; DOS 8.3 names).
+  /// LZW as <c>lz78</c>, LZP, PPM, ALZ), and 2 a UHARC 0.2 archive (store, LZW as <c>lz78</c>, the main
+  /// coder as <c>alz</c>, RLE; DOS 8.3 names). PPM stores text files first and codes them as a
+  /// text stream with UHARC's word transform.
   /// </summary>
   /// <exception cref="NotSupportedException">
   /// Another method, a password that is not printable ASCII or longer than 255 characters, a stub

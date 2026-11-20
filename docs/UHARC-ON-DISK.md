@@ -547,19 +547,45 @@ the same filters the same way; `UHARC.EXE`, `UHARC04.EXE` and `uharc_u.exe` extr
 archives of the fixture sets, of generated executables dense with every kind of operand, and of
 the 39 MB mixed set byte for byte in every mode.
 
-The PPM encoder is the decoder's model too, made generic over the coder direction like ALZ's
-(decoding the 39 MB set below takes as long as before: best 19.6 s against 20.0 s). Every
-coding decision names its outcome from the next input byte — a copy class hit or miss, a copy
-length, an order-4 or order-2 slot or its escape, a binary-predictor hit, the order-1 row's
-predicted byte, a row slot or escape, a uniform byte — so the decoder's own path through the
-cascade is replayed exactly. It writes a binary stream (the stream kind is a uniform choice, so
-no word transform has to be inverted) with each block's multimedia class (below). A predicted copy is taken when
-the bytes it would produce match the input past the length floor, only whole (the full match,
-or 255 for a run) and never past a reset point, for the reason given for ALZ. On the 39 MB set
-the archive is 11.5 MB (12.3 MB without the executable filter) against UHARC's 10.9 MB;
-`UHARC.EXE x` and `UNUHARC.EXE x` extract it,
-every fixture input set, the minimal PPM inputs above and the Canterbury files byte for byte, at
-the fitted window and at 1 KiB.
+The PPM encoder is the decoder's model too, made generic over the coder direction like ALZ's.
+It is driven by the model symbols of the input rather than its bytes (see Text streams below),
+because a text stream codes fewer symbols than it outputs bytes. Every coding decision names its
+outcome from the next symbol — a copy class hit or miss, a copy length, an order-4 or order-2
+slot or its escape, a binary-predictor hit, the order-1 row's predicted byte, a row slot or
+escape, a uniform byte — so the decoder's own path through the cascade is replayed exactly; the
+model counts the symbols it emits, and the encoder checks at every step that the next one
+starts where the output stands. Each block gets its multimedia class (below). A predicted copy
+is taken when the symbols it would produce match the input's past the length floor, only whole
+(the full match, or 255 for a run) and never past a reset point, for the reason given for ALZ.
+On the 39 MB set the archive is 11.5 MB (12.3 MB with neither the executable filter nor a text
+stream) against UHARC's 10.9 MB; `UHARC.EXE x` and `UNUHARC.EXE x` extract it, every fixture
+input set, the minimal PPM inputs above and the Canterbury files byte for byte, at the fitted
+window and at 1 KiB.
+
+**Text streams.** The writer stores text files first in PPM archives (the file table's order is
+the stream's, and readers list whatever order it holds), and codes the leading run of text files
+as a text stream: *L* is where the last of them ends. A file is text when it holds no control
+byte but tab, line feed, form feed, carriage return and 0x1A, and at most one byte in sixteen
+from 0x80; empty files pass; a stream that starts with any other file is binary throughout. Each
+text file becomes symbols on its own, so no symbol spans a file end:
+
+- the longest string of the transform's table that starts here (space runs, letter groups such
+  as `the` or `tion`); line ends (`\n`, `\r\n`, `\r\n `) only where a lower-case letter follows,
+  otherwise their bytes stay as they are;
+- an upper-case letter followed by a lower-case one as the capital prefix, then the word as if it
+  began in lower case;
+- a byte from 0x80 that the transform reserves (110 of them) as the escape pair
+  `0xA6 + n div 11`, `0xA6 + n mod 11`, where *n* is its place in the escape table — the decoder's
+  index `(kind − 0xA6)·11 + value` lands on table entry 166 + *n*; every other byte as itself.
+
+These are the choices UHARC 0.6b's own text streams show when our decoder lists their symbols
+(`alice29.txt`: strings, line ends before lower-case words only, capitalised words with the
+prefix, upper-case words as they are), and our streams come within 0.1 % of its size there
+(`alice29.txt` 37 925 bytes against 37 920; binary coding gives 40 917). Copies stop one symbol
+short of *L*: the window is rewritten there, so the last text symbol is left to a literal, which
+consumes a byte a copy excluded before the rewrite could move it. Decoding is unchanged (the
+symbol count and the checks are compiled into the encoder only): best of six decodes of the
+39 MB set 17.71 s before and 17.67 s after (0.6), 7.21 s and 7.23 s (0.4), 7.20 s and 7.20 s (0.3).
 
 The ALZ encoder runs the decoder's model step for step (one model, generic over the coder
 direction, so the decoding instantiation stays as fast as before) with each block's
@@ -1009,6 +1035,38 @@ accepts every archive.
 
 *Refuted:* 0.6's PPM decodes the 0.4 streams for 2 to 24 bytes only.
 
+### Writing UHARC 0.4
+
+The writer produces 0.4 archives (format option `version` 4) in store, RLE, LZW, LZP, PPM and ALZ: the
+header above with its own check, the stream, the stored CRC table, the name table as 0.4 LZP
+method 17, the dates-then-times table as LZW method 2 and the size table as LZW method 7, each
+table enciphered with the default password or, with a password, all of them and the stream with
+it (flags `0x02`). The filters byte is 0.6's (see Writing). The LZW encoder codes the longest phrase the decoder
+knows and restarts a full dictionary with code 256 followed by a plain byte: coding on past a
+full dictionary, which our decoder follows, crashes `UHARC04.EXE` (a 513 216-byte fax page with
+long zero runs fills the 32768-code dictionary). The 0.4 LZP encoder is the decoder's model
+(generic over the coder direction, as for 0.6) answering each prediction with the full match
+when its first byte matches. The 0.4 ALZ encoder is likewise the decoder's model, run with each
+block's multimedia class as its group (see Writing) and the 0.6 ALZ encoder's choices (whole copies at a recent or hashed distance, within the
+window less 255, never past a block end), every length at least 2 and a new distance at least 3.
+One rule is 0.4's own: a copy whose length the model would take from a per-byte-pair prediction
+of full confidence (0, so no decision is coded) is only taken when that prediction is its length
+symbol. The recent distances start empty here too. The 0.4 PPM encoder is likewise the decoder's
+model, driven by 0.6's symbols: leading text files as a text stream with the word transform,
+the rest binary (see Writing, Text streams), with the block's multimedia class at every reset
+point, and answers each decision from the next symbol: a record or the binary predictor codes
+it or escapes, the rows code it (or its difference in the class path) with the escape where the
+row lacks it. A predicted copy is taken for the length its candidate reproduces (at most 255,
+never past the next reset point, one symbol short of the text end), cut to a codable length — not 3 outside a repeated distance,
+nothing from 7 up to the floor (those become 6) — from 4 bytes on; a copy of 7 to 254 must
+end where the match does, since it excludes the next byte, while shorter ones and 255 (a run)
+need not. `UHARC04.EXE x` extracts our archives of every fixture input set and the 39 MB mixed
+set byte for byte in all six modes, with and without a password and at a 1 KiB window, and
+unuharc_recon's unpacker accepts them; in PPM that includes text streams (a generated set of
+every transform case — strings, capitals, escapes for all bytes from 0x80, line ends, words split
+across files — among them). Against binary coding, a text stream takes `alice29.txt` from 42 941
+to 39 604 bytes (`UHARC04.EXE -mx`: 38 664).
+
 ## UHARC 0.3
 
 UHARC 0.3 BETA (14 Jun 2000, Win32; `uharc_u.exe`, MD5 `9a05cd175ce79fe3c5a4e1adc56e46aa`, the
@@ -1146,34 +1204,6 @@ window and only five the predictor history; the rest are counted with the fifth 
 Fixtures `v03-basic-m1`, `v03-basic-m2`, `v03-basic-m3`, `v03-basic-m2-pw`, `v03-reset-m2`,
 `v03-reset-m21`, `v03-exe-m2`, `v03-mm-m1` and `v03-runs-m2` decode byte for byte.
 
-### Writing UHARC 0.4
-
-The writer produces 0.4 archives (format option `version` 4) in store, RLE, LZW, LZP, PPM and ALZ: the
-header above with its own check, the stream, the stored CRC table, the name table as 0.4 LZP
-method 17, the dates-then-times table as LZW method 2 and the size table as LZW method 7, each
-table enciphered with the default password or, with a password, all of them and the stream with
-it (flags `0x02`). The filters byte is 0.6's (see Writing). The LZW encoder codes the longest phrase the decoder
-knows and restarts a full dictionary with code 256 followed by a plain byte: coding on past a
-full dictionary, which our decoder follows, crashes `UHARC04.EXE` (a 513 216-byte fax page with
-long zero runs fills the 32768-code dictionary). The 0.4 LZP encoder is the decoder's model
-(generic over the coder direction, as for 0.6) answering each prediction with the full match
-when its first byte matches. The 0.4 ALZ encoder is likewise the decoder's model, run with each
-block's multimedia class as its group (see Writing) and the 0.6 ALZ encoder's choices (whole copies at a recent or hashed distance, within the
-window less 255, never past a block end), every length at least 2 and a new distance at least 3.
-One rule is 0.4's own: a copy whose length the model would take from a per-byte-pair prediction
-of full confidence (0, so no decision is coded) is only taken when that prediction is its length
-symbol. The recent distances start empty here too. The 0.4 PPM encoder is likewise the decoder's
-model; it writes a binary stream (no word transform) with the block's multimedia class at
-every reset point (see Writing) and answers each decision from the input: a record or the binary predictor codes the
-byte or escapes, the rows code it (or its difference in the class path) with the escape where
-the row lacks it. A predicted copy is taken for the length its candidate reproduces (at most 255,
-never past the next reset point), cut to a codable length — not 3 outside a repeated distance,
-nothing from 7 up to the floor (those become 6) — from 4 bytes on; a copy of 7 to 254 must
-end where the match does, since it excludes the next byte, while shorter ones and 255 (a run)
-need not. `UHARC04.EXE x` extracts our archives of every fixture input set and the 39 MB mixed
-set byte for byte in all six modes, with and without a password and at a 1 KiB window, and
-unuharc_recon's unpacker accepts them.
-
 ### UHARC 0.3 PPM (methods 22..35)
 
 0.4's PPM (see there) on the 0.3 range decoder: the same stream kind and text length, reset
@@ -1267,15 +1297,19 @@ group 4 with its default 8 for 16-bit stereo, and group 0 and 128 for anything e
 the pairs `uharc_u.exe` codes for such single files (it chooses per 12 800-byte block rather
 than per file); the decoder only follows the switches. A literal in groups 1..5 is coded as its
 signed difference from the byte *lag* + 1 back, as the decoder reads it. The PPM encoder is 0.4's (see
-Writing UHARC 0.4) on the 0.3 model: a binary stream with each block's class, copies cut to a codable length
-from 4 bytes on, and copies of 7 to 254 ending where the match does; 255 is a plain copy here
-and need not. `uharc_u.exe` (0.3 BETA) `x` extracts our archives of every fixture input set and
-the 39 MB mixed set byte for byte in all six modes, with and without a password and at a 1 KiB
-window, and unuharc_recon's unpacker accepts them.
+Writing UHARC 0.4) on the 0.3 model: 0.6's symbols (a text stream for the leading text files),
+each block's class, copies cut to a codable length from 4 bytes on, and copies of 7 to 254
+ending where the match does; 255 is a plain copy here and need not. `uharc_u.exe` (0.3 BETA)
+`x` extracts our archives of every fixture input set, the generated text set and the 39 MB mixed
+set byte for byte in all six modes, with and without a password and at a 1 KiB window, and
+unuharc_recon's unpacker accepts them. A text stream takes `alice29.txt` from 43 407 to 40 083
+bytes (`uharc_u.exe -mx`: 38 983).
 
 ## What is not derived
 
-- **Writing** text PPM streams (in 0.6, 0.4 and 0.3 alike).
+Nothing on the writing side: every mode of 0.6, 0.4 and 0.3 is written, with the filters, the
+multimedia classes, 0.3 ALZ's literal groups and PPM's text streams, and 0.2 archives in store,
+RLE, LZW and its main coder.
 
 ## Sources
 

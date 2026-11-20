@@ -101,6 +101,11 @@ internal static class UharcWriter {
       files.Add((path[(slash + 1)..], directoryIndex[directory], item.Data, item.LastModified));
     }
 
+    // PPM codes only the leading text files as a text stream, so text files go first (the file
+    // table's order is the stream's; readers list whatever order it holds).
+    if (mode == Mode.Ppm && version != 2)
+      files = [.. files.Where(f => UharcPpmSymbols.IsText(f.Data)), .. files.Where(f => !UharcPpmSymbols.IsText(f.Data))];
+
     var n = files.Count;
     long total = 0;
     foreach (var f in files)
