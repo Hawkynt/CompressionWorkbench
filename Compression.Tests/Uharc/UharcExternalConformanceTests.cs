@@ -336,6 +336,8 @@ public class UharcExternalConformanceTests {
   [TestCase("lzp", 1024L, "secret")]
   [TestCase("alz", 0L, null)]
   [TestCase("alz", 1024L, "secret")]
+  [TestCase("ppm", 0L, null)]
+  [TestCase("ppm", 1024L, "secret")]
   public void GivenOurVersion03Archive_WhenUharc03Extracts_ThenEveryFileIsByteIdentical(string method, long dictionary, string? password) {
     var tool = RequireUharc03();
     var random = new Random(2000);

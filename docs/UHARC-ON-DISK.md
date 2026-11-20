@@ -12,9 +12,8 @@ with its nine multimedia predictors —, the executable and multimedia filters, 
 stubs are established and verified, and so are UHARC 0.2, and the UHARC 0.4 and 0.3 containers
 with their store, RLE, LZW, LZP, PPM and ALZ modes (see their sections). The writer
 produces 0.6 archives in every method — store, RLE, LZ78, LZP, PPM and ALZ — with or without a
-password and a self-extractor stub (see Writing), 0.4 archives in store, RLE, LZW, LZP, PPM and
-ALZ (see Writing UHARC 0.4), 0.3 archives in store, RLE, LZW, LZP and ALZ (see Writing UHARC
-0.3), and 0.2 archives in store, RLE, LZW and its main coder (see Writing UHARC 0.2).
+password and a self-extractor stub (see Writing), 0.4 and 0.3 archives in store, RLE, LZW, LZP,
+PPM and ALZ (see Writing UHARC 0.4 and Writing UHARC 0.3), and 0.2 archives in store, RLE, LZW and its main coder (see Writing UHARC 0.2).
 
 ## Evidence
 
@@ -1223,7 +1222,7 @@ every input of each, and unuharc_recon's unpacker accepts them.
 
 ### Writing UHARC 0.3
 
-The writer produces 0.3 archives (format option `version` 3) in store, RLE, LZW, LZP and ALZ:2,
+The writer produces 0.3 archives (format option `version` 3) in store, RLE, LZW, LZP, PPM and ALZ:2,
 in 0.4's container with version byte 3 and the 0.3 LZP name table, the window the smallest power
 of two that holds the stream (1 KiB to 8 MiB, capped by the dictionary size option). The 0.3
 range encoder is the decoder's mirror: a 31-bit low whose top bit is the carry, the top byte
@@ -1233,15 +1232,17 @@ the top symbol of each interval given the remainder. The LZP and ALZ models are 
 encoder answers as 0.4's does. The ALZ encoder stays in literal group 0, never switches models
 or codes long runs, and takes the best of a recent distance, a new distance whose slot is open
 at the current history length and whose offset the narrowed slot holds, or a literal; 0.3
-excludes no byte after a copy, so its copies need not be whole. `uharc_u.exe` (0.3 BETA) `x`
-extracts our archives of every fixture input set and the 39 MB mixed set byte for byte in all
-five modes, with and without a password and at a 1 KiB window, and unuharc_recon's unpacker
-accepts them.
+excludes no byte after a copy, so its copies need not be whole. The PPM encoder is 0.4's (see
+Writing UHARC 0.4) on the 0.3 model: a binary stream with class 0, copies cut to a codable length
+from 4 bytes on, and copies of 7 to 254 ending where the match does; 255 is a plain copy here
+and need not. `uharc_u.exe` (0.3 BETA) `x` extracts our archives of every fixture input set and
+the 39 MB mixed set byte for byte in all six modes, with and without a password and at a 1 KiB
+window, and unuharc_recon's unpacker accepts them.
 
 ## What is not derived
 
 - **Writing** 0.6's executable and multimedia filters, the multimedia ALZ/PPM classes and text
-  PPM streams, and 0.3 PPM.
+  PPM streams (likewise for 0.4/0.3 PPM).
 
 ## Sources
 
