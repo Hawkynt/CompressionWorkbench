@@ -25,5 +25,14 @@ format 1.1 or 2.0, at the level in the name (`none` stored, `fast` to `maximum` 
 | `biased_v2.0_ultra.sqx`, `image_v2.0_ultra.sqx`, `image24_v2.0_ultra.sqx`, `mixed_v2.0_ultra.sqx` | 2.0 | 7 (ultra) | `biased.bin`, `image.raw`, `image24.raw`, `mixed.bin` |
 | `pattern_v2.0_ultra.sqx`, `records_v2.0_ultra.sqx`, `zeros_v2.0_ultra.sqx`, `empty_v2.0_ultra.sqx` | 2.0 | 7 (ultra) | `pattern.bin`, `records.bin`, `zeros.bin`, `empty.dat` |
 
+| `Noise_v1.1_none.sqx`, `test_v1.1_normal.sqx` | 1.1 | 5 (audio) | `Noise.wav`, `test.wav` (16-bit mono) |
+| `Noise_v2.0_maximum.sqx` | 2.0 | 5 (audio) | `Noise.wav` (16-bit mono) |
+| `e_sin8_v2.0_audio.sqx`, `e_st8_v2.0_audio.sqx`, `x_alt8_v2.0_audio.sqx`, `sine_st8_v2.0_audio.sqx` | 2.0 | 5 (audio) | 8-bit mono and stereo, written by Squeez-c's own `sqx create --fmt=20 --method=5` |
+| `x_altst16_v2.0_audio.sqx`, `x_5003st16_v2.0_audio.sqx`, `x_ramp16_v2.0_audio.sqx` | 2.0 | 5 (audio) | 16-bit stereo and mono, written by Squeez-c's own encoder |
+
+The three `Noise_*`/`test_*` archives are from Squeez-c's `corpus` (archives the original SQX
+archiver wrote), with their WAV files; the other audio sources are in the same `corpus`, except
+`sine_st8.wav`, a generated 8-bit stereo sine pair (24044 bytes, SHA-256 `8ad1101a…2fa1`).
+
 The `*_ultra.sqx` archives come from the same `packed_corpus` at revision
 `03211cd1e86473da08bc675198f6902e15a28ca3`; `records.bin` (240000 bytes) is in its `corpus`.

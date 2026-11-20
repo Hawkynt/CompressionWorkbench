@@ -7,9 +7,9 @@ namespace FileFormat.Sqx;
 /// <summary>
 /// Reads SQX archives (formats 1.1 and 2.0) as Squeez-c (MIT) reads them: main, file and
 /// directory blocks with their header checksums, stored and LZ77 + Huffman (methods 1-4) files,
-/// solid chains and self-extracting archives whose stub precedes the main block, text (method 6:
-/// PPMd var. I) and ultra (method 7: LZ77 with a range coder) files. Audio (5) files, encryption
-/// and split files are refused.
+/// solid chains and self-extracting archives whose stub precedes the main block, audio (method 5:
+/// WAV samples behind predictors), text (method 6: PPMd var. I) and ultra (method 7: LZ77 with a
+/// range coder) files. Encryption and split files are refused.
 /// </summary>
 public sealed class SqxReader : IDisposable {
   private readonly Stream _stream;
@@ -86,6 +86,8 @@ public sealed class SqxReader : IDisposable {
     this._stream.ReadExactly(packed);
 
     // a solid file continues the chain's decoder; the chain's first file starts it afresh
+    // an audio member's CRC also covers the audio header in front of its samples
+    byte[] crcPrefix = [];
     var data = entry.Method switch {
       0 => entry.CompressedSize == entry.OriginalSize ? packed : throw new InvalidDataException($"SQX: stored '{entry.FileName}' has mismatched sizes."),
       >= 1 and <= 4 when entry.OriginalSize == 0 => [],
@@ -95,7 +97,7 @@ public sealed class SqxReader : IDisposable {
       7 when entry.ArchiveVersion >= 20 => chain?.Ultra is { } ultra
         ? ultra.Decode(packed, entry.OriginalSize, entry.IsSolid, entry.DictionarySize)
         : Started(chain, new SqxUltraDecoder()).Decode(packed, entry.OriginalSize, false, entry.DictionarySize),
-      5 => throw new NotSupportedException($"SQX: '{entry.FileName}' uses method 5 (audio), which is not supported."),
+      5 => Audio(packed, entry, out crcPrefix),
       // the stream itself says whether it continues the model of the file before
       6 when entry.ArchiveVersion >= 20 => (chain == null ? new SqxPpmdDecoder() : chain.Ppmd ??= new SqxPpmdDecoder()).Decode(packed, entry.OriginalSize),
       6 => throw new InvalidDataException($"SQX: '{entry.FileName}' uses method 6, which format {entry.ArchiveVersion / 10}.{entry.ArchiveVersion % 10} does not have."),
@@ -105,9 +107,14 @@ public sealed class SqxReader : IDisposable {
 
     if (data.Length != entry.OriginalSize)
       throw new InvalidDataException($"SQX: '{entry.FileName}' decodes to {data.Length} bytes, not {entry.OriginalSize}.");
-    var crc = SqxContainer.RawCrc32(data);
+    var crc = SqxContainer.RawCrc32([.. crcPrefix, .. data]);
     if (crc != entry.Crc32)
       throw new InvalidDataException($"SQX: CRC-32 mismatch for '{entry.FileName}': expected 0x{entry.Crc32:X8}, computed 0x{crc:X8}.");
+    return data;
+  }
+
+  private static byte[] Audio(byte[] packed, SqxEntry entry, out byte[] header) {
+    (var data, header) = new SqxAudioDecoder().Decode(packed, entry.OriginalSize, entry.ArchiveVersion);
     return data;
   }
 
