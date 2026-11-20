@@ -14,12 +14,12 @@ namespace FileFormat.InnoSetup;
 ///   <item><description><c>https://github.com/dscharrer/innoextract</c> — innoextract (zlib licence), the extractor this reader was converted from and is checked against</description></item>
 /// </list>
 /// </summary>
-public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "InnoSetup";
   public string DisplayName => "Inno Setup";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".exe";
   // Detected by content (FormatDetector.DetectInstaller), never by ".exe".
@@ -30,7 +30,8 @@ public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveForma
     [new("stored", "Stored"), new("zlib", "zlib"), new("bzip2", "bzip2"), new("lzma", "LZMA"), new("lzma2", "LZMA2")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Inno Setup installer: the files of its [Files] section, checksum-verified";
+  public string Description => "Inno Setup installer: the files of its [Files] section, checksum-verified; " +
+    "written as an Inno Setup 6.0 installer on the stubs of an installed Inno Setup 6.0.x";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     InnoSetupReader reader;
@@ -55,6 +56,36 @@ public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveForma
     }
     var wanted = reader.Entries.Where(e => files == null || MatchesFilter(e.FileName, files)).ToList();
     reader.ExtractMany(wanted, (e, data) => WriteFile(outputDir, e.FileName, data));
+  }
+
+  /// <summary>
+  /// Writes an Inno Setup 6.0 installer that installs every input below its installation directory.
+  /// The method is "lzma2" (the default) or "stored". The loader, setup program, messages and
+  /// wizard bitmaps come from an installed Inno Setup 6.0.x: <c>FormatSpecific["innodir"]</c>, the
+  /// INNOSETUPDIR environment variable, or "Inno Setup 6" under Program Files
+  /// (<see cref="InnoSetupStubs.Load"/>); <c>FormatSpecific["name"]</c> sets the application name.
+  /// </summary>
+  /// <exception cref="InvalidOperationException">No Inno Setup 6.0.x installation is available.</exception>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    options ??= new FormatCreateOptions();
+    if (!string.IsNullOrEmpty(options.Password))
+      throw new NotSupportedException("Inno Setup encryption is not written.");
+    var compression = (options.MethodName ?? "lzma2").ToLowerInvariant() switch {
+      "lzma2" or "" => InnoSetupWriterCompression.Lzma2,
+      "stored" or "store" => InnoSetupWriterCompression.Stored,
+      var other => throw new NotSupportedException($"Inno Setup installers are written stored or LZMA2-compressed, not '{other}'."),
+    };
+    var stubs = InnoSetupStubs.Load(options.FormatSpecific.GetValueOrDefault("innodir"))
+      ?? throw new InvalidOperationException("Creating an Inno Setup installer needs an installed Inno Setup 6.0.x (SetupLdr.e32, " +
+        "Setup.e32, Default.isl): install it, set INNOSETUPDIR, or pass FormatSpecific[\"innodir\"].");
+    var files = inputs.Select(i => new InnoSetupInstallerFile(i.ArchiveName, i.IsDirectory ? null : i.ReadContent(),
+      i.Metadata?.LastWriteTimeUtc?.UtcDateTime)).ToList();
+    InnoSetupWriter.Write(output, stubs, files, new InnoSetupInstallerOptions {
+      AppName = options.FormatSpecific.GetValueOrDefault("name") ?? "Setup",
+      Compression = compression,
+    });
   }
 
   /// <summary>Opens one entry as a bounded read-only stream.</summary>
