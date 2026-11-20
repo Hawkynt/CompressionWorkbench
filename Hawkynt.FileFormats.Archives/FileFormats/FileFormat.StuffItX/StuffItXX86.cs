@@ -22,6 +22,60 @@ internal static class StuffItXX86 {
   private static readonly bool[] Allowed = [true, true, true, false, true, false, false, false];
   private static readonly int[] Shifts = [24, 16, 8, 8, 0, 0, 0, 0];
 
+  /// <summary>
+  /// Applies the filter: the inverse of <see cref="Decode"/>, run on the original bytes. At the same
+  /// positions, with the same history, each convertible relative operand becomes the absolute one
+  /// (plus p + 6, folded while the history says so, cut to 25 bits and sign-extended), so the
+  /// decoder sees the same E8/E9 positions and top bytes and converts it back.
+  /// </summary>
+  public static byte[] Encode(byte[] data) {
+    var output = (byte[])data.Clone();
+    long lastHit = -6;
+    var history = 0;
+    Span<byte> operand = stackalloc byte[4];
+    Span<byte> converted = stackalloc byte[4];
+    var count = data.Length;
+    for (var pos = 0; pos < count; ++pos) {
+      var b = data[pos];
+      if (b is not (0xE8 or 0xE9)) continue;
+      var distance = pos - lastHit;
+      lastHit = pos;
+      if (distance > 5) history = 0;
+      else for (var i = 0; i < distance; ++i) history = (history & 0x77) << 1;
+
+      operand.Clear();
+      for (var i = 0; i < 4; ++i) operand[i] = pos + 1 + i < count ? data[pos + 1 + i] : (byte)0;
+      if (operand[3] is not (0x00 or 0xFF)) {
+        history |= 0x01;
+        continue;
+      }
+      if (!Allowed[(history >> 1) & 7] || (history >> 1) > 0x0F) {
+        history |= 0x11;
+        continue;
+      }
+
+      var relative = BinaryPrimitives.ReadInt32LittleEndian(operand);
+      int absolute;
+      for (;;) {
+        absolute = relative + pos + 6;
+        if (history == 0) break;
+        var shift = Shifts[(history >> 1) & 7];
+        var probe = (absolute >> shift) & 0xFF;
+        if (probe != 0 && probe != 0xFF) break;
+        relative = absolute ^ ((1 << (shift + 8)) - 1);
+      }
+      absolute &= 0x1FFFFFF;
+      if (absolute >= 0x1000000) absolute |= unchecked((int)0xFF000000);
+
+      converted.Clear();
+      BinaryPrimitives.WriteInt32LittleEndian(converted, absolute);
+      for (var i = 0; i < 4 && pos + 1 + i < count; ++i) output[pos + 1 + i] = converted[i];
+      history = 0;
+      pos += 4;
+    }
+    return output;
+  }
+
   /// <summary>Undoes the filter on <paramref name="filtered"/>, producing at most <paramref name="length"/> bytes.</summary>
   public static byte[] Decode(byte[] filtered, long length) {
     var count = (int)Math.Min(filtered.Length, length);

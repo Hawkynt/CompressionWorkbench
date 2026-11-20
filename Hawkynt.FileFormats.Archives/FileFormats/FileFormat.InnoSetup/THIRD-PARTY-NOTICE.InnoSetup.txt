@@ -28,6 +28,13 @@ The Inno Setup reader in this directory was written from these sources:
    (6.4.2, 6.4.3, 6.5.0, 6.5.2, 6.6.0, 6.6.1, 6.7.0, 7.0.0.3, 7.1.1) and
    Setup.FileExtractor.pas (slice names); Shared.EncryptionFunc.pas and
    Compression.Base.pas at is-6_5_4 for the encryption header and Encryption=full.
+   The writer (InnoSetupWriter.cs, InnoMessageIds.cs) is converted from tags is-6_0_5 to is-7_1_1
+   (one release per setup data id: 6_0_5, 6_1_x, 6_2_2, 6_3_3, 6_4_1, 6_4_2, 6_4_3, 6_5_1, 6_5_4,
+   6_6_0, 6_6_1, 6_7_4, 7_1_0, 7_1_1): Struct.pas / Shared.Struct.pas (records), SetupEnt.pas
+   (record serialisation), Compress.pas / Compression.Base.pas (compressed blocks, the
+   call-instruction transform), Compile.pas / Compiler.SetupCompiler.pas (write order, defaults,
+   offset table, PE header fields), Msgs.pas and MsgIDs.pas / Shared.SetupMessageIDs.pas (the
+   message table and its identifiers).
 
    Copyright (C) 1997-2026 Jordan Russell. All rights reserved.
    Portions Copyright (C) 2000-2026 Martijn Laan. All rights reserved.

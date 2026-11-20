@@ -287,7 +287,7 @@ format,Ico,Windows ICO/CUR,Archive,,.ico,Y,Y,Y,Y
 format,IExpress,IExpress self-extractor,Archive,,,Y,Y,,
 format,IffCdaf,IFF CDAF,Archive,,.cdaf,Y,Y,Y,Y
 format,Imd,ImageDisk (IMD),Archive,,.imd,Y,Y,,
-format,InnoSetup,Inno Setup,Archive,,,Y,Y,,
+format,InnoSetup,Inno Setup,Archive,,,Y,Y,Y,
 format,Install4j,install4j,Archive,,,Y,Y,,
 format,InstallerVise,Installer VISE,Archive,,,Y,Y,,
 format,InstallShieldCab,InstallShield cabinet,Archive,,.hdr,Y,Y,,

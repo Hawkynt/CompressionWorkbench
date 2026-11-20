@@ -25,8 +25,8 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
 | `MISSING` | 168 | a source lists it; no descriptor or building block covers it |
-| `READ-ONLY-BUT-SOURCES-WRITE` | 32 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 50 | covered, but the reader handles only part of the format (see the table below) |
+| `READ-ONLY-BUT-SOURCES-WRITE` | 31 | we only read it; a source or the format's own tool writes it |
+| `PARTIAL` | 51 | covered, but the reader handles only part of the format (see the table below) |
 | `OK` | 336 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 442 | in our registry, listed by none of the eight sources |
 
@@ -93,7 +93,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 | 4 | PECompact | MISSING | 3 | The handler locates the payload. Decode its block series (the aPLib and LZMA cores exist) against the 130 PackingData samples, then wrap it in a descriptor. |
 | 5 | ACE | PARTIAL | 2 | The writer lacks the ACE 2.0 SOUND/PIC modes. Oracle: unace, acefile (BSD-2). |
 | 6 | StuffIt | PARTIAL | 2 | Method 8 and segmented sets; method 14 is read and verified with unar; classic DES and StuffIt 5 RC4 reads and writes are proven. Rung 1: XADMaster (LGPL); oracle: unar. |
-| 7 | StuffIt X | PARTIAL | 2 | Method 7 and encryption: no source and no decoder anywhere, unar refuses them too. Archives with a recovery record are refused; their layout is measured in [STUFFITX-RECOVERY-ON-DISK](../STUFFITX-RECOVERY-ON-DISK.md). Every other coding is read and the writer stores or Deflate-codes, all verified with unar. Rung 1: XADMaster (LGPL); oracle: unar. |
+| 7 | StuffIt X | PARTIAL | 2 | Method 7 and encryption: no source and no decoder anywhere, unar refuses them too. Archives with a recovery record are refused; their layout is measured in [STUFFITX-RECOVERY-ON-DISK](../STUFFITX-RECOVERY-ON-DISK.md). Every other coding is read and the writer stores or codes Deflate, Brimstone, Darkhorse, Cyanide, Blend, Obscured and Iron streams, optionally behind the English or x86 preprocessor, all verified with unar. Rung 1: XADMaster (LGPL); oracle: unar. |
 | 8 | ALZip | PARTIAL | 2 | Split archives and method 3 need samples; ALZip is the oracle. |
 | 9 | PEA | OK | 2 | Done: volume sets, every single-cipher encryption and the TRI*/SRI*/HRI* triple cascades are read and written and verified with pea. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
 | 10 | PAK (NoGate) | MISSING | 2 | Rung 1: XADMaster's Crushed method (BB_ArcDistill already covers Distilled). Needs a real sample; PAK 2.51 under DOSBox is the oracle. |
@@ -207,7 +207,6 @@ Every catalogued row where a source records write support (7-Zip, libarchive, an
 | BeeGFS | `BeeGfs` | beegfs-setup-storage | Wikipedia |
 | BitRock InstallBuilder | `BitRock` | InstallBuilder | UniExtract |
 | NSIS installer | `Nsis` | makensis | 7-Zip, XADMaster, UniExtract |
-| Inno Setup | `InnoSetup` | ISCC | UniExtract |
 | GPFS / IBM Storage Scale | `Gpfs` | mmcrfs | Wikipedia |
 | GlusterFS | `GlusterFs` | gluster volume create | Wikipedia |
 | HxC Floppy Emulator (HFE) | `Hfe` | HxC Floppy Emulator tool | PRONOM |

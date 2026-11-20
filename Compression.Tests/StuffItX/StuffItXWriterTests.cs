@@ -46,6 +46,10 @@ public class StuffItXWriterTests {
   [TestCase(StuffItXCompression.Deflate)]
   [TestCase(StuffItXCompression.Darkhorse)]
   [TestCase(StuffItXCompression.Brimstone)]
+  [TestCase(StuffItXCompression.Cyanide)]
+  [TestCase(StuffItXCompression.Blend)]
+  [TestCase(StuffItXCompression.Obscured)]
+  [TestCase(StuffItXCompression.Iron)]
   [Category("RoundTrip")]
   public void GivenFiles_WhenWrittenAndRead_ThenEveryFileFolderAndDateRoundTrips(StuffItXCompression compression) {
     using var r = new StuffItXReader(new MemoryStream(Write(Inputs(), compression)));
@@ -74,6 +78,9 @@ public class StuffItXWriterTests {
 
   [TestCase(StuffItXCompression.Darkhorse, "Darkhorse")]
   [TestCase(StuffItXCompression.Brimstone, "Brimstone")]
+  [TestCase(StuffItXCompression.Cyanide, "Cyanide")]
+  [TestCase(StuffItXCompression.Blend, "Blend")]
+  [TestCase(StuffItXCompression.Iron, "Iron")]
   [Category("HappyPath")]
   public void GivenAModelCoder_WhenWritten_ThenTheStreamShrinksAndIsNamedForIt(StuffItXCompression compression, string name) {
     var text = Inputs().Where(i => i.Path.EndsWith(".txt", StringComparison.Ordinal)).ToList();
@@ -92,6 +99,12 @@ public class StuffItXWriterTests {
   [TestCase("deflate")]
   [TestCase("darkhorse")]
   [TestCase("brimstone")]
+  [TestCase("cyanide")]
+  [TestCase("blend")]
+  [TestCase("obscured")]
+  [TestCase("darkhorse+x86")]
+  [TestCase("iron")]
+  [TestCase("deflate+english")]
   [Category("HappyPath")]
   public void GivenMethod_WhenCreatedThroughTheDescriptor_ThenTheArchiveReadsBack(string method) {
     using var ms = new MemoryStream();
@@ -105,12 +118,137 @@ public class StuffItXWriterTests {
   [TestCase(StuffItXCompression.Deflate)]
   [TestCase(StuffItXCompression.Darkhorse)]
   [TestCase(StuffItXCompression.Brimstone)]
+  [TestCase(StuffItXCompression.Cyanide)]
+  [TestCase(StuffItXCompression.Blend)]
+  [TestCase(StuffItXCompression.Obscured)]
+  [TestCase(StuffItXCompression.Iron)]
   [Category("ExternalInterop")]
   public void GivenOurArchive_WhenUnarExtractsIt_ThenEveryFileMatches(StuffItXCompression compression) {
     var theirs = Unar(Write(Inputs(), compression));
     foreach (var input in Inputs().Where(i => i.Data != null))
       Assert.That(theirs[input.Path], Is.EqualTo(input.Data), input.Path);
     Assert.That(theirs.Keys, Has.Member("docs/empty dir/"), "the empty folder");
+  }
+
+  [TestCase(StuffItXCompression.Store)]
+  [TestCase(StuffItXCompression.Cyanide)]
+  [TestCase(StuffItXCompression.Darkhorse)]
+  [Category("ExternalInterop")]
+  public void GivenX86PreprocessingWeWrote_WhenUnarAndWeExtractIt_ThenTheCodeComesBack(StuffItXCompression compression) {
+    var payload = X86Payload();
+    using var ms = new MemoryStream();
+    StuffItXWriter.Write(ms, [new("code.bin", payload)], compression, StuffItXPreprocess.X86);
+    var archive = ms.ToArray();
+    using (var r = new StuffItXReader(new MemoryStream(archive)))
+      Assert.That(r.Extract(r.Entries.Single(e => e.FullPath == "code.bin")), Is.EqualTo(payload));
+    Assert.That(Unar(archive)["code.bin"], Is.EqualTo(payload));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void GivenPlainMoveToFront_WhenIronCodedAndRead_ThenTheBytesComeBack() {
+    var data = Twice();
+    using var ms = new MemoryStream();
+    StuffItXWriter.WriteCoded(ms, [new("plain.bin", data)], 6, -1, d => StuffItXIronEncoder.Encode(d, fancyMtf: false));
+    var archive = ms.ToArray();
+    using (var r = new StuffItXReader(new MemoryStream(archive)))
+      Assert.That(r.Extract(r.Entries.Single()), Is.EqualTo(data));
+    Assert.That(Unar(archive)["plain.bin"], Is.EqualTo(data));
+  }
+
+  [TestCase(1)]
+  [TestCase(2)]
+  [TestCase(255)]
+  [TestCase(256)]
+  [TestCase(257)]
+  [Category("Boundary")]
+  public void GivenOneByteRepeated_WhenIronCoded_ThenTheRunComesBack(int length) {
+    var data = Enumerable.Repeat((byte)'z', length).ToArray();
+    using var ms = new MemoryStream();
+    StuffItXWriter.Write(ms, [new("run.bin", data)], StuffItXCompression.Iron);
+    using var r = new StuffItXReader(new MemoryStream(ms.ToArray()));
+    Assert.That(r.Extract(r.Entries.Single()), Is.EqualTo(data));
+  }
+
+  /// <summary>
+  /// Sentences whose first word is capitalised, words in capitals, words outside the dictionary,
+  /// and every byte value (so the code bytes themselves must be escaped).
+  /// </summary>
+  private static byte[] EnglishText() {
+    var text = string.Concat(Enumerable.Repeat(
+      "The house stood on the hill. Was it empty? NOBODY knew! the answer, however, was simple:\n" +
+      "\tqwzxv frobnicate Zyzzyx and McDonald's ... a I x. Hello World  !  ?\r\n", 30));
+    var bytes = System.Text.Encoding.ASCII.GetBytes(text).ToList();
+    for (var i = 0; i < 256; ++i) {
+      bytes.Add((byte)i);
+      bytes.AddRange("word "u8.ToArray());
+    }
+    bytes.AddRange("Ends with a word"u8.ToArray());
+    return [.. bytes];
+  }
+
+  [Test, Category("Exception")]
+  public void GivenBrimstone_WhenEnglishPreprocessingIsAsked_ThenRefused()
+    => Assert.That(() => StuffItXWriter.Write(new MemoryStream(), [new("a.txt", "a"u8.ToArray())], StuffItXCompression.Brimstone, StuffItXPreprocess.English),
+      Throws.InstanceOf<NotSupportedException>());
+
+  [Test, Category("EdgeCase")]
+  public void GivenNoise_WhenIronCoded_ThenItIsStoredAndUnarReadsIt() {
+    var data = Noise(10_000, 7); // every byte value: the weighted recency list would overflow, so the block is stored
+    using var ms = new MemoryStream();
+    StuffItXWriter.Write(ms, [new("noise.bin", data)], StuffItXCompression.Iron);
+    var archive = ms.ToArray();
+    using (var r = new StuffItXReader(new MemoryStream(archive)))
+      Assert.That(r.Extract(r.Entries.Single()), Is.EqualTo(data));
+    Assert.That(Unar(archive)["noise.bin"], Is.EqualTo(data));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void GivenText_WhenEnglishFilteredAndUnfiltered_ThenItIsTheSame() {
+    var text = EnglishText();
+    var filtered = StuffItXEnglishEncoder.Encode(text);
+    Assert.That(filtered.Length, Is.LessThan(text.Length), "dictionary words are replaced");
+    Assert.That(StuffItXEnglish.Decode(filtered, text.Length), Is.EqualTo(text));
+  }
+
+  [TestCase("")]
+  [TestCase("a")]
+  [TestCase("Hello")]
+  [TestCase("hello.")]
+  [TestCase(".house")]
+  [TestCase("HOUSE")]
+  [TestCase("x")]
+  [Category("Boundary")]
+  public void GivenShortText_WhenEnglishFilteredAndUnfiltered_ThenItIsTheSame(string s) {
+    var text = System.Text.Encoding.ASCII.GetBytes(s);
+    Assert.That(StuffItXEnglish.Decode(StuffItXEnglishEncoder.Encode(text), text.Length), Is.EqualTo(text));
+  }
+
+  [TestCase(StuffItXCompression.Store)]
+  [TestCase(StuffItXCompression.Deflate)]
+  [TestCase(StuffItXCompression.Darkhorse)]
+  [TestCase(StuffItXCompression.Cyanide)]
+  [TestCase(StuffItXCompression.Blend)]
+  [TestCase(StuffItXCompression.Obscured)]
+  [TestCase(StuffItXCompression.Iron)]
+  [Category("ExternalInterop")]
+  public void GivenEnglishPreprocessingWeWrote_WhenUnarAndWeExtractIt_ThenTheTextComesBack(StuffItXCompression compression) {
+    var text = EnglishText();
+    using var ms = new MemoryStream();
+    StuffItXWriter.Write(ms, [new("text.txt", text), new("other.txt", "Second file. it follows."u8.ToArray())], compression, StuffItXPreprocess.English);
+    var archive = ms.ToArray();
+    using (var r = new StuffItXReader(new MemoryStream(archive)))
+      Assert.That(r.Extract(r.Entries.Single(e => e.FullPath == "text.txt")), Is.EqualTo(text));
+    var theirs = Unar(archive);
+    Assert.That(theirs["text.txt"], Is.EqualTo(text));
+    Assert.That(theirs["other.txt"], Is.EqualTo("Second file. it follows."u8.ToArray()));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void GivenCode_WhenX86FilteredAndUnfiltered_ThenItIsTheSame() {
+    var payload = X86Payload();
+    var filtered = StuffItXX86.Encode(payload);
+    Assert.That(filtered, Is.Not.EqualTo(payload));
+    Assert.That(StuffItXX86.Decode(filtered, filtered.Length), Is.EqualTo(payload));
   }
 
   /// <summary>

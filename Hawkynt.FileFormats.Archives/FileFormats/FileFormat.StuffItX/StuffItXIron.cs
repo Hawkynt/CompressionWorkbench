@@ -190,9 +190,12 @@ internal sealed class StuffItXIron {
           else score[b2] -= (uint)(0x800 >> j);
           if (b2 == b) continue;
 
-          // Sink b2 behind every entry that now scores higher; the walk stops at the last real slot.
+          // Sink b2 behind every entry that now scores higher. The sentinel in slot 256 outscores
+          // everything, so a b2 that sinks to slot 255 would pass it and walk off the end of the
+          // list, where the format defines nothing: such a stream is refused.
           var val = position[b2];
-          while (val + 1 < 256 && score[order[val + 1]] > score[b2]) {
+          while (score[order[val + 1]] > score[b2]) {
+            if (val + 1 == 256) throw new InvalidDataException("Iron recency list walks past its end.");
             order[val] = order[val + 1];
             position[order[val + 1]] = val;
             ++val;

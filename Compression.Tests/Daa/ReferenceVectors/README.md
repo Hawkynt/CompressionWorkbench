@@ -28,3 +28,17 @@ built from generated files (Python `random.Random(30)`; the script is
 `49c55170…14ae`) holds 340 000 random bytes and 30 000 seeded words, so it
 splits into two volumes (300 KiB is PowerISO's smallest volume size). PowerISO
 converts both back to the identical ISOs. `DaaTests` pins both SHA-256 values.
+
+## Version 0x110 images
+
+`v110-better.daa`, `v110-best.daa` and `v110-password.daa` (password `secret42`)
+were written by PowerISO 9.5 for Windows (`piso.exe` from the official
+`poweriso_setup.exe`, SHA-256 `208c63f5…6944`, run under wine) with
+`-method better` and `-method best`, from generated files. The script is
+`make-110.sh`. `v110-iso.sha256` records the SHA-256 and size of the ISO that
+`piso convert` turns each one into. `better` images hold LZMA (with the x86
+filter) and deflate chunks.
+
+`piso-split-110.sh` makes a split 0x110 set on the spot (2.6 MB in 1 MiB
+volumes, too large to commit). It is read from its first volume in an
+ExternalInterop test.

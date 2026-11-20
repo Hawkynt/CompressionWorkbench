@@ -4,9 +4,10 @@ using Compression.Core.Deflate;
 namespace FileFormat.Daa;
 
 /// <summary>
-/// PowerISO DAA image, format version 0x100: a 76-byte header, descriptors, a table of 3-byte
-/// compressed chunk lengths and raw-deflate chunks, optionally split into volumes and protected
-/// by a password. Implemented from <c>docs/DAA-ON-DISK.md</c>.
+/// PowerISO DAA image: a 76-byte header, descriptors, a chunk table and the chunks, optionally
+/// split into volumes and protected by a password. Version 0x100 has 3-byte chunk lengths and
+/// raw-deflate chunks; version 0x110 has a bit-packed table of lengths and chunk kinds (deflate or
+/// LZMA with an optional x86 filter, or stored). Implemented from <c>docs/DAA-ON-DISK.md</c>.
 /// </summary>
 public sealed class DaaImage : IDisposable {
   public const int HeaderSize = 0x4C;
@@ -24,6 +25,12 @@ public sealed class DaaImage : IDisposable {
   public uint ChunkSize { get; private init; }
   public long IsoSize { get; private init; }
   public IReadOnlyList<(long Offset, int Length)> Chunks { get; private init; } = [];
+
+  /// <summary>How each chunk is coded (version 0x100: all deflate).</summary>
+  public IReadOnlyList<DaaChunkKind> ChunkKinds { get; private init; } = [];
+
+  private byte[]? _lzmaProperties;
+  private bool _x86Filter;
 
   /// <summary>Gets the number of volume files the image spans (1 for a single file).</summary>
   public int VolumeCount { get; private init; } = 1;
@@ -66,10 +73,32 @@ public sealed class DaaImage : IDisposable {
     var chunkSize = BinaryPrimitives.ReadUInt32LittleEndian(h.AsSpan(0x24));
     var isoSize = BinaryPrimitives.ReadInt64LittleEndian(h.AsSpan(0x28));
     var daaSize = BinaryPrimitives.ReadInt64LittleEndian(h.AsSpan(0x30));
-    if (version == Version110)
-      throw new NotSupportedException("DAA: format version 0x110 (bit-packed, optionally LZMA chunk table) is not supported yet.");
-    if (version != Version100)
+    if (version != Version100 && version != Version110)
       throw new InvalidDataException($"DAA: unknown format version 0x{version:X}.");
+    byte[]? lzmaProperties = null;
+    var x86Filter = false;
+    int bitsLength = 0, bitsKind = 0;
+    if (version == Version110) {
+      // The data-offset and chunk-size fields carry flags in their high bits (DAA-ON-DISK.md, "Version 0x110").
+      const uint UnverifiedOffsetFlags = 0x90000000;
+      const uint UnverifiedChunkFlags = 0x4000 | 0x20000 | 0x80000 | 0x8000000 | 0x1800000;
+      if ((dataOffset & UnverifiedOffsetFlags) != 0 || (chunkSize & UnverifiedChunkFlags) != 0)
+        throw new NotSupportedException($"DAA: version 0x110 options 0x{dataOffset & 0xFF000000:X8}/0x{chunkSize:X8} (compressed or obfuscated chunk table, permuted deflate) are not supported; no sample uses them.");
+      var lzma = (chunkSize & 0x100000) != 0;
+      dataOffset &= 0xFFFFFF;
+      chunkSize = (chunkSize & 0xFFF) << 14;
+      var hdata = h.AsSpan(0x38, 16);
+      bitsKind = hdata[5] & 7;
+      bitsLength = hdata[5] >> 3;
+      if (bitsLength != 0) bitsLength += 10;
+      else
+        for (var len = chunkSize; len > bitsKind; len >>= 1) ++bitsLength;
+      if (bitsLength + bitsKind is 0 or > 32) throw new InvalidDataException("DAA: chunk table entry width is invalid.");
+      if (lzma) {
+        lzmaProperties = hdata.Slice(7, 5).ToArray();
+        x86Filter = hdata[6] != 0;
+      }
+    }
     if (sizeOffset < HeaderSize || dataOffset < sizeOffset || dataOffset > stream.Length || chunkSize == 0 || chunkSize > 1 << 24 || isoSize < 0)
       throw new InvalidDataException("DAA: header offsets or sizes are invalid.");
 
@@ -116,14 +145,31 @@ public sealed class DaaImage : IDisposable {
     var table = new byte[dataOffset - sizeOffset];
     stream.Position = sizeOffset;
     stream.ReadExactly(table);
-    var count = table.Length / 3;
+    var count = version == Version100 ? table.Length / 3 : (int)((long)table.Length * 8 / (bitsLength + bitsKind));
     if ((long)count * chunkSize < isoSize)
       throw new InvalidDataException("DAA: the chunk table is too short for the ISO size.");
     var chunks = new List<(long, int)>(count);
+    var kinds = new List<DaaChunkKind>(count);
     long offset = dataOffset;
+    var bit = 0L;
     for (var i = 0; i < count; ++i) {
-      var length = table[3 * i] << 16 | table[3 * i + 1] | table[3 * i + 2] << 8;
+      int length;
+      var kind = DaaChunkKind.Deflate;
+      if (version == Version100)
+        length = table[3 * i] << 16 | table[3 * i + 1] | table[3 * i + 2] << 8;
+      else {
+        length = (int)ReadBits(table, bit, bitsLength) + 5;
+        bit += bitsLength;
+        var type = ReadBits(table, bit, bitsKind);
+        bit += bitsKind;
+        kind = length >= chunkSize ? DaaChunkKind.Stored : type switch {
+          0 when lzmaProperties is not null => DaaChunkKind.Lzma,
+          1 => DaaChunkKind.Deflate,
+          _ => throw new InvalidDataException($"DAA: chunk {i} has unknown kind {type}."),
+        };
+      }
       chunks.Add((offset, length));
+      kinds.Add(kind);
       offset += length;
     }
     if (offset > (volumes?.Length ?? stream.Length)) {
@@ -131,7 +177,8 @@ public sealed class DaaImage : IDisposable {
       throw new InvalidDataException("DAA: chunk data runs past the end of the file.");
     }
     return new DaaImage {
-      Version = version, ChunkSize = chunkSize, IsoSize = isoSize, Chunks = chunks,
+      Version = version, ChunkSize = chunkSize, IsoSize = isoSize, Chunks = chunks, ChunkKinds = kinds,
+      _lzmaProperties = lzmaProperties, _x86Filter = x86Filter,
       VolumeCount = volumes?.VolumeCount ?? 1, IsEncrypted = passwordRecord is not null,
       _volumes = volumes, _cipher = cipher,
     };
@@ -156,10 +203,28 @@ public sealed class DaaImage : IDisposable {
       chunkSource.Position = offset;
       chunkSource.ReadExactly(packed);
       this._cipher?.Restore(packed);
+      var want = (int)Math.Min(this.ChunkSize, this.IsoSize - written);
+      // every chunk, whatever its kind, ends with the CRC-32 of the bytes before it
       if (packed.Length < 4 || Crc32(packed.AsSpan(0, packed.Length - 4)) != BinaryPrimitives.ReadUInt32LittleEndian(packed.AsSpan(packed.Length - 4)))
         throw new InvalidDataException($"DAA: chunk {i} fails its CRC-32.");
-      var data = DeflateDecompressor.Decompress(packed.AsSpan(0, packed.Length - 4));
-      var want = (int)Math.Min(this.ChunkSize, this.IsoSize - written);
+      var body = packed.AsSpan(0, packed.Length - 4);
+      byte[] data;
+      switch (this.ChunkKinds[i]) {
+        case DaaChunkKind.Stored:
+          data = body.ToArray();
+          break;
+        case DaaChunkKind.Lzma:
+          try {
+            data = new Compression.Core.Dictionary.Lzma.LzmaDecoder(new MemoryStream(body.ToArray(), writable: false), this._lzmaProperties!, want).Decode();
+          } catch (Exception e) when (e is not InvalidDataException) {
+            throw new InvalidDataException($"DAA: LZMA chunk {i} does not decode.", e);
+          }
+          if (this._x86Filter) data = Compression.Core.Transforms.BcjFilter.DecodeX86(data);
+          break;
+        default:
+          data = DeflateDecompressor.Decompress(body);
+          break;
+      }
       if (data.Length < want || data.Length > this.ChunkSize)
         throw new InvalidDataException($"DAA: chunk {i} decodes to {data.Length} bytes, expected {want}.");
       output.Write(data, 0, want);
@@ -209,6 +274,17 @@ public sealed class DaaImage : IDisposable {
     foreach (var c in packed) output.Write(c);
   }
 
+  /// <summary>LSB-first bit field of <paramref name="width"/> bits at bit <paramref name="at"/>.</summary>
+  private static uint ReadBits(byte[] table, long at, int width) {
+    ulong value = 0;
+    for (var k = 0; k < width; ++k) {
+      var b = at + k;
+      if (b >> 3 >= table.Length) throw new InvalidDataException("DAA: chunk table entry runs past the table.");
+      value |= (ulong)((table[b >> 3] >> (int)(b & 7)) & 1) << k;
+    }
+    return (uint)value;
+  }
+
   internal static uint Crc32(ReadOnlySpan<byte> data) {
     var crc = 0xFFFFFFFFu;
     foreach (var b in data) {
@@ -217,4 +293,14 @@ public sealed class DaaImage : IDisposable {
     }
     return ~crc;
   }
+}
+
+/// <summary>How a DAA chunk is coded.</summary>
+public enum DaaChunkKind {
+  /// <summary>Raw deflate followed by the CRC-32 of the deflate bytes.</summary>
+  Deflate,
+  /// <summary>Raw LZMA with the header's properties, optionally behind an x86 branch filter (version 0x110).</summary>
+  Lzma,
+  /// <summary>The chunk's bytes as they are (version 0x110, when coding would not shrink them).</summary>
+  Stored,
 }
