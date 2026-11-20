@@ -182,7 +182,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Serpent`](#serpent) · [`Twofish`](#twofish)
+[`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`BlockEncryptor128`](#blockencryptor128) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`Eax`](#eax) · [`Eax.SpanAction`](#eaxspanaction) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Serpent`](#serpent) · [`Twofish`](#twofish)
 
 #### `AesCryptor`
 
@@ -223,6 +223,14 @@ Argon2 (version 0x13) memory-hard key derivation, implemented from RFC 9106 and 
 | `Argon2i` | `1` |  |
 | `Argon2id` | `2` |  |
 
+#### `BlockEncryptor128`
+
+Encrypts 128-bit blocks in ECB fashion: `output` receives the encryption of every 16-byte block of `input` (same length, a multiple of 16).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockEncryptor128` | `void BlockEncryptor128(ReadOnlySpan<byte> input, Span<byte> output)` | Encrypts 128-bit blocks in ECB fashion: `output` receives the encryption of every 16-byte block of `input` (same length, a multiple of 16). |
+
 #### `Blowfish`
 
 Blowfish symmetric block cipher. 64-bit block size, 1–56 byte key, 16-round Feistel network. Initial P-array and S-box values are the hexadecimal digits of pi.
@@ -259,6 +267,30 @@ The CAST-128 (CAST5) block cipher (Carlisle Adams), 64-bit blocks and keys of 40
 | `Decrypt` | `void Decrypt(Span<byte> block)` | Decrypts one 8-byte block in place. |
 | `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 8-byte block in place. |
 
+#### `Eax`
+
+EAX authenticated encryption (Bellare, Rogaway and Wagner, "The EAX Mode of Operation", FSE 2004) over any 128-bit block cipher: CTR encryption started at the OMAC of the nonce, and a 16-byte tag that is the XOR of the OMACs of nonce, header and ciphertext. Data may arrive in pieces of any length; the result equals one call over their concatenation.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Eax` | `Eax(BlockEncryptor128 encrypt, ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> header = null)` | Starts an EAX message under `encrypt` with the given nonce and header (associated data). |
+| `BlockSize` | `const int BlockSize` | The block and tag size in bytes. |
+| `Decrypt` | `void Decrypt(Span<byte> data)` | Feeds `data` (ciphertext) to the tag and decrypts it in place. |
+| `Encrypt` | `void Encrypt(Span<byte> data)` | Encrypts `data` in place and feeds the ciphertext to the tag. |
+| `InPlace` | `static BlockEncryptor128 InPlace(SpanAction encryptBlock)` | Adapts a cipher that encrypts one block in place. |
+| `Tag` | `byte[] Tag()` | The 16-byte tag over everything encrypted or decrypted so far; ends the message. |
+| `WithAes` | `static Eax WithAes(ReadOnlySpan<byte> key, ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> header = null)` | EAX with AES under a 16-, 24- or 32-byte key. |
+| `WithSerpent` | `static Eax WithSerpent(ReadOnlySpan<byte> key, ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> header = null)` | EAX with Serpent under a 16-, 24- or 32-byte key. |
+| `WithTwofish` | `static Eax WithTwofish(ReadOnlySpan<byte> key, ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> header = null)` | EAX with Twofish under a 16-, 24- or 32-byte key. |
+
+#### `Eax.SpanAction`
+
+Encrypts one block in place.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SpanAction` | `void Eax.SpanAction(Span<byte> block)` | Encrypts one block in place. |
+
 #### `KeyDerivation`
 
 Key derivation functions for password-based encryption.
@@ -267,6 +299,7 @@ Key derivation functions for password-based encryption.
 | --- | --- | --- |
 | `Pbkdf2Sha1` | `static byte[] Pbkdf2Sha1(string password, ReadOnlySpan<byte> salt, int iterations, int keyLength)` | Derives a key using PBKDF2 with HMAC-SHA1. Used by older ZIP encryption and WinZip AE-1. |
 | `Pbkdf2Sha256` | `static byte[] Pbkdf2Sha256(string password, ReadOnlySpan<byte> salt, int iterations, int keyLength)` | Derives a key using PBKDF2 with HMAC-SHA256. Used by ZIP AES encryption (WinZip AE-1/AE-2). |
+| `Pbkdf2` | `static byte[] Pbkdf2(Func<byte[], byte[]> hash, int blockSize, ReadOnlySpan<byte> password, ReadOnlySpan<byte> salt, int iterations, int keyLength)` | PBKDF2 (RFC 8018, section 5.2) over HMAC (RFC 2104) with any hash function, for the hashes the platform does not offer (Whirlpool, RIPEMD-160, …). |
 | `Rar3DeriveKey` | `static ValueTuple<byte[], byte[]> Rar3DeriveKey(string password, ReadOnlySpan<byte> salt)` | Derives a 16-byte AES-128 key and 16-byte IV for RAR3/4 decryption. RAR3 iterates SHA-1 262144 times over (password_utf16le + salt + 3-byte counter); the IV takes byte 19 of every 16384th intermediate digest and the key is the first four digest words with their bytes reversed. |
 | `Rar5DeriveKey` | `static byte[] Rar5DeriveKey(string password, ReadOnlySpan<byte> salt, int iterations)` | Derives a key using the RAR5 key derivation (PBKDF2-HMAC-SHA256 with specific parameters). |
 | `Rar5DeriveKeys` | `static ValueTuple<byte[], byte[], byte[]> Rar5DeriveKeys(string password, ReadOnlySpan<byte> salt, int kdfLog)` | The three RAR 5 keys of one password and salt: one PBKDF2-HMAC-SHA256 chain run for 2^`kdfLog` iterations gives the AES-256 key, 16 more the key that tweaks checksums (encryption flag 0x0002), 16 more the password check value, folded to 8 bytes. |
@@ -513,6 +546,7 @@ Compresses data in the DEFLATE format (RFC 1951).
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DeflateCompressor` | `DeflateCompressor(Stream output, DeflateCompressionLevel level = 6)` | Initializes a new `DeflateCompressor` for streaming compression. |
+| `DistanceCountBits` | `int DistanceCountBits { get; init; }` | Width of the HDIST field of dynamic blocks: 5 bits in RFC 1951 (the default), 6 in the modified Deflate of StuffIt X. |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, DeflateCompressionLevel level = 6)` | Compresses data in one shot. |
 | `Finish` | `void Finish()` | Writes the final block and flushes all remaining data. |
 | `Write` | `void Write(ReadOnlySpan<byte> data)` | Buffers input data for compression. Emits blocks when the buffer is full. |
@@ -550,6 +584,7 @@ Decompresses data in the DEFLATE format (RFC 1951).
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DeflateDecompressor` | `DeflateDecompressor(Stream input)` | Initializes a new `DeflateDecompressor` for streaming decompression. |
+| `DistanceCountBits` | `int DistanceCountBits { get; init; }` | Width of a dynamic block's distance-code count (HDIST): 5 bits in RFC 1951, 6 in the modified Deflate of StuffIt X. |
 | `IsFinished` | `bool IsFinished { get; }` | Gets a value indicating whether the final block has been decoded. |
 | `StoredBlocksOmitComplement` | `bool StoredBlocksOmitComplement { get; set; }` | Gets or sets a value indicating whether stored blocks carry only LEN and no NLEN. |
 | `UnconsumedBytes` | `int UnconsumedBytes { get; }` | Gets the number of whole bytes read from the underlying stream but not consumed by the DEFLATE data. Once the stream has ended on a seekable input this is zero, because the read-ahead has already been handed back by seeking. |
@@ -3407,7 +3442,17 @@ Decompresses data in the Snappy block format.
 
 ### Namespace `Compression.Core.Dictionary.Sqx`
 
-[`SqxBuildingBlock`](#sqxbuildingblock) · [`SqxLzDecoder`](#sqxlzdecoder) · [`SqxLzEncoder`](#sqxlzencoder) · [`SqxTables`](#sqxtables)
+[`SqxAudioDecoder`](#sqxaudiodecoder) · [`SqxBuildingBlock`](#sqxbuildingblock) · [`SqxLzDecoder`](#sqxlzdecoder) · [`SqxLzEncoder`](#sqxlzencoder) · [`SqxPpmdDecoder`](#sqxppmddecoder) · [`SqxTables`](#sqxtables) · [`SqxUltraDecoder`](#sqxultradecoder)
+
+#### `SqxAudioDecoder`
+
+SQX method 5 ("audio"): a WAV file as an 18-byte audio header (skip, tail and sample byte counts, channels, bits per sample), the skipped header bytes raw, the coded samples and the tail bytes raw. Format 1.1 codes 8-bit samples with Huffman-coded deltas behind six adaptively chosen predictors and 16-bit samples in 384-sample frames with polynomial prediction; format 2.0 codes 8-bit samples with a range coder over nibble models and an adaptive delta predictor, and 16-bit samples in 4608-sample frames with polynomial or FIR prediction and fixed-width or adaptive Rice residuals. Converted from Squeez-c (MIT) src/audio.c. The file CRC of an audio member covers the audio header as well as the file.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SqxAudioDecoder` | `SqxAudioDecoder()` |  |
+| `HeaderSize` | `const int HeaderSize` | Bytes of the audio header at the start of every stream. |
+| `Decode` | `ValueTuple<byte[], byte[]> Decode(byte[] packed, long originalSize, int archiveVersion)` | Decodes one file of `originalSize` bytes. |
 
 #### `SqxBuildingBlock`
 
@@ -3442,6 +3487,16 @@ Encoder of SQX methods 1-4, converted from Squeez-c's `create.c`, `enc.c` and `h
 | --- | --- | --- |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, byte format, int dictionarySize, int effort)` | Encodes `data` as one file's stream. |
 
+#### `SqxPpmdDecoder`
+
+SQX 2.0 method 6 ("text"): PPMd var. I driven by SQX's carryless range coder. Each stream starts with a flag bit: 0 opens a new model (8-bit order, 10-bit memory in MiB), 1 continues the model of the file before (solid). Converted from Squeez-c (MIT) src/ppm8.c; the model is `Ppmd8` with the cut-off restore its memory runs out into.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SqxPpmdDecoder` | `SqxPpmdDecoder()` |  |
+| `MaxMemoryMb` | `const int MaxMemoryMb` | The largest model memory this decoder allocates, in MiB. |
+| `Decode` | `byte[] Decode(byte[] packed, long originalSize)` | Decodes one file of `originalSize` bytes. |
+
 #### `SqxTables`
 
 Constants of the SQX LZ77 + Huffman stream (methods 1-4), as Squeez-c's `huff.h`/`huff.c` and `lz.h` define them: symbol alphabets of formats 1.1 and 2.0, length and distance base tables, and match-length thresholds.
@@ -3452,6 +3507,15 @@ Constants of the SQX LZ77 + Huffman stream (methods 1-4), as Squeez-c's `huff.h`
 | `Format20` | `const byte Format20` | Archive format 2.0 (`cArcerExVer` 20). |
 | `DictionaryFlags` | `static ushort DictionaryFlags(int dictionarySize, byte format)` | File header flag bits that announce `dictionarySize`. |
 | `DictionarySize` | `static int DictionarySize(ushort flags, byte format)` | Dictionary size from a file header's flags (bits 8-10, and bit 11 for 2.0's extended sizes). |
+
+#### `SqxUltraDecoder`
+
+SQX 2.0 method 7 ("ultra"): LZ77 whose literals, match flags, lengths and distances are coded with a carryless range coder over adaptive Fenwick-tree frequency models. Converted from Squeez-c (MIT) src/ultra.c. In a solid chain the window and the models carry over from file to file; the match state and repeated distances start afresh with every file.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SqxUltraDecoder` | `SqxUltraDecoder()` | Creates a decoder; its models and window are set up by the first file decoded. |
+| `Decode` | `byte[] Decode(byte[] packed, long originalSize, bool solid, int dictionarySize)` | Decodes one file of `originalSize` bytes. With `solid` the window and models of the file before are kept. |
 
 ### Namespace `Compression.Core.Dictionary.StackerSd4`
 
@@ -6841,6 +6905,7 @@ sfArk V2 (`.sfArk`): SoundFont 2 banks with the sample data coded losslessly by 
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes an sfArk V2 file to the SoundFont it packs. |
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data, out SfArkInfo info)` | Decodes an sfArk V2 file and reports what its header and text files say. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, string fileName = "sound.sf2")` | Packs a file as sfArk (Fast method). For a SoundFont 2 bank the `smpl` data is coded as audio; any other input is stored as zlib blocks only. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, string fileName, bool turbo)` | Packs a file as sfArk, with the Fast method or, when `turbo` is set, the Turbo method (4096-sample blocks, 0-2 plain integrators chosen per block, 256-sample residual windows). |
 
 #### `SfArkInfo`
 
@@ -8485,6 +8550,8 @@ Shared utility methods for format descriptors (path sanitization, filtering, etc
 | `FlatFiles` | `static IEnumerable<ValueTuple<string, byte[]>> FlatFiles(IReadOnlyList<ArchiveInputInfo> inputs)` | Flattens all entries to root level (filename only) with their data. For formats without path support. |
 | `MatchesFilter` | `static bool MatchesFilter(string name, string[] filters)` | Returns true if `name` matches any of the `filters` by exact name, trailing path segment, or filename-only comparison. |
 | `MethodWithEffort` | `static string MethodWithEffort(FormatCreateOptions options, string method = null)` | The method name to hand a writer that reads its own effort tier out of the name, with the "+" run the caller asked for restored. |
+| `OutputFilePath` | `static string OutputFilePath(Stream output)` | The path an archive is being written to, when `output` is a file: the target behind an atomic-write temp name (`name.tmp.xxxxxxxx`) is what further volumes are named after. Null for any other stream. |
+| `ParseVolumeSize` | `static long ParseVolumeSize(string text)` | A volume size as the `VolumeSize` option carries it: bytes, or a number with a k/m/g/t suffix (powers of 1024); empty means 0, one file. |
 | `WriteFile` | `static void WriteFile(string baseDir, string entryName, byte[] data)` | Sanitizes an entry name and writes its data to disk under `baseDir`. Prevents path traversal attacks. |
 
 #### `FormatMethodInfo`

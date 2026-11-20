@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Compression.Analysis.ExternalTools;
+using Compression.Registry;
 using FileFormat.Uharc;
 
 namespace Compression.Tests.Uharc;
@@ -126,6 +127,10 @@ public class UharcExternalConformanceTests {
 
   [TestCase(null)]
   [TestCase("store")]
+  [TestCase("rle")]
+  [TestCase("lz78")]
+  [TestCase("alz")]
+  [TestCase("ppm")]
   public void GivenOurArchive_WhenUharcExtracts_ThenEveryFileIsByteIdentical(string? method) {
     var uharc = RequireUharc();
     var archive = Path.Combine(this._tmp, "ours.uha");
@@ -144,6 +149,124 @@ public class UharcExternalConformanceTests {
     }
   }
 
+  private static void AssertExtracted(string output, IEnumerable<ArchiveInputInfo> inputs) {
+    foreach (var input in inputs) {
+      var path = Path.Combine(output, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
+      if (input.IsDirectory)
+        Assert.That(Directory.Exists(path), Is.True, input.ArchiveName);
+      else
+        Assert.That(File.ReadAllBytes(path), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+    }
+  }
+
+  [TestCase(null)]
+  [TestCase("store")]
+  [TestCase("rle")]
+  [TestCase("lz78")]
+  [TestCase("alz")]
+  [TestCase("ppm")]
+  public void GivenOurPasswordArchive_WhenUharcExtractsWithThePassword_ThenEveryFileIsByteIdentical(string? method) {
+    var uharc = RequireUharc();
+    var archive = Path.Combine(this._tmp, "ours.uha");
+    var inputs = UharcWriterTests.SampleInputs();
+    File.WriteAllBytes(archive, UharcWriterTests.CreateWith(new FormatCreateOptions(method) { Password = "Open Sesame 42!" }, inputs));
+    var output = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(output);
+    Run(uharc, output, "x", "-y", "-pwOpen Sesame 42!", "-t" + output, archive);
+    AssertExtracted(output, inputs);
+  }
+
+  /// <summary>
+  /// UHARC's own Win32 stub (<c>UHARCSFX.EXE</c> from <c>uharc06b.zip</c>, beside uharc.exe) in
+  /// front of our archive: the self-extractor itself must extract it.
+  /// </summary>
+  [TestCase(null)]
+  [TestCase("secret")]
+  public void GivenOurArchiveBehindUharcsSfxStub_WhenTheSelfExtractorRuns_ThenEveryFileIsByteIdentical(string? password) {
+    var uharc = RequireUharc();
+    var stub = Path.Combine(Path.GetDirectoryName(uharc)!, "UHARCSFX.EXE");
+    if (!File.Exists(stub))
+      Assert.Ignore("UHARCSFX.EXE (from uharc06b.zip) is not beside uharc.exe.");
+
+    var sfx = Path.Combine(this._tmp, "ours.exe");
+    var inputs = UharcWriterTests.SampleInputs();
+    File.WriteAllBytes(sfx, UharcWriterTests.CreateWith(new FormatCreateOptions {
+      Password = password,
+      FormatSpecific = { [UharcFormatDescriptor.SfxStubOption] = stub },
+    }, inputs));
+    var output = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(output);
+    string[] arguments = password == null ? ["x", "-y", "-t" + output] : ["x", "-y", "-pw" + password, "-t" + output];
+    Run(sfx, output, arguments);
+    AssertExtracted(output, inputs);
+  }
+
+  /// <summary>
+  /// UHARC 0.4 BETA's <c>UHARC04.EXE</c> (28 Dec 2001, Win32; <c>CWB_TOOL_UHARC04</c> names it)
+  /// extracts the 0.4 archives we write.
+  /// </summary>
+  [TestCase("store", 0L, null)]
+  [TestCase("rle", 0L, null)]
+  [TestCase("lz78", 0L, null)]
+  [TestCase("lzp", 0L, null)]
+  [TestCase("lzp", 1024L, "secret")]
+  [TestCase("lz78", 0L, "secret")]
+  public void GivenOurVersion04Archive_WhenUharc04Extracts_ThenEveryFileIsByteIdentical(string method, long dictionary, string? password) {
+    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+      Assert.Ignore("UHARC04.EXE is a Win32 console program.");
+    var tool = Environment.GetEnvironmentVariable("CWB_TOOL_UHARC04");
+    if (string.IsNullOrEmpty(tool) || !File.Exists(tool))
+      Assert.Ignore("Set CWB_TOOL_UHARC04 to UHARC 0.4 BETA's UHARC04.EXE.");
+
+    var random = new Random(2001);
+    var noise = new byte[150000];
+    random.NextBytes(noise);
+    var inputs = UharcWriterTests.SampleInputs().Append(ArchiveInputInfo.InMemory("noise.dat", noise))
+      .Append(ArchiveInputInfo.InMemory("fill.txt", System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 40000).Select(i => $"{i * 7919 % 100003:x} "))))).ToList();
+    var archive = Path.Combine(this._tmp, "ours.uha");
+    File.WriteAllBytes(archive, UharcWriterTests.CreateWith(new FormatCreateOptions(method) {
+      Password = password,
+      DictSize = dictionary,
+      FormatSpecific = { [UharcFormatDescriptor.VersionOption] = "4" },
+    }, inputs));
+    var output = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(output);
+    string[] arguments = password == null ? ["x", "-y", archive] : ["x", "-y", "-pw" + password, archive];
+    Run(tool!, output, arguments);
+    AssertExtracted(output, inputs);
+  }
+
+  /// <summary>Enough varied data to fill LZ78's 32768 phrases several times over.</summary>
+  [TestCase("rle", 0)]
+  [TestCase("lz78", 0)]
+  [TestCase("alz", 0)]
+  [TestCase("alz", 1024)]
+  [TestCase("lzp", 1024)]
+  [TestCase("ppm", 0)]
+  [TestCase("ppm", 1024)]
+  public void GivenALargeMixedInput_WhenWeWriteIt_ThenUharcExtractsIt(string method, long dictionary) {
+    var uharc = RequireUharc();
+    var random = new Random(2005);
+    var words = Enumerable.Range(0, 3000).Select(i => new string((char)('a' + i % 26), 1 + i % 7) + i.ToString("x")).ToArray();
+    var text = System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 120000).Select(i => words[random.Next(words.Length)] + (i % 13 == 0 ? "\r\n" : " "))));
+    var noise = new byte[300000];
+    random.NextBytes(noise);
+    var runs = Enumerable.Range(0, 2000).SelectMany(i => Enumerable.Repeat((byte)(0xE0 + i % 32), i % 300)).ToArray();
+    var inputs = new[] {
+      ArchiveInputInfo.InMemory("text.txt", text),
+      ArchiveInputInfo.InMemory("noise.bin", noise),
+      ArchiveInputInfo.InMemory("runs.bin", runs),
+    };
+    var archive = Path.Combine(this._tmp, "large.uha");
+    File.WriteAllBytes(archive, UharcWriterTests.CreateWith(new FormatCreateOptions(method) { DictSize = dictionary }, inputs));
+    var output = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(output);
+    Run(uharc, output, "x", "-y", "-t" + output, archive);
+
+    foreach (var input in inputs)
+      Assert.That(File.ReadAllBytes(Path.Combine(output, input.ArchiveName)), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+  }
+
   [Test]
   public void GivenRealWorldArchives_WhenExtracted_ThenEveryDecodableFilePassesItsCrc() {
     var directory = Environment.GetEnvironmentVariable("CWB_UHARC_SAMPLES");
@@ -154,7 +277,7 @@ public class UharcExternalConformanceTests {
     foreach (var path in Directory.EnumerateFiles(directory)) {
       var head = new byte[4];
       using (var probe = File.OpenRead(path))
-        if (probe.Read(head) < 4 || head is not [(byte)'U', (byte)'H', (byte)'A', 2 or 4 or 6])
+        if (probe.Read(head) < 4 || head is not [(byte)'U', (byte)'H', (byte)'A', 2 or 3 or 4 or 6])
           continue;
 
       using var stream = File.OpenRead(path);

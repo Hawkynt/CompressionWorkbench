@@ -5,7 +5,7 @@ namespace FileFormat.Uharc;
 /// an order-1 frequency row, the order-0 row or a uniform byte, chosen by how well each has
 /// been doing lately; in binary streams a linear predictor may code the byte as a difference.
 /// </summary>
-internal sealed partial class UharcPpmDecoder {
+internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUharcCoder {
 
   private const uint AgeLow = 0x6D4250;
   private const uint AgeHigh = 0x91ADC0;
@@ -48,7 +48,7 @@ internal sealed partial class UharcPpmDecoder {
     var flag = fallback == LiteralFallback ? 1 : 0;
     switch (this.CurrentAgePath()) {
       case AgePath.Uniform:
-        result.Symbol = (int)this._coder.DecodeUniform(0x100);
+        result.Symbol = (int)this._coder.Uniform(0x100, (uint)this._rowTarget);
         result.Uniform = true;
         result.Kernel = new() { ScaleMiss = -1, ScaleHit = -1, Supported = true };
         return result;
@@ -94,6 +94,8 @@ internal sealed partial class UharcPpmDecoder {
     var bias = classSelected ? this._side.Bias : strideBack;
     var mirror = classSelected && this._side.Negate;
 
+    if (TCoder.Encoding)
+      this._rowTarget = !fired ? this._target : mirror ? (byte)(bias - this._target) : (byte)(this._target - bias);
     RowDecode decoded;
     if (fired) {
       this.ShiftExclusions(bias, mirror, toDifference: true);

@@ -17,9 +17,9 @@ namespace FileFormat.StuffItX;
 /// decoded stream; a Brimstone-compressed catalog element holds names, dates and Finder info.
 /// </para>
 /// <para>
-/// Supported stream codings are none, Brimstone (method 0), Cyanide (1), the RC4-obscured stored
-/// method (5) and Iron (6). Darkhorse (2), Deflate (3), Blend (4), method 7, the English and x86
-/// preprocessors and encrypted streams are listed but not extracted.
+/// Supported stream codings are none, Brimstone (method 0), Cyanide (1), Darkhorse (2), Deflate
+/// (3), Blend (4), the RC4-obscured stored method (5) and Iron (6), each optionally followed by the
+/// English or the x86 preprocessor. Method 7 and encrypted streams are listed but not extracted.
 /// </para>
 /// <para>Converted from XADMaster's <c>XADStuffItXParser.m</c>, <c>StuffItXUtilities.m</c>,
 /// <c>XADStuffItXBlockHandle.m</c> and <c>XADRC4Handle.m</c> (LGPL-2.1-or-later, see
@@ -65,6 +65,8 @@ public sealed class StuffItXReader : IDisposable {
   /// <summary>The archive's files, directories and resource forks.</summary>
   public IReadOnlyList<StuffItXEntry> Entries => this._entries;
 
+  /// <summary>The archive's own comment, from the catalog of the archive object, if it has one.</summary>
+  public string? Comment { get; private set; }
   /// <summary>Whether <paramref name="data"/> starts with a StuffIt X signature.</summary>
   public static bool IsStuffItX(ReadOnlySpan<byte> data)
     => data.Length >= 8 && data[..7].SequenceEqual(Signature) && data[7] is (byte)'!' or (byte)'?';
@@ -82,6 +84,13 @@ public sealed class StuffItXReader : IDisposable {
 
   /// <summary>Ids of every data stream, including the ones only previews refer to.</summary>
   internal IEnumerable<long> StreamIds => this._streams.Keys;
+
+  /// <summary>One data stream's coded bytes (its blocks joined) and decoded length.</summary>
+  internal (byte[] Payload, long Length) StreamPayload(long id)
+    => this._streams.TryGetValue(id, out var s) ? (this.ReadBlocks(s.Element), s.Length) : throw new InvalidDataException($"StuffIt X data stream {id} is missing.");
+
+  /// <summary>The coding of one data stream, as the entries name it (e.g. "Darkhorse+x86").</summary>
+  internal string StreamMethod(long id) => this._streams.TryGetValue(id, out var s) ? MethodName(s.Element) : "?";
 
   /// <summary>Decodes a whole data stream and checks its CRC-32 where the archive stores one.</summary>
   internal byte[] DecodeStream(long id) {
@@ -182,6 +191,7 @@ public sealed class StuffItXReader : IDisposable {
     var nodes = new List<Node>();
     var nodesById = new Dictionary<long, Node>();
     var streamForks = new Dictionary<long, List<Fork?>>();
+    var catalogs = 0;
 
     for (var done = false; !done;) {
       if (input.Position >= input.End) throw new InvalidDataException("StuffIt X archive has no end element.");
@@ -220,7 +230,14 @@ public sealed class StuffItXReader : IDisposable {
           ScanElementData(input, element);
           var end = input.Position;
           var catalog = this.Decode(element, element.Attributes[4]);
-          ParseCatalog(new StuffItXInput(catalog), nodes, nodesById);
+          if (catalogs++ == 0) ParseCatalog(new StuffItXInput(catalog), nodes, nodesById);
+          else {
+            // a later catalog describes the archive itself (the object a type-9 element announced):
+            // StuffIt 7 for Mac OS 9 keeps the archive comment there
+            var archiveNode = new Node(element.Attributes[0], -1, false);
+            ParseCatalog(new StuffItXInput(catalog), [archiveNode], []);
+            this.Comment ??= archiveNode.Comment;
+          }
           input.Position = end;
           break;
         }
@@ -228,6 +245,10 @@ public sealed class StuffItXReader : IDisposable {
           input.Skip(element.Attributes[4]);
           break;
         case ElementRoot:
+          // StuffIt's "recoverability"/"redundancy" option marks the root with algorithm 5 and spreads
+          // the archive over 255 checked blocks of an undecoded layout (docs/STUFFITX-RECOVERY-ON-DISK.md)
+          if (element.Algorithms[4] >= 0)
+            throw new NotSupportedException("This StuffIt X archive was written with a recovery record (redundancy blocks), whose layout is not decoded.");
           input.ReadP2();
           break;
         case ElementBoundary:
@@ -327,25 +348,47 @@ public sealed class StuffItXReader : IDisposable {
 
   private byte[] Decode(Element element, long length) {
     if (element.Algorithms[3] >= 0) throw new NotSupportedException("Encrypted StuffIt X streams are not supported.");
-    if (element.Algorithms[2] >= 0) throw new NotSupportedException($"StuffIt X stream preprocessing '{MethodName(element)}' is not supported.");
+    var preprocess = element.Algorithms[2];
+    if (preprocess is >= 0 and not (0 or 2)) throw new NotSupportedException($"StuffIt X stream preprocessing '{MethodName(element)}' is not supported.");
     if (length < 0 || length > int.MaxValue) throw new InvalidDataException("StuffIt X stream length is out of range.");
 
     var payload = this.ReadBlocks(element);
     var input = new StuffItXInput(payload);
-    switch (element.Algorithms[0]) {
-      case -1:
-        return payload;
-      case 0:
-        return StuffItXBrimstone.Decode(input, length);
-      case 1:
-        return StuffItXCyanide.Decode(input, length);
-      case 5:
-        return Rc4(payload);
-      case 6:
-        return StuffItXIron.Decode(input, length);
-      default:
-        throw new NotSupportedException($"StuffIt X compression method '{MethodName(element)}' is not supported.");
+    // The English filter changes the length, so its coder runs to its own end; x86 keeps it.
+    var coded = preprocess == 0 ? long.MaxValue : length;
+    var decoded = element.Algorithms[0] switch {
+      -1 => payload,
+      0 => StuffItXBrimstone.Decode(input, coded),
+      1 => StuffItXCyanide.Decode(input, coded),
+      2 => StuffItXDarkhorse.Decode(input, coded),
+      3 => Deflate(input, coded),
+      4 => StuffItXBlend.Decode(input, coded),
+      5 => Rc4(payload),
+      6 => StuffItXIron.Decode(input, coded),
+      _ => throw new NotSupportedException($"StuffIt X compression method '{MethodName(element)}' is not supported."),
+    };
+    return preprocess switch {
+      0 => StuffItXEnglish.Decode(decoded, length),
+      2 => StuffItXX86.Decode(decoded, length),
+      _ => decoded,
+    };
+  }
+
+  /// <summary>Method 3: a window-size byte (always 15) and Deflate with a six-bit distance-code count.</summary>
+  private static byte[] Deflate(StuffItXInput input, long length) {
+    var windowBits = input.ReadByte();
+    if (windowBits != 15) throw new NotSupportedException($"StuffIt X Deflate with a 2^{windowBits} window is not supported.");
+    var start = input.Position;
+    using var source = new MemoryStream(input.Data, start, input.End - start, writable: false);
+    var inflater = new Compression.Core.Deflate.DeflateDecompressor(source) { DistanceCountBits = 6 };
+    var output = new MemoryStream();
+    var buffer = new byte[65536];
+    while (output.Length < length) {
+      var n = inflater.Decompress(buffer.AsSpan(0, (int)Math.Min(buffer.Length, length - output.Length)));
+      if (n <= 0) break;
+      output.Write(buffer, 0, n);
     }
+    return output.ToArray();
   }
 
   /// <summary>Method 5: two skipped bytes, a one-byte RC4 key, then the RC4-obscured data.</summary>

@@ -1,0 +1,37 @@
+PeaStreamCipher.cs converts the PEA stream encryption from PeaZip's sources
+(https://github.com/peazip/PeaZip, peazip-sources/dev, revision
+a9cd9ea216f9ab8b1f56365727eceee3d641634b):
+
+  pea.pas, pea_utils.pas
+    (C) Copyright 2006 Giorgio Tani
+    GNU Lesser General Public License, version 3 or (at your option) any
+    later version -- the licence of this repository.
+
+  fcrypta.pas, fcryptt.pas, fcrypts.pas
+    (C) Copyright 2003-2008 Wolfgang Ehrhardt
+  fcaes256.pas, fctf256.pas, fcsp256.pas
+    (C) Copyright 2003-2008 Wolfgang Ehrhardt, Giorgio Tani
+
+    This software is provided 'as-is', without any express or implied warranty.
+    In no event will the authors be held liable for any damages arising from
+    the use of this software.
+
+    Permission is granted to anyone to use this software for any purpose,
+    including commercial applications, and to alter it and redistribute it
+    freely, subject to the following restrictions:
+
+    1. The origin of this software must not be misrepresented; you must not
+       claim that you wrote the original software. If you use this software in
+       a product, an acknowledgment in the product documentation would be
+       appreciated but is not required.
+
+    2. Altered source versions must be plainly marked as such, and must not be
+       misrepresented as being the original software.
+
+    3. This notice may not be removed or altered from any source distribution.
+
+What was taken: the keying material (password, archive and stream headers),
+the subheader layout, the PBKDF2 hash and output split per cipher, and the
+choice of EAX or CTR+HMAC. The C# is an altered version written for this
+repository; EAX itself follows Bellare, Rogaway and Wagner (FSE 2004) in
+Compression.Core/Crypto/Eax.cs.

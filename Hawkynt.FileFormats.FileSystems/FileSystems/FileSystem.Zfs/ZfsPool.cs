@@ -138,22 +138,34 @@ internal sealed class ZfsPool : IDisposable {
     }
   }
 
-  /// <summary>Reads the object set a block pointer names.</summary>
-  public ZfsObjectSet ReadObjectSet(ZfsBlockPointer bp) {
-    var block = this.ReadBlock(bp, cache: false);
+  /// <summary>
+  /// Reads the object set a block pointer names; a protected one with its dataset's key, whose
+  /// object set MACs must then hold (<c>docs/ZFS-ON-DISK.md</c>, "Native encryption").
+  /// </summary>
+  public ZfsObjectSet ReadObjectSet(ZfsBlockPointer bp, ZfsDatasetKey? key = null) {
+    if (bp.IsEncrypted && key == null)
+      throw new ZfsEncryptedException("ZFS: the object set is protected (native encryption); no key is available.");
+    var block = this.ReadBlock(bp, cache: false, key);
     if (block.Length < ZfsConstants.ObjsetTypeOffset + 8)
       throw new InvalidDataException("ZFS: object set block too small.");
+    if (bp.IsEncrypted) {
+      var (portable, local) = ZfsCryptoBlocks.ObjsetMacs(key!, block);
+      var mismatch = !portable.AsSpan().SequenceEqual(block.AsSpan(0x2D0, 32)) || !local.AsSpan().SequenceEqual(block.AsSpan(0x2F0, 32));
+      // as OpenZFS: a local MAC that cannot be computed (accounting incomplete) is not held against the block
+      if (mismatch && local.Any(b => b != 0))
+        throw new InvalidDataException("ZFS: the object set's MACs do not hold.");
+    }
     var meta = ZfsDnode.Read(block)
       ?? throw new InvalidDataException("ZFS: object set has no meta-dnode.");
     var type = BinaryPrimitives.ReadUInt64LittleEndian(block.AsSpan(ZfsConstants.ObjsetTypeOffset));
-    return new ZfsObjectSet(this, meta, type);
+    return new ZfsObjectSet(this, meta, type) { Key = key };
   }
 
   /// <summary>
   /// The logical bytes a block pointer names: zeros for a hole, the payload for an
   /// embedded pointer, otherwise the first copy whose checksum holds, decompressed.
   /// </summary>
-  public byte[] ReadBlock(ZfsBlockPointer bp, bool cache = true) {
+  public byte[] ReadBlock(ZfsBlockPointer bp, bool cache = true, ZfsDatasetKey? cryptoKey = null) {
     if (bp.IsEmbedded) {
       if (bp.EmbeddedType != 0)
         throw new NotSupportedException($"ZFS: embedded block type {bp.EmbeddedType} carries no data.");
@@ -165,7 +177,7 @@ internal sealed class ZfsPool : IDisposable {
       ++this.Statistics.Holes;
       return new byte[bp.LogicalSize];
     }
-    if (bp.IsEncrypted)
+    if (bp.IsEncrypted && cryptoKey == null)
       throw new ZfsEncryptedException("ZFS: the block is encrypted (native encryption); no key is available.");
     if (!bp.IsLittleEndian)
       throw new NotSupportedException("ZFS: big-endian blocks are not read.");
@@ -176,13 +188,50 @@ internal sealed class ZfsPool : IDisposable {
     var physical = this.ReadPhysical(bp);
     this.Statistics.Compressions.Add(bp.Compression);
     this.Statistics.Checksums.Add(bp.Checksum);
+    if (bp.IsEncrypted) physical = Unprotect(bp, physical, cryptoKey!);
     var logical = ZfsCompression.Decompress(bp.Compression, physical, bp.LogicalSize);
+    if (bp.IsEncrypted && bp.Level > 0) {
+      // an indirect block carries SHA-512 over its children's MACs (either key version)
+      var mac = ZfsCryptoBlocks.Mac(bp.Raw);
+      if (!ZfsCryptoBlocks.IndirectMac(logical, 1).AsSpan().SequenceEqual(mac) && !ZfsCryptoBlocks.IndirectMac(logical, 0).AsSpan().SequenceEqual(mac))
+        throw new InvalidDataException("ZFS: an indirect block's checksum of MACs does not hold.");
+    }
     if (cache && logical.Length <= CacheableSize) {
       if (this._cache.Count >= CacheCapacity) this._cache.Remove(this._cacheOrder.Dequeue());
       this._cache[key] = logical;
       this._cacheOrder.Enqueue(key);
     }
     return logical;
+  }
+
+  /// <summary>
+  /// A protected block's physical bytes made plain: a dnode block's encrypted bonus buffers, an
+  /// encrypted block whole; an authenticated one checked against its HMAC. Object set and
+  /// indirect blocks are plain already (their MACs are checked once read).
+  /// </summary>
+  private static byte[] Unprotect(ZfsBlockPointer bp, byte[] physical, ZfsDatasetKey key) {
+    if (bp.Level > 0 || bp.Type == ZfsCryptoBlocks.TypeObjset) return physical;
+    if (bp.Type == ZfsCryptoBlocks.TypeDnode) {
+      try {
+        return ZfsCryptoBlocks.DecryptDnodeBlock(key, physical, bp.Raw);
+      } catch (System.Security.Cryptography.AuthenticationTagMismatchException) {
+        throw new InvalidDataException("ZFS: a dnode block's MAC does not hold.");
+      }
+    }
+    var mac = ZfsCryptoBlocks.Mac(bp.Raw);
+    if (!ZfsCryptoBlocks.IsEncryptedType(bp.Type)) {
+      if (!key.Hmac(physical).AsSpan(0, ZfsDatasetKey.MacLength).SequenceEqual(mac))
+        throw new InvalidDataException("ZFS: an authenticated block's MAC does not hold.");
+      return physical;
+    }
+    var (salt, iv) = ZfsCryptoBlocks.Parameters(bp.Raw);
+    var plain = new byte[physical.Length];
+    try {
+      ZfsDatasetKey.Decrypt(key.Crypt, key.BlockKey(salt), iv, physical, mac, plain, []);
+    } catch (System.Security.Cryptography.AuthenticationTagMismatchException) {
+      throw new InvalidDataException("ZFS: an encrypted block's MAC does not hold.");
+    }
+    return plain;
   }
 
   /// <summary>The physical (still compressed) bytes of the first copy that passes its checksum.</summary>
@@ -192,7 +241,8 @@ internal sealed class ZfsPool : IDisposable {
       if (dva.IsEmpty) continue;
       try {
         var physical = this.ReadDva(dva, bp.PhysicalSize);
-        switch (ZfsChecksum.Verify(bp.Checksum, physical, bp.StoredChecksum)) {
+        // a protected block's checksum is two words; the other two are its MAC
+        switch (ZfsChecksum.Verify(bp.Checksum, physical, bp.StoredChecksum, bp.IsEncrypted && bp.Type != ZfsCryptoBlocks.TypeObjset)) {
           case ZfsChecksumResult.Match:
             if (failure != null) ++this.Statistics.CopiesRecovered;
             return physical;
@@ -266,6 +316,11 @@ internal sealed class ZfsReadStatistics {
 internal sealed class ZfsObjectSet(ZfsPool pool, ZfsDnode meta, ulong type) {
   public ulong Type => type;
   public ZfsPool Pool => pool;
+  /// <summary>The dataset's key when the object set is protected by native encryption.</summary>
+  public ZfsDatasetKey? Key { get; init; }
+
+  /// <summary>Reads a block pointer of this object set (with its key).</summary>
+  public byte[] ReadBlock(ZfsBlockPointer bp, bool cache = true) => pool.ReadBlock(bp, cache, this.Key);
 
   /// <summary>The dnode of object <paramref name="objectId"/>, or null when the slot is free.</summary>
   public ZfsDnode? Dnode(ulong objectId) {
@@ -294,12 +349,12 @@ internal sealed class ZfsObjectSet(ZfsPool pool, ZfsDnode meta, ulong type) {
     var bp = dnode.BlockPointers[top];
     for (var level = levels - 1; level > 0; --level) {
       if (bp.IsHole) return pool.Hole(dnode.DataBlockSize);
-      var indirect = pool.ReadBlock(bp);
+      var indirect = pool.ReadBlock(bp, true, this.Key);
       var index = (int)((blockId >> (perIndirectShift * (level - 1))) & ((1UL << perIndirectShift) - 1));
       bp = ZfsBlockPointer.Read(indirect.AsSpan(index * ZfsConstants.BlockPointerSize));
     }
     if (bp.IsHole) return pool.Hole(dnode.DataBlockSize);
-    return pool.ReadBlock(bp, cacheData);
+    return pool.ReadBlock(bp, cacheData, this.Key);
   }
 
   /// <summary>Decodes the ZAP held by <paramref name="dnode"/>.</summary>

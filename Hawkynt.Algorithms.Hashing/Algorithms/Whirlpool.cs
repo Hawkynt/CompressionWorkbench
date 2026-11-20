@@ -59,45 +59,78 @@ public static class Whirlpool {
     return result;
   }
 
-  private static void Compress(Span<ulong> state, ReadOnlySpan<byte> block) {
-    Span<ulong> message = stackalloc ulong[8];
-    Span<ulong> key = stackalloc ulong[8];
-    Span<ulong> nextKey = stackalloc ulong[8];
-    Span<ulong> cipher = stackalloc ulong[8];
-    Span<ulong> nextCipher = stackalloc ulong[8];
+  // The round function looks up eight tables: T_j[b] is Table[b] rotated right by 8j bits.
+  private static readonly ulong[] T0 = Rotated(0);
+  private static readonly ulong[] T1 = Rotated(8);
+  private static readonly ulong[] T2 = Rotated(16);
+  private static readonly ulong[] T3 = Rotated(24);
+  private static readonly ulong[] T4 = Rotated(32);
+  private static readonly ulong[] T5 = Rotated(40);
+  private static readonly ulong[] T6 = Rotated(48);
+  private static readonly ulong[] T7 = Rotated(56);
 
-    for (var i = 0; i < 8; ++i) {
-      message[i] = BinaryPrimitives.ReadUInt64BigEndian(block.Slice(i * 8, 8));
-      key[i] = state[i];
-      cipher[i] = message[i] ^ key[i];
-    }
+  private static ulong[] Rotated(int bits) => [.. Table.Select(v => BitOperations.RotateRight(v, bits))];
 
+  internal static void Compress(Span<ulong> state, ReadOnlySpan<byte> block) {
+    var m0 = BinaryPrimitives.ReadUInt64BigEndian(block[0..]);
+    var m1 = BinaryPrimitives.ReadUInt64BigEndian(block[8..]);
+    var m2 = BinaryPrimitives.ReadUInt64BigEndian(block[16..]);
+    var m3 = BinaryPrimitives.ReadUInt64BigEndian(block[24..]);
+    var m4 = BinaryPrimitives.ReadUInt64BigEndian(block[32..]);
+    var m5 = BinaryPrimitives.ReadUInt64BigEndian(block[40..]);
+    var m6 = BinaryPrimitives.ReadUInt64BigEndian(block[48..]);
+    var m7 = BinaryPrimitives.ReadUInt64BigEndian(block[56..]);
+    ulong k0 = state[0], s0 = m0 ^ k0;
+    ulong k1 = state[1], s1 = m1 ^ k1;
+    ulong k2 = state[2], s2 = m2 ^ k2;
+    ulong k3 = state[3], s3 = m3 ^ k3;
+    ulong k4 = state[4], s4 = m4 ^ k4;
+    ulong k5 = state[5], s5 = m5 ^ k5;
+    ulong k6 = state[6], s6 = m6 ^ k6;
+    ulong k7 = state[7], s7 = m7 ^ k7;
     for (var round = 0; round < 10; ++round) {
-      for (var i = 0; i < 8; ++i)
-        nextKey[i] = Operation(key[i], key[(i + 7) & 7], key[(i + 6) & 7], key[(i + 5) & 7], key[(i + 4) & 7], key[(i + 3) & 7], key[(i + 2) & 7], key[(i + 1) & 7]);
-      nextKey[0] ^= RoundConstants[round];
-      nextKey.CopyTo(key);
-
-      for (var i = 0; i < 8; ++i)
-        nextCipher[i] = Operation(cipher[i], cipher[(i + 7) & 7], cipher[(i + 6) & 7], cipher[(i + 5) & 7], cipher[(i + 4) & 7], cipher[(i + 3) & 7], cipher[(i + 2) & 7], cipher[(i + 1) & 7]) ^ key[i];
-      nextCipher.CopyTo(cipher);
+      var n0 = T0[(int)(k0 >> 56) & 0xFF] ^ T1[(int)(k7 >> 48) & 0xFF] ^ T2[(int)(k6 >> 40) & 0xFF] ^ T3[(int)(k5 >> 32) & 0xFF] ^ T4[(int)(k4 >> 24) & 0xFF] ^ T5[(int)(k3 >> 16) & 0xFF] ^ T6[(int)(k2 >> 8) & 0xFF] ^ T7[(int)k1 & 0xFF] ^ RoundConstants[round];
+      var n1 = T0[(int)(k1 >> 56) & 0xFF] ^ T1[(int)(k0 >> 48) & 0xFF] ^ T2[(int)(k7 >> 40) & 0xFF] ^ T3[(int)(k6 >> 32) & 0xFF] ^ T4[(int)(k5 >> 24) & 0xFF] ^ T5[(int)(k4 >> 16) & 0xFF] ^ T6[(int)(k3 >> 8) & 0xFF] ^ T7[(int)k2 & 0xFF];
+      var n2 = T0[(int)(k2 >> 56) & 0xFF] ^ T1[(int)(k1 >> 48) & 0xFF] ^ T2[(int)(k0 >> 40) & 0xFF] ^ T3[(int)(k7 >> 32) & 0xFF] ^ T4[(int)(k6 >> 24) & 0xFF] ^ T5[(int)(k5 >> 16) & 0xFF] ^ T6[(int)(k4 >> 8) & 0xFF] ^ T7[(int)k3 & 0xFF];
+      var n3 = T0[(int)(k3 >> 56) & 0xFF] ^ T1[(int)(k2 >> 48) & 0xFF] ^ T2[(int)(k1 >> 40) & 0xFF] ^ T3[(int)(k0 >> 32) & 0xFF] ^ T4[(int)(k7 >> 24) & 0xFF] ^ T5[(int)(k6 >> 16) & 0xFF] ^ T6[(int)(k5 >> 8) & 0xFF] ^ T7[(int)k4 & 0xFF];
+      var n4 = T0[(int)(k4 >> 56) & 0xFF] ^ T1[(int)(k3 >> 48) & 0xFF] ^ T2[(int)(k2 >> 40) & 0xFF] ^ T3[(int)(k1 >> 32) & 0xFF] ^ T4[(int)(k0 >> 24) & 0xFF] ^ T5[(int)(k7 >> 16) & 0xFF] ^ T6[(int)(k6 >> 8) & 0xFF] ^ T7[(int)k5 & 0xFF];
+      var n5 = T0[(int)(k5 >> 56) & 0xFF] ^ T1[(int)(k4 >> 48) & 0xFF] ^ T2[(int)(k3 >> 40) & 0xFF] ^ T3[(int)(k2 >> 32) & 0xFF] ^ T4[(int)(k1 >> 24) & 0xFF] ^ T5[(int)(k0 >> 16) & 0xFF] ^ T6[(int)(k7 >> 8) & 0xFF] ^ T7[(int)k6 & 0xFF];
+      var n6 = T0[(int)(k6 >> 56) & 0xFF] ^ T1[(int)(k5 >> 48) & 0xFF] ^ T2[(int)(k4 >> 40) & 0xFF] ^ T3[(int)(k3 >> 32) & 0xFF] ^ T4[(int)(k2 >> 24) & 0xFF] ^ T5[(int)(k1 >> 16) & 0xFF] ^ T6[(int)(k0 >> 8) & 0xFF] ^ T7[(int)k7 & 0xFF];
+      var n7 = T0[(int)(k7 >> 56) & 0xFF] ^ T1[(int)(k6 >> 48) & 0xFF] ^ T2[(int)(k5 >> 40) & 0xFF] ^ T3[(int)(k4 >> 32) & 0xFF] ^ T4[(int)(k3 >> 24) & 0xFF] ^ T5[(int)(k2 >> 16) & 0xFF] ^ T6[(int)(k1 >> 8) & 0xFF] ^ T7[(int)k0 & 0xFF];
+      k0 = n0;
+      k1 = n1;
+      k2 = n2;
+      k3 = n3;
+      k4 = n4;
+      k5 = n5;
+      k6 = n6;
+      k7 = n7;
+      var c0 = T0[(int)(s0 >> 56) & 0xFF] ^ T1[(int)(s7 >> 48) & 0xFF] ^ T2[(int)(s6 >> 40) & 0xFF] ^ T3[(int)(s5 >> 32) & 0xFF] ^ T4[(int)(s4 >> 24) & 0xFF] ^ T5[(int)(s3 >> 16) & 0xFF] ^ T6[(int)(s2 >> 8) & 0xFF] ^ T7[(int)s1 & 0xFF] ^ k0;
+      var c1 = T0[(int)(s1 >> 56) & 0xFF] ^ T1[(int)(s0 >> 48) & 0xFF] ^ T2[(int)(s7 >> 40) & 0xFF] ^ T3[(int)(s6 >> 32) & 0xFF] ^ T4[(int)(s5 >> 24) & 0xFF] ^ T5[(int)(s4 >> 16) & 0xFF] ^ T6[(int)(s3 >> 8) & 0xFF] ^ T7[(int)s2 & 0xFF] ^ k1;
+      var c2 = T0[(int)(s2 >> 56) & 0xFF] ^ T1[(int)(s1 >> 48) & 0xFF] ^ T2[(int)(s0 >> 40) & 0xFF] ^ T3[(int)(s7 >> 32) & 0xFF] ^ T4[(int)(s6 >> 24) & 0xFF] ^ T5[(int)(s5 >> 16) & 0xFF] ^ T6[(int)(s4 >> 8) & 0xFF] ^ T7[(int)s3 & 0xFF] ^ k2;
+      var c3 = T0[(int)(s3 >> 56) & 0xFF] ^ T1[(int)(s2 >> 48) & 0xFF] ^ T2[(int)(s1 >> 40) & 0xFF] ^ T3[(int)(s0 >> 32) & 0xFF] ^ T4[(int)(s7 >> 24) & 0xFF] ^ T5[(int)(s6 >> 16) & 0xFF] ^ T6[(int)(s5 >> 8) & 0xFF] ^ T7[(int)s4 & 0xFF] ^ k3;
+      var c4 = T0[(int)(s4 >> 56) & 0xFF] ^ T1[(int)(s3 >> 48) & 0xFF] ^ T2[(int)(s2 >> 40) & 0xFF] ^ T3[(int)(s1 >> 32) & 0xFF] ^ T4[(int)(s0 >> 24) & 0xFF] ^ T5[(int)(s7 >> 16) & 0xFF] ^ T6[(int)(s6 >> 8) & 0xFF] ^ T7[(int)s5 & 0xFF] ^ k4;
+      var c5 = T0[(int)(s5 >> 56) & 0xFF] ^ T1[(int)(s4 >> 48) & 0xFF] ^ T2[(int)(s3 >> 40) & 0xFF] ^ T3[(int)(s2 >> 32) & 0xFF] ^ T4[(int)(s1 >> 24) & 0xFF] ^ T5[(int)(s0 >> 16) & 0xFF] ^ T6[(int)(s7 >> 8) & 0xFF] ^ T7[(int)s6 & 0xFF] ^ k5;
+      var c6 = T0[(int)(s6 >> 56) & 0xFF] ^ T1[(int)(s5 >> 48) & 0xFF] ^ T2[(int)(s4 >> 40) & 0xFF] ^ T3[(int)(s3 >> 32) & 0xFF] ^ T4[(int)(s2 >> 24) & 0xFF] ^ T5[(int)(s1 >> 16) & 0xFF] ^ T6[(int)(s0 >> 8) & 0xFF] ^ T7[(int)s7 & 0xFF] ^ k6;
+      var c7 = T0[(int)(s7 >> 56) & 0xFF] ^ T1[(int)(s6 >> 48) & 0xFF] ^ T2[(int)(s5 >> 40) & 0xFF] ^ T3[(int)(s4 >> 32) & 0xFF] ^ T4[(int)(s3 >> 24) & 0xFF] ^ T5[(int)(s2 >> 16) & 0xFF] ^ T6[(int)(s1 >> 8) & 0xFF] ^ T7[(int)s0 & 0xFF] ^ k7;
+      s0 = c0;
+      s1 = c1;
+      s2 = c2;
+      s3 = c3;
+      s4 = c4;
+      s5 = c5;
+      s6 = c6;
+      s7 = c7;
     }
-
-    for (var i = 0; i < 8; ++i)
-      state[i] ^= cipher[i] ^ message[i];
+    state[0] ^= s0 ^ m0;
+    state[1] ^= s1 ^ m1;
+    state[2] ^= s2 ^ m2;
+    state[3] ^= s3 ^ m3;
+    state[4] ^= s4 ^ m4;
+    state[5] ^= s5 ^ m5;
+    state[6] ^= s6 ^ m6;
+    state[7] ^= s7 ^ m7;
   }
-
-  private static ulong Operation(ulong x0, ulong x1, ulong x2, ulong x3, ulong x4, ulong x5, ulong x6, ulong x7) =>
-    Table[ByteAt(x0, 0)] ^
-    BitOperations.RotateRight(Table[ByteAt(x1, 1)], 8) ^
-    BitOperations.RotateRight(Table[ByteAt(x2, 2)], 16) ^
-    BitOperations.RotateRight(Table[ByteAt(x3, 3)], 24) ^
-    BitOperations.RotateRight(Table[ByteAt(x4, 4)], 32) ^
-    BitOperations.RotateRight(Table[ByteAt(x5, 5)], 40) ^
-    BitOperations.RotateRight(Table[ByteAt(x6, 6)], 48) ^
-    BitOperations.RotateRight(Table[ByteAt(x7, 7)], 56);
-
-  private static int ByteAt(ulong word, int position) => (int)((word >> ((7 - position) * 8)) & 0xFF);
 
   private static ulong[] BuildTable() {
     var table = new ulong[256];

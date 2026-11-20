@@ -1,29 +1,39 @@
 # Microsoft DoubleSpace / DriveSpace CVF — format notes
 
 > **Verification status.**
-> - **MS-DOS 6.22's own `DRVSPACE.BIN`** mounts every volume `DriveSpaceFormatDescriptor.Create`
->   writes (JM and stored clusters), reads every file byte-exact, writes a new file into it that reads
->   back — through DOS and through our reader — and `SCANDISK` reports nothing to fix
->   (`MsDosRealDriverTests`, opt-in, see `Compression.Tests/Support/MsDosImageStaging.md`).
+> - **MS-DOS 6.22's own `DRVSPACE.BIN`** (English and German) mounts every volume
+>   `DriveSpaceFormatDescriptor.Create` writes (JM and stored clusters), reads every file byte-exact,
+>   writes a new file into it that reads back — through DOS and through our reader — and `SCANDISK`
+>   reports nothing to fix (`MsDosRealDriverTests`, opt-in, see
+>   `Compression.Tests/Support/MsDosImageStaging.md`).
+> - **MS-DOS 6.0's own `DBLSPACE.BIN`** (English and German) does the same for every volume
+>   `DoubleSpaceFormatDescriptor.Create` writes (DS and stored clusters), and `DBLSPACE /CHKDSK` finds
+>   no errors.
 > - **MS-DOS 7.1's `DRVSPACE.BIN`** mounts what both descriptors create (DoubleSpace DS and stored,
 >   DriveSpace JM) and reads every file byte-exact.
-> - A volume **MS-DOS 6.22's `DRVSPACE /CREATE` wrote** and filled is checked in
->   (`Compression.Tests/Cvf/ReferenceVectors/Volumes/`); our readers read it byte-exact, an add keeps
->   it readable, and our writer's system area matches its field for field.
+> - Volumes **MS-DOS 6.0's `DBLSPACE /CREATE`** and **MS-DOS 6.22's `DRVSPACE /CREATE`** wrote and
+>   filled are checked in (`Compression.Tests/Cvf/ReferenceVectors/Volumes/`); our readers read them
+>   byte-exact, an add keeps them readable in their own container, and our writer's system area
+>   matches each field for field.
 > - The independent `dmsdos` driver mounts and reads every volume either descriptor creates
 >   (`CvfCreateDmsdosTests`).
-> - MS-DOS 6.22's driver lists a volume with DS-0-0 clusters but answers each DS cluster with a data
->   error: DS is DoubleSpace's codec, which DriveSpace 6.22 does not decode. MS-DOS 7.1 decodes both.
+> - MS-DOS 6.22's driver refuses DoubleSpace volumes outright (below), and given DS-0-0 clusters in a
+>   DriveSpace container it lists the files but answers each DS cluster with a data error: DS is
+>   DoubleSpace's codec, which DriveSpace 6.22 does not decode. MS-DOS 7.1 decodes both.
 
-Both products use the version-2 **`MSDBL6.0`** compressed volume file: 512-byte sectors, 8 KiB
-clusters (16 sectors), a 4-byte MDFAT entry per cluster. DoubleSpace writes DS-0-0 clusters,
+Both products use the same compressed volume file — 512-byte sectors, 8 KiB clusters (16 sectors), a
+4-byte MDFAT entry per cluster — told apart by the MDBPB's OEM name and CVF version: DoubleSpace
+(MS-DOS 6.0) writes **`MSDSP6.0`, version 0**, DriveSpace (MS-DOS 6.22) **`MSDBL6.0`, version 2**; the
+inner boot sector repeats the OEM name. Each 6.x driver refuses the other product's pair: MS-DOS
+6.0 calls a DriveSpace volume "not a valid compressed volume file", MS-DOS 6.22 says a DoubleSpace
+volume "is in DoubleSpace format, which is incompatible with DriveSpace". MS-DOS 7.1 mounts both. DoubleSpace writes DS-0-0 clusters,
 DriveSpace JM-0-0 ([`docs/CVF-CODECS-ON-DISK.md`](../../../docs/CVF-CODECS-ON-DISK.md)); either may
 store a cluster uncompressed.
 
 ## 🧩 Layout
 
-Measured on volumes MS-DOS 6.22's `DRVSPACE /CREATE` wrote (sizes 0.5 to 6 MB) and confirmed by what
-its driver accepts. Sector numbers are 512-byte sectors from the start of the file.
+Measured on volumes MS-DOS 6.22's `DRVSPACE /CREATE` wrote (sizes 0.5 to 6 MB) and MS-DOS 6.0's
+`DBLSPACE /CREATE` wrote (0.5 MB, the same system area), and confirmed by what their drivers accept. Sector numbers are 512-byte sectors from the start of the file.
 
 | Sectors | Content |
 |---|---|
@@ -36,7 +46,8 @@ its driver accepts. Sector numbers are 512-byte sectors from the start of the fi
 | last sector of the file | Starts with `MDR\0` |
 
 The driver writes a file's last cluster only as far as its data reaches: a 5000-byte file is one
-stored run of 10 sectors (on-disk and decoded sizes 10), the 3616-byte tail of a 20000-byte file a
+stored run of 10 decoded sectors (DriveSpace 6.22 allocates 10 sectors for it, DoubleSpace 6.0 the
+whole 16), the 3616-byte tail of a 20000-byte file a
 compressed run whose decoded size is 8 sectors. The sector holding the end of such a stream carries
 leftover bytes after the stream's final sync, so a reader decodes exactly the decoded-size sectors and
 treats the rest of the cluster as zero.
@@ -49,7 +60,7 @@ cluster boundary. The reserved-sector count absorbs the padding.
 
 | Offset | Size | Value on a volume whose maximum size is the smallest tier |
 |---|---|---|
-| 0x03 | 8 | `MSDBL6.0` |
+| 0x03 | 8 | `MSDSP6.0` (DoubleSpace) or `MSDBL6.0` (DriveSpace) |
 | 0x0B | 2 | 512 bytes per sector |
 | 0x0D | 1 | 16 sectors per cluster |
 | 0x0E | 2 | 28 reserved sectors |
@@ -67,7 +78,7 @@ cluster boundary. The reserved-sector count absorbs the padding.
 | 0x2D | 2 | 10 — MDFAT index of cluster 0 (`0x2B / 16 − 2`) |
 | 0x2F | 2 | 33 — FAT sectors / 4 |
 | 0x31 | 2 | 1024 |
-| 0x33 | 2 | 2 — CVF version |
+| 0x33 | 2 | CVF version: 0 (DoubleSpace) or 2 (DriveSpace) |
 | 0x35 | 2 | 20992 |
 | 0x37 | 2 | 5 |
 | 0x39 | 4 | `16  ` |

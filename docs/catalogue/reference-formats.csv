@@ -45,7 +45,7 @@ LBR (Commodore library),lbr,archive,,,,,,,Y,,1,http://unusedino.de/ec64/technica
 ALZip,alz,archive,,,R,,R,,RW,Y,4,https://en.wikipedia.org/wiki/ALZip,AlZip,Y,Y,Y,PARTIAL,,"split (multi-volume) archives and obfuscated deflate (method 3) refused; writer emits stored/deflate, not ALZ bzip2 (AlZipReader.cs)"
 EGG (ALZip),egg,archive,,,R,,,,,,1,https://en.wikipedia.org/wiki/ALZip,Egg,Y,Y,,PARTIAL,,"reads store/deflate/bzip2/AZO/LZMA, solid, ZIP 2.0/AES/LEA encryption (EggDotNet corpus); writer store/deflate only (EggDotNet reads it back); split (multi-volume) archives unsupported (EggReader.cs)"
 StuffIt (classic + 5),sit;sea,archive,,,R,,R,fmt/1459;fmt/1460;fmt/639,RW,Y,5,https://en.wikipedia.org/wiki/StuffIt,StuffIt,Y,Y,Y,PARTIAL,,"method 8 (MW) and segmented sets unsupported; method 14 installer LZ77 reads real archives verified with unar; classic DES and StuffIt 5 RC4 passwords read and written, verified with unar. Classic encrypted forks require the MacBinary resource fork for the key check; the writer emits classic or StuffIt 5 archives with store, RLE, method 13 or method 15 (Arsenic)"
-StuffIt X,sitx,archive,,,R,,R,fmt/399,RW,Y,5,https://en.wikipedia.org/wiki/StuffIt,StuffItX,Y,,,PARTIAL,,Darkhorse/Deflate/Blend/method 7/preprocessors/encryption throw (StuffItXReader.cs)
+StuffIt X,sitx,archive,,,R,,R,fmt/399,RW,Y,5,https://en.wikipedia.org/wiki/StuffIt,StuffItX,Y,Y,,PARTIAL,,method 7 and encryption throw (StuffItXReader.cs); written stored or Deflate only
 DiskDoubler,dd,archive,,,R,,,,Y,,2,https://en.wikipedia.org/wiki/DiskDoubler,DiskDoubler,Y,Y,,PARTIAL,,"single files and DDAR/DDA2 archives (listings match lsar on real archives); methods 0, 1, 6, 8, 9 decoded and checked against unar on real files; 2, 5, 7 and delta 1 checked against unar on files we built; 3, 4, 10 refused (DiskDoublerReader.cs)"
 Compact Pro,cpt,archive,,,R,,,,Y,Y,3,https://en.wikipedia.org/wiki/Compact_Pro,CompactPro,Y,Y,Y,PARTIAL,,multi-volume and encrypted archives refused; writer emits RLE-only forks (CompactProReader.cs)
 PackIt,pit,archive,,,R,,,,Y,,2,https://en.wikipedia.org/wiki/PackIt,PackIt,Y,Y,Y,PARTIAL,,"real layout (PMag/PMa4, header and fork CRC-16) verified on real archives against unar; encrypted PMa5/PMa6 entries refused (PackItReader.cs)"
@@ -54,13 +54,13 @@ LZX (Amiga),lzx,archive,,,R,,R,,Y,Y,4,https://en.wikipedia.org/wiki/LZX,LzxAmiga
 NuFX / ShrinkIt,shk;sdk;bxy,archive,,,,,,,Y,,1,https://wiki.preterhuman.net/NuFX,NuFx,Y,Y,Y,OK,,
 Spark (Acorn),spk;arc,archive,,,,,,,Y,,1,https://en.wikipedia.org/wiki/Spark_(archiver),Spark,Y,Y,Y,OK,,
 HA,ha,archive,,,,,,,Y,Y,2,https://en.wikipedia.org/wiki/HA_(file_format),Ha,Y,Y,Y,OK,,"reads CPY/ASC/HSC (ha.exe 0.999b archives and the original 1995 HA_SRC.HA); writes HSC/CPY that ha.exe extracts, HSC streams byte-identical to ha.exe; Unix special-file records listed, not extracted (docs/HA-ON-DISK.md)"
-SQX,sqx,archive,,,,,,,Y,Y,2,https://en.wikipedia.org/wiki/SQX,Sqx,Y,Y,Y,PARTIAL,,methods 0-4 read and written (Squeez-c's reference archives decode; Squeez-c extracts ours); methods 5-7 encryption and volumes refused (SqxReader.cs)
-UHARC,uha,archive,,,,,R,,Y,Y,3,https://en.wikipedia.org/wiki/UHarc,Uharc,Y,Y,,PARTIAL,,"reads UHARC 0.2, 0.4 and 0.6; 0.4 store, LZP, ALZ, RLE and LZW verified against UHARC04.EXE; 0.3 and 0.4 PPM refused. Writes stored or LZP-packed 0.6 archives (docs/UHARC-ON-DISK.md)"
+SQX,sqx,archive,,,,,,,Y,Y,2,https://en.wikipedia.org/wiki/SQX,Sqx,Y,Y,Y,PARTIAL,,"methods 0-4 read and written (Squeez-c's reference archives decode; Squeez-c extracts ours); methods 5 (audio), 6 (PPMd) and 7 (ultra) read; encryption and volumes refused (SqxReader.cs)"
+UHARC,uha,archive,,,,,R,,Y,Y,3,https://en.wikipedia.org/wiki/UHarc,Uharc,Y,Y,,PARTIAL,,"reads UHARC 0.2, 0.3, 0.4 and 0.6; 0.4 store, LZP, ALZ, RLE and LZW verified against UHARC04.EXE; 0.3 store, RLE, LZW, LZP and ALZ verified against the 0.3 tool and unuharc_recon; 0.3 and 0.4 PPM refused. Writes 0.6 archives in every method (store, RLE, LZ78, LZP, PPM, ALZ) and 0.4 archives in store, RLE, LZW and LZP, with passwords and SFX stubs (docs/UHARC-ON-DISK.md)"
 FreeArc,arc;cdx,archive,,,,,R,fmt/1096,Y,Y,4,https://en.wikipedia.org/wiki/FreeArc,FreeArc,Y,Y,Y,PARTIAL,,storing/lzma/tornado/ppmd/grzip blocks decode behind rep/delta/exe/lzp/dict and inside 4x4 (every default -m1..-m9/-mx/-m9x chain) and AES/Blowfish/Serpent/Twofish encryption given the password (data and -hp headers); mm and external compressors are refused (FreeArcMethods.cs)
 ZPAQ,zpaq,archive,,,,,R,fmt/1097,RW,,3,https://mattmahoney.net/dc/zpaq206.pdf,Zpaq,Y,Y,Y,PARTIAL,,"journaling and streaming archives at every method are read and zpaq 7.15 extracts what we write; encrypted (-key) multi-part (arc???) and indexed (-index) archives are read and written: created encrypted; edits append a version in place (encrypted with the password) or as the next part of a set or from an index alone with the index updated; indexes written as zpaq extract -index writes them byte for byte; an index alone lists but cannot extract (ZpaqReader.cs, ZpaqWriter.cs, ZpaqSetEditor.cs)"
 PAQ (paq6/7/8 family),paq6;paq7;paq8;paq8l,archive,,,,,,,Y,Y,2,https://mattmahoney.net/dc/paq.html,,,,,MISSING,,the former Paq8 descriptor wrote an order-0 coder under paq8l's header and paq8l decoded it to wrong bytes; a real paq8l is a rung-2 rewrite (docs/RECLAIM-BACKLOG.md)
 KGB Archiver,kgb;kge,archive,,,,,R,,RW,Y,3,https://en.wikipedia.org/wiki/KGB_Archiver,Kgb,Y,Y,Y,PARTIAL,,KGB Archiver 1.0 (PAQ6) at memory levels 0-9 read and written; KGB Archiver 2 archives and .kge are not read
-PEA (PeaZip),pea,archive,,,,,R,fmt/1095,Y,Y,4,https://peazip.github.io/pea-file-format.html,Pea,Y,Y,,PARTIAL,,encrypted streams (EAX/HMAC/Twofish/Serpent and cascades) and multi-volume archives unsupported; no in-place modify
+PEA (PeaZip),pea,archive,,,,,R,fmt/1095,Y,Y,4,https://peazip.github.io/pea-file-format.html,Pea,Y,Y,,OK,,WORM: no in-place modify
 DGCA,dgc,archive,,,,,R,,Y,,2,,,,,,MISSING,,refused: closed format (Shin-ichi Tsuruta's DGCA); no published specification and no licensable implementation; Universal Extractor only drives the closed dgcac.exe
 GCA,gca,archive,,,,,,,Y,Y,2,,,,,,MISSING,,refused: closed format (Shin-ichi Tsuruta's GCA); no published specification and no licensable implementation
 BGA,bza;gza,archive,,,,,R,,,Y,2,https://www.madobe.net/archiver/lib/bga32.html,Gza;Bza,Y,Y,Y,OK,,GZA (gzip) and BZA (bzip2) read and written; BGA32.DLL 0.37 lists and extracts ours
@@ -116,7 +116,7 @@ grzip,grz,compression,,RW,,,,,,,1,https://fossies.org/linux/grzip/GRZipII.c,Grzi
 Brotli,br,compression,,,,,,,Y,,1,https://www.rfc-editor.org/rfc/rfc7932,Brotli,Y,Y,,OK,,
 Snappy (framed),sz;snappy,compression,,,,,,,Y,,1,https://github.com/google/snappy/blob/main/framing_format.txt,Snappy,Y,Y,,OK,,
 genozip,genozip,compression,,,,,,,Y,,1,https://github.com/divonlan/genozip,,,,,MISSING,,"refused: the only implementation is source-available under a licence that forbids reverse engineering and derivative works, and there is no published format specification"
-sfArk,sfark,compression,,,,,R,,Y,,2,docs/SFARK-ON-DISK.md,SfArk;bb:BB_SfArk,Y,Y,,OK,,V2 only (V1 refused like the reference); published Standard/Max files decode as sfarkxtc decodes them; sfarkxtc decodes our Fast-method output
+sfArk,sfark,compression,,,,,R,,Y,,2,docs/SFARK-ON-DISK.md,SfArk;bb:BB_SfArk,Y,Y,,OK,,V2 only (V1 refused like the reference); published Standard/Max files decode as sfarkxtc decodes them; sfarkxtc decodes our Fast- and Turbo-method output
 Squeeze (SQ),sq;qqq;?q?,compression,,,R,,,,Y,,2,,Squeeze,Y,Y,,OK,,
 Crunch (CP/M),cru;crunch;?z?,compression,,,R,,,,Y,,2,,Crunch,Y,Y,,OK,,CRUNCH 1.x/2.x read and 2.x written; lbrate agrees both ways (docs/CRUNCH-ON-DISK.md)
 MS-DOS COMPRESS (SZDD),szdd;??_;mslz,compression,R,,,,,fmt/462,Y,,3,https://www.cabextract.org.uk/libmspack/doc/szdd_kwaj_format.html,Szdd;SzCompress,Y,Y,,OK,,SZ variant: libmspack msexpand reads ours; no real SZ file found to test reading
@@ -183,12 +183,12 @@ StuffIt method 13,,codec,,,R,,,,,,1,,StuffIt,Y,Y,Y,OK,,
 StuffIt Huffman (method 3),,codec,,,R,,,,,,1,,StuffIt,Y,Y,Y,OK,,
 StuffIt LZW (method 2),,codec,,,R,,,,,,1,,StuffIt,Y,Y,Y,OK,,
 StuffIt DES encryption,,encryption,,,R,,,,,,1,,,,,,MISSING,,
-StuffIt X Blend,,codec,,,R,,,,,,1,,,,,,MISSING,,
-StuffIt X Cyanide,,codec,,,R,,,,,,1,,StuffItX,Y,,,OK,,
-StuffIt X Darkhorse,,codec,,,R,,,,,,1,,,,,,MISSING,,
-StuffIt X Iron,,codec,,,R,,,,,,1,,StuffItX,Y,,,OK,,
-StuffIt X English dictionary preprocessor,,codec,,,R,,,,,,1,,,,,,MISSING,,
-StuffIt X x86 filter,,filter,,,R,,,,,,1,,,,,,MISSING,,
+StuffIt X Blend,,codec,,,R,,,,,,1,,StuffItX,Y,Y,,OK,,
+StuffIt X Cyanide,,codec,,,R,,,,,,1,,StuffItX,Y,Y,,OK,,
+StuffIt X Darkhorse,,codec,,,R,,,,,,1,,StuffItX,Y,Y,,OK,,
+StuffIt X Iron,,codec,,,R,,,,,,1,,StuffItX,Y,Y,,OK,,
+StuffIt X English dictionary preprocessor,,codec,,,R,,,,,,1,,StuffItX,Y,Y,,OK,,
+StuffIt X x86 filter,,filter,,,R,,,,,,1,,StuffItX,Y,Y,,OK,,
 DiskDoubler methods (ADn/DDn/Method2),,codec,,,R,,,,,,1,,DiskDoubler,Y,Y,,PARTIAL,,"ADn (6, 9), Method 2/5 splay trees and Stac LZS (7) decoded; DDn refused (DiskDoublerCodecs.cs)"
 Compact Pro LZH/RLE,,codec,,,R,,,,,,1,,CompactPro,Y,Y,Y,PARTIAL,,decoded inside the CompactPro descriptor (no building block); no LZH encoder
 Squeeze (Huffman),,codec,,,R,,,,,,1,,Squeeze,Y,Y,,OK,,
@@ -220,7 +220,7 @@ btoa (ASCII85 text encoding),btoa;atob,encoding,,,,,,,,Y,1,,,,,,MISSING,,"not im
 Intel HEX,hex;ihex,firmware,R,,,,,,,,1,https://en.wikipedia.org/wiki/Intel_HEX,IntelHex,Y,Y,Y,OK,,
 Motorola S-record,srec;s19;mot,firmware,,,,R,,,,,1,https://en.wikipedia.org/wiki/SREC_(file_format),Srec,Y,Y,,OK,,
 NSIS installer,exe;nsis,installer,R,,R,,R,,,Y,4,https://nsis.sourceforge.io/,Nsis,Y,Y,,PARTIAL,makensis,"LZMA behind the x86 branch filter (7-Zip's own installers) and the WriteUninstaller uninstaller read as 7-Zip extracts them; forks that renumber opcodes (NSIS Park) list no uninstaller (NsisReader.cs). Creation writes NSIS 3 Unicode installers (zlib, bzip2 or LZMA, solid or not) onto the exehead stub of the user's own NSIS 3 installation, which is native code and is not shipped; no uninstaller, components, custom pages or script beyond extracting the files (NsisInstallerWriter.cs)"
-Inno Setup,exe,installer,,,,,R,,,,1,https://jrsoftware.org/isinfo.php,InnoSetup,Y,,,READ-ONLY-BUT-SOURCES-WRITE,ISCC,encrypted files and 16-bit 1.2.x refused (InnoSetupReader.cs)
+Inno Setup,exe,installer,,,,,R,,,,1,https://jrsoftware.org/isinfo.php,InnoSetup,Y,,,READ-ONLY-BUT-SOURCES-WRITE,ISCC,"encrypted files read with the password (ARC4-MD5, ARC4-SHA1, XChaCha20, Encryption=full); 16-bit 1.2.x refused (InnoSetupReader.cs)"
 InstallShield (cab / exe),exe;cab;ex_;hdr,installer,,,,,R,fmt/1466,,,2,https://github.com/twogood/unshield,InstallShieldCab,Y,,,READ-ONLY-BUT-SOURCES-WRITE,InstallShield,cabinet sets (data1.hdr + dataN.cab) only; the self-extracting setup.exe wrappers and InstallShield 3 .Z archives are not read (InstallShieldCabReader.cs)
 Wise Installer,exe,installer,,,,,R,,,,1,https://github.com/mnadareski/WiseUnpacker,WiseInstaller,Y,,,PARTIAL,,"setups of versions 5.0 to 9.02 (docs/WISE-ON-DISK.md): every file WiseUnpacker extracts from 7.01, 8.1, 8.12, 9.01 and 9.02 setups is reproduced byte for byte, 5.0 and 6.0 setups (whose scripts WiseUnpacker does not read) are checked by each stream's CRC-32; multi-volume data, PKZIP-wrapped streams and section-based Wise setups are not read"
 Setup Factory,exe,installer,,,,,R,,,,1,https://github.com/lazyhamster/Observer,SetupFactory,Y,,,PARTIAL,,"converted from Observer (LGPL-3.0-or-later): versions 5 to 9, PKWARE DCL/LZMA/LZMA2; every file sfextract extracts from 7.0, 8.0, 9.0.1 and 9.1 setups is reproduced byte for byte, and 5.0 and 6.0 setups (which sfextract does not read) extract against the CRC-32 their scripts record; versions before 5 are not read"
@@ -358,8 +358,12 @@ XPack (DOS),exe;com,executable,,,,,,,,Y,1,,,,,,MISSING,XPack,not implemented: no
 ComPAck (DOS),exe;com,executable,,,,,,,,Y,1,,,,,,MISSING,ComPAck,not implemented: no specification or sample with provenance
 AvPack (DOS),exe,executable,,,,,,,,Y,1,,,,,,MISSING,AvPack,not implemented: no specification or sample with provenance
 ProPack (DOS executable),exe,executable,,,,,,,,Y,1,,,,,,MISSING,ProPack,not implemented: executable form of RNC ProPack; the data codec is the Rnc descriptor
-WWPack (DOS),exe,executable,,,,,,,,Y,1,,,,,,MISSING,WWPack,not implemented: no specification or sample with provenance
-aPACK (DOS),exe;com,executable,,,,,,,,Y,1,,,,,,MISSING,aPACK,"not implemented: aPLib-based DOS packer; BB_Aplib exists, samples are needed"
+WWPack (DOS),exe,executable,,,,,,,,Y,1,http://fileformats.archiveteam.org/wiki/WWPACK,Wwpack,Y,,,PARTIAL,WWPack,"WWPACK 3.05 files (P command) restored by running the stub in the built-in 8086 emulator; image, relocations and registers equal the original programs WWPACK was given; WWPACK's own output for some programs does not run (under DOSBox either) and is refused; writing refused"
+aPACK (DOS),exe;com,executable,,,,,,,,Y,1,https://ibsensoftware.com/products_aPACK.html,Apack,Y,,,PARTIAL,aPACK,"aPACK 1.00 EXE files (standard, -s, -m and tiny stubs) restored by running the stub in the built-in 8086 emulator; image, relocations and registers equal the original programs aPACK was given; COM files are not handled; writing refused"
+ExeLITE (DOS exe),,archive,,,,,,,,,0,https://www.sac.sk/download/pack/elite.zip,ExeLite,Y,,,OURS-ONLY,,ExeLITE EXE files restored by emulating the stub; the original header the stub keeps restores the allocation fields too
+TINYPROG (DOS exe),,archive,,,,,,,,,0,http://fileformats.archiveteam.org/wiki/TINYPROG,TinyProg,Y,,,OURS-ONLY,,"TINYPROG 3.x EXE files restored by emulating the stub (TINYPROG 3.9 samples); image, relocations and registers equal the originals, where UNP 4.11 gets the relocation set wrong"
+AXE (DOS exe),,archive,,,,,,,,,0,http://fileformats.archiveteam.org/wiki/AXE,Axe,Y,,,OURS-ONLY,,"AXE 2.2 EXE files restored by emulating the stub; equal to the originals except SP two lower, as AXE starts them and as UNP 4.11 restores them"
+PGMPAK (DOS exe),,archive,,,,,,,,,0,,Pgmpak,Y,,,OURS-ONLY,,"PGMPAK 0.15 EXE files restored by emulating the stub (loaded high, child PSP); image, relocations, registers and allocation equal the originals; UNP 4.11 agrees on image and relocations; writing refused"
 DIET (DOS),exe;com,executable,,,,,,,,Y,1,https://github.com/jsummers/deark,Diet,Y,,,PARTIAL,DIET,EXE and COM files of DIET 1.00-1.45f restored (Deark MIT conversion); DIET 1.45f output restored byte-identical to UNP 4.11; DIET data files not handled; executable and COM support is proven with the original tools; DIET-compressed data files remain unsupported
 32Lite,exe,executable,,,,,,,,Y,1,,,,,,MISSING,32Lite,"not implemented: aPLib-based packer for PE and DOS-extender executables; BB_Aplib exists, samples are needed"
 YZPack,exe,executable,,,,,,,,Y,1,,,,,,MISSING,YZPack,not implemented: no specification or sample with provenance
@@ -484,7 +488,7 @@ Tux3,,filesystem,,,,,,,Y,,1,,Tux3,Y,,,READ-ONLY-BUT-SOURCES-WRITE,tux3 mkfs,read
 "VxFS (Veritas, incl. cluster CFS)",cfs,filesystem,,,,,,,Y,,1,,VxFs,Y,Y,Y,OK,,
 XFS,xfs;sgi,filesystem,,,,,,,Y,,1,,Xfs,Y,Y,,OK,,
 zFS (z/OS),,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
-ZFS,zfs,filesystem,,,,,,,Y,,1,,Zfs,Y,Y,Y,OK,,"writes and edits version 28 and 5000 pools, single-device, n-way mirror, RAID-Z1/2/3 or striped multi-vdev (OpenZFS-made pools included); lz4, zstd and embedded blocks on feature pools. Snapshot-held frees use deadlists; gang and deduplicated block frees are supported. Unsupported active features are refused; zdb -bcc finds supported pools leak-free and the OpenZFS kernel imports and scrubs them with 0 errors"
+ZFS,zfs,filesystem,,,,,,,Y,,1,,Zfs,Y,Y,Y,OK,,"writes and edits version 28 and 5000 pools, single-device, n-way mirror, RAID-Z1/2/3 or striped multi-vdev (OpenZFS-made pools included); lz4, zstd and embedded blocks on feature pools. Snapshot-held frees use deadlists; gang and deduplicated block frees are supported; snapshots are created and destroyed; natively encrypted datasets read and edited with their keys (AES-GCM/CCM, every MAC checked and written); pools with block cloning active are edited (BRT reference counts kept); dRAID pools read, written and edited, with distributed spares (also in use). Unsupported active features are refused; zdb -bcc finds supported pools leak-free and the OpenZFS kernel imports and scrubs them with 0 errors"
 bcachefs,,filesystem,,,,,,,Y,,1,,BcacheFs,Y,Y,Y,OK,,
 NOVA,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,refused: persistent-memory file system with only an out-of-tree kernel module; no userspace tool and no image
 3FS (Fire-Flyer),deepseek,filesystem,,,,,,,Y,,1,,,,,,MISSING,,

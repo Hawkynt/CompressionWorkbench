@@ -27,7 +27,8 @@ public sealed class CvfCreateDmsdosTests {
 
   private static IEnumerable<TestCaseData> Cases() {
     (Func<IArchiveCreatable> Make, string Detects, string[] Methods)[] formats = [
-      (() => new DoubleSpaceFormatDescriptor(), "drivespace CVF (version 2)", ["stored", "ds", "ds++"]),
+      // dmsdos names DoubleSpace's MSDSP6.0 / version-0 container as MS-DOS 6.0 writes it "doublespace".
+      (() => new DoubleSpaceFormatDescriptor(), "doublespace CVF (version 1)", ["stored", "ds", "ds++"]),
       (() => new DriveSpaceFormatDescriptor(), "drivespace CVF (version 2)", ["stored", "jm", "jm+"]),
       (() => new DriveSpace3FormatDescriptor(), "drivespace 3 CVF", ["stored", "jm", "sq", "auto++"]),
       (() => new StackerFormatDescriptor(), "stacker version 3 CVF", ["stored", "sd3", "sd3++", "auto"]),

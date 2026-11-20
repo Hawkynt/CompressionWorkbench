@@ -4942,6 +4942,8 @@ Shared utility methods for format descriptors (path sanitization, filtering, etc
 | `FlatFiles` | `static IEnumerable<ValueTuple<string, byte[]>> FlatFiles(IReadOnlyList<ArchiveInputInfo> inputs)` | Flattens all entries to root level (filename only) with their data. For formats without path support. |
 | `MatchesFilter` | `static bool MatchesFilter(string name, string[] filters)` | Returns true if `name` matches any of the `filters` by exact name, trailing path segment, or filename-only comparison. |
 | `MethodWithEffort` | `static string MethodWithEffort(FormatCreateOptions options, string method = null)` | The method name to hand a writer that reads its own effort tier out of the name, with the "+" run the caller asked for restored. |
+| `OutputFilePath` | `static string OutputFilePath(Stream output)` | The path an archive is being written to, when `output` is a file: the target behind an atomic-write temp name (`name.tmp.xxxxxxxx`) is what further volumes are named after. Null for any other stream. |
+| `ParseVolumeSize` | `static long ParseVolumeSize(string text)` | A volume size as the `VolumeSize` option carries it: bytes, or a number with a k/m/g/t suffix (powers of 1024); empty means 0, one file. |
 | `WriteFile` | `static void WriteFile(string baseDir, string entryName, byte[] data)` | Sanitizes an entry name and writes its data to disk under `baseDir`. Prevents path traversal attacks. |
 
 #### `FormatMethodInfo`
@@ -15912,7 +15914,7 @@ Implements `IEquatable<ParsedEsps>`.
 
 ### Namespace `FileFormat.ExePackers`
 
-[`AlienyzeExecutablePackerHandler`](#alienyzeexecutablepackerhandler) · [`AmberExecutablePackerHandler`](#amberexecutablepackerhandler) · [`AplibSectionPackerHandler`](#aplibsectionpackerhandler) · [`AplibSectionPackerHandler.Decoded`](#aplibsectionpackerhandlerdecoded) · [`AsPackExecutablePackerHandler`](#aspackexecutablepackerhandler) · [`AsPackFormatDescriptor`](#aspackformatdescriptor) · [`AsProtectFormatDescriptor`](#asprotectformatdescriptor) · [`BeRoExecutablePackerHandler`](#beroexecutablepackerhandler) · [`BzexeExecutablePackerHandler`](#bzexeexecutablepackerhandler) · [`BzexeFormatDescriptor`](#bzexeformatdescriptor) · [`CrinklerFormatDescriptor`](#crinklerformatdescriptor) · [`DescriptorExecutablePackerHandler`](#descriptorexecutablepackerhandler) · [`DietFormatDescriptor`](#dietformatdescriptor) · [`DietUnpacker`](#dietunpacker) · [`DosExePackerHandler`](#dosexepackerhandler) · [`DosPackedExeDescriptor`](#dospackedexedescriptor) · [`DosUnpacked`](#dosunpacked) · [`EnigmaVirtualBoxExecutablePackerHandler`](#enigmavirtualboxexecutablepackerhandler) · [`EronanaExecutablePackerHandler`](#eronanaexecutablepackerhandler) · [`Exe32packExecutablePackerHandler`](#exe32packexecutablepackerhandler) · [`ExePackFormatDescriptor`](#exepackformatdescriptor) · [`ExePackUnpacker`](#exepackunpacker) · [`ExpressorExecutablePackerHandler`](#expressorexecutablepackerhandler) · [`EzuriExecutablePackerHandler`](#ezuriexecutablepackerhandler) · [`FsgExecutablePackerHandler`](#fsgexecutablepackerhandler) · [`FsgFallbackExecutablePackerHandler`](#fsgfallbackexecutablepackerhandler) · [`FsgFormatDescriptor`](#fsgformatdescriptor) · [`GenericAplibPackedPeHandler`](#genericaplibpackedpehandler) · [`GenericNrvPackedPeHandler`](#genericnrvpackedpehandler) · [`GoPackerExecutablePackerHandler`](#gopackerexecutablepackerhandler) · [`GoPackerFormatDescriptor`](#gopackerformatdescriptor) · [`GzexeExecutablePackerHandler`](#gzexeexecutablepackerhandler) · [`GzexeFormatDescriptor`](#gzexeformatdescriptor) · [`HuanExecutablePackerHandler`](#huanexecutablepackerhandler) · [`HuanFormatDescriptor`](#huanformatdescriptor) · [`HxorExecutablePackerHandler`](#hxorexecutablepackerhandler) · [`IDosExeUnpacker`](#idosexeunpacker) · [`JdpackExecutablePackerHandler`](#jdpackexecutablepackerhandler) · [`KkrunchyFormatDescriptor`](#kkrunchyformatdescriptor) · [`LzExeFormatDescriptor`](#lzexeformatdescriptor) · [`LzExeUnpacker`](#lzexeunpacker) · [`M0dernP4ckerExecutablePackerHandler`](#m0dernp4ckerexecutablepackerhandler) · [`MPressExecutablePackerHandler`](#mpressexecutablepackerhandler) · [`MPressFormatDescriptor`](#mpressformatdescriptor) · [`MewExecutablePackerHandler`](#mewexecutablepackerhandler) · [`MewFormatDescriptor`](#mewformatdescriptor) · [`MidgetPackExecutablePackerHandler`](#midgetpackexecutablepackerhandler) · [`MinorExecutablePackerHandlerBase`](#minorexecutablepackerhandlerbase) · [`MoleboxExecutablePackerHandler`](#moleboxexecutablepackerhandler) · [`MoleboxIdea`](#moleboxidea) · [`NeoliteExecutablePackerHandler`](#neoliteexecutablepackerhandler) · [`NsPackExecutablePackerHandler`](#nspackexecutablepackerhandler) · [`NsPackFormatDescriptor`](#nspackformatdescriptor) · [`OrigamiExecutablePackerHandler`](#origamiexecutablepackerhandler) · [`OrigamiFormatDescriptor`](#origamiformatdescriptor) · [`PackmanExecutablePackerHandler`](#packmanexecutablepackerhandler) · [`PakkeroExecutablePackerHandler`](#pakkeroexecutablepackerhandler) · [`PapawExecutablePackerHandler`](#papawexecutablepackerhandler) · [`PapawFormatDescriptor`](#papawformatdescriptor) · [`PeCompactExecutablePackerHandler`](#pecompactexecutablepackerhandler) · [`PePackerExecutablePackerHandler`](#pepackerexecutablepackerhandler) · [`PeToyExecutablePackerHandler`](#petoyexecutablepackerhandler) · [`PetiteExecutablePackerHandler`](#petiteexecutablepackerhandler) · [`PetiteFormatDescriptor`](#petiteformatdescriptor) · [`PetiteInflate`](#petiteinflate) · [`PetiteUnpacker`](#petiteunpacker) · [`PetiteUnpacker.PetiteBlock`](#petiteunpackerpetiteblock) · [`PetiteUnpacker.PetiteImage`](#petiteunpackerpetiteimage) · [`PkLiteFormatDescriptor`](#pkliteformatdescriptor) · [`PkLiteUnpacker`](#pkliteunpacker) · [`ProtectorExecutablePackerHandlerBase`](#protectorexecutablepackerhandlerbase) · [`PyPePackerExecutablePackerHandler`](#pypepackerexecutablepackerhandler) · [`RlPackExecutablePackerHandler`](#rlpackexecutablepackerhandler) · [`ShrinklerFormatDescriptor`](#shrinklerformatdescriptor) · [`SilentPackerExecutablePackerHandler`](#silentpackerexecutablepackerhandler) · [`SilentPackerFormatDescriptor`](#silentpackerformatdescriptor) · [`SimpleDpackExecutablePackerHandler`](#simpledpackexecutablepackerhandler) · [`SquishyExecutablePackerHandler`](#squishyexecutablepackerhandler) · [`TelockExecutablePackerHandler`](#telockexecutablepackerhandler) · [`ThemidaExecutablePackerHandler`](#themidaexecutablepackerhandler) · [`ThemidaFormatDescriptor`](#themidaformatdescriptor) · [`VmProtectFormatDescriptor`](#vmprotectformatdescriptor) · [`WardExecutablePackerHandler`](#wardexecutablepackerhandler) · [`WinUpackExecutablePackerHandler`](#winupackexecutablepackerhandler) · [`WinUpackFallbackExecutablePackerHandler`](#winupackfallbackexecutablepackerhandler) · [`XorPackerExecutablePackerHandler`](#xorpackerexecutablepackerhandler) · [`YodaByteOp`](#yodabyteop) · [`YodaByteOpKind`](#yodabyteopkind) · [`YodaCrypterExecutablePackerHandler`](#yodacrypterexecutablepackerhandler) · [`YodaCrypterFormatDescriptor`](#yodacrypterformatdescriptor) · [`YodaCrypterStub`](#yodacrypterstub) · [`YodaCrypterStubInfo`](#yodacrypterstubinfo) · [`YodaProtectorExecutablePackerHandler`](#yodaprotectorexecutablepackerhandler)
+[`AlienyzeExecutablePackerHandler`](#alienyzeexecutablepackerhandler) · [`AmberExecutablePackerHandler`](#amberexecutablepackerhandler) · [`ApackFormatDescriptor`](#apackformatdescriptor) · [`ApackUnpacker`](#apackunpacker) · [`AplibSectionPackerHandler`](#aplibsectionpackerhandler) · [`AplibSectionPackerHandler.Decoded`](#aplibsectionpackerhandlerdecoded) · [`AsPackExecutablePackerHandler`](#aspackexecutablepackerhandler) · [`AsPackFormatDescriptor`](#aspackformatdescriptor) · [`AsProtectFormatDescriptor`](#asprotectformatdescriptor) · [`AxeFormatDescriptor`](#axeformatdescriptor) · [`AxeUnpacker`](#axeunpacker) · [`BeRoExecutablePackerHandler`](#beroexecutablepackerhandler) · [`BzexeExecutablePackerHandler`](#bzexeexecutablepackerhandler) · [`BzexeFormatDescriptor`](#bzexeformatdescriptor) · [`CrinklerFormatDescriptor`](#crinklerformatdescriptor) · [`DescriptorExecutablePackerHandler`](#descriptorexecutablepackerhandler) · [`DietFormatDescriptor`](#dietformatdescriptor) · [`DietUnpacker`](#dietunpacker) · [`DosExePackerHandler`](#dosexepackerhandler) · [`DosPackedExeDescriptor`](#dospackedexedescriptor) · [`DosTraceUnpacker`](#dostraceunpacker) · [`DosUnpacked`](#dosunpacked) · [`EnigmaVirtualBoxExecutablePackerHandler`](#enigmavirtualboxexecutablepackerhandler) · [`EronanaExecutablePackerHandler`](#eronanaexecutablepackerhandler) · [`Exe32packExecutablePackerHandler`](#exe32packexecutablepackerhandler) · [`ExeLiteFormatDescriptor`](#exeliteformatdescriptor) · [`ExeLiteUnpacker`](#exeliteunpacker) · [`ExePackFormatDescriptor`](#exepackformatdescriptor) · [`ExePackUnpacker`](#exepackunpacker) · [`ExpressorExecutablePackerHandler`](#expressorexecutablepackerhandler) · [`EzuriExecutablePackerHandler`](#ezuriexecutablepackerhandler) · [`FsgExecutablePackerHandler`](#fsgexecutablepackerhandler) · [`FsgFallbackExecutablePackerHandler`](#fsgfallbackexecutablepackerhandler) · [`FsgFormatDescriptor`](#fsgformatdescriptor) · [`GenericAplibPackedPeHandler`](#genericaplibpackedpehandler) · [`GenericNrvPackedPeHandler`](#genericnrvpackedpehandler) · [`GoPackerExecutablePackerHandler`](#gopackerexecutablepackerhandler) · [`GoPackerFormatDescriptor`](#gopackerformatdescriptor) · [`GzexeExecutablePackerHandler`](#gzexeexecutablepackerhandler) · [`GzexeFormatDescriptor`](#gzexeformatdescriptor) · [`HuanExecutablePackerHandler`](#huanexecutablepackerhandler) · [`HuanFormatDescriptor`](#huanformatdescriptor) · [`HxorExecutablePackerHandler`](#hxorexecutablepackerhandler) · [`IDosExeUnpacker`](#idosexeunpacker) · [`JdpackExecutablePackerHandler`](#jdpackexecutablepackerhandler) · [`KkrunchyFormatDescriptor`](#kkrunchyformatdescriptor) · [`LzExeFormatDescriptor`](#lzexeformatdescriptor) · [`LzExeUnpacker`](#lzexeunpacker) · [`M0dernP4ckerExecutablePackerHandler`](#m0dernp4ckerexecutablepackerhandler) · [`MPressExecutablePackerHandler`](#mpressexecutablepackerhandler) · [`MPressFormatDescriptor`](#mpressformatdescriptor) · [`MewExecutablePackerHandler`](#mewexecutablepackerhandler) · [`MewFormatDescriptor`](#mewformatdescriptor) · [`MidgetPackExecutablePackerHandler`](#midgetpackexecutablepackerhandler) · [`MinorExecutablePackerHandlerBase`](#minorexecutablepackerhandlerbase) · [`MoleboxExecutablePackerHandler`](#moleboxexecutablepackerhandler) · [`MoleboxIdea`](#moleboxidea) · [`NeoliteExecutablePackerHandler`](#neoliteexecutablepackerhandler) · [`NsPackExecutablePackerHandler`](#nspackexecutablepackerhandler) · [`NsPackFormatDescriptor`](#nspackformatdescriptor) · [`OrigamiExecutablePackerHandler`](#origamiexecutablepackerhandler) · [`OrigamiFormatDescriptor`](#origamiformatdescriptor) · [`PackmanExecutablePackerHandler`](#packmanexecutablepackerhandler) · [`PakkeroExecutablePackerHandler`](#pakkeroexecutablepackerhandler) · [`PapawExecutablePackerHandler`](#papawexecutablepackerhandler) · [`PapawFormatDescriptor`](#papawformatdescriptor) · [`PeCompactExecutablePackerHandler`](#pecompactexecutablepackerhandler) · [`PePackerExecutablePackerHandler`](#pepackerexecutablepackerhandler) · [`PeToyExecutablePackerHandler`](#petoyexecutablepackerhandler) · [`PetiteExecutablePackerHandler`](#petiteexecutablepackerhandler) · [`PetiteFormatDescriptor`](#petiteformatdescriptor) · [`PetiteInflate`](#petiteinflate) · [`PetiteUnpacker`](#petiteunpacker) · [`PetiteUnpacker.PetiteBlock`](#petiteunpackerpetiteblock) · [`PetiteUnpacker.PetiteImage`](#petiteunpackerpetiteimage) · [`PgmpakFormatDescriptor`](#pgmpakformatdescriptor) · [`PgmpakUnpacker`](#pgmpakunpacker) · [`PkLiteFormatDescriptor`](#pkliteformatdescriptor) · [`PkLiteUnpacker`](#pkliteunpacker) · [`ProtectorExecutablePackerHandlerBase`](#protectorexecutablepackerhandlerbase) · [`PyPePackerExecutablePackerHandler`](#pypepackerexecutablepackerhandler) · [`RlPackExecutablePackerHandler`](#rlpackexecutablepackerhandler) · [`ShrinklerFormatDescriptor`](#shrinklerformatdescriptor) · [`SilentPackerExecutablePackerHandler`](#silentpackerexecutablepackerhandler) · [`SilentPackerFormatDescriptor`](#silentpackerformatdescriptor) · [`SimpleDpackExecutablePackerHandler`](#simpledpackexecutablepackerhandler) · [`SquishyExecutablePackerHandler`](#squishyexecutablepackerhandler) · [`TelockExecutablePackerHandler`](#telockexecutablepackerhandler) · [`ThemidaExecutablePackerHandler`](#themidaexecutablepackerhandler) · [`ThemidaFormatDescriptor`](#themidaformatdescriptor) · [`TinyProgFormatDescriptor`](#tinyprogformatdescriptor) · [`TinyProgUnpacker`](#tinyprogunpacker) · [`VmProtectFormatDescriptor`](#vmprotectformatdescriptor) · [`WardExecutablePackerHandler`](#wardexecutablepackerhandler) · [`WinUpackExecutablePackerHandler`](#winupackexecutablepackerhandler) · [`WinUpackFallbackExecutablePackerHandler`](#winupackfallbackexecutablepackerhandler) · [`WwpackFormatDescriptor`](#wwpackformatdescriptor) · [`WwpackUnpacker`](#wwpackunpacker) · [`XorPackerExecutablePackerHandler`](#xorpackerexecutablepackerhandler) · [`YodaByteOp`](#yodabyteop) · [`YodaByteOpKind`](#yodabyteopkind) · [`YodaCrypterExecutablePackerHandler`](#yodacrypterexecutablepackerhandler) · [`YodaCrypterFormatDescriptor`](#yodacrypterformatdescriptor) · [`YodaCrypterStub`](#yodacrypterstub) · [`YodaCrypterStubInfo`](#yodacrypterstubinfo) · [`YodaProtectorExecutablePackerHandler`](#yodaprotectorexecutablepackerhandler)
 
 #### `AlienyzeExecutablePackerHandler`
 
@@ -15943,6 +15945,34 @@ Inherits `MinorExecutablePackerHandlerBase`. Implements `IExecutablePackerHandle
 | `Detect` | `override DetectionResult Detect(ReadOnlySpan<byte> image)` | Performs the detect operation. |
 | `IsPackerSection` | `protected override bool IsPackerSection(string name)` | Performs the is packer section operation. |
 | `Unpack` | `override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options)` | Amber turns a PE into position-independent shellcode plus an embedded copy of the original image that its reflective loader maps at runtime. When that embedded copy is stored as a plaintext `MZ..PE` (the loader relocates it in place) we carve and validate it as a real PE. When it is XOR/RC4-obscured — the common case — the key lives in the shellcode stub, so we honestly stop at locating the payload-bearing region rather than fabricating a decode. |
+
+#### `ApackFormatDescriptor`
+
+aPACK-packed DOS executables (Joergen Ibsen, 1997-2009): lists the restored program, recovered by running aPACK's stub in the built-in 8086 emulator (`DosTracer`). Reference: `https://ibsensoftware.com/products_aPACK.html`.
+
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ApackFormatDescriptor` | `ApackFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+
+#### `ApackUnpacker`
+
+aPACK 1.00 (Joergen Ibsen) EXE stubs: the standard one, the one without DS/ES saving (-s) and the tiny one (-t).
+
+Inherits `DosTraceUnpacker`. Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ApackUnpacker` | `ApackUnpacker()` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `Instance` | `static ApackUnpacker Instance { get; }` |  |
 
 #### `AplibSectionPackerHandler`
 
@@ -16038,6 +16068,34 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `AxeFormatDescriptor`
+
+AXE-packed DOS executables (System Enhancement Associates): lists the restored program (8086 emulation of the stub).
+
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AxeFormatDescriptor` | `AxeFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+
+#### `AxeUnpacker`
+
+AXE 2.2 (System Enhancement Associates).
+
+Inherits `DosTraceUnpacker`. Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AxeUnpacker` | `AxeUnpacker()` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `Instance` | `static AxeUnpacker Instance { get; }` |  |
 
 #### `BeRoExecutablePackerHandler`
 
@@ -16208,6 +16266,22 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `FindMarker` | `protected virtual string FindMarker(ReadOnlySpan<byte> file)` | A looser recognition for files whose stub is not one the unpacker knows (e.g. the packer's copyright text); returns a description of the mark or null. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
+#### `DosTraceUnpacker`
+
+A DOS packer restored by running its own stub in the emulator (`DosTracer`). Only stubs recognised by `Variant` are taken: each recognised layout was checked against original programs packed by the real packer.
+
+Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DosTraceUnpacker` | `protected DosTraceUnpacker()` |  |
+| `DisplayName` | `abstract string DisplayName { get; }` |  |
+| `Id` | `abstract string Id { get; }` |  |
+| `RoutinePrefix` | `protected virtual int RoutinePrefix { get; }` | Stub bytes in front of a routine the stub unpacks behind the image and runs. |
+| `Detect` | `virtual string Detect(ReadOnlySpan<byte> file)` |  |
+| `Match` | `protected static bool Match(byte[] mem, int pos, string pattern)` | Pattern of byte values (chars 0-255) where '?' matches anything. |
+| `Unpack` | `DosUnpacked Unpack(ReadOnlySpan<byte> file)` |  |
+
 #### `DosUnpacked`
 
 A DOS executable restored from its packed form.
@@ -16265,6 +16339,34 @@ Inherits `MinorExecutablePackerHandlerBase`. Implements `IExecutablePackerHandle
 | `LiteralSignature` | `protected override ReadOnlySpan<byte> LiteralSignature { get; }` | Gets the literal signature. |
 | `Detect` | `override DetectionResult Detect(ReadOnlySpan<byte> image)` | Performs the detect operation. |
 | `IsPackerSection` | `protected override bool IsPackerSection(string name)` | Performs the is packer section operation. |
+
+#### `ExeLiteFormatDescriptor`
+
+ExeLITE-packed DOS executables: lists the restored program (8086 emulation of the stub).
+
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ExeLiteFormatDescriptor` | `ExeLiteFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+
+#### `ExeLiteUnpacker`
+
+ExeLITE (EXE compression of the ELITE tool).
+
+Inherits `DosTraceUnpacker`. Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ExeLiteUnpacker` | `ExeLiteUnpacker()` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `Instance` | `static ExeLiteUnpacker Instance { get; }` |  |
 
 #### `ExePackFormatDescriptor`
 
@@ -17086,6 +17188,34 @@ Implements `IEquatable<PetiteImage>`.
 | `MemoryImage` | `byte[] MemoryImage { get; init; }` |  |
 | `StubSectionRva` | `uint StubSectionRva { get; init; }` |  |
 
+#### `PgmpakFormatDescriptor`
+
+PGMPAK-packed DOS executables (Todor Todorov): lists the restored program (8086 emulation of the stub).
+
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PgmpakFormatDescriptor` | `PgmpakFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+
+#### `PgmpakUnpacker`
+
+PGMPAK 0.15 (Todor Todorov). The packed file asks DOS to load it high (zero minimum and maximum allocation); the stub unpacks the program at the bottom of its memory, gives it a child PSP and jumps to it. Measured on programs packed by PGMPAK 0.15 whose images end at different paragraph offsets: the decompressor writes one zero byte past the image; the program's minimum and maximum allocation are stored in front of its SS, SP, IP and CS near the end of the packed image; the file ends with `"\0PGMPAK 0.15"`, which is the packer's, not the program's.
+
+Inherits `DosTraceUnpacker`. Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PgmpakUnpacker` | `PgmpakUnpacker()` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `Instance` | `static PgmpakUnpacker Instance { get; }` |  |
+
 #### `PkLiteFormatDescriptor`
 
 Pseudo-archive descriptor for PKLITE-packed DOS executables and COM files (PKWARE, 1990-1996): lists the restored program as `unpacked.exe` or `unpacked.com`. Restoring is done by `PkLiteUnpacker`; on files from PKLITE 1.15 and 2.01 the result equals both `pklite -x` and UNP 4.11 byte for byte. References: `https://en.wikipedia.org/wiki/PKLITE` — format and tool history`https://github.com/jsummers/deark` — modules/pklite.c, the converted decoder
@@ -17312,6 +17442,35 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+#### `TinyProgFormatDescriptor`
+
+TINYPROG-packed DOS executables (Tranzoa): lists the restored program (8086 emulation of the stub).
+
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TinyProgFormatDescriptor` | `TinyProgFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+
+#### `TinyProgUnpacker`
+
+TINYPROG (Tranzoa). Recognised as Deark's src/fmtutil-exe.c recognises it: no relocations, a jump over the user data, a short jump, then the stub's fixed opening (MIT; see THIRD-PARTY-NOTICE.Deark.txt).
+
+Inherits `DosTraceUnpacker`. Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TinyProgUnpacker` | `TinyProgUnpacker()` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `Instance` | `static TinyProgUnpacker Instance { get; }` |  |
+| `Detect` | `override string Detect(ReadOnlySpan<byte> file)` | TINYPROG's jumps reach past the 64 entry bytes, so it reads the file itself. |
+
 #### `VmProtectFormatDescriptor`
 
 Pseudo-archive descriptor for VMProtect-protected Win32 executables. VMProtect (~2003+) is a commercial virtualizing protector that re-routes selected bytecode through a per-build virtual machine. The unpacker stub commonly renames sections to `".vmp0"`, `".vmp1"`, `".vmp2"` and almost always embeds the literal `"VMProtect"` in the build for licensing/runtime calls. References: `https://vmpsoft.com` — official VMProtect site (VMProtect Software)`https://en.wikipedia.org/wiki/VMProtect` — background`https://github.com/horsicq/Detect-It-Easy` — Detect It Easy — maintained packer-detection signature database
@@ -17382,6 +17541,35 @@ Inherits `MinorExecutablePackerHandlerBase`. Implements `IExecutablePackerHandle
 | `LiteralSignature` | `protected override ReadOnlySpan<byte> LiteralSignature { get; }` | Gets the literal signature. |
 | `Detect` | `override DetectionResult Detect(ReadOnlySpan<byte> image)` | Performs the detect operation. |
 | `IsPackerSection` | `protected override bool IsPackerSection(string name)` | Performs the is packer section operation. |
+
+#### `WwpackFormatDescriptor`
+
+WWPACK-packed DOS executables: lists the restored program (8086 emulation of the stub).
+
+Inherits `DosPackedExeDescriptor`. Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WwpackFormatDescriptor` | `WwpackFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `MetadataSection` | `protected override string MetadataSection { get; }` |  |
+| `Unpacker` | `protected override IDosExeUnpacker Unpacker { get; }` |  |
+
+#### `WwpackUnpacker`
+
+WWPACK 3.05 (Rafal Wierzbicki, Piotr Warezak), files made with the P command. Recognised as Deark's src/fmtutil-exe.c recognises it (MIT; see THIRD-PARTY-NOTICE.Deark.txt): no relocations, a 32-byte header, an entry point after the image start and the stub's opening bytes. Its stub unpacks a relocation routine right behind the image and runs it; one data byte of the stub sits in front of that routine (measured on files whose image ends at different paragraph offsets), so it is not part of the image.
+
+Inherits `DosTraceUnpacker`. Implements `IDosExeUnpacker`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WwpackUnpacker` | `WwpackUnpacker()` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+| `Instance` | `static WwpackUnpacker Instance { get; }` |  |
+| `RoutinePrefix` | `protected override int RoutinePrefix { get; }` |  |
 
 #### `XorPackerExecutablePackerHandler`
 
@@ -20303,9 +20491,11 @@ Reads the files an Inno Setup installer carries.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `InnoSetupReader` | `InnoSetupReader(Stream stream)` | Opens an Inno Setup installer (setup.exe) or a bare setup-0 file. |
+| `InnoSetupReader` | `InnoSetupReader(Stream stream, string password)` | Opens an Inno Setup installer with the password its encrypted files (or, with Encryption=full, its headers) need. |
 | `AppName` | `string AppName { get; }` | Gets the application name from the setup header. |
 | `AppVersion` | `string AppVersion { get; }` | Gets the application version from the setup header. |
 | `Compression` | `InnoCompression Compression { get; }` | Gets the compressor the files were stored with. |
+| `EncryptionMethods` | `IReadOnlyList<InnoEncryption> EncryptionMethods { get; }` | Gets the ciphers the installer's files use (empty when none is encrypted). |
 | `Entries` | `IReadOnlyList<InnoSetupEntry> Entries { get; }` | Gets the files, named and filtered the way innoextract extracts them. |
 | `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether some files are encrypted. |
 | `VersionText` | `string VersionText { get; }` | Gets the version as text, e.g. "5.5.7 (unicode)". |
@@ -27445,12 +27635,16 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 #### `PeaArchive`
 
-PEA (PeaZip's own format, version 1 revision 6): a 10-byte archive header, one stream with a 10-byte header naming the compression (stored or zlib at level 3/6/9 in independent 1 MiB blocks) and three integrity checks — per object, for the stream and for the volume — then objects (name, time, attributes, size, data) and an end-of-archive trigger. This covers single-volume archives with any of the hash or checksum controls; encrypted streams (EAX, HMAC, Twofish, Serpent and their cascades) are refused.
+PEA (PeaZip's own format, version 1 revision 6): a 10-byte archive header, one stream with a 10-byte header naming the compression (stored or zlib at level 3/6/9 in independent 1 MiB blocks) and three integrity checks — per object, for the stream and for the volume — then objects (name, time, attributes, size, data) and an end-of-archive trigger. A volume set is that byte stream cut into `name.000001.pea`, `name.000002.pea`, …, each volume ending with the volume check over its own bytes. This covers single archives and volume sets with any of the hash or checksum controls, and streams encrypted with one cipher (AES, Twofish or Serpent in EAX mode, 128- or 256-bit, or AES-128 with HMAC) or with the triple cascades of the three 256-bit EAX ciphers, which encrypt everything after salt-and-verifier subheaders and end the stream with a tag in place of the stream check.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Read` | `static List<PeaEntry> Read(Stream stream)` | Reads and verifies a single-volume PEA archive. |
-| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, int compression = 2, Check objectCheck = 2, Check streamCheck = 19, Check volumeCheck = 2)` | Writes a single-volume PEA 1.6 archive the way PeaZip does on Unix: names are stored as absolute paths under `/`, times as Unix seconds, zlib blocks of 1 MiB (a block that does not shrink is stored), with the given object, stream and volume checks. |
+| `ReadVolumes` | `static List<PeaEntry> ReadVolumes(IEnumerable<byte[]> volumes, string password = null)` | Reads and verifies a PEA archive from its volumes in order. Each volume ends with its own volume check over that volume's bytes; the archive is the volumes' contents, checks removed, joined. |
+| `Read` | `static List<PeaEntry> Read(Stream stream, string password = null)` | Reads and verifies a PEA archive. A file stream named like a volume (`name.000001.pea`) is read together with the volumes beside it, starting from volume 1. |
+| `VolumePath` | `static string VolumePath(string baseName, int number)` | The file name of volume `number` (1-based) of the set named `baseName`: `base.000001.pea`, `base.000002.pea`, … (at least six digits). |
+| `VolumePaths` | `static List<string> VolumePaths(string path)` | Every volume of the set `path` belongs to, in order from volume 1 while the next file exists; just `path` when it is not named like a volume. |
+| `VolumeSetBase` | `static string VolumeSetBase(string path)` | The set name of a volume path (`dir/base.000003.pea` gives `dir/base`), or null when `path` is not named like a volume. |
+| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, int compression = 2, Check objectCheck = 2, Check streamCheck = 19, Check volumeCheck = 2, long volumeSize = 0, Func<int, Stream> openVolume = null, string password = null, int cascadeStrength = 0)` | Writes a PEA 1.6 archive the way PeaZip does on Unix: names are stored as absolute paths under `/`, times as Unix seconds, zlib blocks of 1 MiB (a block that does not shrink is stored), with the given object, stream and volume checks. |
 
 #### `PeaArchive.Check`
 
@@ -27472,6 +27666,22 @@ A check algorithm by its PEA id.
 | `Sha3_512` | `23` | SHA3-512. |
 | `Blake2s` | `24` | BLAKE2s-256. |
 | `Blake2b` | `25` | BLAKE2b-512. |
+| `AesHmac` | `48` | Stream only: AES-128 CTR with HMAC-SHA-1, keys by PBKDF2-HMAC-SHA-1 (pea's HMAC). |
+| `AesEax` | `49` | Stream only: AES-128 EAX, keys by PBKDF2-HMAC-SHA-1 (pea's EAX). |
+| `TwofishEax` | `50` | Stream only: Twofish-128 EAX, keys by PBKDF2-HMAC-SHA-1 (pea's TF). |
+| `SerpentEax` | `51` | Stream only: Serpent-128 EAX, keys by PBKDF2-HMAC-SHA-1 (pea's SP). |
+| `Aes256Eax` | `65` | Stream only: AES-256 EAX, keys by PBKDF2-HMAC-Whirlpool (pea's EAX256, PeaZip's default). |
+| `Twofish256Eax` | `66` | Stream only: Twofish-256 EAX, keys by PBKDF2-HMAC-Whirlpool (pea's TF256). |
+| `Serpent256Eax` | `67` | Stream only: Serpent-256 EAX, keys by PBKDF2-HMAC-Whirlpool (pea's SP256). |
+| `TriAts` | `68` | Stream only: AES, then Twofish, then Serpent (256-bit EAX each), keys by PBKDF2 (pea's TRIATS). |
+| `TriTsa` | `69` | Stream only: Twofish, Serpent, AES; keys by PBKDF2 (pea's TRITSA). |
+| `TriSat` | `70` | Stream only: Serpent, AES, Twofish; keys by PBKDF2 (pea's TRISAT). |
+| `SriAts` | `71` | Stream only: AES, Twofish, Serpent; keys by scrypt (pea's SRIATS). |
+| `SriTsa` | `72` | Stream only: Twofish, Serpent, AES; keys by scrypt (pea's SRITSA). |
+| `SriSat` | `73` | Stream only: Serpent, AES, Twofish; keys by scrypt (pea's SRISAT). |
+| `HriAts` | `74` | Stream only: AES, Twofish, Serpent; keys by scrypt and PBKDF2 (pea's HRIATS). |
+| `HriTsa` | `75` | Stream only: Twofish, Serpent, AES; keys by scrypt and PBKDF2 (pea's HRITSA). |
+| `HriSat` | `76` | Stream only: Serpent, AES, Twofish; keys by scrypt and PBKDF2 (pea's HRISAT). |
 
 #### `PeaArchive.Input`
 
@@ -27496,6 +27706,7 @@ One object of a PEA archive.
 | `Attributes` | `uint Attributes { get; init; }` | Gets the file attributes as stored. |
 | `Data` | `byte[] Data { get; init; }` | Gets the decoded content (empty for directories). |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Gets whether the object is a directory. |
+| `IsEncrypted` | `bool IsEncrypted { get; init; }` | Gets whether the archive's stream is encrypted. |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Gets the modification time, when the archive's time encoding is known. |
 | `Path` | `string Path { get; init; }` | Gets the path relative to the archive's common root, '/'-separated. |
 | `Size` | `long Size { get; init; }` | Gets the uncompressed size. |
@@ -27505,7 +27716,7 @@ One object of a PEA archive.
 
 PEA archive (.pea), PeaZip's native format.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -27521,6 +27732,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
@@ -30467,6 +30679,7 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Compress` | `void Compress(Stream input, Stream output)` |  |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Packs with the method `options` names: `fast` (the default) or `turbo`. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` |  |
 
 ### Namespace `FileFormat.Sfar`
@@ -31700,7 +31913,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `SqxReader`
 
-Reads SQX archives (formats 1.1 and 2.0) as Squeez-c (MIT) reads them: main, file and directory blocks with their header checksums, stored and LZ77 + Huffman (methods 1-4) files, solid chains and self-extracting archives whose stub precedes the main block. Audio (5), text (6) and ultra (7) files, encryption and split files are refused.
+Reads SQX archives (formats 1.1 and 2.0) as Squeez-c (MIT) reads them: main, file and directory blocks with their header checksums, stored and LZ77 + Huffman (methods 1-4) files, solid chains and self-extracting archives whose stub precedes the main block, audio (method 5: WAV samples behind predictors), text (method 6: PPMd var. I) and ultra (method 7: LZ77 with a range coder) files. Encryption and split files are refused.
 
 Implements `IDisposable`.
 
@@ -31995,7 +32208,16 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.StuffItX`
 
-[`StuffItXEntry`](#stuffitxentry) · [`StuffItXFormatDescriptor`](#stuffitxformatdescriptor) · [`StuffItXReader`](#stuffitxreader)
+[`StuffItXCompression`](#stuffitxcompression) · [`StuffItXEntry`](#stuffitxentry) · [`StuffItXFormatDescriptor`](#stuffitxformatdescriptor) · [`StuffItXReader`](#stuffitxreader) · [`StuffItXWriter`](#stuffitxwriter) · [`StuffItXWriter.Input`](#stuffitxwriterinput)
+
+#### `StuffItXCompression`
+
+How `StuffItXWriter` codes the archive's data stream.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Store` | `0` | Stored (no coding). |
+| `Deflate` | `1` | Method 3, StuffIt X's Deflate (a six-bit distance-code count in dynamic blocks). |
 
 #### `StuffItXEntry`
 
@@ -32018,9 +32240,9 @@ One file, directory or resource fork of a StuffIt X (.sitx) archive.
 
 #### `StuffItXFormatDescriptor`
 
-StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro), read-only. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver), the reader this one is converted from`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt X
+StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro): read, and written stored or Deflate-coded. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver), the reader this one is converted from`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt X
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -32037,6 +32259,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
@@ -32049,10 +32272,32 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `StuffItXReader` | `StuffItXReader(Stream stream, bool leaveOpen = false)` | Opens a StuffIt X archive and reads its directory. |
+| `Comment` | `string Comment { get; }` | The archive's own comment, from the catalog of the archive object, if it has one. |
 | `Entries` | `IReadOnlyList<StuffItXEntry> Entries { get; }` | The archive's files, directories and resource forks. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(StuffItXEntry entry)` | Decodes one entry. |
 | `IsStuffItX` | `static bool IsStuffItX(ReadOnlySpan<byte> data)` | Whether `data` starts with a StuffIt X signature. |
+
+#### `StuffItXWriter`
+
+Writes StuffIt X (.sitx) archives: one solid data stream holding every file's data fork, stored or Deflate-coded and CRC-32 checked, and a stored catalog of names and dates.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, StuffItXCompression compression = 1)` | Writes a StuffIt X archive of `inputs`. |
+
+#### `StuffItXWriter.Input`
+
+An object to write: a file with data, or a directory (null data).
+
+Implements `IEquatable<Input>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Input` | `Input(string Path, byte[] Data, DateTime? LastModified = null)` | An object to write: a file with data, or a directory (null data). |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `LastModified` | `DateTime? LastModified { get; init; }` |  |
+| `Path` | `string Path { get; init; }` |  |
 
 ### Namespace `FileFormat.Sup`
 
@@ -33383,13 +33628,15 @@ One file or directory of a UHARC archive.
 
 #### `UharcFormatDescriptor`
 
-UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP and ALZ modes, with passwords and the multimedia predictors; and UHARC 0.2 archives. Archives of 0.3, and 0.4 PPM streams, are refused. Creates 0.6 archives, stored or LZP-packed, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
+UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; UHARC 0.4 archives in the store, RLE, LZW, LZP and ALZ modes, with passwords and the multimedia predictors; UHARC 0.3 archives in the store, RLE, LZW, LZP and ALZ modes; and UHARC 0.2 archives. 0.4 and 0.3 PPM streams are refused. Creates 0.6 archives in every 0.6 method and 0.4 archives in store, RLE, LZW and LZP, optionally password-protected or behind a self-extractor stub, that `uharc.exe` extracts; it cannot modify them. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UharcFormatDescriptor` | `UharcFormatDescriptor()` |  |
+| `SfxStubOption` | `const string SfxStubOption` | Format-specific option naming a self-extractor stub file (UHARC's `UHARCSFX.EXE`). |
+| `VersionOption` | `const string VersionOption` | Format-specific option choosing the archive version: 6 (the default) or 4. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
@@ -33402,14 +33649,14 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a UHARC 0.6 archive: method `lzp` (the default) or `store`. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a UHARC 0.6 archive: method `lzp` (the default), `ppm`, `alz`, `lz78`, `rle` or `store`; a password enciphers the stream and the tables as `-pw` does; the `SfxStubOption` option puts the named Win32 stub in front, as `-sfx` does; `DictSize` caps the LZP and ALZ window, as `-md` does; the `VersionOption` option 4 writes a UHARC 0.4 archive (store, RLE, LZW as `lz78`, LZP). |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `UharcReader`
 
-Reads UHARC 0.6 archives (magic `UHA\x06`) as written by UHARC 0.6/0.6a/0.6b, UHARC 0.4 archives (`UHA\x04`) and UHARC 0.2 archives (`UHA\x02`). Layout and codecs are described in docs/UHARC-ON-DISK.md.
+Reads UHARC 0.6 archives (magic `UHA\x06`) as written by UHARC 0.6/0.6a/0.6b, UHARC 0.4 and 0.3 archives (`UHA\x04`, `UHA\x03`) and UHARC 0.2 archives (`UHA\x02`). Layout and codecs are described in docs/UHARC-ON-DISK.md.
 
 | Member | Signature | Summary |
 | --- | --- | --- |

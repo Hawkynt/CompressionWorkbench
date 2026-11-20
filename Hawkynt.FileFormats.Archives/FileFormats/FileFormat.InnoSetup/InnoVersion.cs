@@ -165,7 +165,8 @@ public readonly record struct InnoVersion(uint Value, bool IsUnicode, bool IsIsx
     new("Inno Setup Setup Data (6.6.0)", V(6, 6, 0, 0), true, false),
     new("Inno Setup Setup Data (6.6.1)", V(6, 6, 1, 0), true, false),
     new("Inno Setup Setup Data (6.7.0)", V(6, 7, 0, 0), true, false),
-    new("Inno Setup Setup Data (7.0.0.3)", V(7, 0, 0, 3), true, false),
+    new("Inno Setup Setup Data (7.0.0.3)", V(7, 0, 0, 3), true, false), // 7.0.0 to 7.1.0
+    new("Inno Setup Setup Data (7.1.1)", V(7, 1, 1, 0), true, false),
   ];
 
   /// <summary>

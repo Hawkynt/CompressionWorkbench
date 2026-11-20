@@ -21,5 +21,46 @@ Every archive was made with
 | `misc.pea` | PCOMPRESS2 | RIPEMD160 | WHIRLPOOL | BLAKE2S |
 | `big.pea` | PCOMPRESS2 | CRC32 | CRC32 | SHA256 (input: `big.bin` only; three 1 MiB blocks) |
 
+Volume sets, from `/tmp/a2e1_peasrc` (the same four objects) with
+`pea PEA <out> <volume size> <compression> <volume check> <object check> <stream check> HIDDEN FROMCL …`:
+
+| Files | Volume size | Compression | Volume | Object | Stream |
+| --- | --- | --- | --- | --- | --- |
+| `vol.000001.pea` … `vol.000003.pea` | 5000 | PCOMPRESS0 | CRC32 | CRC32 | SHA256 |
+| `volz.000001.pea` … `volz.000003.pea` | 200 | PCOMPRESS2 | SHA1 | MD5 | SHA256 |
+
+Encrypted streams, password `password`, from the same four objects with
+`pea PEA <out> 0 <compression> CRC32 <object check> <stream encryption> HIDDEN password NOKEYFILE FROMCL …`:
+
+| File | Compression | Object | Stream encryption |
+| --- | --- | --- | --- |
+| `eax256.pea` | PCOMPRESS2 | CRC32 | EAX256 |
+| `tf256.pea` | PCOMPRESS0 | CRC32 | TF256 |
+| `sp256.pea` | PCOMPRESS1 | CRC64 | SP256 |
+| `eax.pea` | PCOMPRESS2 | CRC32 | EAX |
+| `tf.pea` | PCOMPRESS2 | CRC32 | TF |
+| `sp.pea` | PCOMPRESS2 | CRC32 | SP |
+| `hmac.pea` | PCOMPRESS2 | CRC32 | HMAC |
+
+Triple cascades, password `password`, the same command with volume and object check CRC32 and the
+cascade name (an appended digit is the strength, stored in archive header byte 9):
+
+| File | Compression | Stream encryption | pea's time / peak memory |
+| --- | --- | --- | --- |
+| `triats.pea` | PCOMPRESS2 | TRIATS | 1.4 s / 28 MB |
+| `tritsa.pea` | PCOMPRESS0 | TRITSA | 1.3 s / 27 MB |
+| `trisat.pea` | PCOMPRESS1 | TRISAT | 1.3 s / 28 MB |
+| `sriats.pea`, `sritsa.pea`, `srisat.pea` | PCOMPRESS2 | SRIATS, SRITSA, SRISAT | 1.6 s / 92 MB |
+| `hriats.pea`, `hritsa.pea`, `hrisat.pea` | PCOMPRESS2 | HRIATS, HRITSA, HRISAT | 1.5 s / 92 MB |
+| `triats1.pea` | PCOMPRESS2 | TRIATS1 | 2.9 s / 28 MB |
+| `hritsa1.pea` | PCOMPRESS2 | HRITSA1 | 2.9 s / 158 MB |
+| `sriats7.pea` | PCOMPRESS2 | SRIATS7 | 91 s / 1.05 GB |
+| `hrisat7.pea` | PCOMPRESS2 | HRISAT7 | 114 s / 1.05 GB |
+
+The two strength-7 files are read only by the explicit test
+`GivenStrength7CascadeWrittenByPeaZip_WhenRead_ThenItDecrypts`. Recorded run, 2026-11-20 (Windows
+11, .NET 10, Debug): both decrypt byte-exact; `sriats7.pea` took 7 min 36 s (three scrypt passes with
+N = 1 Mi, r = 8, p = 8 over a 1 GiB buffer), `hrisat7.pea` 4 min 24 s.
+
 `pea UNPEA <archive> <dir>/ RESETDATE RESETATTR EXTRACT2DIR HIDDEN "" ""` extracts them under
 `<dir>/<archive name>/`, relative to the objects' common directory.

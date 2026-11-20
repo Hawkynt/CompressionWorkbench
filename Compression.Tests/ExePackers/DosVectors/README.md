@@ -35,6 +35,45 @@ it (`UNP e -k- P<n> U<n>`), committed only where it differs from `T<n>`.
 
 UNP 4.11: `unp411.zip` (sha256 `45681a35…4fc342bf`), from the F1GP file archive.
 
+### Packers restored by emulating their stub
+
+`T6.EXE` (`t.asm`, `NREL=40 NTEXT=10 NRAND=30000 SEED=99 NFAR=5 CSV=3 ENTRYPAD=100`) starts
+in its fourth paragraph at a non-zero offset. These files are restored by running the stub in
+the 8086 emulator; the check is against the original program (image, relocation addresses,
+CS:IP, SS:SP). UNP 4.11 does not recognise aPACK, ExeLITE or WWPACK 3.05 files.
+
+| Files | Packer | Download (sha256 prefix…suffix) |
+|---|---|---|
+| `apack.P1/P2/P6.EXE` | aPACK 1.00, `APACK T<n>.EXE P<n>.EXE` | sac.sk `apack100.zip` (`b81b7de2…ac9f4054`) |
+| `apack-s.P1.EXE`, `apack-t.P1.EXE` | same, options `-s` and `-t` | same |
+| `apack-m.P1/P2.EXE` | same, option `-m` (no code mover: the stub sits below the image and jumps forward into it) | same |
+| `wwpack.P1/P2/P7.EXE` | WWPACK 3.05 beta 5 shareware, `WWPACK P P<n>.EXE` on a copy | sac.sk `wwp305b5.zip` |
+| `exelite.P1/P2/P6.EXE` | ExeLITE (ELITE.EXE), `ELITE a P<n>.EXE` on a copy | sac.sk `elite.zip` (`07ccdaad…1434b344`) |
+| `tinyprog.P1/P2.EXE` | TINYPROG 3.9, `TINYPROG T<n>.EXE P<n>.EXE` | sac.sk `tinyp39.zip` (`eaf138cf…d268192f`) |
+| `axe.P1/P2.EXE` | AXE 2.2, `AXE P<n>.EXE B<n>.EXE -f` on a copy | sac.sk `axe.zip` (`aedc292c…ae2af466`) |
+| `axe.U1/U2.EXE` | UNP 4.11's restoration of `axe.P<n>.EXE` | |
+| `pgmpak.P1/P2/P7.EXE` | PGMPAK 0.15, `PGMPAK P<n>.EXE` on a copy | sac.sk `pgmpak15.zip` (`f6048731…48e3d0fae2f027aa`) |
+
+`T7.EXE` (`NREL=10 NTEXT=77 NRAND=3333 SEED=5 NFAR=3 CSV=1 ENTRYPAD=37`) gives WWPACK a third
+image length. WWPACK 3.05's output for T6 and for one further measured program
+(`NREL=120 NTEXT=13 NRAND=9999 SEED=31337 NFAR=9 ENTRYPAD=3`) hangs under DOSBox and never
+reaches the program in the emulator either; those files are not committed. Its stub unpacks a
+relocation routine right behind the image with one data byte in front of it, at image lengths
+of 8, 0 and another paragraph offset alike.
+
+PGMPAK files ask DOS to load them high (minimum and maximum allocation 0); the stub unpacks
+the program at the bottom of memory behind a child PSP. Its decompressor writes one zero byte
+past the image (image lengths at paragraph offsets 8, 0 and 12 alike), it keeps the program's
+allocation fields in front of SS, SP, IP and CS near the end of the packed image, and the file
+ends in `"\0PGMPAK 0.15"`. UNP 4.11 restores the same image and relocations but keeps that
+trailer as an overlay and writes its own minimum allocation. For the 176 KiB third test program
+PGMPAK keeps 62 of its 962 relocations (UNP's restoration and the emulator's agree that the
+others are gone from the packed file), so that file is not committed.
+
+AXE starts the program with SP two below the original (UNP's restoration has the same SP).
+UNP 4.11 restores TINYPROG files with a different set of relocation addresses than the
+originals; the emulator's set is the original one.
+
 ### Where the unpackers and UNP differ
 
 - **LZEXE** keeps only the linear address of each relocation, so UNP and the unpacker both

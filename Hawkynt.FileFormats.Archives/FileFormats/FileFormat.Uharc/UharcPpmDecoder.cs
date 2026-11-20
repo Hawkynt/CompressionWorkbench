@@ -2,7 +2,39 @@ namespace FileFormat.Uharc;
 
 /// <summary>
 /// UHARC 0.6 PPM decoder (stream methods 24..39, the <c>-mx</c> mode), implemented from
-/// docs/UHARC-ON-DISK.md section "PPM".
+/// docs/UHARC-ON-DISK.md section "PPM". The model is <see cref="UharcPpmModel{TCoder}"/>, shared
+/// with <see cref="UharcPpmEncoder"/>.
+/// </summary>
+internal static class UharcPpmDecoder {
+
+  /// <summary>Decodes <paramref name="unpackedSize"/> bytes of a PPM stream.</summary>
+  /// <param name="packed">Buffer holding the packed stream.</param>
+  /// <param name="offset">Start of the packed stream.</param>
+  /// <param name="length">Length of the packed stream.</param>
+  /// <param name="method">Stream method byte, 24..39.</param>
+  /// <param name="unpackedSize">Number of bytes to produce.</param>
+  /// <param name="fileEnds">Cumulative end offsets of the archived files.</param>
+  /// <param name="recordModel">The header's record-file flag (filters bit 6).</param>
+  public static byte[] Decode(byte[] packed, int offset, int length, int method, int unpackedSize, IReadOnlyList<long> fileEnds, bool recordModel = false) {
+    if (method is < UharcMethods.PpmFirst or > UharcMethods.PpmLast)
+      throw new ArgumentOutOfRangeException(nameof(method));
+
+    var output = new byte[unpackedSize];
+    if (unpackedSize == 0)
+      return output;
+
+    var model = new UharcPpmModel<UharcDecoding>(new(new UharcRangeDecoder(packed, offset, length)), method);
+    if (recordModel)
+      model.UseRecordModel(fileEnds);
+    model.Run(output, fileEnds);
+    return output;
+  }
+}
+
+/// <summary>
+/// The UHARC 0.6 PPM model (docs/UHARC-ON-DISK.md, "PPM"), written once for both directions
+/// (<see cref="IUharcCoder"/>): the decoding instantiation reads the stream, the encoding one is
+/// driven by <see cref="UharcPpmEncoder"/>, which names each step's outcome beforehand.
 /// </summary>
 /// <remarks>
 /// Every step first tries an LZP-style copy predicted from hashed contexts; if none is taken,
@@ -10,7 +42,7 @@ namespace FileFormat.Uharc;
 /// binary-data ring predictor, and finally frequency contexts with SSE. The stream is one of
 /// two kinds: text (with a byte-to-word transform at the output) or binary.
 /// </remarks>
-internal sealed partial class UharcPpmDecoder {
+internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUharcCoder {
 
   private const uint NoPosition = uint.MaxValue;
   private const int HashSize = 0x40000;
@@ -20,7 +52,7 @@ internal sealed partial class UharcPpmDecoder {
   private const int Order2Stride = 20;
   private const int MaxExcluded = 23;
 
-  private readonly UharcRangeDecoder _coder;
+  private TCoder _coder;
   private readonly byte[] _window;
   private readonly uint _mask;
   private readonly uint _windowSize;
@@ -76,11 +108,26 @@ internal sealed partial class UharcPpmDecoder {
   private readonly UharcAlzSideModel _side = new();
   private int _selector;
 
-  private UharcPpmDecoder(byte[] packed, int offset, int length, int method) {
+  // Encoding only: the input, the step's position in it, the model symbol of the literal being
+  // coded (and its form in the row being coded), and the copy decision.
+  private byte[] _source = [];
+  private int _written;
+  private long _copyLimit;
+  private int _target;
+  private int _rowTarget;
+  private int _copyClassWanted;
+  private int _copyLengthWanted;
+
+  /// <summary>The input the encoding instantiation codes; the model chooses copies from it.</summary>
+  public byte[] Source {
+    set => this._source = value;
+  }
+
+  public UharcPpmModel(TCoder coder, int method) {
     this._windowSize = (uint)UharcMethods.DictionarySize(method);
     this._window = new byte[this._windowSize + 0x100];
     this._mask = this._windowSize - 1;
-    this._coder = new UharcRangeDecoder(packed, offset, length);
+    this._coder = coder;
 
     Array.Fill(this._hashPosition, NoPosition);
     Array.Fill(this._hashContext, NoPosition);
@@ -89,46 +136,32 @@ internal sealed partial class UharcPpmDecoder {
 
     this.InitializeContexts();
     this.InitializeRanks();
+    // The context slots are keyed on the empty history before the first byte, not after it.
+    this.ComputeRecentSlots();
   }
 
-  /// <summary>Decodes <paramref name="unpackedSize"/> bytes of a PPM stream.</summary>
-  /// <param name="packed">Buffer holding the packed stream.</param>
-  /// <param name="offset">Start of the packed stream.</param>
-  /// <param name="length">Length of the packed stream.</param>
-  /// <param name="method">Stream method byte, 24..39.</param>
-  /// <param name="unpackedSize">Number of bytes to produce.</param>
-  /// <param name="fileEnds">Cumulative end offsets of the archived files.</param>
-  /// <param name="recordModel">The header's record-file flag (filters bit 6).</param>
-  public static byte[] Decode(byte[] packed, int offset, int length, int method, int unpackedSize, IReadOnlyList<long> fileEnds, bool recordModel = false) {
-    if (method is < UharcMethods.PpmFirst or > UharcMethods.PpmLast)
-      throw new ArgumentOutOfRangeException(nameof(method));
+  /// <summary>Applies the record-file model (filters bit 6) to the first file of the record size.</summary>
+  public void UseRecordModel(IReadOnlyList<long> fileEnds) {
+    if (fileEnds.Count == 0)
+      return;
 
-    var output = new byte[unpackedSize];
-    if (unpackedSize == 0)
-      return output;
-
-    var decoder = new UharcPpmDecoder(packed, offset, length, method);
-    if (recordModel && fileEnds.Count > 0) {
-      // The record file starts where the file before the first one of the record size ends.
-      long previous = 0;
-      foreach (var end in fileEnds) {
-        if (end - previous == RecordFileSize)
-          break;
-        previous = end;
-      }
-
-      decoder._recordStart = previous;
-      decoder._recordStride = previous == 0 ? 10u : 0u;
+    // The record file starts where the file before the first one of the record size ends.
+    long previous = 0;
+    foreach (var end in fileEnds) {
+      if (end - previous == RecordFileSize)
+        break;
+      previous = end;
     }
 
-    decoder.Run(output, fileEnds);
-    return output;
+    this._recordStart = previous;
+    this._recordStride = previous == 0 ? 10u : 0u;
   }
 
   // ── Stream header and reset points ─────────────────────────────────────
 
   private void ReadStreamKind() {
-    this._kind = (int)this._coder.DecodeUniform(2);
+    // The encoder always writes a binary stream: no word transform to invert.
+    this._kind = (int)this._coder.Uniform(2, 1);
     if (this._kind != 0)
       return;
 
@@ -136,15 +169,15 @@ internal sealed partial class UharcPpmDecoder {
     long total = 0;
     var shift = 0;
     do {
-      total += (long)this._coder.DecodeUniform(0x800) << shift;
+      total += (long)this._coder.Uniform(0x800, 0) << shift;
       shift += 11;
-    } while (this._coder.DecodeUniform(2) != 0 && shift < 64);
+    } while (this._coder.Uniform(2, 0) != 0 && shift < 64);
 
     this._textEnd = total & 0xFFFFFFFF;
     this._transformEnd = this._textEnd;
   }
 
-  private void Run(byte[] output, IReadOnlyList<long> fileEnds) {
+  public void Run(byte[] output, IReadOnlyList<long> fileEnds) {
     this.ReadStreamKind();
     var reset = new ResetPoints(fileEnds, output.Length);
     reset.Advance(this);
@@ -167,6 +200,7 @@ internal sealed partial class UharcPpmDecoder {
           this.ResetRing(full: false);
       }
 
+      this._copyLimit = Math.Min(reset.Next, output.Length);
       written = this.Step(output, written);
     }
   }
@@ -182,7 +216,7 @@ internal sealed partial class UharcPpmDecoder {
 
     public IReadOnlyList<long> Ends => ends;
 
-    public void Advance(UharcPpmDecoder decoder) {
+    public void Advance(UharcPpmModel<TCoder> decoder) {
       var span = 0x40000L >> (decoder._kind * 2);
       var target = total - this.Next > span ? this.Next + span : total;
       while (this.File < ends.Count && ends[this.File] < target) {
@@ -235,6 +269,7 @@ internal sealed partial class UharcPpmDecoder {
   // ── One step: a predicted copy, or a literal ───────────────────────────
 
   private int Step(byte[] output, int written) {
+    this._written = written;
     var length = this.TryCopy(out var copyContext, out var copyClass);
     if (copyContext >= 0) {
       this.CountCopyClass(copyContext, copyClass);
@@ -341,12 +376,15 @@ internal sealed partial class UharcPpmDecoder {
       return 0;
     }
 
+    var floor = this.CopyFloor(hash, repeated, out var set);
+    if (TCoder.Encoding)
+      this.ChooseCopy(candidate & this._mask, floor);
     decodedClass = this.DecodeCopyClass(kind);
     classContext = kind;
     if (decodedClass != 1)
       return 0;
 
-    var length = this.DecodeCopyLength(hash, repeated);
+    var length = this.DecodeCopyLength(floor, set);
     var distance = (position - (candidate & this._mask)) & this._mask;
     if (distance == this._lastDistance)
       this._distanceStreak >>= 1;
@@ -391,7 +429,7 @@ internal sealed partial class UharcPpmDecoder {
   private int DecodeCopyClass(int context) {
     while (true) {
       var total = (uint)this._copyClass[context, 3];
-      var count = this._coder.GetCount(total);
+      var count = this._coder.Count(total, TCoder.Encoding ? this._copyClass[context, this._copyClassWanted] : 0u);
       var symbol = 2;
       while (symbol > 0 && count < this._copyClass[context, symbol])
         --symbol;
@@ -399,7 +437,7 @@ internal sealed partial class UharcPpmDecoder {
       if (symbol != 0)
         return symbol;
 
-      this.SelectClass((int)this._coder.DecodeUniform(10));
+      this.SelectClass((int)this._coder.Uniform(10, 0));
     }
   }
 
@@ -420,8 +458,9 @@ internal sealed partial class UharcPpmDecoder {
     this._copyHistory = UharcPpmTables.LzpHistoryNext[this._copyHistory * 2 + decodedClass];
   }
 
-  private int DecodeCopyLength(int hash, bool repeated) {
-    int floor, set;
+  /// <summary>Copy lengths up to the floor are not coded; <paramref name="set"/> is the probability set.</summary>
+  private int CopyFloor(int hash, bool repeated, out int set) {
+    int floor;
     if (repeated) {
       floor = UharcPpmTables.LengthFloorInRun[(this._statOrder4 << 2) / this._statTotal];
       set = (this._runCount > 0 ? 1 : 0) + 3 + (this._runCount > 2 ? 1 : 0);
@@ -439,15 +478,56 @@ internal sealed partial class UharcPpmDecoder {
       set = (remembered > 0xE ? 1 : 0) + (remembered > 0x3E ? 1 : 0);
     }
 
+    return floor;
+  }
+
+  /// <summary>
+  /// The encoder's copy decision: take the candidate when the bytes it would produce match the
+  /// input for longer than the floor, and only whole — the full match, or 255 for a run — and
+  /// never past the next reset point; a shortened copy would leave the next byte equal to the
+  /// byte the literal coder then excludes.
+  /// </summary>
+  private void ChooseCopy(uint source, int floor) {
+    var position = this._position;
+    var available = (int)Math.Min(0xFF, this._copyLimit - this._written);
+    var bytes = this._copyBuffer;
+    var length = 0;
+    for (; length < available; ++length) {
+      var behind = (source - position) & this._mask;
+      var value = behind < (uint)length ? bytes[behind] : this._window[source];
+      if ((byte)~value != this._source[this._written + length])
+        break;
+      bytes[length] = value;
+      source = (source + 1) & this._mask;
+    }
+
+    var whole = length == 0xFF || this._written + length >= this._source.Length;
+    if (!whole && length == available) {
+      // Cut short by the reset point: whole only when the match ends right there.
+      var behind = (source - position) & this._mask;
+      var next = behind < (uint)length ? bytes[behind] : this._window[source];
+      whole = (byte)~next != this._source[this._written + length];
+    }
+
+    var hit = whole && length > floor;
+    this._copyClassWanted = hit ? 1 : 2;
+    this._copyLengthWanted = hit ? length : 0;
+  }
+
+  private int DecodeCopyLength(int floor, int set) {
     var node = 0xE;
     int result;
     while (true) {
       result = (node + 1) & 0xFF;
-      if (floor < result && this._coder.DecodeBit(ref this._lengthProbability[set * 0x100 + node], 4) == 0)
+      if (floor < result && this._coder.Bit(ref this._lengthProbability[set * 0x100 + node], 4, TCoder.Encoding && this._copyLengthWanted > node ? 1 : 0) == 0)
         result = node;
       var next = UharcPpmTables.LengthTree[node * 2 + (result > node ? 1 : 0)];
-      if (next == 0)
+      if (next == 0) {
+        if (TCoder.Encoding && result != this._copyLengthWanted)
+          throw new InvalidOperationException("UHARC: PPM copy length cannot be coded.");
         return result;
+      }
+
       node = next;
     }
   }

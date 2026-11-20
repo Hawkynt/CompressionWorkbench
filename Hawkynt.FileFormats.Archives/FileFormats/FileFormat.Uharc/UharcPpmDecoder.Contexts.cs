@@ -6,7 +6,7 @@ namespace FileFormat.Uharc;
 /// flag), 0x200 is order-0, 0x201..0x300 belong to the multimedia classes, and 0x301..0x30E are
 /// the uniform fallbacks a row escapes into.
 /// </summary>
-internal sealed partial class UharcPpmDecoder {
+internal sealed partial class UharcPpmModel<TCoder> where TCoder : struct, IUharcCoder {
 
   private const int Rows = 0x30F;
   private const int OrderZeroRow = 0x200;
@@ -91,7 +91,7 @@ internal sealed partial class UharcPpmDecoder {
 
     var index = this.PredictionIndex(row, predicted, rest);
     var probability = this._mpsProbability[index];
-    if (this._coder.DecodeScaled(probability, 0x2000)) {
+    if (this._coder.Scaled(probability, 0x2000, TCoder.Encoding && predicted == this._rowTarget)) {
       result.Cost += CostOf(probability * 2);
       return predicted;
     }
@@ -132,8 +132,20 @@ internal sealed partial class UharcPpmDecoder {
     }
 
     result.LastTotal = total;
-    var count = this._coder.GetCount(total);
+    var count = this._coder.Count(total, TCoder.Encoding ? this.SlotInRow(row, excluded) : 0u);
     return this.DecodeInRow(row, total, count, excluded, ref result);
+  }
+
+  /// <summary>The encoder's slot for its target in <paramref name="row"/>: what the symbols above it take.</summary>
+  private uint SlotInRow(int row, ReadOnlySpan<byte> excluded) {
+    var target = this._rowTarget;
+    if (this.F(row, target) == 0 || excluded.Contains((byte)target))
+      throw new InvalidOperationException("UHARC: PPM literal cannot be coded in its row.");
+    var low = 0u;
+    for (var s = 255; s > target; --s)
+      if (!excluded.Contains((byte)s))
+        low += this.F(row, s);
+    return low;
   }
 
   /// <summary>Symbols take the interval from the top down: symbol 255 lies nearest 0.</summary>
@@ -170,7 +182,8 @@ internal sealed partial class UharcPpmDecoder {
     }
 
     result.LastTotal = total;
-    var count = this._coder.GetCount(total);
+    var present = TCoder.Encoding && this.F(row, this._rowTarget) != 0 && !excluded.Contains((byte)this._rowTarget);
+    var count = this._coder.Count(total, !TCoder.Encoding ? 0u : present ? this.SlotInRow(row, excluded) : rest);
     if ((count & 0xFFFF) < rest) {
       if (scale >= 0)
         result.ScaleHit = scale;
@@ -199,7 +212,17 @@ internal sealed partial class UharcPpmDecoder {
     }
 
     result.LastTotal = total;
-    var count = this._coder.GetCount(total) & 0xFFFF;
+    var slot = 0u;
+    if (TCoder.Encoding) {
+      var target = this._rowTarget;
+      if (this.F(row, target) != 0 || excluded.Contains((byte)target) || this.F(fallback, target) == 0)
+        throw new InvalidOperationException("UHARC: PPM literal cannot be coded after the escape.");
+      for (var s = 255; s > target; --s)
+        if (this.F(row, s) == 0 && !excluded.Contains((byte)s))
+          slot = (slot + this.F(fallback, s)) & 0xFFFF;
+    }
+
+    var count = this._coder.Count(total, slot) & 0xFFFF;
     uint high = 0;
     var symbol = 256;
     do {

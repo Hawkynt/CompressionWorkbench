@@ -15,6 +15,9 @@ internal sealed class UharcRangeEncoder {
   private byte _cache;
   private long _cacheSize = 1;
 
+  /// <summary>The total of the frequency decision under way (see <see cref="UharcEncoding"/>).</summary>
+  public uint PendingTotal { get; set; }
+
   /// <summary>Codes the slots <c>[low, low + size)</c> of <paramref name="total"/>.</summary>
   public void Encode(uint low, uint size, uint total) {
     if (size == 0 || low + size > total)

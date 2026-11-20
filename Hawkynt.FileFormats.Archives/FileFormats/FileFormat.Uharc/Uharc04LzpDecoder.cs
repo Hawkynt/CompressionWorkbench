@@ -1,17 +1,61 @@
 namespace FileFormat.Uharc;
 
 /// <summary>
-/// UHARC 0.4 LZP decoder (stream methods 8..23, the <c>-mz</c> mode, and the name table of every
-/// 0.3/0.4 archive), implemented from docs/UHARC-ON-DISK.md section "UHARC 0.4 LZP".
+/// UHARC 0.4 LZP (stream methods 8..23, the <c>-mz</c> mode, and the name table of every 0.3/0.4
+/// archive), implemented from docs/UHARC-ON-DISK.md section "UHARC 0.4 LZP". The model is
+/// <see cref="Uharc04LzpModel{TCoder}"/>, shared with the encoder.
 /// </summary>
-/// <remarks>
-/// The predictor is the one of 0.6 (<see cref="UharcLzpDecoder"/>): complemented data, an order-4
-/// hash, the last distance and the last occurrence of the byte pair, one adaptive decision per
-/// prediction. Two things differ: a copy length is a symbol of the same frequency model the
-/// literals use (eight contexts keyed by the length last seen at the hash slot, two for runs),
-/// and the model keeps a separate order-0 fallback for those length contexts.
-/// </remarks>
-internal sealed class Uharc04LzpDecoder {
+internal static class Uharc04LzpDecoder {
+
+  /// <summary>Decodes <paramref name="unpackedSize"/> bytes of a 0.3/0.4 LZP stream.</summary>
+  /// <param name="packed">Buffer holding the packed stream.</param>
+  /// <param name="offset">Start of the packed stream.</param>
+  /// <param name="length">Length of the packed stream.</param>
+  /// <param name="method">Stream method byte, 8..23 (the dictionary is <c>2^(method+2)</c>).</param>
+  /// <param name="unpackedSize">Number of bytes to produce.</param>
+  /// <param name="fileEnds">Cumulative end offsets of the archived files (empty for a table).</param>
+  public static byte[] Decode(byte[] packed, int offset, int length, int method, int unpackedSize, IReadOnlyList<long> fileEnds) {
+    if (method is < UharcMethods.LzpFirst or > UharcMethods.LzpLast)
+      throw new ArgumentOutOfRangeException(nameof(method));
+
+    var output = new byte[unpackedSize];
+    if (unpackedSize == 0)
+      return output;
+
+    new Uharc04LzpModel<UharcDecoding>(new(new UharcRangeDecoder(packed, offset, length)), method).Run(output, fileEnds);
+    return output;
+  }
+}
+
+/// <summary>The encoder side of <see cref="Uharc04LzpDecoder"/>.</summary>
+internal static class Uharc04LzpEncoder {
+
+  /// <summary>Packs <paramref name="data"/> as a 0.3/0.4 LZP stream of <paramref name="method"/>.</summary>
+  public static byte[] Encode(byte[] data, int method, IReadOnlyList<long> fileEnds) {
+    if (method is < UharcMethods.LzpFirst or > UharcMethods.LzpLast)
+      throw new ArgumentOutOfRangeException(nameof(method));
+    if (data.Length == 0)
+      return [];
+
+    var coder = new UharcRangeEncoder();
+    var output = new byte[data.Length];
+    new Uharc04LzpModel<UharcEncoding>(new(coder), method) { Source = data }.Run(output, fileEnds);
+    if (!output.AsSpan().SequenceEqual(data))
+      throw new InvalidOperationException("UHARC: 0.4 LZP encoder lost track of its model.");
+    return coder.Finish();
+  }
+}
+
+/// <summary>
+/// The 0.4 LZP model, written once for both directions (<see cref="IUharcCoder"/>). The predictor
+/// is the one of 0.6 (<see cref="UharcLzpDecoder"/>): complemented data, an order-4 hash, the last
+/// distance and the last occurrence of the byte pair, one adaptive decision per prediction. Two
+/// things differ: a copy length is a symbol of the same frequency model the literals use (eight
+/// contexts keyed by the length last seen at the hash slot, two for runs), and the model keeps a
+/// separate order-0 fallback for those length contexts. The encoder takes every prediction whose
+/// first byte matches, with the full match length (255 continues as a run).
+/// </summary>
+internal sealed class Uharc04LzpModel<TCoder> where TCoder : struct, IUharcCoder {
 
   private const uint NoPosition = uint.MaxValue;
   private const int HashBits = 18;
@@ -30,7 +74,7 @@ internal sealed class Uharc04LzpDecoder {
 
   private readonly byte[] _window;
   private readonly uint _mask;
-  private readonly UharcRangeDecoder _coder;
+  private TCoder _coder;
 
   private readonly uint[] _hashPosition = new uint[1 << HashBits];
   private readonly uint[] _hashContext = new uint[1 << HashBits];
@@ -52,52 +96,46 @@ internal sealed class Uharc04LzpDecoder {
   private uint _excludedPosition = NoPosition;
   private int _decisionHistory;
 
-  private Uharc04LzpDecoder(byte[] packed, int offset, int length, int method) {
+  // Encoding only: the input and the copy length chosen for the current prediction.
+  private byte[] _source = [];
+  private int _wantedLength;
+
+  public Uharc04LzpModel(TCoder coder, int method) {
     var size = 1u << (method - UharcMethods.LzpFirst + 10);
     this._window = new byte[size];
     this._mask = size - 1;
-    this._coder = new UharcRangeDecoder(packed, offset, length);
+    this._coder = coder;
 
     Array.Fill(this._hashPosition, NoPosition);
     Array.Fill(this._pairPosition, NoPosition);
     this.ResetModels();
   }
 
-  /// <summary>Decodes <paramref name="unpackedSize"/> bytes of a 0.3/0.4 LZP stream.</summary>
-  /// <param name="packed">Buffer holding the packed stream.</param>
-  /// <param name="offset">Start of the packed stream.</param>
-  /// <param name="length">Length of the packed stream.</param>
-  /// <param name="method">Stream method byte, 8..23 (the dictionary is <c>2^(method+2)</c>).</param>
-  /// <param name="unpackedSize">Number of bytes to produce.</param>
-  /// <param name="fileEnds">Cumulative end offsets of the archived files (empty for a table).</param>
-  public static byte[] Decode(byte[] packed, int offset, int length, int method, int unpackedSize, IReadOnlyList<long> fileEnds) {
-    if (method is < UharcMethods.LzpFirst or > UharcMethods.LzpLast)
-      throw new ArgumentOutOfRangeException(nameof(method));
+  /// <summary>The input the encoding instantiation codes.</summary>
+  public byte[] Source {
+    set => this._source = value;
+  }
 
-    var output = new byte[unpackedSize];
-    if (unpackedSize == 0)
-      return output;
-
-    var decoder = new Uharc04LzpDecoder(packed, offset, length, method);
+  /// <summary>Codes the whole stream into <paramref name="output"/>.</summary>
+  public void Run(byte[] output, IReadOnlyList<long> fileEnds) {
+    var unpackedSize = output.Length;
     var ends = fileEnds.Count > 0 && fileEnds[^1] == unpackedSize ? fileEnds : [];
     var nextEnd = 0;
     long resetAfter = ResetSpan;
     long position = 0;
     while (position < unpackedSize) {
-      var copied = decoder.TryPrediction(output, position);
-      position += copied > 0 ? copied : decoder.DecodeLiteral(output, position);
+      var copied = this.TryPrediction(output, position);
+      position += copied > 0 ? copied : this.CodeLiteral(output, position);
 
       // Every file end passed since the last step that lies beyond the threshold resets the
       // models, after the step that crossed it, and moves the threshold 64 KiB past this point.
       while (nextEnd < ends.Count - 1 && position > ends[nextEnd]) {
         if (ends[nextEnd++] > resetAfter) {
-          decoder.ResetModels();
+          this.ResetModels();
           resetAfter = position + ResetSpan;
         }
       }
     }
-
-    return output;
   }
 
   private void ResetModels() {
@@ -127,7 +165,7 @@ internal sealed class Uharc04LzpDecoder {
 
   // ── Prediction ─────────────────────────────────────────────────────────
 
-  /// <summary>Attempts a predicted copy at <paramref name="position"/>; returns the bytes produced, 0 for "decode a literal".</summary>
+  /// <summary>Attempts a predicted copy at <paramref name="position"/>; returns the bytes produced, 0 for "code a literal".</summary>
   private int TryPrediction(byte[] output, long position) {
     var hash = (int)((this._history ^ (this._history >> 13)) & ((1u << HashBits) - 1));
     var pair = (int)(this._history & 0xFFFF);
@@ -172,8 +210,11 @@ internal sealed class Uharc04LzpDecoder {
       return 0;
     }
 
+    if (TCoder.Encoding)
+      this._wantedLength = this.MatchLength(candidate, position);
+
     this._predictedPosition = candidate;
-    if (this.DecodeDecision(decision) != 0) {
+    if (this.CodeDecision(decision, TCoder.Encoding && this._wantedLength == 0) != 0) {
       this._hashLength[hash] = 0;
       this._runCount = 0;
       return 0;
@@ -183,7 +224,7 @@ internal sealed class Uharc04LzpDecoder {
       ? RunContext + (this._runCount > 2 ? 1 : 0)
       : LengthContextFirst + (this._hashLength[hash] < LengthContextStep.Length ? LengthContextStep[this._hashLength[hash]] : 7);
     this._excludedPosition = NoPosition;
-    var length = this.DecodeSymbol(context);
+    var length = this.CodeSymbol(context, this._wantedLength);
     this.Update(context, length);
     this._hashLength[hash] = (byte)length;
     this._lastDistance = (this._writePosition - candidate) & this._mask;
@@ -206,6 +247,24 @@ internal sealed class Uharc04LzpDecoder {
     return count;
   }
 
+  /// <summary>
+  /// The encoder's copy length at <paramref name="candidate"/>: 0 when its first byte does not
+  /// match, else the full match, 255 when it runs on (a run), or what is left at the end.
+  /// </summary>
+  private int MatchLength(uint candidate, long position) {
+    var distance = (this._writePosition - candidate) & this._mask;
+    var data = this._source;
+    var length = 0;
+    while (length < RunLength && position + length < data.Length) {
+      var value = length < distance ? this._window[(candidate + (uint)length) & this._mask] : (byte)~data[position + length - distance];
+      if ((byte)~value != data[position + length])
+        break;
+      ++length;
+    }
+
+    return length;
+  }
+
   private bool ContextAgrees(uint candidate) {
     var before = (uint)this._window[(candidate - 4) & this._mask] << 24
       | (uint)this._window[(candidate - 3) & this._mask] << 16
@@ -217,11 +276,11 @@ internal sealed class Uharc04LzpDecoder {
       || (before & 0xFFFFFF00) == (now & 0xFFFFFF00);
   }
 
-  private int DecodeDecision(int index) {
+  private int CodeDecision(int index, bool missWanted) {
     var split = (uint)this._decisionSplit[index];
     var total = (uint)this._decisionTotal[index];
     int miss;
-    if (this._coder.GetCount(total) < split) {
+    if (this._coder.Count(total, missWanted ? split : 0u) < split) {
       this._coder.Consume(0, split);
       miss = 0;
     } else {
@@ -249,9 +308,9 @@ internal sealed class Uharc04LzpDecoder {
 
   // ── Frequency model (literals and lengths) ─────────────────────────────
 
-  private int DecodeLiteral(byte[] output, long position) {
+  private int CodeLiteral(byte[] output, long position) {
     var context = UharcLzpDecoder.LiteralContext(this._history);
-    var symbol = this.DecodeSymbol(context);
+    var symbol = this.CodeSymbol(context, TCoder.Encoding ? (byte)~this._source[position] : 0);
     this.Update(context, symbol);
     this._excludedPosition = this._predictedPosition != NoPosition && symbol == this._window[this._predictedPosition]
       ? (this._predictedPosition + 1) & this._mask
@@ -263,15 +322,23 @@ internal sealed class Uharc04LzpDecoder {
   private static int OrderZeroOf(int context) => context >= LengthContextFirst ? LengthOrderZero : TextOrderZero;
 
   /// <summary>
-  /// Decodes a symbol of <paramref name="context"/>, skipping the excluded byte; symbols are laid
+  /// Codes a symbol of <paramref name="context"/>, skipping the excluded byte; symbols are laid
   /// out from 255 down to 0. A symbol the context has not seen is an escape followed by the
   /// symbol in the order-0 fallback, among the bytes the context lacks.
   /// </summary>
-  private int DecodeSymbol(int context) {
+  private int CodeSymbol(int context, int target) {
     var excluded = this._excludedPosition == NoPosition ? -1 : this._window[this._excludedPosition];
+    if (TCoder.Encoding && target == excluded)
+      throw new InvalidOperationException("UHARC: 0.4 LZP symbol is the excluded byte.");
     var seen = this._contextTotal[context] - (excluded >= 0 ? this._frequency[context, excluded] : 0);
+    var present = TCoder.Encoding && this._frequency[context, target] != 0;
     if (seen > 0) {
-      var count = this._coder.GetCount((uint)(seen + this._escapeWeight[context]));
+      var slot = 0u;
+      if (present)
+        for (var symbol = 255; symbol > target; --symbol)
+          if (symbol != excluded)
+            slot += this._frequency[context, symbol];
+      var count = this._coder.Count((uint)(seen + this._escapeWeight[context]), !TCoder.Encoding ? 0u : present ? slot : (uint)seen);
       if (count < seen) {
         var low = 0u;
         for (var symbol = 255; symbol >= 0; --symbol) {
@@ -295,18 +362,22 @@ internal sealed class Uharc04LzpDecoder {
 
     var fallback = OrderZeroOf(context);
     var total = 0u;
+    var below = 0u;
     for (var symbol = 0; symbol < 256; ++symbol)
-      if (symbol != excluded && this._frequency[context, symbol] == 0)
+      if (symbol != excluded && this._frequency[context, symbol] == 0) {
         total += this._frequency[fallback, symbol];
+        if (symbol > target)
+          below += this._frequency[fallback, symbol];
+      }
 
-    var target = this._coder.GetCount(total);
+    var wanted = this._coder.Count(total, TCoder.Encoding ? below : 0u);
     var cumulative = 0u;
     for (var symbol = 255; symbol >= 0; --symbol) {
       if (symbol == excluded || this._frequency[context, symbol] != 0)
         continue;
 
       var f = (uint)this._frequency[fallback, symbol];
-      if (target < cumulative + f) {
+      if (wanted < cumulative + f) {
         this._coder.Consume(cumulative, f);
         return symbol;
       }

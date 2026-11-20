@@ -15,7 +15,14 @@ internal abstract class ZfsVdev {
   public abstract string Describe();
 
   /// <summary>Builds the vdev described by a label's <c>vdev_tree</c>, wiring its leaves to the devices supplied.</summary>
-  public static ZfsVdev Build(XdrNvList tree, IReadOnlyDictionary<ulong, ImageAccessor> leavesByGuid, int ashift) {
+  public static ZfsVdev Build(XdrNvList tree, IReadOnlyDictionary<ulong, ImageAccessor> leavesByGuid, int ashift) =>
+    Build(tree, leavesByGuid, ashift, null);
+
+  /// <summary>Whether a vdev was taken out of service (its contents may be stale).</summary>
+  internal static bool IsOutOfService(XdrNvList tree) =>
+    (tree.UInt64("faulted") ?? 0) != 0 || (tree.UInt64("removed") ?? 0) != 0 || (tree.UInt64("offline") ?? 0) != 0;
+
+  private static ZfsVdev Build(XdrNvList tree, IReadOnlyDictionary<ulong, ImageAccessor> leavesByGuid, int ashift, ZfsDraidHolder? draid) {
     var type = tree.String("type") ?? "";
     var children = tree.Lists("children");
     var shift = (int?)tree.UInt64("ashift") ?? ashift;
@@ -26,13 +33,32 @@ internal abstract class ZfsVdev {
           ? new ZfsLeafVdev(device, guid)
           : new ZfsMissingVdev($"{type} device {guid}");
       }
-      case "mirror" or "replacing" or "spare":
-        return new ZfsMirrorVdev(type, children.Select(c => Build(c, leavesByGuid, shift)).ToArray());
+      case "mirror":
+        return new ZfsMirrorVdev(type, children.Select(c => Build(c, leavesByGuid, shift, draid)).ToArray());
+      case "replacing" or "spare": {
+        // a child taken out of service misses what was written since: a spare that took over is read
+        // instead (its losses rebuilt from parity), the replaced device only after the others
+        var serving = children.Where(c => !IsOutOfService(c)).ToArray();
+        var order = type == "spare" && serving.Length > 0 ? serving : [.. children.OrderBy(c => IsOutOfService(c) ? 1 : 0)];
+        return new ZfsMirrorVdev(type, order.Select(c => Build(c, leavesByGuid, shift, draid)).ToArray());
+      }
+      case "dspare":
+        return draid == null
+          ? new ZfsUnsupportedVdev("dspare outside a dRAID")
+          : new ZfsDraidSpareVdev(draid, (int)(tree.UInt64("spareid") ?? 0), tree.String("path") ?? "dspare");
       case "raidz": {
         var parity = (int)(tree.UInt64("nparity") ?? 1);
         if (parity is < 1 or > 3 || children.Length <= parity)
           throw new InvalidDataException($"ZFS: RAID-Z with {children.Length} children and parity {parity} is malformed.");
-        return new ZfsRaidzVdev(children.Select(c => Build(c, leavesByGuid, shift)).ToArray(), parity, shift);
+        return new ZfsRaidzVdev(children.Select(c => Build(c, leavesByGuid, shift, draid)).ToArray(), parity, shift);
+      }
+      case "draid": {
+        var holder = new ZfsDraidHolder();
+        var vdev = new ZfsDraidVdev(children.Select(c => Build(c, leavesByGuid, shift, holder)).ToArray(),
+          (int)(tree.UInt64("draid_ndata") ?? 0), (int)(tree.UInt64("nparity") ?? 0),
+          (int)(tree.UInt64("draid_nspares") ?? 0), (int)(tree.UInt64("draid_ngroups") ?? 0), shift);
+        holder.Draid = vdev;
+        return vdev;
       }
       default:
         return new ZfsUnsupportedVdev(type);
@@ -60,7 +86,7 @@ internal sealed class ZfsMissingVdev(string what) : ZfsVdev {
   public override string Describe() => what + " (missing)";
 }
 
-/// <summary>A vdev type the reader does not map (dRAID, indirect after device removal, holes).</summary>
+/// <summary>A vdev type the reader does not map (indirect after device removal, holes).</summary>
 internal sealed class ZfsUnsupportedVdev(string type) : ZfsVdev {
   public override byte[] Read(long offset, int length)
     => throw new NotSupportedException($"ZFS: '{type}' vdevs are not supported.");

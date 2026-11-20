@@ -16,8 +16,9 @@ public sealed record ZfsDataset(string Name, string Path, string Kind, string? R
 /// copies, mirrors and RAID-Z. Written from <c>docs/ZFS-ON-DISK.md</c>.
 /// </summary>
 /// <remarks>
-/// Read-only by design. Natively encrypted datasets, volumes (zvols) and big-endian pools
-/// are reported and refused rather than guessed at. Checksums are verified for Fletcher-2,
+/// Read-only by design. Natively encrypted datasets are read with their key material (every
+/// AES-GCM/CCM suite; passphrase, hex and raw keys), every MAC checked; without it, as volumes
+/// (zvols) and big-endian pools, they are reported and refused rather than guessed at. Checksums are verified for Fletcher-2,
 /// Fletcher-4, SHA-256 and SHA-512; the salted ones (Skein, Edon-R, BLAKE3) are read
 /// unverified and named in <see cref="UnverifiedChecksums"/>.
 /// </remarks>
@@ -29,15 +30,31 @@ public sealed class ZfsReader : IDisposable {
   private readonly Dictionary<string, int> _byPath = new(StringComparer.Ordinal);
   private readonly List<ZfsDataset> _datasets = [];
   private readonly List<string> _warnings = [];
+  private readonly ZfsKeyMaterial? _anyKey;
+  private readonly IReadOnlyDictionary<string, ZfsKeyMaterial>? _keys;
+  private ZfsKeyring? _keyring;
 
   /// <summary>Opens the pool on a single device image.</summary>
   public ZfsReader(Stream stream, bool leaveOpen = true) : this([stream], leaveOpen) { }
 
+  /// <summary>Opens the pool on a single device image, with key material for its encrypted datasets.</summary>
+  public ZfsReader(Stream stream, ZfsKeyMaterial? anyKey, IReadOnlyDictionary<string, ZfsKeyMaterial>? keys = null, bool leaveOpen = true)
+    : this([stream], anyKey, keys, leaveOpen) { }
+
   /// <summary>Opens the pool spread over <paramref name="devices"/> (mirror, RAID-Z or striped vdevs).</summary>
   /// <exception cref="InvalidDataException">No label, uberblock or readable MOS was found.</exception>
   /// <exception cref="NotSupportedException">The pool was written big-endian.</exception>
-  public ZfsReader(IReadOnlyList<Stream> devices, bool leaveOpen = true) {
+  public ZfsReader(IReadOnlyList<Stream> devices, bool leaveOpen = true) : this(devices, null, null, leaveOpen) { }
+
+  /// <summary>
+  /// Opens the pool with key material for its natively encrypted datasets: <paramref name="keys"/>
+  /// by encryption root (<c>pool/fs</c>), else <paramref name="anyKey"/>. A dataset whose key is
+  /// missing or wrong is listed in <see cref="Datasets"/> as refused.
+  /// </summary>
+  public ZfsReader(IReadOnlyList<Stream> devices, ZfsKeyMaterial? anyKey, IReadOnlyDictionary<string, ZfsKeyMaterial>? keys, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(devices);
+    this._anyKey = anyKey;
+    this._keys = keys;
     foreach (var device in devices) {
       ArgumentNullException.ThrowIfNull(device);
       if (device.CanSeek) device.Position = 0;
@@ -121,12 +138,18 @@ public sealed class ZfsReader : IDisposable {
       this._datasets.Add(new(name, path, kind, "the dataset has no object set yet"));
       return;
     }
+    ZfsDatasetKey? key = null;
     if (bp.IsEncrypted) {
-      this._datasets.Add(new(name, path, kind, "native encryption: names and contents are ciphertext and no key is available"));
-      return;
+      this._keyring ??= new ZfsKeyring(mos, this.PoolName ?? "pool", this._anyKey, this._keys);
+      var (found, refusal) = this._keyring.For(BinaryPrimitives.ReadUInt64LittleEndian(ds.Bonus));
+      if (found == null) {
+        this._datasets.Add(new(name, path, kind, refusal));
+        return;
+      }
+      key = found;
     }
 
-    var os = this._pool.ReadObjectSet(bp);
+    var os = this._pool.ReadObjectSet(bp, key);
     switch (os.Type) {
       case ZfsConstants.OstZfs:
         this._datasets.Add(new(name, path, kind, null));
@@ -233,7 +256,7 @@ public sealed class ZfsReader : IDisposable {
       var values = new Dictionary<string, byte[]>(StringComparer.Ordinal);
       context.Attributes.Parse(dnode.Bonus, values);
       if (dnode.Spill is { } spill)
-        context.Attributes.Parse(context.ObjectSet.Pool.ReadBlock(spill), values);
+        context.Attributes.Parse(context.ObjectSet.ReadBlock(spill), values);
       return new(
         U64(values, "ZPL_MODE"),
         U64(values, "ZPL_SIZE"),

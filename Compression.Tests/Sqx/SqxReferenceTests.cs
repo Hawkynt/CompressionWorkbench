@@ -29,6 +29,16 @@ public sealed class SqxReferenceTests {
     ["mixed.bin"] = (35003, "beb2920ee28f81b77e0a3c5feca91437770c6ebb537c6d73b6b11c5aa4500905"),
     ["zeros.bin"] = (200000, "4cbbd9be0cba685835755f827758705db5a413c5494c34262cd25946a73e7582"),
     ["biased.bin"] = (120000, "a2e40523e3bcada46341099904439de3f92970c827d5f9928f216942ad7654c4"),
+    ["records.bin"] = (240000, "632c93fba25d5906d55b1dfb13195e45ecf8e4b5555a912600d65fdb81cb28b7"),
+    ["Noise.wav"] = (135202, "0d897df3862192ea078efc1dd8fdc4f51fae9e93d3ed4c15e049829b0386729e"),
+    ["test.wav"] = (17410, "5d169a17a6bb134a3ec042a9c131cdee6100aa3ae278b98cd5fb89840dac96dd"),
+    ["e_sin8.wav"] = (45, "b252c340524340648bd30bb1a54705afb15f8158ed92fe869fee596e72a2d164"),
+    ["e_st8.wav"] = (46, "f1f6d6c358bb9f755b38aff600416a4b200fd3338a888b813a4063ae5590ea80"),
+    ["x_alt8.wav"] = (5047, "057ffb7aa1262581d0e5ca9e59c2c05033177d978828b86d078fbecfb592cbf7"),
+    ["sine_st8.wav"] = (24044, "8ad1101ac0c6d473444f8f12afacec6a9fba9f0e63f2158c50b6bddb12f72fa1"),
+    ["x_altst16.wav"] = (36908, "f1bec2c4f0f0afaa97555631bf9e7c8e74a7410b6be7127ab4104054c16d0f28"),
+    ["x_5003st16.wav"] = (20056, "a97294f56b7eb4c96d1d4705ffb567f460caceec5ada41dcab15bae171479449"),
+    ["x_ramp16.wav"] = (18480, "ac4755134fc6f24d871babfeee80378034bc5a4a0e27b91eff3e887f93260d04"),
   };
 
   private static IEnumerable<string> Fixtures() => Assembly.GetExecutingAssembly().GetManifestResourceNames()
@@ -75,11 +85,46 @@ public sealed class SqxReferenceTests {
   }
 
   [Test, Category("Exception")]
-  public void GivenAReferenceArchiveInMethod6_WhenExtracted_ThenTheTextMethodIsRefused() {
-    // hello_v2.0_normal.sqx stores hello.txt with method 6 (PPMd), which this reader does not decode.
-    using var reader = new SqxReader(new MemoryStream(Resource("refused.hello_v2.0_normal.sqx")));
+  public void GivenATextArchiveWithACorruptPayload_WhenExtracted_ThenItIsRefused() {
+    var archive = Resource("eng_v2.0_ultra.sqx");
+    archive[archive.Length / 2] ^= 0x20;
+    using var reader = new SqxReader(new MemoryStream(archive));
     Assert.That(reader.Entries[0].Method, Is.EqualTo(6));
-    Assert.Throws<NotSupportedException>(() => reader.ExtractEntry(reader.Entries[0]));
+    Assert.Throws<InvalidDataException>(() => reader.ExtractEntry(reader.Entries[0]));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenATextStreamThatContinuesAMissingModel_WhenDecoded_ThenItIsRefused() {
+    // the first bit set: "continue the model of the file before", with no file before
+    var stream = new byte[16];
+    stream[3] = 0x80;
+    Assert.Throws<InvalidDataException>(() => new SqxPpmdDecoder().Decode(stream, 10));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenAnUltraArchiveWithACorruptPayload_WhenExtracted_ThenItIsRefused() {
+    var archive = Resource("mixed_v2.0_ultra.sqx");
+    archive[archive.Length / 2] ^= 0x20;
+    using var reader = new SqxReader(new MemoryStream(archive));
+    Assert.That(reader.Entries[0].Method, Is.EqualTo(7));
+    Assert.Throws<InvalidDataException>(() => reader.ExtractEntry(reader.Entries[0]));
+  }
+
+  [TestCase("Noise_v1.1_none.sqx"), TestCase("Noise_v2.0_maximum.sqx"), TestCase("sine_st8_v2.0_audio.sqx"), Category("Exception")]
+  public void GivenAnAudioArchiveWithACorruptPayload_WhenExtracted_ThenItIsRefused(string fixture) {
+    var archive = Resource(fixture);
+    archive[archive.Length / 2] ^= 0x20;
+    using var reader = new SqxReader(new MemoryStream(archive));
+    Assert.That(reader.Entries[0].Method, Is.EqualTo(5));
+    Assert.Throws<InvalidDataException>(() => reader.ExtractEntry(reader.Entries[0]));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenAnAudioHeaderThatDoesNotDescribeTheFile_WhenDecoded_ThenItIsRefused() {
+    var stream = new byte[64];   // skip 0, tail 0, raw 0: describes an empty file, not one of 10 bytes
+    stream[15] = 1;               // one channel (header byte 12, the fourth byte of the fourth word)
+    stream[14] = 16;
+    Assert.Throws<InvalidDataException>(() => new SqxAudioDecoder().Decode(stream, 10, 20));
   }
 
   [Test, Category("Exception")]

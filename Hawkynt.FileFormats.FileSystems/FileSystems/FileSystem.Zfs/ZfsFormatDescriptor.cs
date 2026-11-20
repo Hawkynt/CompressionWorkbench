@@ -62,6 +62,9 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     "gang and embedded blocks, ditto copies, mirror and RAID-Z. Creates single-device version 28 pools " +
     "that OpenZFS imports and scrubs clean, and adds and removes files in such pools in place.";
 
+  /// <summary>A password opens every natively encrypted dataset whose key it is (passphrase, hex or raw key as text).</summary>
+  private static ZfsKeyMaterial? Key(string? password) => password == null ? null : ZfsKeyMaterial.FromText(password);
+
   private const string FullName = "FULL.zfs";
   private const string MetadataName = "metadata.ini";
 
@@ -71,7 +74,7 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     try {
-      using var reader = new ZfsReader(stream);
+      using var reader = new ZfsReader(stream, Key(password));
       var entries = reader.Entries.Select((e, i) => new ArchiveEntryInfo(
         i, e.Name, e.Size, e.Size, "zfs", e.IsDirectory, false, e.LastModified,
         IsSymlink: e.IsSymlink, LinkTarget: e.LinkTarget)).ToList();
@@ -91,7 +94,7 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     ZfsReader reader;
     try {
-      reader = new ZfsReader(stream);
+      reader = new ZfsReader(stream, Key(password));
     } catch (Exception e) when (IsReadFailure(e)) {
       if (files is not { Length: > 0 } || MatchesFilter(MetadataName, files))
         WriteFile(outputDir, MetadataName, Encoding.UTF8.GetBytes($"parse_status=partial\nerror={OneLine(e.Message)}\n"));
@@ -134,7 +137,8 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Writes a new pool (version 28) over <paramref name="devices"/>: one device, or with two or
   /// more an n-way mirror of equally sized devices, each holding every block, or with the option
   /// <c>Layout</c> = <c>raidz1</c>, <c>raidz2</c> or <c>raidz3</c> a RAID-Z (at least parity + 2
-  /// devices), or with <c>stripe</c> one top-level vdev per device. Other options as for <see cref="Create"/>.
+  /// devices), <c>draid&lt;p&gt;:&lt;d&gt;d:&lt;c&gt;c:&lt;s&gt;s</c> a dRAID (version 5000; every device a
+  /// child, <c>s</c> of them distributed spare space, <c>c</c> if given the device count), or with <c>stripe</c> one top-level vdev per device. Other options as for <see cref="Create"/>.
   /// </summary>
   public void CreatePool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(devices);
@@ -150,12 +154,23 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
     var layout = options.GetOption("Layout", "mirror").Trim().ToLowerInvariant();
     writer.Stripe = layout == "stripe";
+    // draid<parity>:<data>d:<children>c:<spares>s, e.g. draid1:2d:1s (every device a child)
+    if (System.Text.RegularExpressions.Regex.Match(layout, @"^draid([1-3])?(?::(\d+)d)?(?::(\d+)c)?(?::(\d+)s)?$") is { Success: true } d) {
+      var parity = d.Groups[1].Success ? int.Parse(d.Groups[1].Value) : 1;
+      var spares = d.Groups[4].Success ? int.Parse(d.Groups[4].Value) : 0;
+      if (d.Groups[3].Success && int.Parse(d.Groups[3].Value) != devices.Count)
+        throw new ArgumentException($"ZFS: layout '{layout}' names {d.Groups[3].Value} children for {devices.Count} devices.");
+      var data = d.Groups[2].Success ? int.Parse(d.Groups[2].Value) : Math.Min(8, devices.Count - spares - parity);
+      writer.Draid = (data, parity);
+      writer.DraidSpares = spares;
+      layout = "mirror";
+    }
     writer.Parity = layout switch {
       "mirror" or "stripe" or "" => 0,
       "raidz" or "raidz1" => 1,
       "raidz2" => 2,
       "raidz3" => 3,
-      var other => throw new ArgumentException($"ZFS: layout '{other}' is not mirror, stripe, raidz1, raidz2 or raidz3."),
+      var other => throw new ArgumentException($"ZFS: layout '{other}' is not mirror, stripe, raidz1-3 or draid<p>:<d>d."),
     };
     writer.Version = options.GetOption("Version", "28").Trim() switch {
       "28" or "" => 28UL,
@@ -192,6 +207,20 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(devices);
     ArgumentNullException.ThrowIfNull(entryNames);
     ZfsPoolEditor.Edit(devices, [], entryNames.Where(n => n is not (MetadataName or FullName)).ToList());
+  }
+
+  /// <summary>
+  /// Adds and removes in one transaction group, in a pool on one or more <paramref name="devices"/>,
+  /// with key material for natively encrypted datasets: <paramref name="keys"/> by encryption root
+  /// (<c>pool/fs</c>), else <paramref name="anyKey"/>. Their new blocks are encrypted and
+  /// authenticated as OpenZFS does; an encrypted dataset without its key is refused untouched.
+  /// </summary>
+  public void EditPool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs, string[] removals,
+      ZfsKeyMaterial? anyKey = null, IReadOnlyDictionary<string, ZfsKeyMaterial>? keys = null) {
+    ArgumentNullException.ThrowIfNull(devices);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(removals);
+    ZfsPoolEditor.Edit(devices, Additions(inputs), removals.Where(n => n is not (MetadataName or FullName)).ToList(), anyKey, keys);
   }
 
   private static List<ZfsPoolEditor.Addition> Additions(IReadOnlyList<ArchiveInputInfo> inputs) =>

@@ -32,6 +32,7 @@ Command, run inside the input set's directory:
 | `exe-m2.uha` / `exe-mz.uha` | exe | `-m2` / `-mz` | E8/E9 + MZ relocation filter, ELF, and the 1 KiB threshold |
 | `fax-m2.uha` / `fax-mx.uha` | fax | `-m2` / `-mx` | the fax-page transpose (filters bit 7) behind ALZ and PPM |
 | `sizes-mx-a.uha` / `sizes-mx-b.uha` | sizes | `-mx`, files `a1.txt a2.txt` / `b1.txt b2.txt` | PPM's file-size rules: quartering, and clearing, at the matching reset points |
+| `slots-mx-a.uha` / `slots-mx-b.uha` | slots | `-mx`, file `first.bin` / `records.bin` | PPM's context slots keyed on the empty history from the first byte (6 and 60 bytes) |
 
 The `v02-*` archives were written by **UHARC 0.2** (`UHARC.EXE`, DOS, 21 Dec 1997, from
 <https://archive.org/details/UHARC>, MD5 `6e2f0e8d0e6b83c0c05c9b406ce056fb`) in DOSBox, from the
@@ -73,6 +74,24 @@ The `v04-*` archives were written by **UHARC 0.4 BETA** (`UHARC04.EXE`, Win32, 2
 | `v04-fax-mz.uha` | fax | `-mz` | the fax-page transpose behind 0.4 LZP |
 
 `UHARC04.EXE t` reports "All files OK" for every `v04-*` archive.
+
+The `v03-*` archives were written by **UHARC 0.3 BETA** (`uharc_u.exe`, Win32, 14 Jun 2000, MD5
+`9a05cd175ce79fe3c5a4e1adc56e46aa`, the copy kept in the unuharc_recon repository) the same way.
+It prints nothing; its `x` reproduces every input of every `v03-*` archive:
+
+| Archive | Set | Switches | What it pins |
+| --- | --- | --- | --- |
+| `v03-basic-m0.uha` | basic | `-m0` | 0.3 container, 0.3-LZP name table, LZW date/size tables |
+| `v03-basic-mz.uha` / `v03-basic-mz-pw.uha` | basic | `-mz` / `-mz -pwsecret` | 0.3 LZP and its range coder; the password |
+| `v03-reset-mz.uha` / `v03-reset-mz1.uha` | reset | `-mz` / `-mz -md1` | 0.3 LZP model resets; a 1 KiB window |
+| `v03-exe-mz.uha` / `v03-mm-mz.uha` | exe / mm | `-mz` (mm: `pic.bmp u8.wav s16.wav`) | the executable and multimedia filters |
+| `v03-runs-mz.uha` / `v03-dates-mz.uha` | runs / dates | `-mz` | 256-byte copies; per-file stamps |
+| `v03-basic-mr.uha` / `v03-runs-mr.uha` | basic / runs | `-mr` | 0.3 RLE |
+| `v03-basic-mw.uha` / `v03-runs-mw.uha` / `v03-reset-mw1.uha` / `v03-exe-mw.uha` | | `-mw` (`-md1`) | 0.3 LZW |
+| `v03-basic-m1.uha` / `-m2` / `-m3` / `v03-basic-m2-pw.uha` | basic | `-m1`..`-m3` (`-pwsecret`) | 0.3 ALZ:1..3 |
+| `v03-reset-m2.uha` / `v03-reset-m21.uha` | reset | `-m2` / `-m2 -md1` | 0.3 ALZ over 232 KiB; a 1 KiB window |
+| `v03-exe-m2.uha` / `v03-mm-m1.uha` / `v03-runs-m2.uha` | exe / mm / runs | `-m2` / `-m1` / `-m2` | executables, the literal groups 1..5, long runs |
+| `v03-basic-mx.uha` | basic | `-mx` | 0.3 PPM, listed but not decoded |
 
 Every archive here is also tested by the unpacker of unuharc_recon
 (<https://github.com/roytam1/unuharc_recon>, revision

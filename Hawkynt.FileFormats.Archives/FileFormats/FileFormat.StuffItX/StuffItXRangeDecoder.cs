@@ -59,6 +59,30 @@ internal sealed class StuffItXRangeDecoder {
     return 1;
   }
 
+  /// <summary>An evenly weighted bit.</summary>
+  public int NextBit() {
+    var bit = (int)this.CurrentCount(2);
+    if (bit == 0) this.RemoveSubRange(0, 1);
+    else this.RemoveSubRange(1, 2);
+    return bit;
+  }
+
+  /// <summary>A bit that is 0 with probability <paramref name="weight"/> / 2^<paramref name="shift"/>, splitting the range directly (Darkhorse).</summary>
+  public int NextWeightedBitShift(uint weight, int shift) {
+    var threshold = (this._range >> shift) * weight;
+    int bit;
+    if (this._code < threshold) {
+      bit = 0;
+      this._range = threshold;
+    } else {
+      bit = 1;
+      this._range -= threshold;
+      this._code -= threshold;
+    }
+    this.Normalize();
+    return bit;
+  }
+
   private void Normalize() {
     for (;;) {
       if ((this._low ^ (this._low + this._range)) >= 0x1000000) {

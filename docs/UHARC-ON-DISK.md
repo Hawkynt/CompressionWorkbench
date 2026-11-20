@@ -4,15 +4,16 @@ UHARC is Uwe Herklotz's closed-source archiver (1997–2005). No specification w
 published and no implementation exists under a licence this repository can take, so this
 document is the specification `FileFormat.Uharc` is implemented from. It covers the 0.6 format
 (0.6, 0.6a and 0.6b write the same archives; the documentation says so and the header carries
-version byte 6) and, in their own sections, the 0.4 and 0.2 formats, as far as they were established; what
+version byte 6) and, in their own sections, the 0.4, 0.3 and 0.2 formats, as far as they were established; what
 is not covered is listed at the end.
 
 **Status: read, write-once.** Container, ciphers, every 0.6 mode — store, RLE, LZ78, LZP, PPM and ALZ
 with its nine multimedia predictors —, the executable and multimedia filters, passwords and SFX
 stubs are established and verified, and so are UHARC 0.2 and the UHARC 0.4 container with its
-store, RLE, LZW, LZP and ALZ modes (see their sections). Archives of 0.3, and 0.4's PPM streams,
-are not, and are refused. The writer produces stored and LZP-packed 0.6 archives (see
-Writing).
+store, RLE, LZW, LZP and ALZ modes, and the UHARC 0.3 container with its store, RLE, LZW, LZP and
+ALZ modes (see their sections). 0.4's and 0.3's PPM streams are not, and are refused. The writer produces 0.6 archives in every method — store, RLE, LZ78, LZP, PPM and ALZ —
+with or without a password and a self-extractor stub (see Writing), and 0.4 archives in store,
+RLE, LZW and LZP (see Writing UHARC 0.4).
 
 ## Evidence
 
@@ -366,7 +367,12 @@ pass `Order4Threshold`/`Order2Threshold` for their escape count.
 neighbours) and follows the most frequent below 256; two marker counters detect interleaved
 16-bit text, which then uses alternate bytes as context; binary streams remember for each byte
 whether it occurred in the last 64 window positions (text streams do not, and the single-symbol
-order-2 decision never asks).
+order-2 decision never asks). Four context slots remember the byte that last followed them,
+keyed by byte pairs of the history (*hₖ* the *k*-th last byte): `h4·256 + h8`,
+`0x10000 + h3·256 + h2`, `0x20000 + h3·256 + h1` and `0x30000 + h1·256 + h5`. Before each
+literal the bytes the current slots remember are marked, and a marked byte sets a flag in the
+probability cells. The history starts as zero bytes and the slots are keyed on it from the first
+byte on, so a byte that followed the empty history is marked again when its key recurs.
 
 **Text transform.** In a text stream the output of every symbol below *L* is `~symbol`, except
 that complemented values from 0x80 stand for strings (`TransformString*`), a capital-letter
@@ -384,7 +390,8 @@ when either the stored value or the swapped one is a target within the file; und
 then proceed as for the other methods.
 
 Fixtures `basic-mx` (text, switching to binary after 15 bytes), `reset-mx` and `reset-mx1`
-(reset points; a 1 KiB window wrapping hundreds of times), `exe-mx` and `mm-mx` pin the stream;
+(reset points; a 1 KiB window wrapping hundreds of times), `exe-mx`, `mm-mx` and `slots-mx-a`/`-b`
+(the context slots at the start of a binary stream) pin the stream;
 all archives packed here — 17 MB of text, 13 MB of DLLs, fonts and media, the source and
 documentation of this repository, mixed text and binary sets, dictionaries from 1 KiB to 16 MiB
 — decode exactly, and so does the real-world sample `D3X.UHA` (45 files).
@@ -394,7 +401,10 @@ documentation of this repository, mixed text and binary sets, dictionaries from 
   17 MB text packed as binary at 38 450 (order-4) and a DLL set at 536 014 (order-2); the
   thresholds 5 and 7, 11 and 13 break other corpora;
 - the recency flag in the single-symbol order-2 decision of a text stream: breaks a 1 KiB
-  window text archive at 3 931, where the window position returns to 0.
+  window text archive at 3 931, where the window position returns to 0;
+- context slots that are first keyed after the first byte: the first byte is then remembered
+  under key 0 of all four slots, and the six bytes `03 02 FF 03 FF 45` (fixture `slots-mx-a`)
+  break at byte 5; a 1 MB record file broke at 413 523 the same way.
 
 ## ALZ (methods 40..87)
 
@@ -414,7 +424,8 @@ by `32 + tag/8` when the two-byte context's remembered token tag says so (a tag 
 the top two bits and a repeat count below). A token adds 88 to its frequency; the row halves at
 16384.
 
-**Copies.** Twelve recent distances, all 1 at first. A new distance: a slot 1..44 by binary
+**Copies.** Twelve recent distances, empty at first (both 0.6b extractors copy zero bytes
+through a slot no copy has filled, so a valid stream never uses one). A new distance: a slot 1..44 by binary
 search (root 16), slot *k* covering `[base, base + span)` with bases 1, 2, 4, 8, 16, 32, then
 64, 96, 128, 192, … (2ᵏ and 1.5·2ᵏ alternating), the span clipped to what has been output; the low bit coded
 with its own probability when the span is ≥ 4, then a uniform value, split into 2048-wide
@@ -422,8 +433,9 @@ blocks when wider. Token 3 picks slot 1..11 of the recent list by a small tree. 
 decoded by binary search from node 10 over a 256-node tree, in one of eight probability sets
 (the distance class < 256, < 4 Ki, < 64 Ki, < 1 Mi, larger for new distances; one set for
 repeats and two for runs), each node's probability refined by the two lengths last seen after
-the copy's source byte pair. Short lengths are not coded at all: a new distance of class *c*
-copies at least *c* + 4 bytes, a repeat at least 3. 255 means a run: the next token is decoded
+the copy's source byte pair. Short lengths are not coded at all: the tree nodes below *c* + 3
+(new distance of class *c*) or below 2 (repeats) carry no bit, so a new distance copies at
+least *c* + 3 bytes and a repeat at least 2 — both extractors take such copies. 255 means a run: the next token is decoded
 in the run rows. The distance enters the recent list unless it is 1 and fewer than two runs
 precede it; a repeat moves its slot to the front.
 
@@ -508,12 +520,49 @@ transposed. Fixtures `fax-m2`, `fax-mx` and `v04-fax-mz`.
 
 ## Writing
 
-The writer produces 0.6 archives in the layout above: the stream stored (method 0) or packed
-with LZP at the smallest window that holds it (methods 8..23, 1 KiB to 32 MiB), the three tables
+The writer produces 0.6 archives in the layout above: the stream stored (method 0), packed with
+RLE (method 1), with LZ78 (method 7, 32768 phrases), or with LZP, PPM or ALZ:2 at the smallest
+window that holds it (methods 8..23, 24..39 and 56..71, 1 KiB to 32 MiB), the three tables
 — the name table lists the root as an empty name and every directory with a trailing `\` —
 packed with LZP method 17 and enciphered with the default password, the header scrambled with
 the low byte of its own check. The filters byte is 0: no executable or multimedia filter runs,
-so none is undone. It writes no password-protected archives and no other method.
+so none is undone.
+
+The PPM encoder is the decoder's model too, made generic over the coder direction like ALZ's
+(decoding the 39 MB set below takes as long as before: best 19.6 s against 20.0 s). Every
+coding decision names its outcome from the next input byte — a copy class hit or miss, a copy
+length, an order-4 or order-2 slot or its escape, a binary-predictor hit, the order-1 row's
+predicted byte, a row slot or escape, a uniform byte — so the decoder's own path through the
+cascade is replayed exactly. It writes a binary stream (the stream kind is a uniform choice, so
+no word transform has to be inverted) with multimedia class 0. A predicted copy is taken when
+the bytes it would produce match the input past the length floor, only whole (the full match,
+or 255 for a run) and never past a reset point, for the reason given for ALZ. On the 39 MB set
+the stream is 12.3 MB against UHARC's 10.9 MB; `UHARC.EXE x` and `UNUHARC.EXE x` extract it,
+every fixture input set, the minimal PPM inputs above and the Canterbury files byte for byte, at
+the fitted window and at 1 KiB.
+
+The ALZ encoder runs the decoder's model step for step (one model, generic over the coder
+direction, so the decoding instantiation stays as fast as before) with selector 0 — no
+multimedia predictor. Each step takes the best of: a copy at one of the recent distances that
+holds a value, a new distance from a 3-byte hash chain (48 deep) that the slot coding can express
+at this position (narrowed slots and the low-bit halving leave some odd offsets out) and that is
+at least *c* + 3 bytes long, or a literal. A copy is always taken whole — the full match, or 255
+for a run — and never crosses a model reset point, because a shortened copy would leave the next
+byte equal to the byte the literal coder excludes. Distances stay within the window less 255,
+the farthest UHARC 0.6b's own `-m2` streams reach (769 at `-md1`, 1793 at `-md2`, 3841 at
+`-md4`); both 0.6b extractors mis-copy distances near the full window (at 1 KiB, a text
+whose copies reach 1003 bytes back fails its CRC). The window is the smallest power of two that
+holds the stream, capped by the dictionary size option as `-md` caps it. On a 39 MB mixed set
+(Canterbury corpus and system DLLs) the stream is 13.8 MB against UHARC's own 12.1 MB, and
+`UHARC.EXE x` and `UNUHARC.EXE x` extract it byte for byte.
+
+**Passwords** set flags `0x06` and encipher the packed stream and the three tables with the
+password instead of the default one, as `-pw` does; the writer takes printable ASCII up to 255
+characters. **Self-extractors** are the stub followed by the archive, as `UHARC.DOC` describes
+(`COPY /B UHARCSFX.EXE+archive.uha archive.exe`): an `-sfx` archive of UHARC 0.6b is
+`UHARCSFX.EXE` byte for byte followed by the same archive `-sfx` leaves out, which differs only in
+the archive time. The stub is not ours to ship, so the caller names it; the writer checks that it
+is a PE image ending with its last section, where readers look for the archive.
 
 The LZP encoder keeps the decoder's model step for step and answers each prediction with the
 input: a hit with the longest copy the candidate reproduces (255 when it runs on, the rest of
@@ -523,10 +572,21 @@ which the decoder expects: the byte after it is then excluded like the byte afte
 range encoder is the decoder's mirror with a carrying 64-bit low, which makes the first stream
 byte 0.
 
+The RLE encoder writes runs of four or more as *R* `n` `x` (from 255 as *R* `FF lo hi x`, at
+most 65535 per run), runs of three as *T* `x`, shorter runs as literals, and one or two literal
+marker bytes as the *R* `c` escape, which moves the markers; it reproduces UHARC's own stream for
+the measured input above. The LZ78 encoder keeps the decoder's dictionary step for step, codes
+at each position the longest phrase the decoder already knows (never the not-yet-defined code
+*n*), writes no runs or resets, and lets a full dictionary be pruned as the decoder prunes it.
+`UHARC.EXE x` extracts both byte for byte, including 1.4 MB of text, noise and marker-byte runs
+that fill the 32768-phrase dictionary many times over.
+
 Every archive written from the fixture inputs, 17 MB of text, 13 MB of DLLs, fonts and media,
 this repository's sources and the mixed text/binary set — stored and packed, up to 400 files and
 a 32 MiB window — is extracted byte for byte by `UHARC.EXE x` and `UNUHARC.EXE x` (0.6b),
-directories and empty files included.
+directories and empty files included. Password archives of every written method are extracted
+by `UHARC.EXE x -pw…`, and our archives behind `UHARCSFX.EXE` by the self-extractor itself, with
+and without a password.
 
 ## UHARC 0.2
 
@@ -782,9 +842,161 @@ for 0.6's LZ78). Fixtures `v04-basic-mr`, `v04-runs-mr`, `v04-basic-mw`, `v04-ru
 
 PPM (`-mx`) streams of 0.4 do not decode with 0.6's PPM and are refused.
 
+## UHARC 0.3
+
+UHARC 0.3 BETA (14 Jun 2000, Win32; `uharc_u.exe`, MD5 `9a05cd175ce79fe3c5a4e1adc56e46aa`, the
+copy kept in the unuharc_recon repository) prints nothing, but packs and extracts: it was run on
+the fixture inputs in every mode (`-m0`, `-m1`..`-m3`, `-mx`, `-mz`, and the unlisted `-mr` and
+`-mw`), with `-md1` and `-pw`, and its own `x` reproduces every input. The unuharc_recon
+unpacker (revision `37f1953ac57609b95ab738bb45991d6d00415789`) accepts every archive too. The
+store, RLE, LZW, LZP and ALZ archives of that project's 0.3 sample set (`uharc-rs-03`, made with the
+same executable) pass every CRC here.
+
+**Container.** Byte for byte 0.4's (see there): 44-byte header with version byte 3, the same
+scrambling, checks, flags (bit 1 password), filters (bits 0, 1 and 7) and the four tables;
+the name table is a 0.3 LZP stream (method 17, below), the date/time and size tables 0.2's LZW
+(methods 2 and 7) with dates before times.
+
+Methods, in bands of 14 dictionary sizes (`2^((m − 8) mod 14 + 10)`, 1 KiB to 8 MiB):
+
+| Method | Mode | Coder |
+| --- | --- | --- |
+| 0, 80 | `-m0` | store |
+| 1 | `-mr` | 0.6's RLE |
+| 2..7 | `-mw` | 0.2's LZW, `2^(m+8)` codes |
+| 8..21 | `-mz` | 0.3 LZP |
+| 22..35 | `-mx` | 0.3 PPM — refused |
+| 36..49, 50..63, 64..77 (78, 79) | `-m1`, `-m2`, `-m3` | 0.3 ALZ |
+
+Measured: `-m1`/`-m2`/`-m3` of the 9.7 KB basic set give 40, 54 and 68, `-mx` 26, `-mz` 12, and
+`-md1` the first method of each band.
+
+**Range decoder** (LZP and ALZ). The stream's first byte carries no information. A 32-bit
+`code` starts as the second byte shifted right by one, `range = 0x80`, and that byte is kept as
+*carry*. Before every decode, while `range ≤ 2²³`: read byte *b*,
+`code = code << 8 | (carry & 1) << 7 | b >> 1`, `range <<= 8`, `carry = b`. Decoding against a
+total *t*: `unit = range / t`, `slot = min(code / unit, t − 1)`; consuming `[low, low + size)`:
+`code −= unit·low`, and `range = unit·size` — except for the top interval
+(`low + size = t`), which keeps the remainder: `range −= unit·low`.
+
+### UHARC 0.3 LZP (methods 8..21)
+
+0.4's LZP (see there) without runs and with this coder:
+
+- 326 contexts plus the two order-0 fallbacks 326 (literals) and 327 (lengths); the literal
+  contexts, length contexts 318..325 (by the length the hash slot remembers), escapes, steps and
+  halving are 0.4's. A length symbol 0 copies 256 bytes, 255 copies 255 and excludes nothing;
+  no run follows.
+- The last distance starts at 2³² − 1, so the distance candidate never applies before the first
+  copy.
+- **Decisions**: 48 pairs, the index the candidate's base (0 for the hash, 8 for the distance,
+  16 for the pair; +24 when the hash slot remembers no length) plus a three-bit history of the
+  last outcomes (starting at 7, `history = (2·history + miss) mod 8`). They are seeded
+  `[0x800, 0x400, 0x500, 0x400, 0x600, 0x400, 0x500, 0x400]` by `index mod 8` over a total of
+  0x2000, counted and halved as 0.4's, and restored to the seeds at a model reset.
+- Resets follow 0.4's rule (threshold 64 KiB, after the step that passes a file end).
+
+Fixtures `v03-basic-mz`, `v03-basic-mz-pw`, `v03-reset-mz`, `v03-reset-mz1` (1 KiB window),
+`v03-exe-mz`, `v03-mm-mz`, `v03-runs-mz` and `v03-dates-mz` decode byte for byte, as do the
+name tables of every 0.3 archive; `v03-basic-mr`, `v03-runs-mr`, `v03-basic-mw`,
+`v03-runs-mw`, `v03-reset-mw1` and `v03-exe-mw` pin RLE and LZW.
+
+### UHARC 0.3 ALZ (methods 36..79)
+
+A different coder from 0.4/0.6's ALZ, on the 0.3 range decoder, without model resets.
+Methods 78 and 79 decode as method 36 (1 KiB); 79 also raises step 2 (below) to 64.
+
+**Steps.** Each step is a three-way decision coded from one of eight cumulative rows
+`[0, 1, 0xC00, 0x2000]` picked by a three-bit history (start 7): `[0,1)` switches the literal
+model (the history is left alone), `[1,0xC00)` is a copy, the rest a literal. A copy adds 64 to
+the literal boundary and the total, a literal 64 to the total; at 16384 both widths halve
+(rounding up), and the history becomes `2·history + decision − 1` (mod 8).
+
+**Model switch**: a uniform value of 12. 0..5 selects literal group *g* (byte lag
+`(g − 1) mod 4`, step 1, context 0) and, after the first output byte, reseeds groups 0 and 5;
+6..9 selects step `v − 6` and, after the first byte, halves every context of the current group
+`n` times, *n* from a fixed 96-entry table by group, old step and new step (for every group:
+`0 0 1 2 / 2 0 0 1 / 4 2 0 0 / 6 4 2 0`, old step by row); 10 toggles raw literals (a uniform
+value of 256); 11 toggles high literals (only symbols 128..255 are coded).
+
+**Literals.** Six groups of 256-symbol frequency contexts (512, 32, 32, 96, 64, 512), every
+count starting at 1; a symbol adds the step (`[2, 8, 32, 128]`, step 3 first) and a context
+halves at 16384. Symbols occupy the interval from 255 down. A symbol *s* stands for `v = ~s`;
+in groups 1..5 `v` is a signed difference: negated while the sign is negative, the sign
+flipping after every `v ≥ 0x80`, then added to the byte *lag* + 1 back. The next context
+comes from the symbol just counted — groups 0 and 5: the symbol plus 256 when its top two bits
+equal the previous context's; group 1: `class(previous context) · 16 + class16(s)`; group 3:
+`(n mod 3) · 32 + class32(s)`; groups 2 and 4: `(lag & n) · 16 + class16(s)` (*n* counts
+counted symbols) — with ALZ's difference-class tables for groups 1, 2 and 4, but group 3's own
+32-class table, which unlike 0.6's holds no class back:
+
+    0 1 2 3 4 5 6 7 7 8 8 9 9 10 10 10 11 11 11 11 11 12 12 12 12 12 12 12 12 13 13 13
+    13 13 13 13 13 13 13 13 13 13 14 14 14 14 14 14 14 14 14 14 14 14 14 14 14 14 14 14 14 14 14 15
+    15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15
+    15 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16
+    16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16
+    17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17 17
+    17 17 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 18 19 19 19 19 19 19 19 19 19
+    19 19 19 19 20 20 20 20 20 20 20 20 21 21 21 21 21 22 22 22 23 23 24 24 25 25 26 27 28 29 30 31
+
+(0.6's table, which skips class 16, breaks a WAV coded in group 3 at its sixth byte.) Copied bytes are counted too, as the
+symbol they stand for.
+
+**Copies.** A 61-symbol cumulative table (start: slots 52..59 0x200 wide, 60 one wide, total
+0x1000) codes 0..55 distance slots, 56 distance 1, 57 a recent distance 3.. (a second table over the recent
+slots), 58 recent 1 or 2 (a two-entry table), 59 the most recent, 60 a long run. A slot's span is
+clipped to the history and refined by a uniform value (4096-wide blocks first). Slots open as
+the history grows past fixed thresholds (32, 64, 128, … up to 0x780000; the history starts at
+31): the next lower slot receives half the width of the one above, then all widths halve.
+Counting adds 32 to a slot (4 to the long run). Five, eight or sixteen recent distances (by
+ALZ:1..3; all 2³² − 1 first) move to the front unless the distance is 1. The length is a class
+of two tables (new distances: lengths 3..255; recent ones also 2), plus a uniform remainder for
+the wide classes; 255 is a plain 255-byte copy here.
+
+    slot bases  0..7: 0x780000 down to 0x400000 by 0x80000 (span 0x80000)
+                8..15: 0x3C0000 down to 0x200000 by 0x40000 (span 0x40000)
+               16..29: 0x1E0000 down to 0x40000 by 0x20000 (span 0x20000)
+               30..55: 0x30000 0x20000 0x18000 0x10000 0xC000 0x8000 0x6000 0x4000 0x3000 0x2000
+                       0x1800 0x1000 0xC00 0x800 0x600 0x400 0x300 0x200 0x100 0x80 0x40 0x20
+                       0x10 8 4 2
+    spans      30..55: 0x10000 0x10000 0x8000 0x8000 0x4000 0x4000 0x2000 0x2000 0x1000 0x1000
+                       0x800 0x800 0x400 0x400 0x200 0x200 0x100 0x100 0x100 0x80 0x40 0x20
+                       0x10 8 4 2
+    opening thresholds by slot limit 52 down to 1: 0x20 0x40 … (doubling, then 1.5× steps) —
+    the slot bases shifted by one: threshold[k] = base[k − 1], threshold[52] = 0x20
+    length classes 0..21: base 255 191 127 95 63 47 31 23 19 15 13 12 11 10 9 8 7 6 5 4 3 2,
+                          extra 0 64 64 32 32 16 16 8 4 4 2 (then 0)
+    length seeds (both tables): 0 16 24 40 56 88 124 204 304 396 580 751 1025 1225 1485
+                                1823 2273 2873 3673 4673 6073 8473 10000
+    recent seeds: 0 400 850 1350 1900 2500 3150 3850 4600 5400 6250 7150 8100 9100;
+                  near (recent 2, 1): 0 4500 9100
+    long-run classes (fixed): 0 1 2 3 5 7 9 12 17 24 33 44 57 73 89 99
+
+**Long runs**: a class of a fixed table, then a power-of-two-sized offset (the last offset again
+for class 14); the run is `offset + 512` bytes of the previous byte. Only 511 of them enter the
+window and only five the predictor history; the rest are counted with the fifth one's symbol.
+
+Fixtures `v03-basic-m1`, `v03-basic-m2`, `v03-basic-m3`, `v03-basic-m2-pw`, `v03-reset-m2`,
+`v03-reset-m21`, `v03-exe-m2`, `v03-mm-m1` and `v03-runs-m2` decode byte for byte.
+
+### Writing UHARC 0.4
+
+The writer produces 0.4 archives (format option `version` 4) in store, RLE, LZW and LZP: the
+header above with its own check, the stream, the stored CRC table, the name table as 0.4 LZP
+method 17, the dates-then-times table as LZW method 2 and the size table as LZW method 7, each
+table enciphered with the default password or, with a password, all of them and the stream with
+it (flags `0x02`). The filters byte is 0. The LZW encoder codes the longest phrase the decoder
+knows and restarts a full dictionary with code 256 followed by a plain byte: coding on past a
+full dictionary, which our decoder follows, crashes `UHARC04.EXE` (a 513 216-byte fax page with
+long zero runs fills the 32768-code dictionary). The 0.4 LZP encoder is the decoder's model
+(generic over the coder direction, as for 0.6) answering each prediction with the full match
+when its first byte matches. `UHARC04.EXE x` extracts our archives of every fixture input set
+and the 39 MB mixed set byte for byte in all four modes, with and without a password and at a
+1 KiB window, and unuharc_recon's unpacker accepts them.
+
 ## What is not derived
 
-- **Version 0.3** (`UHA` + 3): refused with the version named.
+- **UHARC 0.3's PPM streams** (`-mx`): the container reads, the stream is refused.
 - **UHARC 0.4's PPM streams** (`-mx`): the container reads, the stream is refused.
 - **UHARC 0.2's RLE stream method 1**: no archive the tool writes uses it; refused.
 - **Writing** any method other than store and LZP, passwords, filters and SFX stubs.

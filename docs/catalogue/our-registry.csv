@@ -36,6 +36,7 @@ format,AndroidSparse,Android Sparse Image,Archive,,.simg;.sparse,Y,Y,Y,
 format,AndroidVbmeta,Android Verified Boot (vbmeta),Archive,,.avb,Y,Y,Y,Y
 format,Ani,ANI (animated cursor),Archive,,.ani,Y,Y,Y,
 format,Aomei,AOMEI Backupper Image (ADI/AFI),Archive,,.adi;.afi,Y,Y,Y,Y
+format,Apack,aPACK (DOS exe),Archive,,,Y,Y,,
 format,Apc,CRYO APC,Audio,,.apc,Y,Y,Y,
 format,Ape,Monkey's Audio (.ape),Audio,,.ape;.mac,Y,Y,Y,
 format,Apfs,APFS,Archive,Y,.apfs,Y,Y,Y,Y
@@ -68,6 +69,7 @@ format,Avif,AVIF,Image,,.avif;.avifs,Y,Y,,
 format,Avr,AVR (Audio Visual Research),Audio,,.avr,Y,Y,Y,
 format,Avro,Apache Avro OCF,Archive,,.avro,Y,Y,,
 format,Awb,CRI Audio Wave Bank,Archive,,.awb;.acb,Y,Y,Y,
+format,Axe,AXE (DOS exe),Archive,,,Y,Y,,
 format,Axfs,AXFS (Advanced XIP File System),Archive,Y,.axfs,Y,Y,,
 format,Ay,ZX Spectrum AY,Audio,,.ay,Y,Y,,
 format,B1,B1,Archive,,.b1,Y,Y,Y,Y
@@ -88,6 +90,7 @@ format,Bik,Bink Video,Audio,,.bik;.bk2,Y,Y,Y,
 format,BinaryII,Apple II Binary II,Archive,,.bny;.bqy,Y,Y,Y,Y
 format,BinCue,BIN/CUE,Archive,,.bin;.cue,Y,Y,Y,Y
 format,BinHex,BinHex,Wrapper,,.hqx,,Y,Y,
+format,BitLocker,BitLocker,Archive,,.bitlocker;.bde,Y,Y,Y,
 format,BitRock,BitRock / InstallBuilder,Archive,,,Y,Y,,
 format,Bkf,Microsoft NTBackup (MTF),Archive,,.bkf,Y,Y,Y,Y
 format,BlakHole,BlakHole,Archive,,.bh,Y,Y,,
@@ -164,6 +167,7 @@ format,DiskCopy42,Apple Disk Copy 4.2,Archive,,.dc42;.image,Y,Y,Y,Y
 format,DiskDoubler,DiskDoubler,Archive,,.dd;.sea,Y,Y,Y,
 format,Djvu,DjVu,Image,,.djvu;.djv,Y,Y,,
 format,Dls,DLS (Downloadable Sounds),Audio,,.dls,Y,Y,,
+format,DmCryptPlain,dm-crypt (plain),Archive,,,Y,Y,Y,
 format,Dmg,DMG,Archive,,.dmg,Y,Y,Y,Y
 format,Dms,DMS,Archive,,.dms,Y,Y,Y,
 format,Dng,Adobe DNG / Camera RAW,Image,,.dng;.nef;.cr2;.raf;.arw;.rw2;.orf;.pef;.srw,Y,Y,,
@@ -199,6 +203,7 @@ format,Esd,ESD,Archive,,.esd,Y,Y,Y,
 format,EspsSd,ESPS sampled data (.sd),Audio,,.sd,Y,Y,,
 format,Ewf,EnCase EWF (E01),Archive,,.e01;.ewf;.l01,Y,Y,Y,Y
 format,Ewf2,EnCase EWF2 (Ex01),Archive,,.ex01,Y,Y,Y,
+format,ExeLite,ExeLITE (DOS exe),Archive,,,Y,Y,,
 format,ExePack,EXEPACK (DOS exe),Archive,,,Y,Y,,
 format,ExFat,exFAT,Archive,Y,.img;.exfat,Y,Y,Y,Y
 format,Ext,ext2/3/4,Archive,Y,.ext2;.ext3;.ext4;.img,Y,Y,Y,Y
@@ -234,6 +239,7 @@ format,Gbs,Game Boy Sound,Audio,,.gbs,Y,Y,,
 format,Gdi,Dreamcast GDI,Archive,,.gdi,Y,Y,,
 format,Gem,Ruby Gem,Archive,,.gem,Y,Y,Y,
 format,Gemdos,GEMDOS (Atari ST),Archive,Y,.st;.stx;.dim,Y,Y,Y,Y
+format,GenteeInstaller,Gentee installer (CreateInstall),Archive,,,Y,Y,,
 format,Gfs1,"GFS (Sistina/Red Hat, original)",Archive,Y,.gfs;.gfs1,Y,Y,Y,Y
 format,Gfs2,GFS2 (Global File System 2),Archive,Y,.gfs2,Y,Y,Y,Y
 format,Ghost,Symantec / Norton Ghost,Archive,,.gho;.ghs,Y,Y,Y,Y
@@ -464,6 +470,7 @@ format,PeResources,PE Resources (Windows binary),Archive,,.dll;.exe;.ocx;.cpl;.s
 format,PeSections,PE sections (Windows binary),Archive,,,Y,Y,,
 format,Petite,Petite (Win32 PE),Archive,,,Y,Y,,
 format,Pfs0,Nintendo PartitionFS,Archive,,.nsp;.pfs0,Y,Y,Y,Y
+format,Pgmpak,PGMPAK (DOS exe),Archive,,,Y,Y,,
 format,Phar,PHAR,Archive,,.phar,Y,Y,Y,Y
 format,Pickle,Python pickle object graph,Archive,,.pkl;.pickle,Y,Y,Y,
 format,Pkcs12,PKCS#12 (PFX),Archive,,.p12;.pfx,Y,Y,,
@@ -570,7 +577,7 @@ format,Stm,STM (Scream Tracker 2),Audio,,.stm,Y,Y,,
 format,Storable,Perl Storable object graph,Archive,,.storable;.sto,Y,Y,Y,
 format,StreamHfe,HxC Stream HFE,Archive,,,Y,Y,Y,Y
 format,StuffIt,StuffIt,Archive,,.sit,Y,Y,Y,Y
-format,StuffItX,StuffIt X,Archive,,.sitx,Y,Y,,
+format,StuffItX,StuffIt X,Archive,,.sitx,Y,Y,Y,
 format,Sup,Blu-ray PGS Subtitles,Archive,,.sup,Y,Y,Y,Y
 format,Svr4Bfs,SVR4 Boot File System (BFS),Archive,Y,.svbfs,Y,Y,Y,Y
 format,Svx8,IFF/8SVX (Amiga),Audio,,.8svx;.svx,Y,Y,Y,
@@ -608,6 +615,7 @@ format,Thumbcache,Windows thumbnail cache (thumbcache_*.db),Archive,,,Y,Y,,
 format,ThumbsDb,Thumbs.db,Archive,,.db,Y,Y,Y,Y
 format,Ti99,TI-99/4A DSR,Archive,Y,.tifd;.tifiles,Y,Y,Y,Y
 format,Tiff,TIFF (multi-page),Archive,,.tif;.tiff,Y,Y,,
+format,TinyProg,TINYPROG (DOS exe),Archive,,,Y,Y,,
 format,TiTxt,TI-TXT (MSP430),Archive,,,Y,Y,Y,Y
 format,Tnef,MS-TNEF (winmail.dat),Archive,,.dat;.tnef,Y,Y,Y,Y
 format,TrDos,TR-DOS,Archive,Y,.trd,Y,Y,Y,Y
@@ -625,7 +633,7 @@ format,Uc2,UltraCompressor II,Archive,,.uc2;.pu2,Y,Y,Y,
 format,Udf,UDF,Archive,Y,.udf,Y,Y,Y,Y
 format,UefiFv,UEFI Firmware Volume,Archive,,.fv;.fd,Y,Y,Y,Y
 format,Ufs,UFS,Archive,Y,.ufs,Y,Y,Y,Y
-format,Uharc,UHARC,Archive,,.uha,Y,Y,,
+format,Uharc,UHARC,Archive,,.uha,Y,Y,Y,
 format,Uif,MagicISO UIF,Archive,,.uif,Y,Y,,
 format,UImage,U-Boot uImage,Archive,,,Y,Y,Y,Y
 format,Ult,UltraTracker,Audio,,.ult,Y,Y,,
@@ -645,6 +653,7 @@ format,Vag,Sony VAG (PS1/PS2 SPU-ADPCM),Audio,,.vag,Y,Y,Y,
 format,Vdfs,VDFS,Archive,Y,.vdf,Y,Y,Y,Y
 format,Vdi,VDI,Archive,,.vdi,Y,Y,Y,Y
 format,Veeam,Veeam Backup & Replication,Archive,,.vbk;.vib;.vrb,Y,Y,,
+format,VeraCrypt,VeraCrypt / TrueCrypt,Archive,,.hc;.tc,Y,Y,Y,
 format,Vgm,Video Game Music Log,Audio,,.vgm;.vgz,Y,Y,,
 format,Vhd,VHD,Archive,,.vhd,Y,Y,Y,Y
 format,Vhdx,VHDX,Archive,,.vhdx,Y,Y,Y,Y
@@ -684,6 +693,7 @@ format,WordPerfect,WordPerfect,Archive,,.wpd;.wp;.wp5;.wp6;.wp7,Y,Y,,
 format,Woz,Apple II WOZ,Archive,,.woz,Y,Y,Y,Y
 format,Wrapster,Wrapster,Archive,,,Y,Y,Y,
 format,WwiseBnk,Wwise SoundBank,Archive,,.bnk,Y,Y,,
+format,Wwpack,WWPACK (DOS exe),Archive,,,Y,Y,,
 format,Xa,CD-XA audio (.xa),Audio,,.xa,Y,Y,Y,
 format,Xar,XAR,Archive,,.xar,Y,Y,Y,Y
 format,Xenix,Xenix FS,Archive,Y,.xnx;.xenix,Y,Y,Y,Y
@@ -707,7 +717,7 @@ format,YEnc,yEnc,Wrapper,,.yenc,,Y,Y,
 format,YodaCrypter,Yoda's Crypter (Win32 PE),Archive,,,Y,Y,,
 format,Ypf,YukaScript YPF,Archive,,.ypf,Y,Y,Y,Y
 format,Zarr,Zarr array metadata,Archive,,,Y,Y,,
-format,Zfs,ZFS,Archive,Y,.zfs;.zpool,Y,Y,,
+format,Zfs,ZFS,Archive,Y,.zfs;.zpool,Y,Y,Y,Y
 format,Zip,ZIP,Archive,,.zip;.zipx,Y,Y,Y,Y
 format,Zlib,Zlib,Stream,,.zlib,,Y,Y,
 format,Zling,Zling,Stream,,.zling,,Y,Y,

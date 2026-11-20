@@ -94,7 +94,7 @@ internal sealed class ZfsWriter {
   private bool Features => this._version >= 5000;
 
   /// <summary>The features a version 5000 pool is written with: guid, description, read (vs. write) list, needed to open the MOS.</summary>
-  private static readonly (string Guid, string Description, bool ForRead, bool Mos)[] FeatureTable = [
+  private static readonly (string Guid, string Description, bool ForRead, bool Mos)[] BaseFeatures = [
     ("com.delphix:enabled_txg", "Record txg at which a feature is enabled", false, false),
     ("com.delphix:hole_birth", "Retain hole birth txg for more precise zfs send", true, true),
     ("com.delphix:embedded_data", "Blocks which compress very well use even less space.", true, true),
@@ -104,6 +104,12 @@ internal sealed class ZfsWriter {
     ("com.delphix:extensible_dataset", "Enhanced dataset functionality, used by other features.", true, false),
     ("org.freebsd:zstd_compress", "zstd compression algorithm support.", true, false),
   ];
+
+  /// <summary>dRAID's feature, enabled (and active) only in a dRAID pool.</summary>
+  private static readonly (string Guid, string Description, bool ForRead, bool Mos) DraidFeature =
+    ("org.openzfs:draid", "Support for distributed spare RAID", true, true);
+
+  private (string Guid, string Description, bool ForRead, bool Mos)[] FeatureTable => this._draid == null ? BaseFeatures : [.. BaseFeatures, DraidFeature];
 
   /// <summary>The <c>compression</c> property value: the algorithm id, for zstd with its level in the bits above the 7 id bits.</summary>
   private ulong CompressionProperty =>
@@ -196,14 +202,43 @@ internal sealed class ZfsWriter {
     set => this._parity = value is >= 0 and <= 3 ? value : throw new ArgumentOutOfRangeException(nameof(value), "ZFS: RAID-Z parity is 1, 2 or 3.");
   }
 
+  private (int Data, int Parity)? _draidLayout;
+  private ZfsDraidVdev? _draid;
+
+  /// <summary>
+  /// Writes a dRAID instead (data and parity columns per redundancy group, every device a child,
+  /// <see cref="DraidSpares"/> distributed spares); needs <see cref="Version"/> 5000.
+  /// </summary>
+  public (int Data, int Parity)? Draid {
+    get => this._draidLayout;
+    set => this._draidLayout = value is null or { Data: >= 1, Parity: >= 1 and <= 3 } ? value
+      : throw new ArgumentOutOfRangeException(nameof(value), "ZFS: dRAID takes 1-3 parity and at least one data column.");
+  }
+
+  private int _draidSpares;
+
+  /// <summary>Distributed spares of a <see cref="Draid"/>: each child keeps that many rows per slice free for them.</summary>
+  public int DraidSpares {
+    get => this._draidSpares;
+    set => this._draidSpares = value is >= 0 and <= 100 ? value
+      : throw new ArgumentOutOfRangeException(nameof(value), "ZFS: a dRAID takes 0-100 distributed spares.");
+  }
+
   private long AllocatedSize(int size) =>
-    this._parity == 0 ? size : ZfsRaidzVdev.AllocatedSize(size, this._devices, this._parity, Ashift);
+    this._draid != null ? this._draid.AllocatedSize(size)
+    : this._parity == 0 ? size : ZfsRaidzVdev.AllocatedSize(size, this._devices, this._parity, Ashift);
+
+  /// <summary>Allocation alignment: a dRAID allocates whole stripes, group-width aligned.</summary>
+  private long Alignment => this._draid != null ? (long)this._draid.GroupWidth << Ashift : Sector;
 
   /// <summary>What a block's allocation is charged to datasets (<c>dsize</c>: RAID-Z charges by its deflate ratio).</summary>
   private ulong Charged(Block b) =>
-    this._parity == 0 ? (ulong)b.Allocated
+    this._draid != null ? (ulong)((b.Allocated >> ZfsConstants.SectorShift) * ((1L << 17) / (this._draid.AllocatedSize(1L << 17) >> ZfsConstants.SectorShift)))
+    : this._parity == 0 ? (ulong)b.Allocated
       : (ulong)((b.Allocated >> ZfsConstants.SectorShift) * ZfsRaidzVdev.DeflateRatio(this._devices, this._parity, Ashift));
   private readonly List<Block> _blocks = [];
+
+  private static long AlignUp(long value, long alignment) => (value + alignment - 1) / alignment * alignment;
 
   private Block Allocate(int size, byte type, int level) {
     size = (size + Sector - 1) & ~(Sector - 1);
@@ -213,8 +248,9 @@ internal sealed class ZfsWriter {
     var vdev = this._rotor;
     this._rotor = (this._rotor + 1) % this._nexts.Length;
     ref var next = ref this._nexts[vdev];
+    next = AlignUp(next, this.Alignment);
     if (next >> MetaslabShift != (next + allocated - 1) >> MetaslabShift)
-      next = (next >> MetaslabShift) + 1 << MetaslabShift;
+      next = AlignUp((next >> MetaslabShift) + 1 << MetaslabShift, this.Alignment);
     var block = new Block { Offset = next, Vdev = vdev, Size = size, LogicalSize = size, Allocated = allocated, Type = type, Level = level, Data = new byte[size] };
     next += allocated;
     this._blocks.Add(block);
@@ -775,6 +811,18 @@ internal sealed class ZfsWriter {
     if (this._parity > 0 && outputs.Count < this._parity + 2)
       throw new ArgumentException($"ZFS: RAID-Z{this._parity} needs at least {this._parity + 2} devices.", nameof(outputs));
     if (this._stripe && this._parity > 0) throw new ArgumentException("ZFS: a pool is written striped or as RAID-Z, not both.");
+    this._draid = null;
+    if (this._draidLayout is { } layout) {
+      if (this._stripe || this._parity > 0) throw new ArgumentException("ZFS: a dRAID is written on its own, not striped or as RAID-Z.");
+      if (!this.Features) throw new ArgumentException("ZFS: a dRAID needs a version 5000 pool.");
+      var width = layout.Data + layout.Parity;
+      var spares = this._draidSpares;
+      if (outputs.Count < width + spares)
+        throw new ArgumentException($"ZFS: dRAID{layout.Parity} with {layout.Data} data columns and {spares} spares needs at least {width + spares} devices.", nameof(outputs));
+      var groups = 1;
+      while (width * groups % (outputs.Count - spares) != 0) ++groups;
+      this._draid = new ZfsDraidVdev([.. outputs.Select(_ => (ZfsVdev)new ZfsMissingVdev("draid child"))], layout.Data, layout.Parity, spares, groups, Ashift);
+    }
     this._devices = outputs.Count;
     this._nexts = new long[this._stripe ? outputs.Count : 1];
     this._rotor = 0;
@@ -782,9 +830,10 @@ internal sealed class ZfsWriter {
     var poolGuid = Guid64();
     var leafGuids = outputs.Select(_ => Guid64()).ToArray();
     var raidz = this._parity > 0;
+    var draid = this._draid;
     var stripe = this._stripe && outputs.Count > 1;
-    var mirror = outputs.Count > 1 && !raidz && !stripe;
-    var topGuid = mirror || raidz ? Guid64() : leafGuids[0];
+    var mirror = outputs.Count > 1 && !raidz && !stripe && draid == null;
+    var topGuid = mirror || raidz || draid != null ? Guid64() : leafGuids[0];
     var tops = stripe ? outputs.Count : 1;
     var now = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
@@ -850,6 +899,14 @@ internal sealed class ZfsWriter {
     var estimate = (this._nexts.Max() + 4L * 1024 * 1024 * (this._parity + 1)) / (raidz ? outputs.Count : 1);
     var device = Math.Max(MinimumDevice, (estimate * 5 / 4 + 32L * 1024 * 1024 + 4L * 1024 * 1024 + 512 * 1024 + 0x3FFFF) & ~0x3FFFFL);
     var asize = (device - 4L * 1024 * 1024 - 512 * 1024) * (raidz ? outputs.Count : 1);
+    if (draid != null) {
+      // each child: whole 16 MiB rows after its labels and a 32 MiB reserve; the vdev: whole groups
+      var rows = (this._nexts.Max() * 5 / 4 + 8L * 1024 * 1024) * draid.GroupWidth / draid.Data / draid.Disks / ZfsDraidVdev.RowHeight + 2;
+      var child = rows * ZfsDraidVdev.RowHeight;
+      device = Math.Max(MinimumDevice, child + 32L * 1024 * 1024 + 4L * 1024 * 1024 + 512 * 1024);
+      child = (device - 4L * 1024 * 1024 - 512 * 1024 - 32L * 1024 * 1024) / ZfsDraidVdev.RowHeight * ZfsDraidVdev.RowHeight;
+      asize = child * draid.Disks / draid.GroupSize * draid.GroupSize;
+    }
     var metaslabShift = MetaslabShift;
     while ((asize >> metaslabShift) > 200)
       ++metaslabShift;
@@ -865,11 +922,13 @@ internal sealed class ZfsWriter {
       var top = new NvList();
       if (mirror) top.Add("type", "mirror").Add("id", 0UL).Add("guid", topGuid);
       else if (raidz) top.Add("type", "raidz").Add("id", 0UL).Add("guid", topGuid).Add("nparity", (ulong)this._parity);
+      else if (draid != null) top.Add("type", "draid").Add("id", 0UL).Add("guid", topGuid).Add("nparity", (ulong)draid.Parity)
+        .Add("draid_ndata", (ulong)draid.Data).Add("draid_nspares", (ulong)draid.Spares).Add("draid_ngroups", (ulong)draid.Groups);
       else if (stripe) top.Add("type", "file").Add("id", (ulong)id).Add("guid", leafGuids[id]).Add("path", $"/dev/{poolName}-{id}");
       else top.Add("type", "file").Add("id", 0UL).Add("guid", topGuid).Add("path", $"/dev/{poolName}");
       top.Add("metaslab_array", arrayObject).Add("metaslab_shift", (ulong)metaslabShift).Add("ashift", (ulong)Ashift)
         .Add("asize", (ulong)asize).Add("is_log", 0UL).Add("create_txg", Txg);
-      if (mirror || raidz)
+      if (mirror || raidz || draid != null)
         top.Add("children", leafGuids.Select((g, i) => new NvList().Add("type", "file").Add("id", (ulong)i).Add("guid", g)
           .Add("path", $"/dev/{poolName}-{i}").Add("create_txg", Txg)).ToArray());
       return top;
@@ -898,6 +957,19 @@ internal sealed class ZfsWriter {
     var configBlocks = configBytes.Chunk(ConfigBlock).Select(c => (byte[]?)c).ToList();
     var configObj = Add(this.NewObject(OtPackedNvList, OtPackedNvListSize, configBonus, ConfigBlock, configBlocks));
 
+    // a dRAID's distributed spares: the pool's spare list, a packed nvlist like the config
+    var spareEntries = new List<(string Name, ulong Value)>();
+    if (draid is { Spares: > 0 }) {
+      var list = new NvList().Add("spares", Enumerable.Range(0, draid.Spares).Select(i => new NvList()
+        .Add("type", "dspare").Add("guid", Guid64()).Add("path", $"draid{draid.Parity}-0-{i}").Add("top_guid", topGuid)
+        .Add("spareid", (ulong)i).Add("whole_disk", 1UL).Add("is_spare", 1UL).Add("ashift", (ulong)Ashift)).ToArray());
+      var sparesBytes = XdrNvListWriter.Pack(list);
+      var sparesBonus = new byte[8];
+      BinaryPrimitives.WriteUInt64LittleEndian(sparesBonus, (ulong)sparesBytes.Length);
+      spareEntries.Add(("spares", Add(this.NewObject(OtPackedNvList, OtPackedNvListSize, sparesBonus, ConfigBlock,
+        sparesBytes.Chunk(ConfigBlock).Select(c => (byte[]?)c).ToList()))));
+    }
+
     // feature flags: which are enabled (read / write lists, with their reference counts), their
     // descriptions and the txg each was enabled in. spacemap_histogram counts the space maps; its
     // count is filled in once they are known (it is the first entry of the write list).
@@ -906,7 +978,7 @@ internal sealed class ZfsWriter {
     if (this.Features) {
       ulong Refcount(string guid) => guid switch {
         "com.delphix:enabled_txg" => (ulong)FeatureTable.Length,
-        "com.delphix:hole_birth" or "com.delphix:embedded_data" or "org.illumos:lz4_compress" => 1,
+        "com.delphix:hole_birth" or "com.delphix:embedded_data" or "org.illumos:lz4_compress" or "org.openzfs:draid" => 1,
         // zstd blocks activate zstd_compress on their dataset, whose object becomes a ZAP (extensible)
         "com.delphix:extensible_dataset" or "org.freebsd:zstd_compress" => this._zstdUsed ? 1UL : 0,
         _ => 0,
@@ -926,12 +998,15 @@ internal sealed class ZfsWriter {
       ("root_dataset", rootDir), ("config", configObj), ("sync_bplist", syncBplist), ("free_bpobj", freeBpobj),
       ("deflate", 1), ("creation_version", this._version),
       .. featureEntries,
+      .. spareEntries,
     ]);
 
     // space maps: one per metaslab the pool's blocks reach, sized for a debug word and runs.
     // Everything still to come (space map blocks, MOS dnode blocks, MOS objset) is bounded.
-    var reserve = (metaslabCount * (long)Sector + ((long)mosNext + 64 + metaslabCount) * DnodeSize + 4L * IndirectSize + 4096) * (this._parity + 1)
-      + (long)metaslabCount * MaxDataBlock * (this._parity + 1);    // a skip to the next metaslab per boundary
+    // what a sector of payload may take: RAID-Z adds parity, a dRAID a whole stripe per small block
+    var spread = draid != null ? draid.GroupWidth : this._parity + 1;
+    var reserve = (metaslabCount * (long)Sector + ((long)mosNext + 64 + metaslabCount) * DnodeSize + 4L * IndirectSize + 4096) * spread
+      + (long)metaslabCount * MaxDataBlock * spread;                // a skip to the next metaslab per boundary
     var reach = this._nexts.Max() + reserve;
     var mapsNeeded = (int)Math.Min(metaslabCount, (reach + metaslabSize - 1) / metaslabSize);
     if (reach > (long)metaslabCount * metaslabSize)
@@ -966,8 +1041,9 @@ internal sealed class ZfsWriter {
         ranges.Add((b.Offset, b.Offset + b.Allocated));
     var metaslabArrayData = new byte[metaslabCount * 8];
     for (var m = 0; m < mapsNeeded; ++m) {
-      var start = m * metaslabSize;
-      var limit = start + metaslabSize;
+      // a dRAID metaslab starts at the next stripe boundary and keeps whole stripes
+      var start = AlignUp(m * metaslabSize, this.Alignment);
+      var limit = start + (metaslabSize - (start - m * metaslabSize)) / this.Alignment * this.Alignment;
       var words = new List<ulong> { 2UL << 62 | 1UL << 50 | Txg };     // debug entry: ALLOC, sync pass 1, txg
       long allocatedHere = 0;
       var here = new List<(long, long)>();
@@ -1064,7 +1140,7 @@ internal sealed class ZfsWriter {
 
     // every vdev of the tree counts towards the uberblock's guid sum: root (the pool), top, leaves
     var guidSum = stripe ? poolGuid : unchecked(poolGuid + topGuid);
-    if (mirror || raidz || stripe)
+    if (mirror || raidz || stripe || draid != null)
       foreach (var g in leafGuids) guidSum = unchecked(guidSum + g);
     // RAID-Z: each block's columns (data and parity), by device
     var pieces = new List<(long At, byte[] Data)>[outputs.Count];
@@ -1072,6 +1148,23 @@ internal sealed class ZfsWriter {
     foreach (var b in this._blocks) {
       if (stripe) {
         pieces[b.Vdev].Add((b.Offset, b.Data));
+        continue;
+      }
+      if (draid != null) {
+        // every column of every row, written to the parity column's length (zero-padded)
+        var at = 0;
+        foreach (var row in draid.Map(b.Offset, b.Size)) {
+          var rowColumns = row.Select(c => new ZfsRaidzVdev.Column(c.Child, c.Offset, c.Size, c.IsData)).ToArray();
+          var rowData = rowColumns.Where(c => c.IsData).Sum(c => c.Size);
+          var slice = b.Data.AsSpan(at, Math.Min(rowData, b.Data.Length - at)).ToArray();
+          at += rowData;
+          var rowEncoded = ZfsRaidzVdev.Encode(slice, rowColumns, draid.Parity);
+          for (var c = 0; c < rowColumns.Length; ++c) {
+            var padded = new byte[rowColumns[0].Size];
+            rowEncoded[c].CopyTo(padded, 0);
+            pieces[rowColumns[c].Child].Add((rowColumns[c].Offset, padded));
+          }
+        }
         continue;
       }
       if (!raidz) {

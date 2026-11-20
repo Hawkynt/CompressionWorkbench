@@ -2,7 +2,11 @@ Compression.Core/Dictionary/Sqx/ (SqxTables, SqxBits, SqxHuffman, SqxDelta, SqxR
 SqxLzDecoder, SqxLzEncoder) and Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Sqx/
 (SqxReader, SqxWriter, SqxContainer) are converted from Squeez-c
 (https://github.com/seb3773/Squeez-c), revision 9eb5b385ce775aa50a47fd4d35fdc26dbfe7d8e9:
-src/bitio.h, bitw.h, huff.c, delta.c, rc.c, lz.c, sqx.c, create.c, enc.c and henc.c,
+src/bitio.h, bitw.h, huff.c, delta.c, rc.c, lz.c, sqx.c, create.c, enc.c and henc.c; and,
+from revision 03211cd1e86473da08bc675198f6902e15a28ca3, src/audio.c (SqxAudioDecoder, the
+decoding half), src/ultra.c (SqxUltraDecoder) and
+src/ppm8.c (SqxPpmdDecoder and Compression.Core/Entropy/Ppmd/Ppmd8.Sqx.cs, its range coder
+and symbol decoding over the existing Ppmd8 model),
 under the following licence:
 
 MIT License

@@ -51,6 +51,23 @@ internal static class DosPackerVectors {
     });
   }
 
+  /// <summary>
+  /// Asserts that <paramref name="restored"/> is the same program as <paramref name="original"/>:
+  /// same image, same set of relocation addresses, same entry and stack registers (SP lowered by
+  /// <paramref name="spDelta"/> where the packer leaves words on the stack). Allocation fields are
+  /// not compared: a packer that does not keep them leaves nothing to restore them from.
+  /// </summary>
+  public static void AssertSameProgram(byte[] original, byte[] restored, string what, int spDelta = 0) {
+    var o = MzView.Parse(original);
+    var r = MzView.Parse(restored);
+    Assert.Multiple(() => {
+      Assert.That(r.Image, Is.EqualTo(o.Image), $"{what}: load image");
+      Assert.That(r.LinearRelocs.Order(), Is.EqualTo(o.LinearRelocs.Order()), $"{what}: relocation addresses");
+      Assert.That((r.CS, r.IP, r.SS, (ushort)(r.SP + spDelta)), Is.EqualTo((o.CS, o.IP, o.SS, o.SP)), $"{what}: CS:IP SS:SP");
+      Assert.That(r.Overlay, Is.EqualTo(o.Overlay), $"{what}: overlay");
+    });
+  }
+
   // ── live oracle (DOSBox) ────────────────────────────────────────────
 
   public static string? DosBox => Environment.GetEnvironmentVariable("CWB_DOSBOX") is { Length: > 0 } p && File.Exists(p) ? p : null;

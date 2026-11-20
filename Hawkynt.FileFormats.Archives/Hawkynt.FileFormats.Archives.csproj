@@ -31,6 +31,9 @@
     <!-- UltraCompressor II's built-in supermaster dictionary (SUPER.DAT, LGPL-3.0 UC2 release);
          see FileFormats/FileFormat.Uc2/THIRD-PARTY-NOTICE.UltraCompressor2.txt. -->
     <EmbeddedResource Include="FileFormats\FileFormat.Uc2\super.dat" LogicalName="FileFormat.Uc2.super.dat" />
+    <!-- StuffIt X's English preprocessor word list, PPMd var.I-packed as XADMaster ships it
+         (StuffItXEnglishDictionary.c); see FileFormats/FileFormat.StuffItX/THIRD-PARTY-NOTICE.XADMaster.txt. -->
+    <EmbeddedResource Include="FileFormats\FileFormat.StuffItX\StuffItXEnglishDictionary.ppmd" LogicalName="FileFormat.StuffItX.EnglishDictionary.ppmd" />
   </ItemGroup>
 
   <ItemGroup>
@@ -43,6 +46,8 @@
           Pack="true" PackagePath="notices/Install4j/" />
     <None Update="FileFormats\FileFormat.GenteeInstaller\THIRD-PARTY-NOTICE.*.txt"
           Pack="true" PackagePath="notices/GenteeInstaller/" />
+    <None Update="FileFormats\FileFormat.ExePackers\THIRD-PARTY-NOTICE.IUP.txt"
+          Pack="true" PackagePath="notices/ExePackers/" />
     <None Update="FileFormats\FileFormat.ExePackers\THIRD-PARTY-NOTICE.Deark.txt"
           Pack="true" PackagePath="notices/ExePackers/" />
     <None Update="FileFormats\FileFormat.Nsis\THIRD-PARTY-NOTICE.NSIS.txt"

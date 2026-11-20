@@ -1125,6 +1125,8 @@ Shared utility methods for format descriptors (path sanitization, filtering, etc
 | `FlatFiles` | `static IEnumerable<ValueTuple<string, byte[]>> FlatFiles(IReadOnlyList<ArchiveInputInfo> inputs)` | Flattens all entries to root level (filename only) with their data. For formats without path support. |
 | `MatchesFilter` | `static bool MatchesFilter(string name, string[] filters)` | Returns true if `name` matches any of the `filters` by exact name, trailing path segment, or filename-only comparison. |
 | `MethodWithEffort` | `static string MethodWithEffort(FormatCreateOptions options, string method = null)` | The method name to hand a writer that reads its own effort tier out of the name, with the "+" run the caller asked for restored. |
+| `OutputFilePath` | `static string OutputFilePath(Stream output)` | The path an archive is being written to, when `output` is a file: the target behind an atomic-write temp name (`name.tmp.xxxxxxxx`) is what further volumes are named after. Null for any other stream. |
+| `ParseVolumeSize` | `static long ParseVolumeSize(string text)` | A volume size as the `VolumeSize` option carries it: bytes, or a number with a k/m/g/t suffix (powers of 1024); empty means 0, one file. |
 | `WriteFile` | `static void WriteFile(string baseDir, string entryName, byte[] data)` | Sanitizes an entry name and writes its data to disk under `baseDir`. Prevents path traversal attacks. |
 
 #### `FormatMethodInfo`
@@ -10039,7 +10041,16 @@ Builds a Commodore 1581 D81 disk image from a set of files, filling in the heade
 
 ### Namespace `FileSystem.DoubleSpace`
 
-[`DoubleSpaceEntry`](#doublespaceentry) · [`DoubleSpaceFormatDescriptor`](#doublespaceformatdescriptor) · [`DoubleSpaceReader`](#doublespacereader) · [`DriveSpaceFormatDescriptor`](#drivespaceformatdescriptor) · [`GenuineCvfReader`](#genuinecvfreader) · [`GenuineCvfWriter`](#genuinecvfwriter)
+[`CvfV2Container`](#cvfv2container) · [`DoubleSpaceEntry`](#doublespaceentry) · [`DoubleSpaceFormatDescriptor`](#doublespaceformatdescriptor) · [`DoubleSpaceReader`](#doublespacereader) · [`DriveSpaceFormatDescriptor`](#drivespaceformatdescriptor) · [`GenuineCvfReader`](#genuinecvfreader) · [`GenuineCvfWriter`](#genuinecvfwriter)
+
+#### `CvfV2Container`
+
+The two version-2 compressed volume files of MS-DOS 6.x, told apart by the MDBPB's OEM name and CVF version (word at 0x33); the layout is otherwise the same.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `DriveSpace` | `0` | DriveSpace (MS-DOS 6.22): `MSDBL6.0`, version 2. |
+| `DoubleSpace` | `1` | DoubleSpace (MS-DOS 6.0 / 6.2): `MSDSP6.0`, version 0. |
 
 #### `DoubleSpaceEntry`
 
@@ -10054,7 +10065,7 @@ Represents a double space entry.
 
 #### `DoubleSpaceFormatDescriptor`
 
-Microsoft DoubleSpace compressed volume file (MS-DOS 6.0 / 6.2): the real `MSDBL6.0` container — MDBPB, MDFAT, BitFAT and an inner FAT12 volume whose clusters are stored or compressed per cluster. Volumes are created with DoubleSpace's own DS-0-x clusters, in the layout the independent dmsdos driver mounts ("drivespace CVF version 2"); DS and JM clusters are read (a DoubleSpace volume later used by DriveSpace may hold both); edits rebuild the volume, keeping its codec. References: `docs/CVF-CODECS-ON-DISK.md` — the cluster codecs, measured against dmsdosMicrosoft MS-DOS 6 documentation (DoubleSpace chapter) — original vendor description of the compressed volume file`https://en.wikipedia.org/wiki/DriveSpace` — overview of DoubleSpace and its successors
+Microsoft DoubleSpace compressed volume file (MS-DOS 6.0 / 6.2): the real `MSDSP6.0` container (version 0) — MDBPB, MDFAT, BitFAT and an inner FAT12 volume whose clusters are stored or compressed per cluster. Volumes are created with DoubleSpace's own DS-0-x clusters, in the layout the independent dmsdos driver mounts ("drivespace CVF version 2"); DS and JM clusters are read (a DoubleSpace volume later used by DriveSpace may hold both); edits rebuild the volume, keeping its codec. References: `docs/CVF-CODECS-ON-DISK.md` — the cluster codecs, measured against dmsdosMicrosoft MS-DOS 6 documentation (DoubleSpace chapter) — original vendor description of the compressed volume file`https://en.wikipedia.org/wiki/DriveSpace` — overview of DoubleSpace and its successors
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
@@ -10085,7 +10096,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `DoubleSpaceReader`
 
-Reads a real MS-DOS 6.x DoubleSpace / DriveSpace compressed volume file (OEM name `MSDBL6.0` or `MSDBL6.2`) — the general reader behind `GenuineCvfReader`, used for real volumes whose geometry or directory tree the latter does not cover (subdirectories, long file names, other cluster sizes). The MDBPB at sector 0 points (word at 0x27) to the embedded inner FAT12 volume, whose boot sector carries the same `MSDBL` name; the MDFAT (sector word at 0x24 plus one, index base word at 0x2D) maps each inner cluster to its physical run. A stored run is read verbatim, a compressed one is decoded by `CvfLzCodec` from its method header.
+Reads a real MS-DOS 6.x DoubleSpace / DriveSpace compressed volume file (OEM name `MSDSP6.0`, as DoubleSpace writes it, or `MSDBL6.0` / `MSDBL6.2`) — the general reader behind `GenuineCvfReader`, used for real volumes whose geometry or directory tree the latter does not cover (subdirectories, long file names, other cluster sizes). The MDBPB at sector 0 points (word at 0x27) to the embedded inner FAT12 volume, whose boot sector carries the same `MSDSP` / `MSDBL` name; the MDFAT (sector word at 0x24 plus one, index base word at 0x2D) maps each inner cluster to its physical run. A stored run is read verbatim, a compressed one is decoded by `CvfLzCodec` from its method header.
 
 Implements `IDisposable`.
 
@@ -10093,7 +10104,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `DoubleSpaceReader` | `DoubleSpaceReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `DoubleSpaceReader`. |
 | `Entries` | `IReadOnlyList<DoubleSpaceEntry> Entries { get; }` | Gets the entries. |
-| `Signature` | `string Signature { get; }` | OEM name in the MDBPB: `MSDBL6.0` or `MSDBL6.2`. |
+| `Signature` | `string Signature { get; }` | OEM name in the MDBPB: `MSDSP6.0`, `MSDBL6.0` or `MSDBL6.2`. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `Extract` | `byte[] Extract(DoubleSpaceEntry entry)` | Extracts file data: walks the inner FAT chain from the file's first cluster and resolves each cluster through the MDFAT to its stored or compressed run. |
 
@@ -10144,13 +10155,14 @@ Implements `IDisposable`.
 
 #### `GenuineCvfWriter`
 
-Builds a genuine MS-DOS DoubleSpace/DriveSpace Compressed Volume File (CVF) in the on-disk shape a real DoubleSpace/DriveSpace driver mounts — verified by the independent GPL `dmsdos` driver (the Linux DoubleSpace/DriveSpace/Stacker driver): it mounts this writer's output, lists the inner directory, and reads every file back byte-exact (detected as "drivespace CVF version 2"). The writer reproduces the real `MSDBL6.0` container: Sector 0 — MDBPB: standard BPB (512 B/sector, 16 sec/cluster, 28 reserved, 1 FAT, 512 root entries, 132-sector FAT) plus the DoubleSpace geometry substructure (inner-volume base sector @0x27, root @0x29, first-data @0x2B, MDFAT index offset @0x2D, MDFAT-start-1 @0x24) and the size-tier words a driver-created volume carries.Sectors 1–133 — BitFAT: one bit per physical sector of the cluster heap.Sector 134 — MDFAT: one little-endian u32 per inner-volume cluster at `(0x24+1)*512 + (0x2D + cluster)*4`; physical sector = `(entry & 0x1FFFFF) + 1`.Sector 429 (inner base) — the inner FAT12 volume's boot sector, FAT and root directory; the cluster heap follows two sectors after them. Files must fit the inner FAT12 volume (at most 4080 clusters of 8 KB).
+Builds a genuine MS-DOS DoubleSpace/DriveSpace Compressed Volume File (CVF) in the on-disk shape a real DoubleSpace/DriveSpace driver mounts — verified by the independent GPL `dmsdos` driver (the Linux DoubleSpace/DriveSpace/Stacker driver): it mounts this writer's output, lists the inner directory, and reads every file back byte-exact (detected as "drivespace CVF version 2"). The writer reproduces the real container — `MSDSP6.0` version 0 as DoubleSpace writes it, `MSDBL6.0` version 2 as DriveSpace does (`Container`): Sector 0 — MDBPB: standard BPB (512 B/sector, 16 sec/cluster, 28 reserved, 1 FAT, 512 root entries, 132-sector FAT) plus the DoubleSpace geometry substructure (inner-volume base sector @0x27, root @0x29, first-data @0x2B, MDFAT index offset @0x2D, MDFAT-start-1 @0x24) and the size-tier words a driver-created volume carries.Sectors 1–133 — BitFAT: one bit per physical sector of the cluster heap.Sector 134 — MDFAT: one little-endian u32 per inner-volume cluster at `(0x24+1)*512 + (0x2D + cluster)*4`; physical sector = `(entry & 0x1FFFFF) + 1`.Sector 429 (inner base) — the inner FAT12 volume's boot sector, FAT and root directory; the cluster heap follows two sectors after them. Files must fit the inner FAT12 volume (at most 4080 clusters of 8 KB).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `GenuineCvfWriter` | `GenuineCvfWriter()` |  |
 | `CompressionLevel` | `int CompressionLevel { get; init; }` | Codec effort (search depth). Higher = better ratio, slower. |
 | `CompressionMethod` | `CvfLzMethod CompressionMethod { get; init; }` | Per-cluster compression codec: Stored (default), DS (DoubleSpace DS-0-0) or JM (DriveSpace JM-0-0). Anything else is refused by `Build`. |
+| `Container` | `CvfV2Container Container { get; init; }` | Which product's container is written: its OEM name and CVF version. |
 | `ForceCompress` | `bool ForceCompress { get; init; }` | Keep a compressed cluster even if it does not shrink (auto-best off). |
 | `Timestamp` | `DateTime Timestamp { get; init; }` | Creation/modification timestamp stamped on every file entry. Default (before 1980) leaves the FAT date/time fields zero. |
 | `VolumeLabel` | `string VolumeLabel { get; init; }` | Optional inner-volume label (≤11 chars). Empty = no label entry. |
@@ -10320,7 +10332,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `GenuineDvr3Reader`
 
-Reads a genuine Microsoft DriveSpace 3 CVF — the real `MSDBL6.0`-family layout that `GenuineDvr3Writer` emits and that the independent `dmsdos` driver mounts. This is the read half of the genuine DriveSpace 3 round trip; together with the driver-proven writer it gives a full read/write path over the genuine on-disk format. Layout (little-endian): MDBPB at sector 0 carries the BPB plus the CVF geometry substructure — inner-volume base sector @0x27, MDFAT start @0x24, cluster index base @0x2D, root-dir offset @0x29; sectors/cluster @0x0D = 64; version_flag @0x33 = 3. The inner FAT16 volume lives at the base sector; file data clusters are located through the 5-byte DRVSP3 MDFAT (102 entries per sector + 2 pad bytes). Stored clusters (MDFAT flags = used + uncompressed) are read verbatim; the inner directory's file size truncates the tail.
+Reads a genuine Microsoft DriveSpace 3 CVF — the real `MSDBL6.0`-family layout that `GenuineDvr3Writer` emits and that the independent `dmsdos` driver mounts. This is the read half of the genuine DriveSpace 3 round trip; together with the driver-proven writer it gives a full read/write path over the genuine on-disk format. Layout (little-endian): MDBPB at sector 0 carries the BPB plus the CVF geometry substructure — inner-volume base sector @0x27, MDFAT start @0x24, cluster index base @0x2D, root-dir offset @0x29; sectors/cluster @0x0D = 64. The inner FAT16 volume lives at the base sector; file data clusters are located through the 5-byte DRVSP3 MDFAT (102 entries per sector + 2 pad bytes). Stored clusters (MDFAT flags = used + uncompressed) are read verbatim; the inner directory's file size truncates the tail.
 
 Implements `IDisposable`.
 
@@ -10334,7 +10346,7 @@ Implements `IDisposable`.
 
 #### `GenuineDvr3Writer`
 
-Builds a genuine Microsoft DriveSpace 3 Compressed Volume File (CVF) — the on-disk shape a real DriveSpace 3 driver mounts, verified by the independent GPL `dmsdos` driver (the Linux DoubleSpace/DriveSpace/Stacker driver), which detects this writer's output as "drivespace 3 CVF", mounts it, lists the inner directory and reads every file back byte-exact. DriveSpace 3 is a member of the DOS `MSDBL6.0` CVF family: the same container as `GenuineCvfWriter`, but distinguished by `64` sectors per cluster (32 KB clusters, boot byte 13), a `version_flag = 3` (boot byte 51) and a 5-byte-per-entry MDFAT (102 entries per sector plus 2 pad bytes) instead of the 4-byte v2 entry. Clusters are stored uncompressed (MDFAT flags = 3: used + uncompressed) and identity-mapped through the MDFAT; the inner volume is FAT16. Inner-directory file sizes truncate each cluster's tail, so we store every cluster as a full 64-sector run with the unused tail zero-padded.
+Builds a genuine Microsoft DriveSpace 3 Compressed Volume File (CVF) in the layout Windows 98's DriveSpace 3 creates — the real driver and the independent `dmsdos` driver both mount it and read every file back byte-exact. DriveSpace 3 is a member of the DOS `MSDBL6.0` CVF family: the same container as `GenuineCvfWriter`, but with `64` sectors per cluster (32 KB clusters), an MDBPB extended to 0x47 (jump `EB 6E`), a 5-byte-per-entry MDFAT (102 entries per sector plus 2 pad bytes) and an inner FAT16 volume sized for the 2 GB maximum. The system area (BitFAT, MDFAT, inner boot sector, FAT, root directory) has the fixed geometry a created volume carries whatever its size; see `FileSystem.DriveSpace3/FORMAT-NOTES.md`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -21161,7 +21173,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 ### Namespace `FileSystem.Zfs`
 
-[`ZfsDataset`](#zfsdataset) · [`ZfsEntry`](#zfsentry) · [`ZfsFilesystemDriverAdapter`](#zfsfilesystemdriveradapter) · [`ZfsFormatDescriptor`](#zfsformatdescriptor) · [`ZfsReader`](#zfsreader)
+[`ZfsDataset`](#zfsdataset) · [`ZfsEntry`](#zfsentry) · [`ZfsFilesystemDriverAdapter`](#zfsfilesystemdriveradapter) · [`ZfsFormatDescriptor`](#zfsformatdescriptor) · [`ZfsKeyMaterial`](#zfskeymaterial) · [`ZfsReader`](#zfsreader)
 
 #### `ZfsDataset`
 
@@ -21234,12 +21246,22 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `AddToPool` | `void AddToPool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files in a pool spread over `devices` — every device of a mirror or RAID-Z, in any order — in place, as `Add` does for one device. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files and directories in an existing pool, in place: one new transaction group, copy-on-write, freed blocks returned to the space maps. Paths of child datasets (`child/…`, as listed) go into that dataset. |
-| `CreatePool` | `void CreatePool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a new pool (version 28) over `devices`: one device, or with two or more an n-way mirror of equally sized devices, each holding every block, or with the option `Layout` = `raidz1`, `raidz2` or `raidz3` a RAID-Z (at least parity + 2 devices), or with `stripe` one top-level vdev per device. Other options as for `Create`. |
+| `CreatePool` | `void CreatePool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a new pool (version 28) over `devices`: one device, or with two or more an n-way mirror of equally sized devices, each holding every block, or with the option `Layout` = `raidz1`, `raidz2` or `raidz3` a RAID-Z (at least parity + 2 devices), `draid<p>:<d>d:<c>c:<s>s` a dRAID (version 5000; every device a child, `s` of them distributed spare space, `c` if given the device count), or with `stripe` one top-level vdev per device. Other options as for `Create`. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a new single-device pool (version 28) whose one filesystem holds `inputs`. The option `PoolName` names the pool (default `cwb`); `Compression` sets how file data is compressed and the filesystem's `compression` property: `off` (default), `on`/`lzjb`, `gzip`, `gzip-1`…`gzip-9` or `zle`, and with `Version` = `5000` (a feature-flag pool; default `28`) also `lz4`, `zstd` and `zstd-1`…`zstd-19`. |
+| `EditPool` | `void EditPool(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs, string[] removals, ZfsKeyMaterial anyKey = null, IReadOnlyDictionary<string, ZfsKeyMaterial> keys = null)` | Adds and removes in one transaction group, in a pool on one or more `devices`, with key material for natively encrypted datasets: `keys` by encryption root (`pool/fs`), else `anyKey`. Their new blocks are encrypted and authenticated as OpenZFS does; an encrypted dataset without its key is refused untouched. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts the pool's files (links as files holding their target). |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the pool's files. Never throws: an image that cannot be read lists as `FULL.zfs` plus a `metadata.ini` saying why. |
 | `RemoveFromPool` | `void RemoveFromPool(IReadOnlyList<Stream> devices, string[] entryNames)` | Removes files and directories from a pool spread over `devices`, in place. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files and directories (with everything beneath them) from an existing pool, in place. |
+
+#### `ZfsKeyMaterial`
+
+Key material for a natively encrypted ZFS dataset, as `zfs load-key` reads it from its key location: a passphrase, 64 hexadecimal digits, or 32 raw bytes — which one the dataset's `keyformat` says.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FromBytes` | `static ZfsKeyMaterial FromBytes(ReadOnlySpan<byte> bytes)` | Key material given as bytes (a raw key, or a key file's contents). |
+| `FromText` | `static ZfsKeyMaterial FromText(string text)` | Key material given as text (a passphrase, or a hex key). |
 
 #### `ZfsReader`
 
@@ -21249,7 +21271,9 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `ZfsReader` | `ZfsReader(IReadOnlyList<Stream> devices, ZfsKeyMaterial anyKey, IReadOnlyDictionary<string, ZfsKeyMaterial> keys, bool leaveOpen = true)` | Opens the pool with key material for its natively encrypted datasets: `keys` by encryption root (`pool/fs`), else `anyKey`. A dataset whose key is missing or wrong is listed in `Datasets` as refused. |
 | `ZfsReader` | `ZfsReader(IReadOnlyList<Stream> devices, bool leaveOpen = true)` | Opens the pool spread over `devices` (mirror, RAID-Z or striped vdevs). |
+| `ZfsReader` | `ZfsReader(Stream stream, ZfsKeyMaterial anyKey, IReadOnlyDictionary<string, ZfsKeyMaterial> keys = null, bool leaveOpen = true)` | Opens the pool on a single device image, with key material for its encrypted datasets. |
 | `ZfsReader` | `ZfsReader(Stream stream, bool leaveOpen = true)` | Opens the pool on a single device image. |
 | `Datasets` | `IReadOnlyList<ZfsDataset> Datasets { get; }` | Every dataset and snapshot found, listed or refused. |
 | `Entries` | `IReadOnlyList<ZfsEntry> Entries { get; }` | Every file, directory and symbolic link, parents before children. |

@@ -10,12 +10,12 @@ namespace FileSystem.DoubleSpace;
 /// The product a version-2 volume is created as: DoubleSpace (MS-DOS 6.0/6.2) writes DS clusters,
 /// DriveSpace (MS-DOS 6.22) JM clusters — each only the codec the real driver of that product writes.
 /// </summary>
-internal sealed record CvfV2Product(string Codec, CvfLzMethod Method, string OptionValue, string Description) {
-  /// <summary>DoubleSpace: DS-0-x clusters.</summary>
-  public static CvfV2Product DoubleSpace { get; } = new("ds", CvfLzMethod.Ds, "DS", "DoubleSpace DS-0-0 LZ77");
+internal sealed record CvfV2Product(string Codec, CvfLzMethod Method, string OptionValue, string Description, CvfV2Container Container) {
+  /// <summary>DoubleSpace: DS-0-x clusters in an <c>MSDSP6.0</c> volume.</summary>
+  public static CvfV2Product DoubleSpace { get; } = new("ds", CvfLzMethod.Ds, "DS", "DoubleSpace DS-0-0 LZ77", CvfV2Container.DoubleSpace);
 
-  /// <summary>DriveSpace: JM-0-0 clusters.</summary>
-  public static CvfV2Product DriveSpace { get; } = new("jm", CvfLzMethod.Jm, "JM", "DriveSpace JM-0-0 LZ77");
+  /// <summary>DriveSpace: JM-0-0 clusters in an <c>MSDBL6.0</c> volume.</summary>
+  public static CvfV2Product DriveSpace { get; } = new("jm", CvfLzMethod.Jm, "JM", "DriveSpace JM-0-0 LZ77", CvfV2Container.DriveSpace);
 
   /// <summary>The one codec name the product's Create accepts.</summary>
   public IReadOnlyDictionary<string, CvfLzMethod> Codecs { get; } = new Dictionary<string, CvfLzMethod> { [Codec] = Method };
@@ -26,7 +26,7 @@ internal sealed record CvfV2Product(string Codec, CvfLzMethod Method, string Opt
 
 /// <summary>
 /// The operations the DoubleSpace and DriveSpace descriptors share over the real MS-DOS 6.x
-/// container (<c>MSDBL6.0</c>, version 2): reading through <see cref="GenuineCvfReader"/> (or
+/// container (DoubleSpace's <c>MSDSP6.0</c>, version 0, or DriveSpace's <c>MSDBL6.0</c>, version 2): reading through <see cref="GenuineCvfReader"/> (or
 /// <see cref="DoubleSpaceReader"/> for real volumes outside its geometry), writing through
 /// <see cref="GenuineCvfWriter"/>, and every edit as a rebuild of the whole volume — the layout dmsdos
 /// mounts is the only one either descriptor produces.
@@ -39,6 +39,9 @@ internal sealed record CvfV2Product(string Codec, CvfLzMethod Method, string Opt
 /// A DriveSpace 3 volume shares the <c>.cvf</c> name and the <c>MSDBL6.0</c> OEM name, so it may
 /// arrive here by its file name; it is handed to the DriveSpace 3 code, which reads its 5-byte MDFAT
 /// and rebuilds it as DriveSpace 3.
+/// </para>
+/// <para>
+/// A rebuild keeps the container the volume already is (its OEM name and version).
 /// </para>
 /// </summary>
 internal static class GenuineCvfVolume {
@@ -60,9 +63,16 @@ internal static class GenuineCvfVolume {
       Description: "Keep the compressed form even when it does not shrink a cluster."),
   ];
 
-  /// <summary>The container <see cref="GenuineCvfReader"/> reads: MSDBL6.0 with 16 sectors per cluster.</summary>
-  public static bool IsGenuineV2(byte[] data) =>
-    data.Length > 0x0E && Encoding.ASCII.GetString(data, 3, 8) == "MSDBL6.0" && data[0x0D] == 16;
+  /// <summary>The container <see cref="GenuineCvfReader"/> reads: MSDSP6.0 or MSDBL6.0 with 16 sectors per cluster.</summary>
+  public static bool IsGenuineV2(byte[] data) => IsV2Oem(data) && data[0x0D] == 16;
+
+  /// <summary>The MDBPB carries DoubleSpace's <c>MSDSP6.0</c> or DriveSpace's <c>MSDBL6.0</c>.</summary>
+  public static bool IsV2Oem(byte[] data) =>
+    data.Length > 0x0E && Encoding.ASCII.GetString(data, 3, 8) is "MSDSP6.0" or "MSDBL6.0";
+
+  /// <summary>The container a version-2 volume already is: DoubleSpace for <c>MSDSP6.0</c>, else DriveSpace.</summary>
+  internal static CvfV2Container ContainerOf(byte[] data) =>
+    data.Length > 11 && Encoding.ASCII.GetString(data, 3, 8) == "MSDSP6.0" ? CvfV2Container.DoubleSpace : CvfV2Container.DriveSpace;
 
   private sealed record Volume(IReadOnlyList<DoubleSpaceEntry> Entries, Func<DoubleSpaceEntry, byte[]> Extract, string Label);
 
@@ -108,6 +118,7 @@ internal static class GenuineCvfVolume {
       CompressionMethod = method,
       CompressionLevel = level,
       ForceCompress = options.GetOptionBool("ForceCompress", false),
+      Container = product.Container,
     };
     foreach (var (name, data) in FlatFiles(inputs))
       writer.AddFile(name, data);
@@ -132,7 +143,9 @@ internal static class GenuineCvfVolume {
         keep.RemoveAll(k => LeafLower(k.Name) == LeafLower(n));
         keep.Add((n, d));
       }
-    var writer = new GenuineCvfWriter { VolumeLabel = volume.Label, CompressionMethod = CodecInUse(data) ?? product.Method, CompressionLevel = 2 };
+    var writer = new GenuineCvfWriter {
+      VolumeLabel = volume.Label, CompressionMethod = CodecInUse(data) ?? product.Method, CompressionLevel = 2, Container = ContainerOf(data),
+    };
     foreach (var (n, d) in keep) writer.AddFile(n, d);
     return writer.Build();
   }

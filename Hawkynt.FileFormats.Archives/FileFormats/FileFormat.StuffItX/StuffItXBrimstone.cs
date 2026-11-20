@@ -85,6 +85,12 @@ internal sealed class StuffItXBrimstone {
     var order = input.ReadByte();
     if (order < 1) throw new InvalidDataException("Brimstone model order 0 is not valid.");
     var model = new StuffItXBrimstone(input, 1 << exponent, order);
+    if (length > int.MaxValue) {
+      // unknown length (a preprocessor follows): up to the model's end code
+      var grown = new MemoryStream();
+      for (int b; (b = model.NextByte()) >= 0;) grown.WriteByte((byte)b);
+      return grown.ToArray();
+    }
     var output = new byte[length];
     var n = 0;
     while (n < length) {

@@ -6,41 +6,43 @@ using Compression.Core.FileSystems.Cvf;
 namespace FileSystem.DriveSpace3;
 
 /// <summary>
-/// Builds a <b>genuine</b> Microsoft DriveSpace 3 Compressed Volume File (CVF) —
-/// the on-disk shape a real DriveSpace 3 driver mounts, verified by the
-/// independent GPL <c>dmsdos</c> driver (the Linux DoubleSpace/DriveSpace/Stacker
-/// driver), which detects this writer's output as "drivespace 3 CVF", mounts it,
-/// lists the inner directory and reads every file back byte-exact.
+/// Builds a <b>genuine</b> Microsoft DriveSpace 3 Compressed Volume File (CVF) in the layout Windows 98's
+/// DriveSpace 3 creates — the real driver and the independent <c>dmsdos</c> driver both mount it and
+/// read every file back byte-exact.
 /// <para>
-/// DriveSpace 3 is a member of the DOS <c>MSDBL6.0</c> CVF family: the
-/// same container as <see cref="FileSystem.DoubleSpace.GenuineCvfWriter"/>, but
-/// distinguished by <c>64</c> sectors per cluster (32&#160;KB clusters,
-/// boot byte&#160;13), a <c>version_flag = 3</c> (boot byte&#160;51) and a
-/// 5-byte-per-entry MDFAT (102 entries per sector plus 2 pad bytes) instead of
-/// the 4-byte v2 entry. Clusters are stored uncompressed (MDFAT flags = 3:
-/// used + uncompressed) and identity-mapped through the MDFAT; the inner volume
-/// is FAT16. Inner-directory file sizes truncate each cluster's tail, so we
-/// store every cluster as a full 64-sector run with the unused tail zero-padded.
+/// DriveSpace 3 is a member of the DOS <c>MSDBL6.0</c> CVF family: the same container as
+/// <see cref="FileSystem.DoubleSpace.GenuineCvfWriter"/>, but with <c>64</c> sectors per cluster
+/// (32&#160;KB clusters), an MDBPB extended to 0x47 (jump <c>EB 6E</c>), a 5-byte-per-entry MDFAT (102
+/// entries per sector plus 2 pad bytes) and an inner FAT16 volume sized for the 2 GB maximum. The system
+/// area (BitFAT, MDFAT, inner boot sector, FAT, root directory) has the fixed geometry a created volume
+/// carries whatever its size; see <c>FileSystem.DriveSpace3/FORMAT-NOTES.md</c>.
 /// </para>
 /// </summary>
 public sealed class GenuineDvr3Writer {
 
   private const int Ss = 512;
   private const int Spc = 64;                                   // 32 KB clusters
-  private const int Resv = 16;
   private const int NumFats = 1;
   private const int RootEntries = 512;
   private const int RootSecs = RootEntries * 32 / Ss;           // 32
-  private const int MdfatStartSec = 130;
-  private const int SDcluster = 0;                              // boot byte 45
   private const int ClusterBytes = Ss * Spc;                    // 32768
 
-  // Geometry sized to the cluster count (so the volume scales past the old fixed
-  // ~512-cluster limit up to the inner FAT16 / 24-bit-sector ceiling).
-  private int _fatSize;       // inner FAT16 sectors
-  private int _innerBase;     // res0 / emulated boot block sector (after the MDFAT)
-  private int _rootLog;       // Resv + NumFats*fatSize
-  private int _firstData;     // rootLog + RootSecs
+  // The system area of a volume Windows 98's DriveSpace 3 creates, the same whatever the volume's size:
+  // BitFAT in sectors 1..1021, MDFAT from 1022 (FAT entries / 102, plus 31 sectors), the inner volume
+  // from 1693 with 33 reserved sectors (so the data area starts on a cluster boundary), a 255-sector FAT16
+  // and the 512-entry root directory; the inner volume declares the 2 GB maximum.
+  private const int Resv = 33;
+  private const int FatSectors = 255;
+  private const int MdfatStartSec = 1022;
+  private const int InnerBase = 1693;
+  private const int RootLog = Resv + NumFats * FatSectors;      // 288
+  private const int FirstData = RootLog + RootSecs;             // 320
+  private const int SDcluster = FirstData / Spc - 2;            // 3, MDBPB 0x2D
+  private const uint InnerSectors = 0x3FC0C0;                   // MDBPB 0x20: 4 178 112
+  private const int MinFileSectors = 2144;                      // a 1 MB volume, the smallest created
+
+  // FAT16 cluster numbers stop short of the reserved values; the inner volume declares at most this many.
+  private const int MaxClusters = (int)((InnerSectors - FirstData) / Spc);
 
   private readonly List<(string Name, byte[] Data)> _files = [];
 
@@ -106,22 +108,18 @@ public sealed class GenuineDvr3Writer {
       next += count;
     }
 
-    // Size the geometry to the cluster count: inner FAT16 big enough for all
-    // clusters, MDFAT region big enough for all 5-byte entries, inner volume
-    // placed right after the MDFAT.
     var maxCluster = next - 1;                                   // highest cluster used (>=1)
-    this._fatSize = Math.Max(1, ((maxCluster + 1) * 2 + Ss - 1) / Ss);
-    var mdfatBytes = MdfatBytePos(maxCluster) + 5 - Ss * MdfatStartSec;
-    var mdfatSectors = Math.Max(1, (mdfatBytes + Ss - 1) / Ss);
-    this._innerBase = MdfatStartSec + mdfatSectors;
-    this._rootLog = Resv + NumFats * this._fatSize;
-    this._firstData = this._rootLog + RootSecs;
+    if (maxCluster > MaxClusters)
+      throw new NotSupportedException($"The files need {maxCluster - 1} clusters; a DriveSpace 3 volume holds at most {MaxClusters - 1}.");
+    if (this._files.Count + (string.IsNullOrEmpty(this.VolumeLabel) ? 0 : 1) > RootEntries)
+      throw new NotSupportedException($"The root directory holds {RootEntries} entries; {this._files.Count} files were given.");
 
     // 2. Compress each cluster, assigning packed physical sectors. Only DriveSpace 3's own codecs
     // are written: JM and SQ (DS belongs to DoubleSpace volumes).
     if (this.CompressionMethod is not (CvfLzMethod.Stored or CvfLzMethod.Jm or CvfLzMethod.Sq or CvfLzMethod.Auto))
       throw new NotSupportedException($"DriveSpace 3 writes stored, JM or SQ clusters; {this.CompressionMethod} is not a DriveSpace 3 codec.");
-    var physDataStart = this._innerBase + this._firstData;
+    // Cluster runs start two sectors past the inner system area, where the BitFAT's first bit points.
+    var physDataStart = InnerBase + FirstData + 2;
     var physCursor = physDataStart;
     var layout = new List<ClusterPlan>();
     foreach (var (cl, full) in clusterFull) {
@@ -138,24 +136,16 @@ public sealed class GenuineDvr3Writer {
       }
     }
 
-    var totalSectors = physCursor + 2;
+    var totalSectors = Math.Max(MinFileSectors, physCursor + 2);
     if ((totalSectors & 1) != 0) totalSectors++;
     var img = new byte[totalSectors * Ss];
 
-    // dmsdos derives a DOS max_cluster = (declaredSectors - fatSize - reserved -
-    // rootDirSectors)/spc + 1 from the BPB total-sectors field. With compression
-    // the physical image is far smaller than maxCluster*spc, so declare enough
-    // sectors to keep that cap above the real cluster count (the field only feeds
-    // this calc; physical reads use the MDFAT's absolute sectors).
-    var declaredSectors = Math.Max(totalSectors,
-      (maxCluster + 2) * Spc + this._fatSize + Resv + (RootEntries >> 4) + Spc);
+    WriteMdbpb(img);
+    WriteInnerBoot(img);
 
-    this.WriteMdbpb(img, declaredSectors);
-    this.WriteInnerBoot(img);
-
-    var innerOff = this._innerBase * Ss;
+    var innerOff = InnerBase * Ss;
     var fatOff = innerOff + Resv * Ss;
-    var rootOff = innerOff + this._rootLog * Ss;
+    var rootOff = innerOff + RootLog * Ss;
 
     // FAT16 reserved entries (clusters 0 and 1).
     img[fatOff] = 0xF8; img[fatOff + 1] = 0xFF; img[fatOff + 2] = 0xFF; img[fatOff + 3] = 0xFF;
@@ -198,50 +188,48 @@ public sealed class GenuineDvr3Writer {
       img[p + 4] = (byte)(((Spc - 1) & 0x3F) | ((plan.Compressed ? 2 : 3) << 6)); // size_hi, flags
     }
 
-    // MDR end-of-CVF signature at the final sector.
-    "MDR"u8.CopyTo(img.AsSpan((totalSectors - 1) * Ss, 3));
+    // BitFAT (from sector 1): one bit per physical sector from physDataStart, set for every sector a
+    // cluster run occupies, MSB-first through little-endian 16-bit words.
+    foreach (var plan in layout)
+      for (var sector = plan.PhysSector; sector < plan.PhysSector + plan.Sectors; ++sector) {
+        var bit = sector - physDataStart;
+        var word = Ss + bit / 16 * 2;
+        var mask = 0x8000 >> (bit % 16);
+        img[word] |= (byte)mask;
+        img[word + 1] |= (byte)(mask >> 8);
+      }
+
+    // Signatures: "MDR\0" opens the last sector, F8 08 22 00 the inner volume's second sector.
+    "MDR\0"u8.CopyTo(img.AsSpan((totalSectors - 1) * Ss));
+    InnerSecondSector.CopyTo(img.AsSpan((InnerBase + 1) * Ss));
     return img;
   }
 
-  private void WriteMdbpb(byte[] img, int totalSectors) {
-    img[0] = 0xEB; img[1] = 0x58; img[2] = 0x90;
-    "MSDBL6.0"u8.CopyTo(img.AsSpan(3, 8));
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x0B), Ss);
-    img[0x0D] = Spc;                                       // 64 sectors/cluster
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x0E), Resv);
-    img[0x10] = NumFats;
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x11), RootEntries);
-    img[0x15] = 0xF8;
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x16), (ushort)this._fatSize);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x18), 17);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x1A), 6);
-    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(0x20), (uint)totalSectors);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x24), (ushort)(MdfatStartSec - 1));
-    img[0x26] = 9;
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x27), (ushort)this._innerBase);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x29), (ushort)this._rootLog);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x2B), (ushort)this._firstData);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x2D), SDcluster);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x2F), RootSecs);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x31), 1024);
-    img[0x33] = 3;                                         // version_flag = 3 (DriveSpace 3)
-    "16  "u8.CopyTo(img.AsSpan(0x39, 4));
-    img[0x3D] = 1; img[0x3F] = 1;
-  }
+  // MDBPB bytes 0x00..0x47 of a created volume, total sectors and geometry included; nothing in them
+  // follows the volume's content.
+  private static ReadOnlySpan<byte> Mdbpb => [
+    0xEB, 0x6E, 0x90, (byte)'M', (byte)'S', (byte)'D', (byte)'B', (byte)'L', (byte)'6', (byte)'.', (byte)'0', 0x00, 0x02, 0x40, 0x21, 0x00,
+    0x01, 0x00, 0x02, 0x00, 0x00, 0xF8, 0xFF, 0x00, 0x11, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xC0, 0xC0, 0x3F, 0x00, 0xFD, 0x03, 0x09, 0x9D, 0x06, 0x20, 0x01, 0x40, 0x01, 0x03, 0x00, 0xFF,
+    0x00, 0x00, 0x06, 0x00, 0x01, 0x00, 0xBA, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x07,
+    0x14, 0x00, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00,
+  ];
 
-  private void WriteInnerBoot(byte[] img) {
-    var b = this._innerBase * Ss;
-    img[b] = 0xEB; img[b + 1] = 0x58; img[b + 2] = 0x90;
-    "MSDBL6.0"u8.CopyTo(img.AsSpan(b + 3, 8));
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x0B), Ss);
-    img[b + 0x0D] = Spc;
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x0E), Resv);
-    img[b + 0x10] = NumFats;
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x11), RootEntries);
-    img[b + 0x15] = 0xF8;
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x16), (ushort)this._fatSize);
+  // The inner volume's second sector starts with these bytes on a created volume.
+  private static ReadOnlySpan<byte> InnerSecondSector => [0xF8, 0x08, 0x22, 0x00];
+
+  private static void WriteMdbpb(byte[] img) => Mdbpb.CopyTo(img);
+
+  // What DOS sees: the MDBPB's geometry with two FATs (the driver serves the one stored FAT for both), so
+  // the total is the MDBPB's plus one FAT.
+  private static void WriteInnerBoot(byte[] img) {
+    var b = InnerBase * Ss;
+    Mdbpb[..0x20].CopyTo(img.AsSpan(b));
+    img[b + 0x10] = 2;
+    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(b + 0x20), InnerSectors + FatSectors);
     img[b + 0x26] = 0x29;                                  // extended boot signature
-    "FAT16   "u8.CopyTo(img.AsSpan(b + 0x36, 8));          // off57 -> "16  " => 16-bit FAT
+    "COMPRESSED "u8.CopyTo(img.AsSpan(b + 0x2B, 11));
+    "FAT16   "u8.CopyTo(img.AsSpan(b + 0x36, 8));
     img[b + 0x1FE] = 0x55; img[b + 0x1FF] = 0xAA;
   }
 

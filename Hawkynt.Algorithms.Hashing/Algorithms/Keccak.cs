@@ -21,13 +21,8 @@ public static class Keccak {
     0x8000000080008081UL, 0x8000000000008080UL, 0x0000000080000001UL, 0x8000000080008008UL
   ];
 
-  private static readonly int[] RotationOffsets = [
-     0,  1, 62, 28, 27,
-    36, 44,  6, 55, 20,
-     3, 10, 43, 25, 39,
-    41, 45, 15, 21,  8,
-    18,  2, 61, 56, 14
-  ];
+  // rho rotation offsets per lane x + 5y (FIPS 202 table 2), written into Permute:
+  //  0  1 62 28 27 / 36 44  6 55 20 / 3 10 43 25 39 / 41 45 15 21  8 / 18  2 61 56 14
 
   /// <summary>
   /// Computes the 224-bit Keccak hash of the supplied data.
@@ -88,36 +83,98 @@ public static class Keccak {
       state[i] ^= BinaryPrimitives.ReadUInt64LittleEndian(block[(i * 8)..]);
   }
 
+  /// <summary>Keccak-f[1600] on 25 lanes held in locals (theta, rho and pi, chi, iota per round).</summary>
   internal static void Permute(Span<ulong> state) {
-    Span<ulong> c = stackalloc ulong[5];
-    Span<ulong> d = stackalloc ulong[5];
-    Span<ulong> b = stackalloc ulong[25];
-
+    ulong a0 = state[0]; ulong a1 = state[1]; ulong a2 = state[2]; ulong a3 = state[3]; ulong a4 = state[4]; ulong a5 = state[5]; ulong a6 = state[6]; ulong a7 = state[7]; ulong a8 = state[8]; ulong a9 = state[9]; ulong a10 = state[10]; ulong a11 = state[11]; ulong a12 = state[12]; ulong a13 = state[13]; ulong a14 = state[14]; ulong a15 = state[15]; ulong a16 = state[16]; ulong a17 = state[17]; ulong a18 = state[18]; ulong a19 = state[19]; ulong a20 = state[20]; ulong a21 = state[21]; ulong a22 = state[22]; ulong a23 = state[23]; ulong a24 = state[24];
     for (var round = 0; round < 24; ++round) {
-      for (var x = 0; x < 5; ++x)
-        c[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20];
-
-      for (var x = 0; x < 5; ++x)
-        d[x] = c[(x + 4) % 5] ^ BitOperations.RotateLeft(c[(x + 1) % 5], 1);
-
-      for (var y = 0; y < 5; ++y)
-        for (var x = 0; x < 5; ++x)
-          state[x + 5 * y] ^= d[x];
-
-      for (var y = 0; y < 5; ++y) {
-        for (var x = 0; x < 5; ++x) {
-          var source = x + 5 * y;
-          var destination = y + 5 * ((2 * x + 3 * y) % 5);
-          b[destination] = BitOperations.RotateLeft(state[source], RotationOffsets[source]);
-        }
-      }
-
-      for (var y = 0; y < 5; ++y)
-        for (var x = 0; x < 5; ++x)
-          state[x + 5 * y] = b[x + 5 * y] ^ ((~b[(x + 1) % 5 + 5 * y]) & b[(x + 2) % 5 + 5 * y]);
-
-      state[0] ^= RoundConstants[round];
+      var c0 = a0 ^ a5 ^ a10 ^ a15 ^ a20;
+      var c1 = a1 ^ a6 ^ a11 ^ a16 ^ a21;
+      var c2 = a2 ^ a7 ^ a12 ^ a17 ^ a22;
+      var c3 = a3 ^ a8 ^ a13 ^ a18 ^ a23;
+      var c4 = a4 ^ a9 ^ a14 ^ a19 ^ a24;
+      var d0 = c4 ^ BitOperations.RotateLeft(c1, 1);
+      var d1 = c0 ^ BitOperations.RotateLeft(c2, 1);
+      var d2 = c1 ^ BitOperations.RotateLeft(c3, 1);
+      var d3 = c2 ^ BitOperations.RotateLeft(c4, 1);
+      var d4 = c3 ^ BitOperations.RotateLeft(c0, 1);
+      a0 ^= d0;
+      a1 ^= d1;
+      a2 ^= d2;
+      a3 ^= d3;
+      a4 ^= d4;
+      a5 ^= d0;
+      a6 ^= d1;
+      a7 ^= d2;
+      a8 ^= d3;
+      a9 ^= d4;
+      a10 ^= d0;
+      a11 ^= d1;
+      a12 ^= d2;
+      a13 ^= d3;
+      a14 ^= d4;
+      a15 ^= d0;
+      a16 ^= d1;
+      a17 ^= d2;
+      a18 ^= d3;
+      a19 ^= d4;
+      a20 ^= d0;
+      a21 ^= d1;
+      a22 ^= d2;
+      a23 ^= d3;
+      a24 ^= d4;
+      var b0 = a0;
+      var b1 = BitOperations.RotateLeft(a6, 44);
+      var b2 = BitOperations.RotateLeft(a12, 43);
+      var b3 = BitOperations.RotateLeft(a18, 21);
+      var b4 = BitOperations.RotateLeft(a24, 14);
+      var b5 = BitOperations.RotateLeft(a3, 28);
+      var b6 = BitOperations.RotateLeft(a9, 20);
+      var b7 = BitOperations.RotateLeft(a10, 3);
+      var b8 = BitOperations.RotateLeft(a16, 45);
+      var b9 = BitOperations.RotateLeft(a22, 61);
+      var b10 = BitOperations.RotateLeft(a1, 1);
+      var b11 = BitOperations.RotateLeft(a7, 6);
+      var b12 = BitOperations.RotateLeft(a13, 25);
+      var b13 = BitOperations.RotateLeft(a19, 8);
+      var b14 = BitOperations.RotateLeft(a20, 18);
+      var b15 = BitOperations.RotateLeft(a4, 27);
+      var b16 = BitOperations.RotateLeft(a5, 36);
+      var b17 = BitOperations.RotateLeft(a11, 10);
+      var b18 = BitOperations.RotateLeft(a17, 15);
+      var b19 = BitOperations.RotateLeft(a23, 56);
+      var b20 = BitOperations.RotateLeft(a2, 62);
+      var b21 = BitOperations.RotateLeft(a8, 55);
+      var b22 = BitOperations.RotateLeft(a14, 39);
+      var b23 = BitOperations.RotateLeft(a15, 41);
+      var b24 = BitOperations.RotateLeft(a21, 2);
+      a0 = b0 ^ (~b1 & b2);
+      a1 = b1 ^ (~b2 & b3);
+      a2 = b2 ^ (~b3 & b4);
+      a3 = b3 ^ (~b4 & b0);
+      a4 = b4 ^ (~b0 & b1);
+      a5 = b5 ^ (~b6 & b7);
+      a6 = b6 ^ (~b7 & b8);
+      a7 = b7 ^ (~b8 & b9);
+      a8 = b8 ^ (~b9 & b5);
+      a9 = b9 ^ (~b5 & b6);
+      a10 = b10 ^ (~b11 & b12);
+      a11 = b11 ^ (~b12 & b13);
+      a12 = b12 ^ (~b13 & b14);
+      a13 = b13 ^ (~b14 & b10);
+      a14 = b14 ^ (~b10 & b11);
+      a15 = b15 ^ (~b16 & b17);
+      a16 = b16 ^ (~b17 & b18);
+      a17 = b17 ^ (~b18 & b19);
+      a18 = b18 ^ (~b19 & b15);
+      a19 = b19 ^ (~b15 & b16);
+      a20 = b20 ^ (~b21 & b22);
+      a21 = b21 ^ (~b22 & b23);
+      a22 = b22 ^ (~b23 & b24);
+      a23 = b23 ^ (~b24 & b20);
+      a24 = b24 ^ (~b20 & b21);
+      a0 ^= RoundConstants[round];
     }
+    state[0] = a0; state[1] = a1; state[2] = a2; state[3] = a3; state[4] = a4; state[5] = a5; state[6] = a6; state[7] = a7; state[8] = a8; state[9] = a9; state[10] = a10; state[11] = a11; state[12] = a12; state[13] = a13; state[14] = a14; state[15] = a15; state[16] = a16; state[17] = a17; state[18] = a18; state[19] = a19; state[20] = a20; state[21] = a21; state[22] = a22; state[23] = a23; state[24] = a24;
   }
 }
 

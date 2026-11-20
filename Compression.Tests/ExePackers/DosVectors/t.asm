@@ -17,6 +17,12 @@
 %ifndef SEED
 %define SEED 12345
 %endif
+%ifndef CSV
+%define CSV 0
+%endif
+%ifndef ENTRYPAD
+%define ENTRYPAD 0
+%endif
 %define DATAPARA 0x100
 
 bits 16
@@ -31,8 +37,8 @@ mz:     db 'MZ'
         dw stackpara
         dw 0x0200
         dw 0
-        dw entry - img
-        dw 0
+        dw entry - img - 16 * CSV
+        dw CSV
         dw reloc - mz
         dw 0
 reloc:  dw entry - img + 1, 0
@@ -49,6 +55,7 @@ reloc:  dw entry - img + 1, 0
 %endrep
         times (-($ - mz)) & 15 db 0
 img:
+        times ENTRYPAD db 0xCC
 entry:  mov ax, DATAPARA          ; relocated: DS = load segment + DATAPARA
         mov ds, ax
         mov dx, ax

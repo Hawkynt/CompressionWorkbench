@@ -97,6 +97,9 @@ internal sealed partial class DeflateEncoder {
   private ulong _bitBuf;
   private int _bitCount;
 
+  /// <summary>Width of the HDIST field of dynamic blocks (5 in RFC 1951, 6 for StuffIt X).</summary>
+  public int DistanceCountBits { get; set; } = 5;
+
   /// <summary>Creates an encoder writing to <paramref name="output"/> at zlib level <paramref name="level"/> (1–9).</summary>
   public DeflateEncoder(Stream output, int level) {
     ArgumentOutOfRangeException.ThrowIfLessThan(level, 1);

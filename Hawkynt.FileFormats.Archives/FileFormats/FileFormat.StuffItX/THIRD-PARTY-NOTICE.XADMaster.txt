@@ -6,7 +6,12 @@ Revision:  7cb9ee0abbb163f261e4cb74501e15067032319c
 Files:     XADStuffItXParser.m, StuffItXUtilities.m, XADStuffItXBlockHandle.m,
            XADStuffItXCyanideHandle.m, XADStuffItXIronHandle.m, XADRC4Handle.m,
            XADPPMdHandles.m (Brimstone), PPMd/VariantG.c, PPMd/Context.c, PPMd/RangeCoder.c,
-           PPMd/SubAllocatorBrimstone.c, CarrylessRangeCoder.m, BWT.c, CSInputBuffer.m
+           PPMd/SubAllocatorBrimstone.c, CarrylessRangeCoder.m, BWT.c, CSInputBuffer.m,
+           XADStuffItXDarkhorseHandle.m, XADLZSSHandle.m, XADStuffItXEnglishHandle.m,
+           XADStuffItXBlendHandle.m, XADStuffItXX86Handle.m, the StuffIt X variant of
+           XADDeflateHandle.m (six-bit distance-code count),
+           StuffItXEnglishDictionary.c (the packed word list, carried verbatim as
+           StuffItXEnglishDictionary.ppmd)
 Licence:   GNU Lesser General Public License, version 2.1 or (at your option) any later version.
            This repository is distributed under LGPL-3.0-or-later, which the "any later version"
            grant permits.
@@ -15,12 +20,15 @@ Copyright (c) 2017-present, MacPaw Way Ltd. and the XADMaster contributors.
 The PPMd variant G algorithm is by Dmitry Shkarin.
 
 Tables copied verbatim: the PPMd binary-escape initialisers, the escape table, the Cyanide Markov
-context groups. Everything else was rewritten in C# for this codebase.
+context groups, the Darkhorse distance-slot bases and bit counts, and the English dictionary. Everything else was rewritten in C# for this codebase.
 
 Local changes against XADMaster's behaviour, each confirmed against StuffIt-written archives:
 - catalog tag 10: the name strings start on a byte boundary after the count (XADMaster reads them
   unaligned and fails on StuffIt 7 for Mac archives);
 - a data stream is decoded to the size its data element records, which the stored CRC-32 covers,
   even where its forks claim less (the preview stream of StuffIt Deluxe 2009/2010 archives);
+- a catalog after the first describes the archive object a type-9 element announces (StuffIt 7
+  for Mac OS 9 keeps the archive comment there); XADMaster reads it as another catalog of the
+  files and fails;
 - Iron's weighted recency list stops sinking an entry at the last of its 256 slots, where
   XADMaster reads one element past its array.

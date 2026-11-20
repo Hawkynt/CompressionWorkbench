@@ -172,3 +172,9 @@ update `2·check + sum`, in file order.
 A writer that only uses method 5 (no shifts, plain family, k = 1, s[0] = 0) produces
 files the reference accepts; choosing per window the `fix` with the fewest bits is
 enough for useful compression. Non-audio blocks must end exactly at audio start.
+
+A Turbo (method 4) writer picks per 4096-sample block the integrator count k whose k-th
+differences are smallest. Difference j of a block starts from `h[j]`, which only blocks with
+k > j move (to the last value of level j); the file check takes the first differences, the
+buffer as it stands before the decoder's last integration, and stays untouched for k = 0.
+The reference decodes such files with k changing between 0, 1 and 2 from block to block.

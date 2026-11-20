@@ -6,11 +6,27 @@ namespace FileFormat.Uharc;
 
 /// <summary>
 /// Writes UHARC 0.6 archives (docs/UHARC-ON-DISK.md, "Writing"): the stream stored or packed
-/// with LZP, the directory tables packed with LZP method 17 and enciphered with the default
+/// with RLE, LZ78, LZP, PPM or ALZ, the directory tables packed with LZP method 17 and enciphered with the default
 /// password, the header scrambled — the layout <c>uharc.exe</c> itself writes, without the
 /// executable and multimedia filters.
 /// </summary>
 internal static class UharcWriter {
+
+  /// <summary>Stream packing the writer offers.</summary>
+  public enum Mode {
+    /// <summary>Method 0.</summary>
+    Store,
+    /// <summary>Method 1.</summary>
+    Rle,
+    /// <summary>Method 7: 32768 phrases, UHARC's default.</summary>
+    Lz78,
+    /// <summary>Methods 8..23, the smallest window that holds the stream.</summary>
+    Lzp,
+    /// <summary>ALZ:2, methods 56..71, the smallest window that holds the stream.</summary>
+    Alz,
+    /// <summary>PPM, methods 24..39, the smallest window that holds the stream.</summary>
+    Ppm,
+  }
 
   /// <summary>One archive member; <see cref="Data"/> is null for a directory.</summary>
   public sealed record Item(string Name, byte[]? Data, DateTime? LastModified);
@@ -20,11 +36,37 @@ internal static class UharcWriter {
   /// <summary>Writes <paramref name="items"/> as one archive.</summary>
   /// <param name="output">Receives the archive.</param>
   /// <param name="items">Files and directories, names with '/' separators.</param>
-  /// <param name="compress">LZP-pack the stream (the dictionary fitted to its size) rather than store it.</param>
+  /// <param name="mode">How the stream is packed; LZP fits its dictionary to the stream.</param>
   /// <param name="now">Archive time stamp.</param>
-  public static void Write(Stream output, IReadOnlyList<Item> items, bool compress, DateTime now) {
+  /// <param name="password">
+  /// Enciphers the packed stream and the three tables with this password (flags <c>0x06</c>, as
+  /// <c>-pw</c> does); null or empty for none. ASCII, at most 255 characters.
+  /// </param>
+  /// <param name="sfxStub">
+  /// A Win32 self-extractor stub (UHARC's <c>UHARCSFX.EXE</c>) written in front of the archive,
+  /// which then starts where the stub's last PE section ends; null for a plain archive.
+  /// </param>
+  /// <param name="dictionaryLimit">
+  /// Largest LZP/ALZ window in bytes, as <c>-md</c> sets it (rounded up to a power of two, 1 KiB
+  /// to 32 MiB); 0 fits the window to the stream.
+  /// </param>
+  /// <param name="version">
+  /// The archive version: 6 (UHARC 0.6, every mode) or 4 (UHARC 0.4: store, RLE, LZW for
+  /// <see cref="Mode.Lz78"/>, and LZP).
+  /// </param>
+  public static void Write(Stream output, IReadOnlyList<Item> items, Mode mode, DateTime now, string? password = null, byte[]? sfxStub = null,
+    long dictionaryLimit = 0, int version = 6) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(items);
+    if (version is not (4 or 6))
+      throw new NotSupportedException($"UHARC: the writer writes versions 0.4 and 0.6, not {version}.");
+    if (version == 4 && mode is Mode.Alz or Mode.Ppm)
+      throw new NotSupportedException($"UHARC: the 0.4 writer does not write {mode} streams.");
+    if (version == 4 && sfxStub != null)
+      throw new NotSupportedException("UHARC: 0.4 has no self-extractor stub.");
+    var key = PasswordBytes(password);
+    if (sfxStub != null && UharcHeader.PeImageEnd(sfxStub) != sfxStub.Length)
+      throw new NotSupportedException("UHARC: the self-extractor stub must be a PE image that ends with its last section.");
 
     var directories = new List<string> { string.Empty };
     var directoryIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { [string.Empty] = 0 };
@@ -72,8 +114,28 @@ internal static class UharcWriter {
       fileEnds.Add(offset);
     }
 
-    var method = compress && total > 0 ? LzpMethodFor(total) : UharcMethods.Store;
-    var packed = method == UharcMethods.Store ? stream : UharcLzpEncoder.Encode(stream, method, fileEnds);
+    var method = total == 0 ? UharcMethods.Store : mode switch {
+      Mode.Store => UharcMethods.Store,
+      Mode.Rle => UharcMethods.Rle,
+      Mode.Lz78 => UharcMethods.Lz78Last,
+      Mode.Lzp => LzpMethodFor(total, dictionaryLimit),
+      Mode.Alz => AlzMethodFor(total, dictionaryLimit),
+      Mode.Ppm => LzpMethodFor(total, dictionaryLimit) - UharcMethods.LzpFirst + UharcMethods.PpmFirst,
+      _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+    };
+    var packed = version == 4 ? method switch {
+      UharcMethods.Store => stream,
+      UharcMethods.Rle => UharcRleEncoder.Encode(stream),
+      >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => Uharc02LzwEncoder.Encode(stream, method),
+      _ => Uharc04LzpEncoder.Encode(stream, method, fileEnds),
+    } : method switch {
+      UharcMethods.Store => stream,
+      UharcMethods.Rle => UharcRleEncoder.Encode(stream),
+      >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => UharcLz78Encoder.Encode(stream, method),
+      >= UharcMethods.AlzFirst and <= UharcMethods.AlzLast => UharcAlzEncoder.Encode(stream, method, fileEnds),
+      >= UharcMethods.PpmFirst and <= UharcMethods.PpmLast => UharcPpmEncoder.Encode(stream, method, fileEnds),
+      _ => UharcLzpEncoder.Encode(stream, method, fileEnds),
+    };
 
     // CRC table, name table, file table.
     var crcs = new byte[4 * n];
@@ -106,6 +168,11 @@ internal static class UharcWriter {
     if (directories.Count > ushort.MaxValue || nameTable.Length >= 1 << 24)
       throw new NotSupportedException("UHARC: directory is too large.");
 
+    if (version == 4) {
+      WriteVersion4(output, now, key, method, directories.Count, total, packed, crcs, nameTable, fileTable, n);
+      return;
+    }
+
     var packedNames = PackTable(nameTable);
     var packedFiles = PackTable(fileTable);
     if (packedNames.Length >= 1 << 24 || packedFiles.Length >= 1 << 24)
@@ -123,6 +190,8 @@ internal static class UharcWriter {
     var (archiveDate, archiveTime) = ToDos(now);
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(4), archiveTime);
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(6), archiveDate);
+    if (key != null)
+      header[8] = (byte)(UharcHeader.TablesUsePassword | UharcHeader.StreamUsesPassword);
     header[10] = (byte)method;
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(11), (ushort)directories.Count);
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(13), (uint)total);
@@ -137,7 +206,15 @@ internal static class UharcWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(37), check);
     UharcCipher.DescrambleHeader(header, header[37]);
 
-    UharcCipher.Apply(crcs, UharcCipher.DefaultPassword);
+    var tableKey = key ?? UharcCipher.DefaultPassword.ToArray();
+    UharcCipher.Apply(crcs, tableKey);
+    UharcCipher.Apply(packedNames, tableKey);
+    UharcCipher.Apply(packedFiles, tableKey);
+    if (key != null)
+      UharcCipher.Apply(packed, key);
+
+    if (sfxStub != null)
+      output.Write(sfxStub);
     output.Write(header);
     output.Write(packed);
     output.Write(crcs);
@@ -145,18 +222,90 @@ internal static class UharcWriter {
     output.Write(packedFiles);
   }
 
-  /// <summary>The LZP method whose window is the smallest power of two that holds the stream (1 KiB to 32 MiB).</summary>
-  internal static int LzpMethodFor(long size) {
+  /// <summary>
+  /// The LZP method whose window is the smallest power of two that holds the stream (1 KiB to
+  /// 32 MiB), at most <paramref name="limit"/> rounded up (0 for no limit).
+  /// </summary>
+  internal static int LzpMethodFor(long size, long limit = 0) {
     var shift = 10;
-    while (shift < 25 && 1L << shift < size)
+    while (shift < 25 && 1L << shift < size && (limit <= 0 || 1L << shift < limit))
       ++shift;
     return UharcMethods.LzpFirst + shift - 10;
   }
 
-  private static byte[] PackTable(byte[] table) {
-    var packed = UharcLzpEncoder.Encode(table, UharcMethods.Table, []);
-    UharcCipher.Apply(packed, UharcCipher.DefaultPassword);
-    return packed;
+  /// <summary>The ALZ:2 method for the same window as <see cref="LzpMethodFor"/>.</summary>
+  internal static int AlzMethodFor(long size, long limit = 0) => LzpMethodFor(size, limit) - UharcMethods.LzpFirst + UharcMethods.AlzFirst + 16;
+
+  private static byte[] PackTable(byte[] table) => UharcLzpEncoder.Encode(table, UharcMethods.Table, []);
+
+  /// <summary>
+  /// The UHARC 0.4 container (docs/UHARC-ON-DISK.md, "UHARC 0.4"): a 44-byte header, the stream,
+  /// the stored CRC table, the name table as 0.4 LZP method 17, the dates-then-times table as LZW
+  /// method 2 and the size table (directory planes, size-delta planes, attributes) as LZW method 7.
+  /// </summary>
+  private static void WriteVersion4(Stream output, DateTime now, byte[]? key, int method, int directoryCount, long total, byte[] packed,
+    byte[] crcs, byte[] nameTable, byte[] fileTable, int n) {
+    // The 0.6 file table holds the same planes: dates, times, directory, size delta, attribute.
+    var dates = fileTable.AsSpan(0, 4 * n).ToArray();
+    var sizes = fileTable.AsSpan(4 * n, 7 * n).ToArray();
+    var packedNames = Uharc04LzpEncoder.Encode(nameTable, UharcMethods.Table, []);
+    var packedDates = Uharc02LzwEncoder.Encode(dates, 2);
+    var packedSizes = Uharc02LzwEncoder.Encode(sizes, 7);
+    if (packedNames.Length >= 1 << 24 || packedDates.Length >= 1 << 24 || packedSizes.Length >= 1 << 24)
+      throw new NotSupportedException("UHARC: directory is too large.");
+
+    var namesCrc = new Crc32();
+    namesCrc.Update(crcs);
+    namesCrc.Update(nameTable);
+
+    var header = new byte[Uharc04Header.Size];
+    header[0] = (byte)'U';
+    header[1] = (byte)'H';
+    header[2] = (byte)'A';
+    header[3] = 4;
+    var (archiveDate, archiveTime) = ToDos(now);
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(4), archiveTime);
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(6), archiveDate);
+    if (key != null)
+      header[8] = Uharc04Header.UsesPassword;
+    header[10] = (byte)method;
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(11), (ushort)directoryCount);
+    BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(13), (uint)total);
+    BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(17), (uint)packed.Length);
+    WriteUInt24(header.AsSpan(21), n);
+    WriteUInt24(header.AsSpan(24), nameTable.Length);
+    WriteUInt24(header.AsSpan(27), packedNames.Length);
+    WriteUInt24(header.AsSpan(30), packedDates.Length);
+    WriteUInt24(header.AsSpan(33), packedSizes.Length);
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(36), (ushort)namesCrc.Value);
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(38), (ushort)Crc32.Compute(dates));
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(40), (ushort)Crc32.Compute(sizes));
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(42), (ushort)Crc32.Compute(header.AsSpan(4, 36)));
+    for (var i = 0; i < 36; ++i)
+      header[4 + i] ^= (byte)(header[42] + i * i);
+
+    var tableKey = key ?? UharcCipher.DefaultPassword.ToArray();
+    UharcCipher.Apply(crcs, tableKey);
+    UharcCipher.Apply(packedNames, tableKey);
+    UharcCipher.Apply(packedDates, tableKey);
+    UharcCipher.Apply(packedSizes, tableKey);
+    if (key != null)
+      UharcCipher.Apply(packed, key);
+
+    output.Write(header);
+    output.Write(packed);
+    output.Write(crcs);
+    output.Write(packedNames);
+    output.Write(packedDates);
+    output.Write(packedSizes);
+  }
+
+  private static byte[]? PasswordBytes(string? password) {
+    if (string.IsNullOrEmpty(password))
+      return null;
+    if (password.Length > byte.MaxValue || password.Any(c => c is < ' ' or > '~'))
+      throw new NotSupportedException("UHARC: passwords are printable ASCII, at most 255 characters.");
+    return Encoding.ASCII.GetBytes(password);
   }
 
   private static string Normalize(string name) {

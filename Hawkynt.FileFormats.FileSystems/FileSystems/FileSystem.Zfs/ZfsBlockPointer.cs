@@ -40,7 +40,10 @@ internal sealed class ZfsBlockPointer {
     this.PhysicalSize = (int)(((prop >> 16) & 0xFFFF) + 1) << ZfsConstants.SectorShift;
     this.Checksum = (byte)((prop >> 40) & 0xFF);
     this.IsEncrypted = ((prop >> 61) & 1) != 0;
-    this.Dvas = [ZfsDva.Read(raw.AsSpan(0x00)), ZfsDva.Read(raw.AsSpan(0x10)), ZfsDva.Read(raw.AsSpan(0x20))];
+    // a protected block keeps at most two copies: DVA[2] holds an encrypted block's salt and IV
+    this.Dvas = this.IsEncrypted
+      ? [ZfsDva.Read(raw.AsSpan(0x00)), ZfsDva.Read(raw.AsSpan(0x10))]
+      : [ZfsDva.Read(raw.AsSpan(0x00)), ZfsDva.Read(raw.AsSpan(0x10)), ZfsDva.Read(raw.AsSpan(0x20))];
     this.Fill = BinaryPrimitives.ReadUInt64LittleEndian(raw.AsSpan(0x58));
   }
 
@@ -68,6 +71,9 @@ internal sealed class ZfsBlockPointer {
   public bool IsHole => !this.IsEmbedded && this.Dvas[0].IsEmpty;
 
   public ReadOnlySpan<byte> StoredChecksum => this._raw.AsSpan(0x60, 32);
+
+  /// <summary>The 128 bytes as stored.</summary>
+  public ReadOnlySpan<byte> Raw => this._raw;
 
   /// <summary>
   /// The payload of an embedded pointer: words 0-5, 7-9 and 11-15, skipping the

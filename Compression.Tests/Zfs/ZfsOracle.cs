@@ -88,16 +88,39 @@ internal static class ZfsOracle {
   /// <summary>
   /// As <see cref="KernelManifest(string, string, string, out string)"/>, running <paramref name="after"/>
   /// (shell, pool imported and mounted) before the export, and with <paramref name="download"/> copying
-  /// the device images back over the staged ones, so OpenZFS's own later writes can be checked too.
+  /// the device images back over the staged ones, so OpenZFS's own later writes can be checked too;
+  /// <paramref name="before"/> runs right after the import (loading keys of encrypted datasets).
   /// </summary>
-  public static Dictionary<string, string> KernelManifest(string dir, string wsl, string pool, out string log, string after, bool download) {
+  /// <summary>
+  /// Runs <paramref name="script"/> as root in the appliance (<c>$O</c> = an empty output directory,
+  /// <c>$M</c> = a mount root) and downloads <paramref name="downloads"/> from <c>$O</c> into
+  /// <paramref name="dir"/>; returns the script's output.
+  /// </summary>
+  public static string Appliance(string dir, string wsl, string script, IReadOnlyList<string> downloads) {
+    File.WriteAllText(Path.Combine(dir, "inner.sh"), ("modprobe zfs\nO=/sysroot/out; M=/sysroot/mnt; mkdir -p $O $M\n" + script + "\n").Replace("\r\n", "\n"));
+    var fetch = string.Concat(downloads.Select(f => $"download /out/{f} {f}\\n"));
+    var run = FsInteropToolbox.RunWsl(
+      "export LIBGUESTFS_BACKEND=direct LIBGUESTFS_CACHEDIR=$HOME/cwbzfs-work/cache LIBGUESTFS_MEMSIZE=2048; " +
+      $"mkdir -p $HOME/cwbzfs-work/cache; cd {wsl}; truncate -s 2G scratch.img; " +
+      "printf 'run\\nmkfs ext4 /dev/sda\\nmount /dev/sda /\\nmkdir /out\\nupload inner.sh /inner.sh\\n" +
+      "debug sh \"sh /sysroot/inner.sh > /sysroot/log.txt 2>&1\"\\ndownload /log.txt log.txt\\n" +
+      $"{fetch}' | timeout 600 guestfish -a scratch.img 2>&1");
+    var logPath = Path.Combine(dir, "log.txt");
+    if (!File.Exists(logPath)) Assert.Inconclusive("the appliance did not run:\n" + run.StdOut + run.StdErr);
+    return File.ReadAllText(logPath);
+  }
+
+  public static Dictionary<string, string> KernelManifest(string dir, string wsl, string pool, out string log, string after, bool download, string before = "") {
     var images = Directory.GetFiles(dir, "*.img").Select(f => Path.GetFileName(f)!).Order(StringComparer.Ordinal).ToList();
     var uploads = string.Concat(images.Select(f => $"upload {f} /out/{f}\\n"));
+    // the scratch disk holds every uploaded image with room to spare
+    var scratch = Math.Max(512, images.Sum(f => new FileInfo(Path.Combine(dir, f)).Length) / (1 << 20) * 5 / 4 + 256);
     var downloads = download ? string.Concat(images.Select(f => $"download /out/{f} {f}\\n")) : "";
     File.WriteAllText(Path.Combine(dir, "inner.sh"), $$"""
       modprobe zfs
       O=/sysroot/out; M=/sysroot/mnt; mkdir -p $M
       zpool import -d $O -N -o altroot=$M {{pool}} || { echo IMPORT-FAILED; exit 1; }
+      {{before}}
       zpool scrub -w {{pool}}
       zpool status -v {{pool}}
       zpool get -H -o property,value all {{pool}} | grep feature@ | while read -r k v; do echo "FEATURE ${k#feature@} $v"; done
@@ -109,7 +132,7 @@ internal static class ZfsOracle {
       """.Replace("\r\n", "\n"));
     var run = FsInteropToolbox.RunWsl(
       "export LIBGUESTFS_BACKEND=direct LIBGUESTFS_CACHEDIR=$HOME/cwbzfs-work/cache LIBGUESTFS_MEMSIZE=2048; " +
-      $"mkdir -p $HOME/cwbzfs-work/cache; cd {wsl}; truncate -s 512M scratch.img; " +
+      $"mkdir -p $HOME/cwbzfs-work/cache; cd {wsl}; truncate -s {scratch}M scratch.img; " +
       $"printf 'run\\nmkfs ext4 /dev/sda\\nmount /dev/sda /\\nmkdir /out\\n{uploads}upload inner.sh /inner.sh\\n" +
       "debug sh \"sh /sysroot/inner.sh > /sysroot/log.txt 2>&1\"\\ndownload /log.txt log.txt\\n" +
       $"download /out/pool.manifest pool.manifest\\n{downloads}' | timeout 300 guestfish -a scratch.img 2>&1");

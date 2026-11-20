@@ -14,6 +14,10 @@ namespace FileFormat.InnoSetup;
 /// <para>Converted from innoextract (https://github.com/dscharrer/innoextract, zlib licence).
 /// Every extracted file is checked against the checksum the compiler stored for it, so a file
 /// either comes out exactly as the compiler stored it or the extraction fails.</para>
+/// <para>Encrypted files (Encryption=yes) open with the installer's password: ARC4 keyed with MD5
+/// (4.2.2 – 5.3.8) or SHA-1 (5.3.9 – 6.3.x) of a per-chunk salt and the password, XChaCha20 with
+/// a PBKDF2-SHA256 key from 6.4; Encryption=full (6.5+) encrypts the setup headers too. The
+/// password is checked against the one the installer stores before anything is decrypted.</para>
 /// </remarks>
 public sealed class InnoSetupReader {
 
@@ -22,6 +26,9 @@ public sealed class InnoSetupReader {
   private readonly InnoSetupInfo _info;
   private readonly List<InnoSetupEntry> _entries = [];
   private readonly string? _sliceDirectory;
+  private readonly string? _sliceBase;
+  private readonly string? _password;
+  private byte[]? _key;
 
   /// <summary>Gets the setup-data version.</summary>
   public InnoVersion Version => this._info.Version;
@@ -41,6 +48,10 @@ public sealed class InnoSetupReader {
   /// <summary>Gets whether some files are encrypted.</summary>
   public bool IsEncrypted => this._info.EncryptionUsed;
 
+  /// <summary>Gets the ciphers the installer's files use (empty when none is encrypted).</summary>
+  public IReadOnlyList<InnoEncryption> EncryptionMethods =>
+    [.. this._info.DataEntries.Select(d => d.Encryption).Where(e => e != InnoEncryption.None).Distinct()];
+
   /// <summary>Gets the files, named and filtered the way innoextract extracts them.</summary>
   public IReadOnlyList<InnoSetupEntry> Entries => this._entries;
 
@@ -50,14 +61,28 @@ public sealed class InnoSetupReader {
   /// <param name="stream">A seekable stream over the whole file.</param>
   /// <exception cref="InvalidDataException">No Inno Setup data, or headers that do not parse.</exception>
   /// <exception cref="NotSupportedException">The 16-bit Inno Setup 1.2.x format.</exception>
-  public InnoSetupReader(Stream stream) {
+  public InnoSetupReader(Stream stream) : this(stream, null) { }
+
+  /// <summary>
+  /// Opens an Inno Setup installer with the password its encrypted files (or, with
+  /// Encryption=full, its headers) need.
+  /// </summary>
+  /// <param name="stream">A seekable stream over the whole file.</param>
+  /// <param name="password">The installer's password, or <see langword="null"/>.</param>
+  /// <exception cref="InvalidDataException">No Inno Setup data, or headers that do not parse.</exception>
+  /// <exception cref="NotSupportedException">The 16-bit Inno Setup 1.2.x format.</exception>
+  /// <exception cref="Compression.Registry.ArchivePasswordException">Encrypted headers without the right password.</exception>
+  public InnoSetupReader(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);
+    this._password = password;
     if (!stream.CanSeek)
       throw new ArgumentException("Stream must be seekable.", nameof(stream));
     this._stream = stream;
     this._offsets = InnoLoader.Locate(stream);
-    if (stream is FileStream fs)
+    if (stream is FileStream fs) {
       this._sliceDirectory = Path.GetDirectoryName(Path.GetFullPath(fs.Name));
+      this._sliceBase = Path.GetFileNameWithoutExtension(fs.Name);
+    }
 
     if (this._offsets.HeaderOffset < 0 || this._offsets.HeaderOffset + 64 > stream.Length)
       throw new InvalidDataException("Inno Setup headers lie outside the file.");
@@ -70,23 +95,24 @@ public sealed class InnoSetupReader {
   }
 
   /// <summary>
-  /// 6.5.0+: a CRC32 and TSetupEncryptionHeader (EncryptionUse, KDF salt, iterations, base nonce,
-  /// password test) follow the version tag. Returns whether files are encrypted; refuses
-  /// installers whose headers are encrypted too.
+  /// 6.5.0+: a CRC32 and TSetupEncryptionHeader follow the version tag: EncryptionUse (0 none,
+  /// 1 files, 2 full: the header blocks too), KDF salt (16), iterations, base nonce (24) and the
+  /// password test. Returns the mode and the password material (null before 6.5).
   /// </summary>
-  private static bool ReadEncryptionHeader(Stream stream, InnoVersion v) {
+  private static (int Mode, InnoPasswordData? Password) ReadEncryptionHeader(Stream stream, InnoVersion v) {
     if (v.Below(6, 5, 0))
-      return false;
-    Span<byte> h = stackalloc byte[4 + 49];
+      return (0, null);
+    var h = new byte[4 + 49];
     stream.ReadExactly(h);
-    if (System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(h) != global::Compression.Core.Checksums.Crc32.Compute(h[4..]))
+    if (System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(h) != global::Compression.Core.Checksums.Crc32.Compute(h.AsSpan(4)))
       throw new InvalidDataException("Inno Setup encryption header CRC mismatch.");
-    return h[4] switch {
-      0 => false,
-      1 => true,
-      2 => throw new NotSupportedException("This Inno Setup installer encrypts its headers too; a password is needed."),
-      _ => throw new InvalidDataException($"Unknown Inno Setup encryption mode {h[4]}."),
-    };
+    if (h[4] > 2)
+      throw new InvalidDataException($"Unknown Inno Setup encryption mode {h[4]}.");
+    return (h[4], new InnoPasswordData {
+      Check = InnoPasswordCheck.XChaCha20, Salt = h[5..21],
+      Iterations = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(h.AsSpan(21)),
+      BaseNonce = h[25..49], Expected = h[49..53],
+    });
   }
 
   /// <summary>
@@ -119,10 +145,21 @@ public sealed class InnoSetupReader {
       try {
         var info = new InnoSetupInfo { Version = v };
         this._stream.Position = this._offsets.HeaderOffset + 64;
-        var encryptedFiles = ReadEncryptionHeader(this._stream, v);
-        info.LoadPrimary(InnoCodec.ReadHeaderBlock(this._stream, v), out var w1, out var t1);
-        info.EncryptionUsed |= encryptedFiles;
-        info.LoadData(InnoCodec.ReadHeaderBlock(this._stream, v), out var w2, out var t2);
+        var (mode, password) = ReadEncryptionHeader(this._stream, v);
+        Action<Span<byte>>? block1 = null, block2 = null;
+        if (mode == 2) {
+          // Encryption=full: each header block is decrypted sub-block by sub-block, after its CRC
+          var key = this._key ??= password!.Key(this._password, unicode: true, Encoding.Latin1);
+          var c1 = password!.Cipher(key, 0, InnoPasswordData.HeaderBlock1Slice);
+          var c2 = password.Cipher(key, 0, InnoPasswordData.HeaderBlock2Slice);
+          (block1, block2) = (c1.Transform, c2.Transform);
+        }
+        info.LoadPrimary(InnoCodec.ReadHeaderBlock(this._stream, v, block1), out var w1, out var t1);
+        if (password != null) {
+          info.Password = password;
+          info.EncryptionUsed |= mode != 0;
+        }
+        info.LoadData(InnoCodec.ReadHeaderBlock(this._stream, v, block2), out var w2, out var t2);
         if (w1 + w2 == 0 && !t1 && !t2)
           return info;
         fallback ??= info;
@@ -247,6 +284,12 @@ public sealed class InnoSetupReader {
 
   // ── extraction ──────────────────────────────────────────────────────
 
+  /// <summary>The checksum the compiler stored for an entry's bytes.</summary>
+  internal (InnoChecksumKind Kind, byte[] Checksum) StoredChecksum(InnoSetupEntry entry) {
+    var d = this._info.DataEntries[entry.DataIndex];
+    return (d.ChecksumKind, d.Checksum);
+  }
+
   /// <summary>Returns the bytes of one entry, verified against the stored checksum.</summary>
   public byte[] Extract(InnoSetupEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
@@ -269,12 +312,10 @@ public sealed class InnoSetupReader {
       .OrderBy(g => g.Key.FirstSlice).ThenBy(g => g.Key.ChunkOffset);
 
     foreach (var chunk in byChunk) {
-      if (chunk.Key.Encryption != InnoEncryption.None)
-        throw new NotSupportedException("Encrypted Inno Setup files are not supported.");
       var needed = chunk.Max(e => this._info.DataEntries[e.DataIndex].FileOffset + this._info.DataEntries[e.DataIndex].FileSize);
       if (needed > int.MaxValue)
         throw new NotSupportedException("Inno Setup chunks larger than 2 GiB are not supported.");
-      var decoded = this.ReadChunk(chunk.Key.FirstSlice, chunk.Key.ChunkOffset, chunk.Key.ChunkSize, chunk.Key.Compression, (long)needed);
+      var decoded = this.ReadChunk(chunk.Key.FirstSlice, chunk.Key.ChunkOffset, chunk.Key.ChunkSize, chunk.Key.Compression, chunk.Key.Encryption, (long)needed);
       foreach (var e in chunk) {
         var d = this._info.DataEntries[e.DataIndex];
         var bytes = decoded.AsSpan((int)d.FileOffset, (int)d.FileSize).ToArray();
@@ -288,15 +329,32 @@ public sealed class InnoSetupReader {
 
   private static ReadOnlySpan<byte> ChunkMagic => "zlb\x1a"u8;
 
-  private byte[] ReadChunk(uint slice, ulong offset, ulong size, InnoCompression compression, long needed) {
+  /// <summary>The key for encrypted chunks, from the password (checked once).</summary>
+  private byte[] Key() => this._key ??= this._info.Password.Key(this._password, this._info.Version.IsUnicode, this._info.TextEncoding);
+
+  private byte[] ReadChunk(uint slice, ulong offset, ulong size, InnoCompression compression, InnoEncryption encryption, long needed) {
+    var key = encryption == InnoEncryption.None ? null : this.Key();
     using var slices = new SliceReader(this, slice, (long)offset);
     Span<byte> magic = stackalloc byte[4];
     slices.ReadExactly(magic);
     if (!magic.SequenceEqual(ChunkMagic))
       throw new InvalidDataException("Inno Setup chunk has no \"zlb\\x1a\" magic.");
-    using var bounded = new BoundedReader(slices, (long)size);
+    Stream data = new BoundedReader(slices, (long)size);
+    switch (encryption) {
+      case InnoEncryption.Arc4Md5 or InnoEncryption.Arc4Sha1: {
+        // an 8-byte salt between the magic and the encrypted data
+        var salt = new byte[8];
+        slices.ReadExactly(salt);
+        data = new InnoDecryptingStream(data, InnoPasswordData.Arc4(encryption, salt, key!).Transform);
+        break;
+      }
+      case InnoEncryption.XChaCha20:
+        data = new InnoDecryptingStream(data, this._info.Password.Cipher(key!, (long)offset, (int)slice).Transform);
+        break;
+    }
+    using var _ = data;
     try {
-      return InnoCodec.Decompress(compression, bounded, needed);
+      return InnoCodec.Decompress(compression, data, needed);
     } catch (InvalidDataException ex) {
       throw new InvalidDataException($"Inno Setup chunk at slice {slice} offset {offset} ({compression}, {size} bytes): {ex.Message}", ex);
     }
@@ -314,7 +372,9 @@ public sealed class InnoSetupReader {
 
     var perDisk = Math.Max(1u, this._info.SlicesPerDisk);
     var suffix = perDisk == 1 ? $"{index + 1}" : $"{index / perDisk + 1}{(char)('a' + index % perDisk)}";
-    var bases = new[] { this._info.BaseFilename, "setup" }.Where(b => b.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase);
+    // Up to 7.1.0 the header names the slices (OutputBaseFilename); 7.1.1 names them after the
+    // setup EXE itself (Setup.FileExtractor.pas FindSliceFilename), so the EXE's name is tried too.
+    var bases = new[] { this._info.BaseFilename, this._sliceBase ?? "", "setup" }.Where(b => b.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase);
     foreach (var b in bases) {
       var name = b + "-" + suffix + ".bin";
       var path = Directory.EnumerateFiles(this._sliceDirectory)

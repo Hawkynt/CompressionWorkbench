@@ -56,8 +56,8 @@ public sealed class GenuineCvfReader : IDisposable {
   private ushort U16(int off) => BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(off));
 
   private void Parse() {
-    if (this._data.Length < Ss || Encoding.ASCII.GetString(this._data, 3, 8) != "MSDBL6.0")
-      throw new InvalidDataException("DoubleSpace (genuine): missing MSDBL6.0 signature.");
+    if (this._data.Length < Ss || !GenuineCvfVolume.IsV2Oem(this._data))
+      throw new InvalidDataException("DoubleSpace (genuine): missing MSDSP6.0 / MSDBL6.0 signature.");
 
     this._spc = this._data[0x0D];
     var resv = this.U16(0x0E);
