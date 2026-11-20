@@ -43,7 +43,7 @@ StuffIt	table	AppleSingle, ARC, ARJ, BinHex, BtoAText, bzip2, CAB, CompactPro, c
 Squeez	table	7z, SQX, ARJ, LHA, LZH, ZIP, RAR, CAB, gzip, tar, UUE, JAR, ACE, bzip2	SQX	PARTIAL	
 TUGZip	table	7z, A, ACE, ARC, ARJ, BH, bz2, CAB, cpio, deb, GCA, gz, IMP, JAR, LHA, LZH, LIB, RAR, RPM, SQX, tar, tgz, tbz, taz, YZ1, ZIP, ZOO	-	NOT-A-FORMAT	multi-format front-end
 tar	table	tar, tgz, tbz, tbz2, tb2	tar (incl. ustar)	FULL	
-UHARC	table	UHA	UHA	PARTIAL	
+UHARC	table	UHA	UHA	FULL	
 UltimateZip	table	ZIP	-	NOT-A-FORMAT	writes ZIP
 UltraCompressor II	table	UC2	UC2	PARTIAL	
 WinAce	table	ACE, ZIP, Zip64, LHA, CAB, BZip, ISO, RAR, ARC, ARJ, gzip, tar, ZOO, JAR	ACE	PARTIAL	

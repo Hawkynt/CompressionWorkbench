@@ -26,8 +26,8 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | --- | ---: | --- |
 | `MISSING` | 175 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 35 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 49 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 327 | covered with no known gap against what the sources list |
+| `PARTIAL` | 48 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 328 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 438 | in our registry, listed by none of the eight sources |
 
 ### Per source
@@ -41,12 +41,12 @@ read-only rows.
 | libarchive (formats + filters) | 28 | 28 | 100.0 | 27 |
 | XADMaster / The Unarchiver | 127 | 108 | 85.0 | 94 |
 | binwalk v3 | 79 | 56 | 70.9 | 51 |
-| Universal Extractor 2 | 124 | 104 | 83.9 | 72 |
+| Universal Extractor 2 | 124 | 104 | 83.9 | 73 |
 | PRONOM | 87 | 83 | 95.4 | 74 |
-| Wikipedia | 268 | 197 | 73.5 | 154 |
-| Wikipedia (de): list of compression programs | 124 | 78 | 62.9 | 47 |
+| Wikipedia | 268 | 197 | 73.5 | 155 |
+| Wikipedia (de): list of compression programs | 124 | 78 | 62.9 | 48 |
 
-These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-13. The source inventories retain their original 2026-10-19 snapshot; the German list is revision 268525499 (2026-07-05). The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.
+These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-20. The source inventories retain their original 2026-10-19 snapshot; the German list is revision 268525499 (2026-07-05). The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.
 
 ## 📋 Wikipedia (de): Liste von Datenkompressionsprogrammen
 
@@ -67,8 +67,8 @@ Front-ends were resolved to the formats they list, and those formats were checke
 
 | Status | Formats | Programs (table) | Packers | Identifiers |
 | --- | ---: | ---: | ---: | ---: |
-| FULL | 49 | 19 | 1 |  |
-| PARTIAL | 31 | 13 | 16 |  |
+| FULL | 50 | 20 | 1 |  |
+| PARTIAL | 30 | 12 | 16 |  |
 | MISSING | 50 | 9 | 29 |  |
 | REFUSED | 2 | 1 |  |  |
 | NOT-A-FORMAT | 2 | 16 | 1 | 7 |
@@ -118,7 +118,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 | 29 | Compact Pro | PARTIAL | 1 | Multi-volume and encrypted archives; samples needed. |
 | 30 | KGB Archiver | PARTIAL | 1 | KGB Archiver 2 (PAQ7-based) and encrypted .kge are not read; KGB is GPL, so rung 2 with the kgb2 binary as oracle. |
 
-The other 47 are rare (weight 1). In rank order: UHARC 0.3 and 0.4 PPM, BlakHole, GCA
+The other 46 are rare (weight 1). In rank order: BlakHole, GCA
 (refused), WinHKI, ICE (refused), PAQ, WinRK, SQX, UC2, YZ1, then single-source rows. Among the
 single-source rows, btoa is the cheapest new format, and Courgette has a BSD-3 source to
 convert. QUAD needs its licence checked. IMP, JAR (.j), PAE, Aladdin Private File, Central Point
@@ -255,7 +255,6 @@ running real-world samples. The file named at the end of each row is where the l
 | DiskDoubler | `DiskDoubler` | 2 | single files only (no DDAR/DDA2 archives); methods 0, 1, 6, 9 decoded and checked against unar on real files; 2-5, 7, 8, 10 and delta refused (DiskDoublerReader.cs) |
 | EnCase / Expert Witness (E01) | `Ewf` | 2 | single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs) |
 | PackIt | `PackIt` | 2 | encrypted PMa5/PMa6 entries refused; stored and Huffman entries verified on real archives against unar (PackItReader.cs) |
-| UHARC | `Uharc` | 2 | UHARC 0.6: store, RLE, LZ78, LZP, PPM and ALZ (incl. multimedia predictors) verified against uharc.exe and real archives; UHARC 0.2 verified against the 0.2 tool and the dexvert samples; 0.3/0.4 refused; writes stored or LZP-packed 0.6 archives (docs/UHARC-ON-DISK.md) |
 | Comic Book Archive | `Cbz`, `Cbr`, `Cb7` | 1 | .cbt (tar) and .cba (ACE) have no descriptor |
 | DMS (Disk Masher) | `Dms` | 1 | NONE/SIMPLE/QUICK only; MEDIUM/DEEP/HEAVY1/HEAVY2 throw (DmsReader.cs) |
 | EGG (ALZip) | `Egg` | 1 | store and deflate only; bzip2/LZMA/AZO, encryption and split archives unsupported (EggReader.cs) |
