@@ -28,7 +28,20 @@ public sealed record EcSbxContent(int Version, string FileName, DateTime? Modifi
 /// (FNM, SNM, FSZ, FDT, SDT, HSH multihash, RSD/RSP shard counts; 1 + parity copies). Sequence s ≥ 1 belongs to
 /// RS set (s - 1) / (M + N); its first M positions are data, the remaining N parity.
 /// </remarks>
-public sealed class EcSbxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class EcSbxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+
+  /// <inheritdoc />
+  public long? MaxTotalArchiveSize => null;
+
+  /// <inheritdoc />
+  public string AcceptedInputsDescription => "exactly one file: the file the EC-SBX container holds";
+
+  /// <summary>Any one file; a directory has nothing to protect. The writer takes exactly one file in all.</summary>
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    ArgumentNullException.ThrowIfNull(input);
+    reason = input.IsDirectory ? $"'{input.ArchiveName}' is a directory; {this.AcceptedInputsDescription}" : null;
+    return reason == null;
+  }
 
   private const int HeaderSize = 16;
 
