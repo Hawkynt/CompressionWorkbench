@@ -120,6 +120,14 @@ public class DvdisasterEccTests {
     Assert.That(new DvdisasterEccFormatDescriptor().List(new MemoryStream(ecc), null), Has.Count.EqualTo(3));
   }
 
+  [Test, Category("Boundary")]
+  public void Given_TheWriteConstraints_When_Asked_Then_OneFileIsAcceptedAndADirectoryIsNot() {
+    var constraints = (Compression.Registry.IArchiveWriteConstraints)new DvdisasterEccFormatDescriptor();
+    Assert.That(constraints.CanAccept(Compression.Registry.ArchiveInputInfo.InMemory("disc.iso", [1]), out _), Is.True);
+    Assert.That(constraints.CanAccept(new Compression.Registry.ArchiveInputInfo("", "dir", true), out var reason), Is.False);
+    Assert.That(reason, Does.Contain("exactly one file"));
+  }
+
   [Test, Category("Exception")]
   public void Given_BadParameters_When_Created_Then_Refused() {
     Assert.Throws<ArgumentException>(() => DvdisasterEccWriter.CreateRs01([]));

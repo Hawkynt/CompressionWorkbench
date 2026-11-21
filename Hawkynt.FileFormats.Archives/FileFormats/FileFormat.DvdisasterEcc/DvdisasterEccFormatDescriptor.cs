@@ -50,7 +50,20 @@ public sealed record DvdisasterEccHeader(
 /// versions, Int32 fingerprint sector. RS01 then stores one CRC32 per medium sector and
 /// roots × ceil(sectors / dataBytes) × 2048 bytes of parity.
 /// </remarks>
-public sealed class DvdisasterEccFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class DvdisasterEccFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+
+  /// <inheritdoc />
+  public long? MaxTotalArchiveSize => null;
+
+  /// <inheritdoc />
+  public string AcceptedInputsDescription => "exactly one file: the image the ecc data protects";
+
+  /// <summary>Any one file; a directory has nothing to protect. The writer takes exactly one file in all.</summary>
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    ArgumentNullException.ThrowIfNull(input);
+    reason = input.IsDirectory ? $"'{input.ArchiveName}' is a directory; {this.AcceptedInputsDescription}" : null;
+    return reason == null;
+  }
 
   private const int SectorSize = 2048;
 
