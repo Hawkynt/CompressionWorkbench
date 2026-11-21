@@ -14973,17 +14973,18 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 ### Namespace `FileFormat.DvdisasterEcc`
 
-[`DvdisasterEccFormatDescriptor`](#dvdisastereccformatdescriptor) · [`DvdisasterEccHeader`](#dvdisastereccheader)
+[`DvdisasterEccFormatDescriptor`](#dvdisastereccformatdescriptor) · [`DvdisasterEccHeader`](#dvdisastereccheader) · [`DvdisasterEccWriter`](#dvdisastereccwriter)
 
 #### `DvdisasterEccFormatDescriptor`
 
-dvdisaster error-correction file (`.ecc`), read-only: the parity a disc image is repaired from. It holds no files, so the view is its header as `metadata.ini` and, for the RS01 method, the per-sector CRC table and the Reed-Solomon parity layers; RS03 files list their header and raw data. Test checks the ecc MD5 the header records. References: `https://dvdisaster.jcea.es/` — dvdisaster documentation, RS01/RS03 methods and the ecc header
+dvdisaster error-correction file (`.ecc`): the parity a disc image is repaired from; RS01 and RS03 files are created by `DvdisasterEccWriter`. It holds no files, so the view is its header as `metadata.ini` and, for RS01, the per-sector CRC table and the Reed-Solomon parity; for RS03, the CRC layer and the parity layers. Test checks the ecc MD5 the header records (RS01) or the header's and CRC blocks' self CRCs (RS03). References: `https://dvdisaster.jcea.es/` — dvdisaster documentation, RS01/RS03 methods and the ecc header
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DvdisasterEccFormatDescriptor` | `DvdisasterEccFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
@@ -14994,9 +14995,12 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `EccDataIntact` | `static bool EccDataIntact(ReadOnlySpan<byte> file)` | Whether the data after the header still has the MD5 the header records. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Any one file; a directory has nothing to protect. The writer takes exactly one file in all. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates the RS01 (default) or RS03 (method `rs03`) ecc file of the one input image. Option `Roots` (default 32; 8-100 for RS01, 8-170 for RS03) sets the parity bytes per codeword. |
+| `EccDataIntact` | `static bool EccDataIntact(ReadOnlySpan<byte> file)` | Whether the file is intact as far as it records: for RS01 the data after the header still has the MD5 the header records; for RS03 the header and every CRC block still have their self CRCs. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
@@ -15023,6 +15027,17 @@ Implements `IEquatable<DvdisasterEccHeader>`.
 | `Sectors` | `long Sectors { get; init; }` |  |
 | `Read` | `static DvdisasterEccHeader Read(ReadOnlySpan<byte> file)` |  |
 | `Version` | `static string Version(int v)` | Formats a dvdisaster version number (7910 = 0.79.10). |
+
+#### `DvdisasterEccWriter`
+
+Writes dvdisaster RS01 error-correction files as `docs/DVDISASTER-ECC-ON-DISK.md` describes them: the 4 KiB header, one CRC per 2048-byte image sector, and Reed-Solomon parity over GF(2^8) (polynomial 0x187, first root 112, primitive element 11) computed across ndata = 255 − nroots layers of the image.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultRoots` | `const int DefaultRoots` | Parity bytes per codeword when none are asked for (dvdisaster's "normal" redundancy). |
+| `Rs03NeededVersion` | `const int Rs03NeededVersion` | The version RS03 files require (0.79). |
+| `CreateRs01` | `static byte[] CreateRs01(ReadOnlySpan<byte> image, int roots = 32, int? creatorVersion = null)` | Creates the RS01 ecc file of the image `image`. |
+| `CreateRs03` | `static byte[] CreateRs03(ReadOnlySpan<byte> image, int roots = 32, int? creatorVersion = null, bool developmentBuild = false)` | Creates the RS03 ecc file of the image `image` (docs/DVDISASTER-ECC-ON-DISK.md, RS03): the 4 KiB header, the CRC layer and `roots` parity layers. |
 
 ### Namespace `FileFormat.DxArchive`
 
@@ -15503,7 +15518,7 @@ Linear scanner that locates zlib substreams inside an EaseUS Todo Backup `.pbd` 
 
 ### Namespace `FileFormat.EcSbx`
 
-[`EcSbxContent`](#ecsbxcontent) · [`EcSbxFormatDescriptor`](#ecsbxformatdescriptor)
+[`EcSbxContent`](#ecsbxcontent) · [`EcSbxFormatDescriptor`](#ecsbxformatdescriptor) · [`EcSbxWriter`](#ecsbxwriter)
 
 #### `EcSbxContent`
 
@@ -15523,13 +15538,14 @@ Implements `IEquatable<EcSbxContent>`.
 
 #### `EcSbxFormatDescriptor`
 
-Error-correcting SeqBox (`.ecsbx`, blkar's SBX versions 17/18/19), read-only. Every block carries its sequence number, so the protected file is reassembled from the data blocks wherever the burst interleaving put them, and checked against the stored hash. A container whose data blocks are damaged or missing needs a Reed-Solomon repair, which is refused rather than guessed. References: `https://github.com/darrenldl/blockyarchive/blob/master/SBX_FORMAT.md` — blkar's SBX/EC-SBX specification (MIT)`https://github.com/MarcoPon/SeqBox` — the original SeqBox format
+Error-correcting SeqBox (`.ecsbx`, blkar's SBX versions 17/18/19); `EcSbxWriter` creates them. Every block carries its sequence number, so the protected file is reassembled from the data blocks wherever the burst interleaving put them, and checked against the stored hash. A container whose data blocks are damaged or missing needs a Reed-Solomon repair, which is refused rather than guessed. References: `https://github.com/darrenldl/blockyarchive/blob/master/SBX_FORMAT.md` — blkar's SBX/EC-SBX specification (MIT)`https://github.com/MarcoPon/SeqBox` — the original SeqBox format
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `EcSbxFormatDescriptor` | `EcSbxFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
@@ -15540,13 +15556,26 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `BlockCrc` | `static ushort BlockCrc(ReadOnlySpan<byte> block)` | CRC-16-CCITT (polynomial 0x1021, MSB first) seeded with the block's version byte. |
 | `BlockSize` | `static int BlockSize(int version)` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Any one file; a directory has nothing to protect. The writer takes exactly one file in all. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates the container of the one input file. Options: `Version` (17, 18, 19; default 17), `DataShards` (default 10), `ParityShards` (default 2), `Burst` (default 12), as blkar's defaults. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `Read` | `static EcSbxContent Read(ReadOnlySpan<byte> file)` |  |
+
+#### `EcSbxWriter`
+
+Writes error-correcting SeqBox containers as blkar lays them out (SBX_FORMAT.md, and blkar's encoder for what the specification leaves open; MIT): 1 + N copies of the metadata block, the file in data blocks grouped into Reed-Solomon sets of M data and N parity blocks (a short last set filled with padding blocks of 0x1A), all of it interleaved in super block sets of (M + N) · B blocks so that a burst of up to B consecutive lost blocks costs each set at most one block. Parity is a systematic Reed-Solomon code over GF(2^8) (polynomial 0x11D): the Vandermonde matrix V[r][c] = r^c of M + N rows, multiplied by the inverse of its top M rows.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Create` | `static byte[] Create(ReadOnlySpan<byte> data, string fileName, string containerName, DateTime? modified = null, int version = 17, int dataShards = 10, int parityShards = 2, int burst = 12, byte[] uid = null, DateTime? created = null)` | Creates a container for `data`. |
+| `DataIndex` | `static long DataIndex(uint seq, int dataShards, int parityShards, int burst)` | The block index of data sequence number `seq` (1-based): sets are transposed inside each super block set of (M + N)·B blocks, behind the metadata blocks in front of it. |
+| `MetaIndices` | `static IEnumerable<long> MetaIndices(int parity, int burst)` | Block indices of the metadata block and its copies: 0, then i·(1 + B) for i = 1..N. |
 
 ### Namespace `FileFormat.Egg`
 
@@ -22115,7 +22144,7 @@ Provides static methods for reading and writing Lzip (.lz) format members.
 
 ### Namespace `FileFormat.LzipFec`
 
-[`LzipFecBlock`](#lzipfecblock) · [`LzipFecFile`](#lzipfecfile) · [`LzipFecFormatDescriptor`](#lzipfecformatdescriptor)
+[`LzipFecBlock`](#lzipfecblock) · [`LzipFecFile`](#lzipfecfile) · [`LzipFecFormatDescriptor`](#lzipfecformatdescriptor) · [`LzipFecWriter`](#lzipfecwriter)
 
 #### `LzipFecBlock`
 
@@ -22149,13 +22178,14 @@ Implements `IEquatable<LzipFecFile>`.
 
 #### `LzipFecFormatDescriptor`
 
-lziprecover forward-error-correction file (`.fec`), read-only: the parity lziprecover repairs a file from. It holds no files, so the view is `metadata.ini`, the CRC arrays of the chksum packets and one entry per FEC block (`fec_NNNNN.bin`); every packet's header and payload CRC is checked. References: lziprecover manual, "Fec file format" (`https://www.nongnu.org/lzip/manual/lziprecover_manual.html`)
+lziprecover forward-error-correction file (`.fec`): the parity lziprecover repairs a file from. Creating one (`LzipFecWriter`) protects a single file. It holds no files, so the view is `metadata.ini`, the CRC arrays of the chksum packets and one entry per FEC block (`fec_NNNNN.bin`); every packet's header and payload CRC is checked. References: lziprecover manual, "Fec file format" (`https://www.nongnu.org/lzip/manual/lziprecover_manual.html`)
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzipFecFormatDescriptor` | `LzipFecFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
@@ -22166,12 +22196,26 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Any one file; a directory has nothing to protect. The writer takes exactly one file in all. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates the fec file of the one input file. Method `gf8` or `gf16` picks the field (default: GF(2^8) when it suffices); options `FecBlocks` (default 9) and `BlockSize` (bytes, a multiple of 512). |
 | `DecodeFbs` | `static long DecodeFbs(ushort coded)` | Decodes the 16-bit floating-point block size. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `Read` | `static LzipFecFile Read(ReadOnlySpan<byte> file)` | Parses and checks a fec file. |
+
+#### `LzipFecWriter`
+
+Writes lziprecover fec files as the lziprecover manual specifies them ("Fec files", "Fec file format"): the protected file in N data blocks of the FEC block size (the last one zero-padded for the arithmetic), FEC block i = Σ_j A[i][j]·D_j with the Hilbert-type matrix A[i][j] = 1/(i ⊕ j ⊕ r0), r0 = half the field size, over GF(2^8) (polynomial 0x11D, byte by byte) or GF(2^16) (polynomial 0x1100B, little-endian 16-bit words). The file is a chksum packet with the CRC32s of the data blocks (the last one over its real bytes only), the fec packets in order, and a second chksum packet with CRC32-Cs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultFecBlocks` | `const int DefaultFecBlocks` | FEC blocks written when none are asked for (lziprecover's default). |
+| `Create` | `static byte[] Create(ReadOnlySpan<byte> data, int fecBlocks = 9, long blockSize = 0, bool? gf16 = null)` | Creates a fec file for `data`. |
+| `Encode` | `static ushort Encode(long size)` | The fbs field for a representable block size: the largest mantissa, the smallest exponent. |
+| `Representable` | `static long Representable(long size)` | The block size rounded up to one the 16-bit fbs field stores exactly (11-bit mantissa × 2^(exponent+9)). |
 
 ### Namespace `FileFormat.Lzop`
 
@@ -27859,6 +27903,7 @@ PEA (PeaZip's own format, version 1 revision 6): a 10-byte archive header, one s
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `Modify` | `static void Modify(Stream archive, IEnumerable<Input> add, IEnumerable<string> remove, string password = null)` | Edits a single-file PEA archive in place: drops the `remove` paths (a folder with everything beneath it), then adds `add`, replacing files of the same path. Everything else stays as it was: the archive's compression, object, stream and volume checks, encryption kind and strength (under a fresh salt), system bytes, and every kept object's stored name, time and attributes. New objects go under the archive's common folder, their times in its encoding. |
 | `ReadVolumes` | `static List<PeaEntry> ReadVolumes(IEnumerable<byte[]> volumes, string password = null)` | Reads and verifies a PEA archive from its volumes in order. Each volume ends with its own volume check over that volume's bytes; the archive is the volumes' contents, checks removed, joined. |
 | `Read` | `static List<PeaEntry> Read(Stream stream, string password = null)` | Reads and verifies a PEA archive. A file stream named like a volume (`name.000001.pea`) is read together with the volumes beside it, starting from volume 1. |
 | `VolumePath` | `static string VolumePath(string baseName, int number)` | The file name of volume `number` (1-based) of the set named `baseName`: `base.000001.pea`, `base.000002.pea`, … (at least six digits). |
@@ -27936,7 +27981,7 @@ One object of a PEA archive.
 
 PEA archive (.pea), PeaZip's native format.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -27954,10 +27999,14 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`,
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces objects, keeping the archive's settings; an encrypted archive needs `Add`. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, ArchiveMutationOptions options)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes objects (a folder with everything beneath it), keeping the archive's settings. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames, ArchiveMutationOptions options)` |  |
 
 ### Namespace `FileFormat.Phar`
 

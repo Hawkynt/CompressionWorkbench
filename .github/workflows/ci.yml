@@ -310,20 +310,46 @@ jobs:
       # (/usr/share/nsis/Stubs); Windows unpacks the official NSIS 3.10 zip, hash-pinned. 7-Zip and
       # our reader must extract every variant, and on Windows the installer itself must install
       # exactly the payload when run with /S /D=.
+      #
+      # Both installs share the oracle's !cancelled() condition. Gated on success() they were
+      # skipped whenever a test before them failed, and the oracle, which still ran, then failed
+      # for missing stubs (CWB_REQUIRE_NSIS_STUBS) on top of the pull request's own failure.
       - name: Install NSIS stubs (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
         run: |
-          sudo apt-get install -y nsis
+          for attempt in 1 2 3; do
+            sudo apt-get -o Acquire::Retries=3 install -y nsis && break
+            [ "$attempt" = 3 ] && exit 1
+            sleep 20; sudo apt-get update || true
+          done
+          test -d /usr/share/nsis/Stubs || { echo "::error::the nsis package installed no /usr/share/nsis/Stubs"; exit 1; }
           echo "NSISDIR=/usr/share/nsis" >> "$GITHUB_ENV"
 
+      - name: Cache NSIS 3.10 (Windows)
+        if: ${{ !cancelled() && matrix.os == 'windows-latest' }}
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nsis-zip
+          key: nsis-3.10-fcdce3229717a2a148e7cda0ab5bdb667f39d8fb33ede1da8dabc336bd5ad110
+
       - name: Install NSIS stubs (Windows)
-        if: matrix.os == 'windows-latest'
+        if: ${{ !cancelled() && matrix.os == 'windows-latest' }}
         shell: pwsh
         run: |
-          $zip = Join-Path $env:RUNNER_TEMP 'nsis-3.10.zip'
-          Invoke-WebRequest -UserAgent 'Wget/1.21' -Uri 'https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download' -OutFile $zip
-          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($hash -ne 'fcdce3229717a2a148e7cda0ab5bdb667f39d8fb33ede1da8dabc336bd5ad110') { throw "nsis-3.10.zip SHA-256 mismatch: $hash" }
+          $want = 'fcdce3229717a2a148e7cda0ab5bdb667f39d8fb33ede1da8dabc336bd5ad110'
+          $dir = Join-Path $env:RUNNER_TEMP 'nsis-zip'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $zip = Join-Path $dir 'nsis-3.10.zip'
+          $hash = if (Test-Path $zip) { (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }
+          for ($attempt = 1; $hash -ne $want -and $attempt -le 4; ++$attempt) {
+            if ($attempt -gt 1) { Start-Sleep -Seconds 20 }
+            try {
+              Invoke-WebRequest -UserAgent 'Wget/1.21' -Uri 'https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download' -OutFile $zip
+              $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($hash -ne $want) { Write-Host "::warning::attempt $attempt got nsis-3.10.zip with SHA-256 $hash" }
+            } catch { Write-Host "::warning::attempt $attempt failed: $($_.Exception.Message)" }
+          }
+          if ($hash -ne $want) { Remove-Item $zip -ErrorAction SilentlyContinue; throw "nsis-3.10.zip SHA-256 mismatch: $hash" }
           Expand-Archive $zip -DestinationPath $env:RUNNER_TEMP -Force
           "NSISDIR=$(Join-Path $env:RUNNER_TEMP 'nsis-3.10')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
@@ -381,14 +407,31 @@ jobs:
       # failed. Gated on success() this install was skipped whenever any test before it went
       # red, and the oracle then failed for a missing guestfish -- on every pull request whose
       # own failure lay somewhere else entirely.
+      #
+      # One install once hung for 45 minutes and took the whole job with it. Each apt-get now has
+      # ten minutes; a hung or failed attempt is killed, dpkg is settled, and it is tried again,
+      # three times in all. The step itself is capped as a backstop. A kernel that never installs
+      # still fails the step, and with it the bcachefs gate.
       - name: Install a kernel with bcachefs (Linux)
         if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
+        timeout-minutes: 45
         run: |
           set -euo pipefail
-          sudo apt-get install -y libguestfs-tools
+          install() {
+            for attempt in 1 2 3; do
+              if sudo timeout --kill-after=30 600 apt-get -o Acquire::Retries=3 -o Dpkg::Lock::Timeout=120 install -y "$@"; then
+                return 0
+              fi
+              echo "::warning::apt-get install $* failed or timed out (attempt $attempt)"
+              sudo timeout 300 dpkg --configure -a || true
+              sleep 15
+            done
+            return 1
+          }
+          install libguestfs-tools
           kver=$(apt-cache depends linux-image-generic | sed -n 's/^ *Depends: linux-image-\(.*-generic\)$/\1/p' | head -n 1)
           test -n "$kver" || { echo "::error::cannot resolve the generic kernel version"; exit 1; }
-          sudo apt-get install -y --no-install-recommends "linux-image-$kver" "linux-modules-$kver" "linux-modules-extra-$kver"
+          install --no-install-recommends "linux-image-$kver" "linux-modules-$kver" "linux-modules-extra-$kver"
           sudo chmod 0644 /boot/vmlinuz-*
           sudo chmod 0666 /dev/kvm || echo "::warning::no /dev/kvm; the appliance runs without acceleration"
           echo "SUPERMIN_KERNEL=/boot/vmlinuz-$kver" >> "$GITHUB_ENV"
@@ -704,21 +747,39 @@ jobs:
       # Hard gate: MAME floptool loads the complete Union Demo (the sample the Pasti authors
       # publish, hash-pinned) and its ST writer recovers the standard track 0 sectors, which must be
       # the bytes our reader takes from the Pasti records.
+      # The sample is cached under its hash: pasti.fxatari.com has answered runners with a 200 and
+      # the wrong bytes on every retry of a run, so once a good copy has been seen it is reused.
+      - name: Cache Pasti sample
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/pasti
+          key: pasti-uniondemo-c6dd827ad17f1b6076eafcc246e09913511c0a532f1beec4ace6ce59352af388
       - name: Pasti oracle
         if: matrix.os == 'ubuntu-latest'
         env:
           CWB_REQUIRE_FLOPTOOL: "1"
         run: |
           sudo apt-get install -y mame-tools
-          # Fetch directly over HTTPS; the HTTP entry point has served wrong bytes with a 200
-          # even across retries. Keep the checksum gate for every transfer.
-          for attempt in 1 2 3 4; do
-            curl -sfL -o "$RUNNER_TEMP/UnionDemo.zip" https://pasti.fxatari.com/downloads/UnionDemo.zip &&
-              echo "c6dd827ad17f1b6076eafcc246e09913511c0a532f1beec4ace6ce59352af388  $RUNNER_TEMP/UnionDemo.zip" | sha256sum -c - && break
-            [ "$attempt" = 4 ] && exit 1
-            sleep 15
-          done
-          unzip -o -q "$RUNNER_TEMP/UnionDemo.zip" -d "$RUNNER_TEMP"
+          # Every copy, cached or fetched, must match the pinned hash; a mismatch fails the gate.
+          # The Internet Archive's capture of the same URL (identical bytes) is the fallback.
+          dir="$RUNNER_TEMP/pasti"; zip="$dir/UnionDemo.zip"
+          sum="c6dd827ad17f1b6076eafcc246e09913511c0a532f1beec4ace6ce59352af388  $zip"
+          mkdir -p "$dir"
+          if ! echo "$sum" | sha256sum -c --status 2>/dev/null; then
+            ok=
+            for attempt in 1 2 3; do
+              for url in https://pasti.fxatari.com/downloads/UnionDemo.zip \
+                         https://web.archive.org/web/20250317113325id_/http://pasti.fxatari.com/downloads/UnionDemo.zip; do
+                curl -sSfL --retry 3 --retry-all-errors -o "$zip" "$url" || continue
+                if echo "$sum" | sha256sum -c --status; then ok=1; break 2; fi
+                echo "::warning::$url served $(stat -c %s "$zip") bytes that do not match the pinned hash"
+              done
+              sleep 15
+            done
+            [ -n "$ok" ] || { rm -f "$zip"; echo "::error::no source served UnionDemo.zip with the pinned hash"; exit 1; }
+          fi
+          unzip -o -q "$zip" -d "$RUNNER_TEMP"
           CWB_UNIONDEMO="$RUNNER_TEMP/UnionDemo.stx" dotnet test Compression.Tests --configuration Release --no-build \
             --filter "FullyQualifiedName~Compression.Tests.Pasti.PastiExternalConformanceTests" \
             --logger "trx;LogFileName=pasti-oracle-tests.trx"

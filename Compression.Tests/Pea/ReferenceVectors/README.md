@@ -58,9 +58,10 @@ cascade name (an appended digit is the strength, stored in archive header byte 9
 | `hrisat7.pea` | PCOMPRESS2 | HRISAT7 | 114 s / 1.05 GB |
 
 The two strength-7 files are read only by the explicit test
-`GivenStrength7CascadeWrittenByPeaZip_WhenRead_ThenItDecrypts`. Recorded run, 2026-11-20 (Windows
-11, .NET 10, Debug): both decrypt byte-exact; `sriats7.pea` took 7 min 36 s (three scrypt passes with
-N = 1 Mi, r = 8, p = 8 over a 1 GiB buffer), `hrisat7.pea` 4 min 24 s.
+`GivenStrength7CascadeWrittenByPeaZip_WhenRead_ThenItDecrypts`. Recorded runs, 2026-11-20 (Windows
+11, .NET 10): both decrypt byte-exact. `sriats7.pea` (three scrypt runs with N = 1 Mi, r = 8, p = 8
+over a 1 GiB table) took 7 min 36 s at first, 2 min 1 s (Debug) and 44 s (Release) with the unrolled
+scrypt; `hrisat7.pea` 4 min 24 s, then 2 min 37 s (Debug) and 1 min (Release). pea: 91 s and 114 s.
 
 `pea UNPEA <archive> <dir>/ RESETDATE RESETATTR EXTRACT2DIR HIDDEN "" ""` extracts them under
 `<dir>/<archive name>/`, relative to the objects' common directory.

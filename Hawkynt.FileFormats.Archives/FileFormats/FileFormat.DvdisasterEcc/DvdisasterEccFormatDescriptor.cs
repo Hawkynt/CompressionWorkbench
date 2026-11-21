@@ -32,10 +32,11 @@ public sealed record DvdisasterEccHeader(
 }
 
 /// <summary>
-/// dvdisaster error-correction file (<c>.ecc</c>), read-only: the parity a disc image is repaired from.
-/// It holds no files, so the view is its header as <c>metadata.ini</c> and, for the RS01 method, the
-/// per-sector CRC table and the Reed-Solomon parity layers; RS03 files list their header and raw data.
-/// Test checks the ecc MD5 the header records.
+/// dvdisaster error-correction file (<c>.ecc</c>): the parity a disc image is repaired from; RS01 and RS03
+/// files are created by <see cref="DvdisasterEccWriter"/>.
+/// It holds no files, so the view is its header as <c>metadata.ini</c> and, for RS01, the per-sector CRC
+/// table and the Reed-Solomon parity; for RS03, the CRC layer and the parity layers.
+/// Test checks the ecc MD5 the header records (RS01) or the header's and CRC blocks' self CRCs (RS03).
 ///
 /// References:
 /// <list type="bullet">
@@ -49,7 +50,20 @@ public sealed record DvdisasterEccHeader(
 /// versions, Int32 fingerprint sector. RS01 then stores one CRC32 per medium sector and
 /// roots × ceil(sectors / dataBytes) × 2048 bytes of parity.
 /// </remarks>
-public sealed class DvdisasterEccFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class DvdisasterEccFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+
+  /// <inheritdoc />
+  public long? MaxTotalArchiveSize => null;
+
+  /// <inheritdoc />
+  public string AcceptedInputsDescription => "exactly one file: the image the ecc data protects";
+
+  /// <summary>Any one file; a directory has nothing to protect. The writer takes exactly one file in all.</summary>
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    ArgumentNullException.ThrowIfNull(input);
+    reason = input.IsDirectory ? $"'{input.ArchiveName}' is a directory; {this.AcceptedInputsDescription}" : null;
+    return reason == null;
+  }
 
   private const int SectorSize = 2048;
 
@@ -57,7 +71,8 @@ public sealed class DvdisasterEccFormatDescriptor : IFormatDescriptor, IArchiveF
   public string DisplayName => "dvdisaster ecc";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
+    FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".ecc";
   public IReadOnlyList<string> Extensions => [".ecc"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -65,7 +80,27 @@ public sealed class DvdisasterEccFormatDescriptor : IFormatDescriptor, IArchiveF
   public IReadOnlyList<FormatMethodInfo> Methods => [new("rs01", "RS01"), new("rs03", "RS03")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "dvdisaster error-correction file: header as metadata.ini, RS01 sector CRCs and parity (read-only)";
+  public string Description => "dvdisaster error-correction file: header as metadata.ini, RS01 sector CRCs and parity, RS03 CRC and parity layers; RS01 and RS03 files created";
+
+  /// <summary>
+  /// Creates the RS01 (default) or RS03 (method <c>rs03</c>) ecc file of the one input image. Option <c>Roots</c>
+  /// (default 32; 8-100 for RS01, 8-170 for RS03) sets the parity bytes per codeword.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    var files = inputs.Where(i => !i.IsDirectory).ToList();
+    if (files.Count != 1)
+      throw new NotSupportedException($"dvdisaster ecc: an ecc file protects exactly one image ({files.Count} given).");
+    var method = (options.MethodName ?? "rs01").Trim().ToLowerInvariant();
+    if (method is not ("" or "rs01" or "rs03"))
+      throw new NotSupportedException($"dvdisaster ecc: method '{options.MethodName}' is not written; RS01 and RS03 are.");
+    var roots = int.Parse(options.GetOption("Roots", DvdisasterEccWriter.DefaultRoots.ToString(CultureInfo.InvariantCulture)), CultureInfo.InvariantCulture);
+    output.Write(method == "rs03"
+      ? DvdisasterEccWriter.CreateRs03(files[0].ReadContent(), roots)
+      : DvdisasterEccWriter.CreateRs01(files[0].ReadContent(), roots));
+  }
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => [.. Entries(ReadAll(stream)).Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Data.Length, e.Data.Length, "stored", false, false, null))];
@@ -76,15 +111,32 @@ public sealed class DvdisasterEccFormatDescriptor : IFormatDescriptor, IArchiveF
         WriteFile(outputDir, name, data);
   }
 
-  /// <summary>Whether the data after the header still has the MD5 the header records.</summary>
-  public static bool EccDataIntact(ReadOnlySpan<byte> file)
-    => MD5.HashData(file[DvdisasterEccHeader.Size..]).AsSpan().SequenceEqual(DvdisasterEccHeader.Read(file).EccMd5);
+  /// <summary>
+  /// Whether the file is intact as far as it records: for RS01 the data after the header still has the MD5 the
+  /// header records; for RS03 the header and every CRC block still have their self CRCs.
+  /// </summary>
+  public static bool EccDataIntact(ReadOnlySpan<byte> file) {
+    var h = DvdisasterEccHeader.Read(file);
+    if (h.Method != "RS03")
+      return MD5.HashData(file[DvdisasterEccHeader.Size..]).AsSpan().SequenceEqual(h.EccMd5);
+    if (!DvdisasterEccWriter.SelfCrcHolds(file[..DvdisasterEccHeader.Size], 96))
+      return false;
+    var layer = BinaryPrimitives.ReadInt64LittleEndian(file[120..]);
+    if (layer <= 0 || DvdisasterEccHeader.Size + layer * SectorSize > file.Length)
+      return false;
+    for (var j = 0L; j < layer; ++j)
+      if (!DvdisasterEccWriter.SelfCrcHolds(file.Slice((int)(DvdisasterEccHeader.Size + j * SectorSize), SectorSize), DvdisasterEccWriter.CrcBlock.SelfCrc))
+        return false;
+    return true;
+  }
 
   private static List<(string Name, byte[] Data)> Entries(byte[] file) {
     var entries = new List<(string Name, byte[] Data)>();
     var h = DvdisasterEccHeader.Read(file);
     if (!EccDataIntact(file))
-      throw new InvalidDataException("dvdisaster ecc: the ecc data no longer has the MD5 its header records.");
+      throw new InvalidDataException(h.Method == "RS03"
+        ? "dvdisaster ecc: the header or a CRC block no longer has the self CRC it records."
+        : "dvdisaster ecc: the ecc data no longer has the MD5 its header records.");
     var ini = new StringBuilder()
       .Append("[dvdisaster]\n")
       .Append(CultureInfo.InvariantCulture, $"method={h.Method}\n")
@@ -110,6 +162,13 @@ public sealed class DvdisasterEccFormatDescriptor : IFormatDescriptor, IArchiveF
         throw new InvalidDataException($"dvdisaster ecc: RS01 for {h.Sectors} sectors needs {crcLength + parityLength} bytes after the header, the file has {body.Length}.");
       entries.Add(("sector-crc32.bin", body[..(int)crcLength].ToArray()));
       entries.Add(("parity.bin", body[(int)crcLength..].ToArray()));
+    } else if (h.Method == "RS03" && (h.MethodFlags[0] & DvdisasterEccWriter.Rs03EccFileFlag) != 0) {
+      var layer = BinaryPrimitives.ReadInt64LittleEndian(file.AsSpan(120));
+      if (h.Sectors <= 0 || h.EccBytes is < 8 or > 170 || h.DataBytes + h.EccBytes != 255
+          || layer != (h.Sectors + h.DataBytes - 2) / (h.DataBytes - 1) || (h.EccBytes + 1L) * layer * SectorSize != body.Length)
+        throw new InvalidDataException($"dvdisaster ecc: RS03 for {h.Sectors} sectors with {h.EccBytes} roots does not fit the {body.Length} bytes after the header.");
+      entries.Add(("crc-layer.bin", body[..(int)(layer * SectorSize)].ToArray()));
+      entries.Add(("parity.bin", body[(int)(layer * SectorSize)..].ToArray()));
     } else {
       entries.Add(("ecc.bin", body.ToArray()));
     }

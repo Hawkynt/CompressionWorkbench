@@ -111,13 +111,13 @@ public sealed class MountNamespaceResolverTests {
   }
 
   [Test]
-  public void WormOnlyPeaArchive_RebuildsWithMountedWrites() {
-    var descriptor = FormatRegistry.GetById("Pea");
+  public void WormOnlyStuffItXArchive_RebuildsWithMountedWrites() {
+    var descriptor = FormatRegistry.GetById("StuffItX");
     Assert.That(descriptor, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(descriptor, Is.Not.InstanceOf<IArchiveModifiable>());
 
-    using var archive = Create("Pea", [ArchiveInputInfo.InMemory("existing.txt", "before"u8.ToArray())]);
-    var probe = MountNamespaceResolver.Probe("Pea", archive);
+    using var archive = Create("StuffItX", [ArchiveInputInfo.InMemory("existing.txt", "before"u8.ToArray())]);
+    var probe = MountNamespaceResolver.Probe("StuffItX", archive);
     Assert.Multiple(() => {
       Assert.That(probe.Profile.CanMountWritable, Is.True);
       Assert.That(probe.Profile.MutationModel, Is.EqualTo(FilesystemMutationModel.WholeImageRebuild));
@@ -125,7 +125,7 @@ public sealed class MountNamespaceResolverTests {
     });
 
     using (var mounted = MountNamespaceResolver.Open(
-      "Pea", archive, new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true))) {
+      "StuffItX", archive, new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true))) {
       var node = mounted.CreateFile(mounted.RootNodeId, "created.txt");
       using (var file = mounted.OpenFile(node, FileAccess.Write)) {
         file.Write(0, "after"u8);
@@ -137,7 +137,7 @@ public sealed class MountNamespaceResolverTests {
 
     archive.Position = 0;
     using var verified = MountNamespaceResolver.Open(
-      "Pea", archive, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+      "StuffItX", archive, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
     Assert.That(verified.Lookup(verified.RootNodeId, "existing.txt"), Is.Null);
     var created = verified.Lookup(verified.RootNodeId, "created.txt");
     Assert.That(created, Is.Not.Null);

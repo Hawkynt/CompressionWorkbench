@@ -181,7 +181,7 @@ format,DriveSpace3,DriveSpace 3 CVF,Archive,Y,,Y,Y,Y,Y
 format,Dsf,DSF (DSD Stream File),Audio,,.dsf,Y,Y,Y,
 format,Dtb,Flattened Device Tree Blob,Archive,,.dtb;.dtbo,Y,Y,Y,Y
 format,Dts,DTS (Coherent Acoustics),Audio,,.dts;.dtshd,Y,Y,,
-format,DvdisasterEcc,dvdisaster ecc,Archive,,.ecc,Y,Y,,
+format,DvdisasterEcc,dvdisaster ecc,Archive,,.ecc,Y,Y,Y,
 format,DxArchive,DxLib archive (DXA),Archive,,.dxa;.wolf,Y,Y,,
 format,Dxbc,DXBC (DirectX shader bytecode),Archive,,.dxbc,Y,Y,Y,Y
 format,Dxf,DXF (AutoCAD Drawing Exchange),Archive,,.dxf,Y,Y,,
@@ -191,7 +191,7 @@ format,EaSchl,Electronic Arts SCHl Stream,Audio,,.eam;.sng,Y,Y,Y,
 format,EaseUsPbd,EaseUS Todo Backup (.pbd),Archive,,.pbd,Y,Y,,
 format,Ecm,ECM,Stream,,.ecm,,Y,Y,
 format,Ecryptfs,eCryptfs,Archive,Y,.ecryptfs,Y,Y,Y,Y
-format,EcSbx,Error-correcting SeqBox,Archive,,.ecsbx,Y,Y,,
+format,EcSbx,Error-correcting SeqBox,Archive,,.ecsbx,Y,Y,Y,
 format,Efs,EFS (SGI Extent File System),Archive,Y,.efs;.efsimg,Y,Y,Y,Y
 format,Egg,EGG,Archive,,.egg,Y,Y,Y,
 format,Elf,ELF executable,Archive,,.elf;.so;.o;.ko,Y,Y,,
@@ -342,7 +342,7 @@ format,Lzg,LZG,Stream,,.lzg,,Y,Y,
 format,Lzh,LZH,Archive,,.lzh;.lha,Y,Y,Y,Y
 format,Lzham,LZHAM,Stream,,.lzham,,Y,Y,
 format,Lzip,Lzip,Stream,,.lz;.lzip,,Y,Y,
-format,LzipFec,lziprecover fec,Archive,,.fec,Y,Y,,
+format,LzipFec,lziprecover fec,Archive,,.fec,Y,Y,Y,
 format,Lzma,LZMA,Stream,,.lzma,,Y,Y,
 format,Lzop,LZOP,Stream,,.lzo,,Y,Y,
 format,LzxAmiga,LZX (Amiga),Archive,,.lzx,Y,Y,Y,Y
@@ -467,7 +467,7 @@ format,Pc98,NEC PC-98 DOS,Archive,Y,.hdm;.fdi;.d88,Y,Y,Y,Y
 format,Pcap,PCAP (libpcap capture),Archive,,.pcap;.cap,Y,Y,Y,Y
 format,Pcapng,PCAP Next Generation,Archive,,.pcapng;.ntar,Y,Y,Y,Y
 format,Pdf,PDF (Image Extraction),Archive,,.pdf,Y,Y,Y,Y
-format,Pea,PEA (PeaZip),Archive,,.pea,Y,Y,Y,
+format,Pea,PEA (PeaZip),Archive,,.pea,Y,Y,Y,Y
 format,PeResources,PE Resources (Windows binary),Archive,,.dll;.exe;.ocx;.cpl;.sys;.mui;.mun,Y,Y,,
 format,PeSections,PE sections (Windows binary),Archive,,,Y,Y,,
 format,Petite,Petite (Win32 PE),Archive,,,Y,Y,,

@@ -10,10 +10,9 @@ namespace FileFormat.Zpaq;
 /// everything after it is XORed with AES-256 in counter mode.
 /// </summary>
 /// <remarks>
-/// <para>Converted from libzpaq 7.15 (Matt Mahoney, public domain): <c>stretchKey</c>, <c>scrypt</c>,
-/// <c>smix</c>, <c>blockmix</c>, <c>salsa8</c> and <c>AES_CTR::encrypt</c>, and zpaq.cpp's
-/// <c>InputArchive</c>. The key is scrypt(SHA-256(password), salt, N = 16384, r = 8, p = 1),
-/// 32 bytes; scrypt is RFC 7914, PBKDF2-HMAC-SHA256 with one iteration around the Salsa20/8 mix.
+/// <para>Converted from libzpaq 7.15 (Matt Mahoney, public domain): <c>stretchKey</c> and
+/// <c>AES_CTR::encrypt</c>, and zpaq.cpp's <c>InputArchive</c>. The key is scrypt(SHA-256(password),
+/// salt, N = 16384, r = 8, p = 1), 32 bytes, with scrypt from <see cref="Compression.Core.Crypto.Scrypt"/> (RFC 7914).
 /// Counter block <c>i</c> (big-endian) is the first eight salt bytes followed by the 64-bit block
 /// number <c>offset / 16</c>, where the offset counts from the start of the file, salt included.</para>
 /// <para>An index written with <c>-index</c> uses the first part's salt with its first byte XORed
@@ -28,7 +27,7 @@ internal static class ZpaqCrypto {
     ArgumentNullException.ThrowIfNull(password);
     // zpaq hashes the -key argument's bytes, which are UTF-8 on every platform it runs on.
     var hashed = SHA256.HashData(Encoding.UTF8.GetBytes(password));
-    return Scrypt(hashed, salt, 1 << 14, 8, 1, 32);
+    return Compression.Core.Crypto.Scrypt.Derive(hashed, salt, 1 << 14, 8, 1, 32);
   }
 
   /// <summary>
@@ -60,80 +59,6 @@ internal static class ZpaqCrypto {
     var salt = archiveSalt.ToArray();
     salt[0] ^= (byte)('7' ^ 'z');
     return salt;
-  }
-
-  /// <summary>scrypt (RFC 7914): PBKDF2-HMAC-SHA256 (one iteration), ROMix with Salsa20/8, PBKDF2 again.</summary>
-  public static byte[] Scrypt(ReadOnlySpan<byte> password, ReadOnlySpan<byte> salt, int n, int r, int p, int length) {
-    if (n < 2 || (n & (n - 1)) != 0)
-      throw new ArgumentOutOfRangeException(nameof(n), "N must be a power of two.");
-    ArgumentOutOfRangeException.ThrowIfLessThan(r, 1);
-    ArgumentOutOfRangeException.ThrowIfLessThan(p, 1);
-    var b = Rfc2898DeriveBytes.Pbkdf2(password, salt, 1, HashAlgorithmName.SHA256, p * 128 * r);
-    for (var i = 0; i < p; ++i)
-      SMix(b.AsSpan(i * 128 * r, 128 * r), r, n);
-    return Rfc2898DeriveBytes.Pbkdf2(password, b, 1, HashAlgorithmName.SHA256, length);
-  }
-
-  private static void SMix(Span<byte> b, int r, int n) {
-    var words = 32 * r;
-    var x = new uint[words];
-    var v = new uint[words * n];
-    var y = new uint[words];
-    for (var i = 0; i < words; ++i)
-      x[i] = BinaryPrimitives.ReadUInt32LittleEndian(b[(i * 4)..]);
-    for (var i = 0; i < n; ++i) {
-      x.CopyTo(v, i * words);
-      BlockMix(x, y, r);
-    }
-    for (var i = 0; i < n; ++i) {
-      var j = (int)(x[(2 * r - 1) * 16] & (uint)(n - 1));
-      for (var k = 0; k < words; ++k)
-        x[k] ^= v[j * words + k];
-      BlockMix(x, y, r);
-    }
-    for (var i = 0; i < words; ++i)
-      BinaryPrimitives.WriteUInt32LittleEndian(b[(i * 4)..], x[i]);
-  }
-
-  /// <summary>BlockMix-Salsa20/8: even output blocks first, then the odd ones.</summary>
-  private static void BlockMix(uint[] b, uint[] y, int r) {
-    Span<uint> x = stackalloc uint[16];
-    b.AsSpan((2 * r - 1) * 16, 16).CopyTo(x);
-    for (var i = 0; i < 2 * r; ++i) {
-      for (var j = 0; j < 16; ++j)
-        x[j] ^= b[i * 16 + j];
-      Salsa8(x);
-      x.CopyTo(y.AsSpan(i * 16, 16));
-    }
-    for (var i = 0; i < r; ++i)
-      y.AsSpan(i * 32, 16).CopyTo(b.AsSpan(i * 16, 16));
-    for (var i = 0; i < r; ++i)
-      y.AsSpan(i * 32 + 16, 16).CopyTo(b.AsSpan((i + r) * 16, 16));
-  }
-
-  private static void Salsa8(Span<uint> b) {
-    Span<uint> x = stackalloc uint[16];
-    b.CopyTo(x);
-    for (var i = 0; i < 4; ++i) {
-      x[4] ^= uint.RotateLeft(x[0] + x[12], 7); x[8] ^= uint.RotateLeft(x[4] + x[0], 9);
-      x[12] ^= uint.RotateLeft(x[8] + x[4], 13); x[0] ^= uint.RotateLeft(x[12] + x[8], 18);
-      x[9] ^= uint.RotateLeft(x[5] + x[1], 7); x[13] ^= uint.RotateLeft(x[9] + x[5], 9);
-      x[1] ^= uint.RotateLeft(x[13] + x[9], 13); x[5] ^= uint.RotateLeft(x[1] + x[13], 18);
-      x[14] ^= uint.RotateLeft(x[10] + x[6], 7); x[2] ^= uint.RotateLeft(x[14] + x[10], 9);
-      x[6] ^= uint.RotateLeft(x[2] + x[14], 13); x[10] ^= uint.RotateLeft(x[6] + x[2], 18);
-      x[3] ^= uint.RotateLeft(x[15] + x[11], 7); x[7] ^= uint.RotateLeft(x[3] + x[15], 9);
-      x[11] ^= uint.RotateLeft(x[7] + x[3], 13); x[15] ^= uint.RotateLeft(x[11] + x[7], 18);
-      x[1] ^= uint.RotateLeft(x[0] + x[3], 7); x[2] ^= uint.RotateLeft(x[1] + x[0], 9);
-      x[3] ^= uint.RotateLeft(x[2] + x[1], 13); x[0] ^= uint.RotateLeft(x[3] + x[2], 18);
-      x[6] ^= uint.RotateLeft(x[5] + x[4], 7); x[7] ^= uint.RotateLeft(x[6] + x[5], 9);
-      x[4] ^= uint.RotateLeft(x[7] + x[6], 13); x[5] ^= uint.RotateLeft(x[4] + x[7], 18);
-      x[11] ^= uint.RotateLeft(x[10] + x[9], 7); x[8] ^= uint.RotateLeft(x[11] + x[10], 9);
-      x[9] ^= uint.RotateLeft(x[8] + x[11], 13); x[10] ^= uint.RotateLeft(x[9] + x[8], 18);
-      x[12] ^= uint.RotateLeft(x[15] + x[14], 7); x[13] ^= uint.RotateLeft(x[12] + x[15], 9);
-      x[14] ^= uint.RotateLeft(x[13] + x[12], 13); x[15] ^= uint.RotateLeft(x[14] + x[13], 18);
-    }
-    for (var i = 0; i < 16; ++i)
-      b[i] += x[i];
   }
 }
 
