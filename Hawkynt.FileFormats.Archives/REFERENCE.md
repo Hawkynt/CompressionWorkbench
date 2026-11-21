@@ -14999,8 +14999,8 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveWriteConstr
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Any one file; a directory has nothing to protect. The writer takes exactly one file in all. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates the RS01 ecc file of the one input image. Option `Roots` (8-100, default 32) sets the parity bytes per codeword; RS03 is not written. |
-| `EccDataIntact` | `static bool EccDataIntact(ReadOnlySpan<byte> file)` | Whether the data after the header still has the MD5 the header records. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates the RS01 (default) or RS03 (method `rs03`) ecc file of the one input image. Option `Roots` (default 32; 8-100 for RS01, 8-170 for RS03) sets the parity bytes per codeword. |
+| `EccDataIntact` | `static bool EccDataIntact(ReadOnlySpan<byte> file)` | Whether the file is intact as far as it records: for RS01 the data after the header still has the MD5 the header records; for RS03 the header and every CRC block still have their self CRCs. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
