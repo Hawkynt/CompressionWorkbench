@@ -704,21 +704,39 @@ jobs:
       # Hard gate: MAME floptool loads the complete Union Demo (the sample the Pasti authors
       # publish, hash-pinned) and its ST writer recovers the standard track 0 sectors, which must be
       # the bytes our reader takes from the Pasti records.
+      # The sample is cached under its hash: pasti.fxatari.com has answered runners with a 200 and
+      # the wrong bytes on every retry of a run, so once a good copy has been seen it is reused.
+      - name: Cache Pasti sample
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/pasti
+          key: pasti-uniondemo-c6dd827ad17f1b6076eafcc246e09913511c0a532f1beec4ace6ce59352af388
       - name: Pasti oracle
         if: matrix.os == 'ubuntu-latest'
         env:
           CWB_REQUIRE_FLOPTOOL: "1"
         run: |
           sudo apt-get install -y mame-tools
-          # Fetch directly over HTTPS; the HTTP entry point has served wrong bytes with a 200
-          # even across retries. Keep the checksum gate for every transfer.
-          for attempt in 1 2 3 4; do
-            curl -sfL -o "$RUNNER_TEMP/UnionDemo.zip" https://pasti.fxatari.com/downloads/UnionDemo.zip &&
-              echo "c6dd827ad17f1b6076eafcc246e09913511c0a532f1beec4ace6ce59352af388  $RUNNER_TEMP/UnionDemo.zip" | sha256sum -c - && break
-            [ "$attempt" = 4 ] && exit 1
-            sleep 15
-          done
-          unzip -o -q "$RUNNER_TEMP/UnionDemo.zip" -d "$RUNNER_TEMP"
+          # Every copy, cached or fetched, must match the pinned hash; a mismatch fails the gate.
+          # The Internet Archive's capture of the same URL (identical bytes) is the fallback.
+          dir="$RUNNER_TEMP/pasti"; zip="$dir/UnionDemo.zip"
+          sum="c6dd827ad17f1b6076eafcc246e09913511c0a532f1beec4ace6ce59352af388  $zip"
+          mkdir -p "$dir"
+          if ! echo "$sum" | sha256sum -c --status 2>/dev/null; then
+            ok=
+            for attempt in 1 2 3; do
+              for url in https://pasti.fxatari.com/downloads/UnionDemo.zip \
+                         https://web.archive.org/web/20250317113325id_/http://pasti.fxatari.com/downloads/UnionDemo.zip; do
+                curl -sSfL --retry 3 --retry-all-errors -o "$zip" "$url" || continue
+                if echo "$sum" | sha256sum -c --status; then ok=1; break 2; fi
+                echo "::warning::$url served $(stat -c %s "$zip") bytes that do not match the pinned hash"
+              done
+              sleep 15
+            done
+            [ -n "$ok" ] || { rm -f "$zip"; echo "::error::no source served UnionDemo.zip with the pinned hash"; exit 1; }
+          fi
+          unzip -o -q "$zip" -d "$RUNNER_TEMP"
           CWB_UNIONDEMO="$RUNNER_TEMP/UnionDemo.stx" dotnet test Compression.Tests --configuration Release --no-build \
             --filter "FullyQualifiedName~Compression.Tests.Pasti.PastiExternalConformanceTests" \
             --logger "trx;LogFileName=pasti-oracle-tests.trx"
