@@ -310,20 +310,46 @@ jobs:
       # (/usr/share/nsis/Stubs); Windows unpacks the official NSIS 3.10 zip, hash-pinned. 7-Zip and
       # our reader must extract every variant, and on Windows the installer itself must install
       # exactly the payload when run with /S /D=.
+      #
+      # Both installs share the oracle's !cancelled() condition. Gated on success() they were
+      # skipped whenever a test before them failed, and the oracle, which still ran, then failed
+      # for missing stubs (CWB_REQUIRE_NSIS_STUBS) on top of the pull request's own failure.
       - name: Install NSIS stubs (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
         run: |
-          sudo apt-get install -y nsis
+          for attempt in 1 2 3; do
+            sudo apt-get -o Acquire::Retries=3 install -y nsis && break
+            [ "$attempt" = 3 ] && exit 1
+            sleep 20; sudo apt-get update || true
+          done
+          test -d /usr/share/nsis/Stubs || { echo "::error::the nsis package installed no /usr/share/nsis/Stubs"; exit 1; }
           echo "NSISDIR=/usr/share/nsis" >> "$GITHUB_ENV"
 
+      - name: Cache NSIS 3.10 (Windows)
+        if: ${{ !cancelled() && matrix.os == 'windows-latest' }}
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nsis-zip
+          key: nsis-3.10-fcdce3229717a2a148e7cda0ab5bdb667f39d8fb33ede1da8dabc336bd5ad110
+
       - name: Install NSIS stubs (Windows)
-        if: matrix.os == 'windows-latest'
+        if: ${{ !cancelled() && matrix.os == 'windows-latest' }}
         shell: pwsh
         run: |
-          $zip = Join-Path $env:RUNNER_TEMP 'nsis-3.10.zip'
-          Invoke-WebRequest -UserAgent 'Wget/1.21' -Uri 'https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download' -OutFile $zip
-          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($hash -ne 'fcdce3229717a2a148e7cda0ab5bdb667f39d8fb33ede1da8dabc336bd5ad110') { throw "nsis-3.10.zip SHA-256 mismatch: $hash" }
+          $want = 'fcdce3229717a2a148e7cda0ab5bdb667f39d8fb33ede1da8dabc336bd5ad110'
+          $dir = Join-Path $env:RUNNER_TEMP 'nsis-zip'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $zip = Join-Path $dir 'nsis-3.10.zip'
+          $hash = if (Test-Path $zip) { (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }
+          for ($attempt = 1; $hash -ne $want -and $attempt -le 4; ++$attempt) {
+            if ($attempt -gt 1) { Start-Sleep -Seconds 20 }
+            try {
+              Invoke-WebRequest -UserAgent 'Wget/1.21' -Uri 'https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download' -OutFile $zip
+              $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($hash -ne $want) { Write-Host "::warning::attempt $attempt got nsis-3.10.zip with SHA-256 $hash" }
+            } catch { Write-Host "::warning::attempt $attempt failed: $($_.Exception.Message)" }
+          }
+          if ($hash -ne $want) { Remove-Item $zip -ErrorAction SilentlyContinue; throw "nsis-3.10.zip SHA-256 mismatch: $hash" }
           Expand-Archive $zip -DestinationPath $env:RUNNER_TEMP -Force
           "NSISDIR=$(Join-Path $env:RUNNER_TEMP 'nsis-3.10')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
