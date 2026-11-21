@@ -35,7 +35,20 @@ public sealed record LzipFecFile(
 /// UInt32 CRC32 of the array; fec <c>B3 46 45 43</c>, UInt16 block number, UInt16 fbs, UInt32 header CRC32,
 /// fbs bytes, UInt32 CRC32 of them. <c>fbs</c> is an 11-bit mantissa and 5-bit exponent: mantissa × 2^(exponent+9).
 /// </remarks>
-public sealed class LzipFecFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class LzipFecFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+
+  /// <inheritdoc />
+  public long? MaxTotalArchiveSize => null;
+
+  /// <inheritdoc />
+  public string AcceptedInputsDescription => "exactly one file: the file the fec data protects";
+
+  /// <summary>Any one file; a directory has nothing to protect. The writer takes exactly one file in all.</summary>
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    ArgumentNullException.ThrowIfNull(input);
+    reason = input.IsDirectory ? $"'{input.ArchiveName}' is a directory; {this.AcceptedInputsDescription}" : null;
+    return reason == null;
+  }
 
   private static ReadOnlySpan<byte> ChksumMagic => [0xB3, 0xA5, 0xB6, 0xAF];
   private static ReadOnlySpan<byte> FecMagic => [0xB3, 0x46, 0x45, 0x43];

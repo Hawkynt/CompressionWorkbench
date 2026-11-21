@@ -128,6 +128,14 @@ public class LzipFecTests {
     => Assert.Throws<NotSupportedException>(() => new LzipFecFormatDescriptor().Create(new MemoryStream(),
       [Compression.Registry.ArchiveInputInfo.InMemory("a", [1]), Compression.Registry.ArchiveInputInfo.InMemory("b", [2])], new Compression.Registry.FormatCreateOptions()));
 
+  [Test, Category("Boundary")]
+  public void Given_TheWriteConstraints_When_Asked_Then_OneFileIsAcceptedAndADirectoryIsNot() {
+    var constraints = (Compression.Registry.IArchiveWriteConstraints)new LzipFecFormatDescriptor();
+    Assert.That(constraints.CanAccept(Compression.Registry.ArchiveInputInfo.InMemory("a.lz", [1]), out _), Is.True);
+    Assert.That(constraints.CanAccept(new Compression.Registry.ArchiveInputInfo("", "dir", true), out var reason), Is.False);
+    Assert.That(reason, Does.Contain("exactly one file"));
+  }
+
   [Test, Category("EndToEnd")]
   public void Given_OurFec_When_LziprecoverTestsAndRepairs_Then_TheFileComesBack() {
     var tool = Environment.GetEnvironmentVariable("CWB_LZIPRECOVER");

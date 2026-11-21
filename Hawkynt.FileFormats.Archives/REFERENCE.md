@@ -22151,11 +22151,12 @@ Implements `IEquatable<LzipFecFile>`.
 
 lziprecover forward-error-correction file (`.fec`): the parity lziprecover repairs a file from. Creating one (`LzipFecWriter`) protects a single file. It holds no files, so the view is `metadata.ini`, the CRC arrays of the chksum packets and one entry per FEC block (`fec_NNNNN.bin`); every packet's header and payload CRC is checked. References: lziprecover manual, "Fec file format" (`https://www.nongnu.org/lzip/manual/lziprecover_manual.html`)
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzipFecFormatDescriptor` | `LzipFecFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
@@ -22166,8 +22167,10 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Any one file; a directory has nothing to protect. The writer takes exactly one file in all. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates the fec file of the one input file. Method `gf8` or `gf16` picks the field (default: GF(2^8) when it suffices); options `FecBlocks` (default 9) and `BlockSize` (bytes, a multiple of 512). |
 | `DecodeFbs` | `static long DecodeFbs(ushort coded)` | Decodes the 16-bit floating-point block size. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
