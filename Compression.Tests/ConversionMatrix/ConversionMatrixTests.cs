@@ -128,6 +128,7 @@ public class ConversionMatrixTests {
       { "Wbn", "[single-payload/whole-image target] WebBundle writer collapses tree to a single FULL.wbn" },
       { "SeqBox", "[single-payload/whole-image target] a SeqBox container holds exactly one file; a tree of several is refused" },
       { "LzipFec", "[single-payload/whole-image target] a lziprecover fec file protects exactly one file, so a tree of several is refused (IArchiveWriteConstraints); it re-lists as metadata.ini, CRC arrays and fec blocks, never the file itself" },
+      { "EcSbx", "[single-payload/whole-image target] an EC-SBX container holds exactly one file, so a tree of several is refused (IArchiveWriteConstraints)" },
       { "Wrapster", "[single-payload/whole-image target] Wrapster MP3 wrapper; one FULL.mp3 + 0/1 frame, not a tree" },
       // -- bucket: name/charset/size constraint --
       { "Bbc", "[name/charset/size constraint] BBC Micro DFS disk; name-synthesizing FS, payload not found by content" },

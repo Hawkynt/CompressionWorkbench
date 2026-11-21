@@ -15525,11 +15525,12 @@ Implements `IEquatable<EcSbxContent>`.
 
 Error-correcting SeqBox (`.ecsbx`, blkar's SBX versions 17/18/19); `EcSbxWriter` creates them. Every block carries its sequence number, so the protected file is reassembled from the data blocks wherever the burst interleaving put them, and checked against the stored hash. A container whose data blocks are damaged or missing needs a Reed-Solomon repair, which is refused rather than guessed. References: `https://github.com/darrenldl/blockyarchive/blob/master/SBX_FORMAT.md` — blkar's SBX/EC-SBX specification (MIT)`https://github.com/MarcoPon/SeqBox` — the original SeqBox format
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `EcSbxFormatDescriptor` | `EcSbxFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
@@ -15540,10 +15541,12 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `BlockCrc` | `static ushort BlockCrc(ReadOnlySpan<byte> block)` | CRC-16-CCITT (polynomial 0x1021, MSB first) seeded with the block's version byte. |
 | `BlockSize` | `static int BlockSize(int version)` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Any one file; a directory has nothing to protect. The writer takes exactly one file in all. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates the container of the one input file. Options: `Version` (17, 18, 19; default 17), `DataShards` (default 10), `ParityShards` (default 2), `Burst` (default 12), as blkar's defaults. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |

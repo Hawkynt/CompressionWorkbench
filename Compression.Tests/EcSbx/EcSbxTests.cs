@@ -104,6 +104,14 @@ public class EcSbxTests {
     Assert.That(c.Data, Is.EqualTo(bytes));
   }
 
+  [Test, Category("Boundary")]
+  public void Given_TheWriteConstraints_When_Asked_Then_OneFileIsAcceptedAndADirectoryIsNot() {
+    var constraints = (Compression.Registry.IArchiveWriteConstraints)new EcSbxFormatDescriptor();
+    Assert.That(constraints.CanAccept(Compression.Registry.ArchiveInputInfo.InMemory("a.bin", [1]), out _), Is.True);
+    Assert.That(constraints.CanAccept(new Compression.Registry.ArchiveInputInfo("", "dir", true), out var reason), Is.False);
+    Assert.That(reason, Does.Contain("exactly one file"));
+  }
+
   [Test, Category("Exception")]
   public void Given_BadParameters_When_Created_Then_Refused() {
     Assert.Throws<InvalidDataException>(() => EcSbxWriter.Create([1], "a", "a.ecsbx", version: 1));
