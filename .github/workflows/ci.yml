@@ -407,14 +407,31 @@ jobs:
       # failed. Gated on success() this install was skipped whenever any test before it went
       # red, and the oracle then failed for a missing guestfish -- on every pull request whose
       # own failure lay somewhere else entirely.
+      #
+      # One install once hung for 45 minutes and took the whole job with it. Each apt-get now has
+      # ten minutes; a hung or failed attempt is killed, dpkg is settled, and it is tried again,
+      # three times in all. The step itself is capped as a backstop. A kernel that never installs
+      # still fails the step, and with it the bcachefs gate.
       - name: Install a kernel with bcachefs (Linux)
         if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
+        timeout-minutes: 45
         run: |
           set -euo pipefail
-          sudo apt-get install -y libguestfs-tools
+          install() {
+            for attempt in 1 2 3; do
+              if sudo timeout --kill-after=30 600 apt-get -o Acquire::Retries=3 -o Dpkg::Lock::Timeout=120 install -y "$@"; then
+                return 0
+              fi
+              echo "::warning::apt-get install $* failed or timed out (attempt $attempt)"
+              sudo timeout 300 dpkg --configure -a || true
+              sleep 15
+            done
+            return 1
+          }
+          install libguestfs-tools
           kver=$(apt-cache depends linux-image-generic | sed -n 's/^ *Depends: linux-image-\(.*-generic\)$/\1/p' | head -n 1)
           test -n "$kver" || { echo "::error::cannot resolve the generic kernel version"; exit 1; }
-          sudo apt-get install -y --no-install-recommends "linux-image-$kver" "linux-modules-$kver" "linux-modules-extra-$kver"
+          install --no-install-recommends "linux-image-$kver" "linux-modules-$kver" "linux-modules-extra-$kver"
           sudo chmod 0644 /boot/vmlinuz-*
           sudo chmod 0666 /dev/kvm || echo "::warning::no /dev/kvm; the appliance runs without acceleration"
           echo "SUPERMIN_KERNEL=/boot/vmlinuz-$kver" >> "$GITHUB_ENV"
