@@ -84,7 +84,7 @@ pm_field() {
 }
 
 # Collect the package set to install (dedup, skip empties and already-present binaries).
-declare -A WANT
+declare -A WANT=()
 SKIP_PRESENT=()
 for entry in "${TOOLS[@]}"; do
   IFS='|' read -r purpose binary p_pac p_apt p_dnf p_zyp <<<"$entry"
