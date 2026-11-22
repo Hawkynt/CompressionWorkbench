@@ -52,7 +52,7 @@ TOOLS=(
   "exFAT mkfs/fsck|mkfs.exfat|exfatprogs|exfatprogs|exfatprogs|exfatprogs"
   "ext2/3/4 (mke2fs,debugfs,dumpe2fs)|debugfs|e2fsprogs|e2fsprogs|e2fsprogs|e2fsprogs"
   "ext file access (e2ls,e2cp)|e2ls|e2tools|e2tools|e2tools|e2tools"
-  "NTFS (mkntfs,ntfsls,ntfsinfo)|ntfsls|ntfs-3g|ntfs-3g|ntfs-3g|ntfs-3g_ntfsprogs"
+  "NTFS (mkntfs,ntfsls,ntfsinfo)|ntfsls|ntfsprogs|ntfs-3g|ntfsprogs|ntfs-3g_ntfsprogs"
   "XFS (mkfs.xfs,xfs_db)|mkfs.xfs|xfsprogs|xfsprogs|xfsprogs|xfsprogs"
   "Btrfs (mkfs.btrfs,btrfs)|mkfs.btrfs|btrfs-progs|btrfs-progs|btrfs-progs|btrfsprogs"
   "F2FS (mkfs.f2fs,dump.f2fs)|mkfs.f2fs|f2fs-tools|f2fs-tools|f2fs-tools|f2fs-tools"
