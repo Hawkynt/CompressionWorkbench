@@ -31,7 +31,7 @@ public class MoleboxExecutablePackerHandlerTests {
   private static readonly byte[] ConfigurationKey =
     [0x0F, 0x1E, 0x2D, 0x3C, 0x4B, 0x5A, 0x69, 0x78, 0x87, 0x96, 0xA5, 0xB4, 0xC3, 0xD2, 0xE1, 0xF0];
 
-  private static readonly byte[] SectionKey =
+  internal static readonly byte[] SectionKey =
     [0xFD, 0x5F, 0x5D, 0x5A, 0x80, 0xF7, 0x8D, 0xDC, 0x4C, 0xDF, 0x71, 0xCC, 0x75, 0xA5, 0xFC, 0x8F];
 
   /// <summary>
@@ -95,7 +95,7 @@ public class MoleboxExecutablePackerHandlerTests {
   private static byte[] Section(UnpackResult result, int index) =>
     result.Artifacts.Single(a => a.Name.StartsWith($"sections/{index:000}_", StringComparison.Ordinal)).Data;
 
-  private static byte[] BuildSectionBody(int length, byte seed) {
+  internal static byte[] BuildSectionBody(int length, byte seed) {
     var body = new byte[length];
     for (var i = 0; i < length; ++i)
       body[i] = (byte)(i * seed % 253);
@@ -137,7 +137,7 @@ public class MoleboxExecutablePackerHandlerTests {
     return stream.ToArray();
   }
 
-  private static byte[] BuildMoleboxPe(byte[] text, byte[] data) {
+  internal static byte[] BuildMoleboxPe(byte[] text, byte[] data, string? boxName = null) {
     var blobBaseRva = EntryRva + 0x5F;
 
     // The loader blob: the configuration key in the clear, and the keystreamed
@@ -148,6 +148,10 @@ public class MoleboxExecutablePackerHandlerTests {
     ConfigurationKey.CopyTo(blob, (int)(EntryRva + 0x7C - blobBaseRva));
     var keyBlobOffset = (int)(KeyBlobRva - blobBaseRva);
     SectionKey.CopyTo(blob, keyBlobOffset + 0x20);
+    if (boxName != null) {
+      blob.AsSpan(keyBlobOffset + 0x30, 0x40).Clear();
+      Encoding.ASCII.GetBytes(boxName).CopyTo(blob, keyBlobOffset + 0x30);
+    }
     ApplyKeystream(blob.AsSpan(keyBlobOffset, 0x80 * 4), ImageBase + KeyBlobRva, 0x3C6EF35F);
 
     var configuration = new byte[64];

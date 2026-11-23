@@ -1,0 +1,93 @@
+# MoleBox 2.x file box — on-disk notes
+
+MoleBox (Teggo, later Alexey Sudachen) packs an application and its data files into one
+executable. The program's own sections are covered by `MoleboxExecutablePackerHandler`;
+this page is about the **file box**, the data files MoleBox 2.x appends to the executable.
+
+No specification was published, and the GPL source of the later open-source MoleBox
+(sudachen/Molebox, 2014) writes a different container (SVFS/`STELPACK`). None of the
+real 2.x programs measured here carries that container. Everything below was measured on
+real MoleBox-packed programs (see *Provenance*) and checked against an independent
+extractor's output for the same programs.
+
+## Key
+
+The box is encrypted with the **section key**, the 16 bytes at offset `0x20` of the
+section-key blob the loader chain yields (the chain itself is described in
+`MoleboxExecutablePackerHandler`). The same blob holds, from offset `0x30`, the
+NUL-terminated name the loader gives the box: `<program>.exe.BOX`, `<program>.BOX`, or a
+plain name such as `data`.
+
+The cipher is IDEA in ECB mode, decryption direction (the inverted key schedule of the
+section key). Every region below is encrypted from its own first byte over its whole
+8-byte blocks; a trailing partial block is stored as is.
+
+## Trailer and box header (end of file)
+
+The last 56 bytes (the directory ends right before them):
+
+| Offset from end | Size | Field |
+|---|---|---|
+| −56 | 4 | program copy: file offset of its first block (see below) |
+| −52 | 4 | program copy: size |
+| −48 | 4 | program copy: item flags |
+| −44 | 4 | directory length (bytes, multiple of 8) |
+| −40 | 4 | directory length again (equal in every sample) |
+| −36 | 4 | directory file offset |
+| −32 | 4 | length of the name table at the start of the directory |
+| −28 | 4 | number of directory records |
+| −24 | 4 | **length of the whole file** |
+| −20 | 16 | **MD5 of the decrypted directory** |
+| −4 | 4 | build marker: `0xCAFEBABE` in most samples, other values in some builds |
+
+The length field and the MD5 identify the box; the marker is not relied on.
+
+The program-copy slot names a copy of the packed program's own executable kept inside the
+box. Some builds have no slot at all: the header is then the last 44 bytes and the
+directory ends right before its length fields (the `zen.exe` sample); where the directory
+ends tells the two apart. Builds with the slot that keep no copy leave it zero, so it
+counts only when its flags, offset and block table are consistent with the box.
+
+## Directory
+
+Decrypted, the directory is
+
+1. the name table: NUL-terminated names, `\`-separated paths (e.g. `titlescreen\ss_logo.png`);
+2. one 16-byte record per file: `u32 name offset` (into the name table), `u32 file offset`,
+   `u32 size`, `u32 item flags`;
+3. further data (registry and COM registration records in some boxes), not needed to read
+   the files;
+4. zero padding to a multiple of 8.
+
+## Files
+
+Item flags seen are always `0x33`: bit 0 — blocks are zlib streams, bit 1 — blocks are
+encrypted. Bits 4 and 5 are set in every sample and do not change how a file is read.
+
+A file of `size` bytes is cut into `ceil(size / 65536)` blocks of 64 KiB (the last one
+shorter). Right before the file offset sits one `u32` per block: the block's stored
+length, with bit 31 set when that block is **stored** rather than compressed (MoleBox
+stores blocks that do not shrink, such as PNG and Ogg data). The blocks follow back to
+back from the file offset. A compressed block is a complete zlib stream (RFC 1950) whose
+Adler-32 checks the block; a stored block is the raw bytes. Files sit a few bytes apart.
+
+## Integrity
+
+- directory: MD5 in the trailer;
+- compressed blocks: zlib's Adler-32 and the block length (64 KiB, or the rest of the file);
+- stored blocks: length only.
+
+## Provenance
+
+Eighteen MoleBox-packed programs from magazine cover discs and ftp.winsite.com (2003–2013),
+as indexed by discmaster.textfiles.com (format "MoleBox Packed"), were measured. The
+loader chain yields the box key for nine of them; all nine boxes read with every block's
+check passing. For four of them (`zen.exe` 2005, `bruceLee.exe` 2008, `Encounter.exe` 2006,
+`Helium_Frog_2_06.exe` 2013), the files discmaster's extraction lists were fetched and
+compared: all 14 compared files are byte-identical, including a 2 MiB executable mixing
+compressed and stored blocks. The program copy of `Encounter.exe` equals the extractor's
+unpacked program except for 17 PE-header bytes the extractor rewrites.
+
+Eight of the other nine come from a loader build whose chain does not yield the
+configuration record (it decodes to noise); the ninth could not be read on the measuring machine. Those boxes are refused, not
+guessed.
