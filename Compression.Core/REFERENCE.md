@@ -5980,6 +5980,18 @@ Implements `IBuildingBlock`.
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes `data` as a pack file. |
 
+### Namespace `Compression.Core.Entropy.WinZipJpeg`
+
+[`WinZipJpegDecoder`](#winzipjpegdecoder)
+
+#### `WinZipJpegDecoder`
+
+Decoder for ZIP compression method 96, WinZip's lossless JPEG recompression: LZMA-packed JPEG metadata and arithmetic-coded DCT coefficients, re-entropy-coded into the original JPEG file bit for bit.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes a method-96 stream back to the original JPEG file. |
+
 ### Namespace `Compression.Core.ExecutableUnpacking`
 
 [`CpuArchitecture`](#cpuarchitecture) · [`DetectionResult`](#detectionresult) · [`ElfParser`](#elfparser) · [`ExecutableContainerKind`](#executablecontainerkind) · [`ExecutableContainerParsers`](#executablecontainerparsers) · [`ExecutableDiagnostic`](#executablediagnostic) · [`ExecutableDiagnosticCode`](#executablediagnosticcode) · [`ExecutableDiagnosticsJson`](#executablediagnosticsjson) · [`ExecutableImageInfo`](#executableimageinfo) · [`ExecutableImport`](#executableimport) · [`ExecutableMemoryImageBuilder`](#executablememoryimagebuilder) · [`ExecutableRegion`](#executableregion) · [`ExecutableRegionFlags`](#executableregionflags) · [`ExecutableRelocation`](#executablerelocation) · [`ExecutableUnpackCapabilities`](#executableunpackcapabilities) · [`ExecutableUnpackLevel`](#executableunpacklevel) · [`FatMachOParser`](#fatmachoparser) · [`IExecutableContainerParser`](#iexecutablecontainerparser) · [`IExecutablePackerHandler`](#iexecutablepackerhandler) · [`IPackerTransform`](#ipackertransform) · [`MachOParser`](#machoparser) · [`PackedExecutable`](#packedexecutable) · [`PeParser`](#peparser) · [`PeRebuilder`](#perebuilder) · [`TransformResult`](#transformresult) · [`UnpackArtifact`](#unpackartifact) · [`UnpackOptions`](#unpackoptions) · [`UnpackResult`](#unpackresult)
@@ -10846,6 +10858,7 @@ ZIP compression methods.
 | `Lzma` | `14` | LZMA compression. |
 | `Zstd` | `93` | Zstandard compression. |
 | `Xz` | `95` | XZ compression (a complete .xz stream, APPNOTE 4.4.5 method 95). |
+| `Jpeg` | `96` | WinZip JPEG: lossless recompression of a JPEG file; decoded by `WinZipJpegDecoder`. |
 | `WavPack` | `97` | WinZip WavPack (a wrapped WavPack image of a WAV file); decoded through `ZipMethodCodecs`. |
 | `Ppmd` | `98` | PPMd version I, Rev 1 compression. |
 | `WinZipAes` | `99` | WinZip AES encryption (actual method stored in extra field). |
