@@ -155,7 +155,8 @@ internal sealed class MountWindow : Form {
       this._formatId = formatId;
       this._driverProfile = probe.Profile;
       this._mountLayers = probe.Layers;
-      this._sourceCanWrite = sourceCanWrite;
+      this._sourceCanWrite = sourceCanWrite ||
+        probe.Layers.Contains("namespace:append-only-sidecar", StringComparer.Ordinal);
       this._statusLabel.Text = $"Detected {descriptor?.DisplayName ?? "raw disk image"}: {probe.Profile.ProfileName}.";
       this.RefreshPlan();
     } catch (Exception ex) {
@@ -172,7 +173,7 @@ internal sealed class MountWindow : Form {
     this._password = null;
     for (var attempt = 0; ; ++attempt) {
       try {
-        return MountNamespaceResolver.Probe(formatId, source, this._password);
+        return MountNamespaceResolver.Probe(formatId, source, this._password, preferArchiveOverlay: true);
       } catch (ArchivePasswordException ex) when (attempt < 5) {
         var dialog = new PasswordDialog(Path.GetFileName(path), previousWasWrong: ex.PasswordWasSupplied);
         if (dialog.ShowDialog() != DialogResult.OK) {
@@ -194,7 +195,7 @@ internal sealed class MountWindow : Form {
       $"Format: {this._formatId}",
       $"Resolved profile: {profile.FormatId} / {profile.ProfileName}",
       $"Mutation model: {profile.MutationModel}",
-      $"Backing source writable: {this._sourceCanWrite}",
+      $"Writable backing (archive or sidecar): {this._sourceCanWrite}",
       $"Can mount: {profile.CanMount}",
       $"Can mount writable: {profile.CanMountWritable}",
       $"Driver capabilities: {profile.Capabilities}",

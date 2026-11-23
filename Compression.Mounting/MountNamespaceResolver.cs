@@ -29,7 +29,8 @@ public static class MountNamespaceResolver {
       string formatId,
       Stream source,
       string? password = null,
-      IReadOnlyDictionary<string, string>? volumeParameters = null) {
+      IReadOnlyDictionary<string, string>? volumeParameters = null,
+      bool preferArchiveOverlay = false) {
     ArgumentException.ThrowIfNullOrWhiteSpace(formatId);
     ArgumentNullException.ThrowIfNull(source);
     if (IsOpaqueRaw(formatId))
@@ -65,6 +66,10 @@ public static class MountNamespaceResolver {
 
       if (source.CanSeek) source.Position = 0;
       if (descriptor is IArchiveFormatOperations) {
+        if (preferArchiveOverlay &&
+            ArchiveOverlayFilesystemSession.Probe(descriptor, source, password) is { } overlayProfile)
+          return new(overlayProfile, [$"archive:{descriptor.Id}", "namespace:append-only-sidecar"]);
+
         var archiveProfile = MutableArchiveMountSession.Probe(descriptor, source, password);
         var layers = new List<string> { $"archive:{descriptor.Id}" };
         // Path-based mounts may publish a verified replacement without holding
@@ -140,6 +145,21 @@ public static class MountNamespaceResolver {
     }
 
     return options.LeaveOpen ? session : new OwnedFilesystemSession(session, source);
+  }
+
+  /// <summary>
+  /// Opens a qualified WORM archive with a persistent append-only sidecar.
+  /// The native archive is immutable; a separate export is required to publish changes.
+  /// </summary>
+  public static IFilesystemSession OpenOverlayArchivePath(
+      string formatId,
+      string imagePath,
+      string? password = null) {
+    ArgumentException.ThrowIfNullOrWhiteSpace(formatId);
+    ArgumentException.ThrowIfNullOrWhiteSpace(imagePath);
+    var descriptor = FormatRegistry.GetById(formatId)
+      ?? throw new KeyNotFoundException($"Unknown archive format '{formatId}'.");
+    return ArchiveOverlayFilesystemSession.OpenPath(descriptor, imagePath, password);
   }
 
   /// <summary>
