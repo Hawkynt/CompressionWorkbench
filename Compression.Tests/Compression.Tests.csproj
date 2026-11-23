@@ -99,6 +99,9 @@
     <EmbeddedResource Include="StuffItX\ReferenceVectors\*.sitx">
       <LogicalName>StuffItXVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="StuffItX\JpegVectors\*.jc;StuffItX\JpegVectors\*.jpg">
+      <LogicalName>StuffItXJpegVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="Aar\ReferenceVectors\*.aar">
       <LogicalName>AarVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>

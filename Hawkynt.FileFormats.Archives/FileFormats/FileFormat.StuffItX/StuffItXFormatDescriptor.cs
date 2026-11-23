@@ -40,7 +40,7 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
     "Brimstone, Cyanide, Darkhorse, Deflate, Blend, Iron and stored streams, also behind the English " +
     "and x86 preprocessors and behind AES, Blowfish, DES or RC4 encryption, each checked against its CRC-32; " +
     "written stored, Deflate-, Brimstone-, Darkhorse-, Cyanide-, Blend-, Obscured- or Iron-coded, optionally " +
-    "behind the English or x86 preprocessor. Method 7 streams are listed but not extracted.";
+    "behind the English or x86 preprocessor. Method 7 (JPEG recompression) restores the original JPEG file.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new StuffItXReader(stream, leaveOpen: true, password);

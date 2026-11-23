@@ -36,8 +36,11 @@ internal sealed class StuffItXCrypto {
   /// <summary>One cipher layer: the cipher number and its key.</summary>
   internal sealed record Layer(long Cipher, byte[] Key) {
     /// <summary>The IV (block ciphers) or salt (RC4) at the start of this layer.</summary>
-    public int PrefixSize => this.Cipher switch { 0 => 16, 3 => this.Key.Length, _ => 8 };
+    public int PrefixSize => StuffItXCrypto.PrefixSize(this.Cipher, this.Key.Length);
   }
+
+  /// <summary>The IV (block ciphers) or salt (RC4) length of a layer.</summary>
+  internal static int PrefixSize(long cipher, long keyLength) => cipher switch { 0 => 16, 3 => (int)keyLength, _ => 8 };
 
   private readonly byte[] _verifier;
 
