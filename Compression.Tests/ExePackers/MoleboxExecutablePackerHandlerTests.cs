@@ -26,7 +26,8 @@ public class MoleboxExecutablePackerHandlerTests {
   private const uint LoaderSectionRva = 0x4000;
   private const uint EntryRva = LoaderSectionRva + 0x100;
   private const uint OriginalEntryRva = 0x1234;
-  private const uint KeyBlobRva = EntryRva + 0x100;
+  // The key blob sits 0x32 bytes into the loader blob, as in every real build measured.
+  private const uint KeyBlobRva = EntryRva + 0x5F + 0x32;
 
   private static readonly byte[] ConfigurationKey =
     [0x0F, 0x1E, 0x2D, 0x3C, 0x4B, 0x5A, 0x69, 0x78, 0x87, 0x96, 0xA5, 0xB4, 0xC3, 0xD2, 0xE1, 0xF0];
@@ -137,7 +138,7 @@ public class MoleboxExecutablePackerHandlerTests {
     return stream.ToArray();
   }
 
-  internal static byte[] BuildMoleboxPe(byte[] text, byte[] data, string? boxName = null) {
+  internal static byte[] BuildMoleboxPe(byte[] text, byte[] data, string? boxName = null, bool undecodableConfiguration = false) {
     var blobBaseRva = EntryRva + 0x5F;
 
     // The loader blob: the configuration key in the clear, and the keystreamed
@@ -165,6 +166,9 @@ public class MoleboxExecutablePackerHandlerTests {
 
     var lzss = EncodeLzssLiterals(blob);
     var loader = new byte[0x1000];
+    if (undecodableConfiguration)
+      for (var i = 0; i < configurationRecord.Length; ++i)
+        configurationRecord[i] ^= 0xA5;
     configurationRecord.CopyTo(loader, (int)(EntryRva + 0x0B - LoaderSectionRva));
     var headerOffset = (int)(blobBaseRva - LoaderSectionRva);
     BinaryPrimitives.WriteUInt32LittleEndian(loader.AsSpan(headerOffset), (uint)blob.Length);

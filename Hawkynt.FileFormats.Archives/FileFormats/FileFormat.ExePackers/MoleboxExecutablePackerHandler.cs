@@ -291,6 +291,36 @@ public sealed class MoleboxExecutablePackerHandler : MinorExecutablePackerHandle
     }
   }
 
+  /// <summary>Offset of the section-key blob inside the decoded loader blob, in every build measured.</summary>
+  private const int KeyBlobOffsetInLoaderBlob = 0x32;
+
+  /// <summary>
+  /// The section-key blob for reading the file box. Builds whose configuration record decodes
+  /// name it there; in builds whose record does not decode under the loader's key, the blob
+  /// sits at the same place, <see cref="KeyBlobOffsetInLoaderBlob"/> into the loader blob (the
+  /// place every decodable record names too). The caller must verify the key (the box
+  /// directory's MD5 does).
+  /// </summary>
+  internal static bool TryReadBoxKeyBlob(byte[] image, ExecutableImageInfo info, UnpackOptions options, out byte[] keyBlob) {
+    if (TryReadLoaderKeys(image, info, options, out _, out keyBlob))
+      return true;
+    keyBlob = [];
+    if (info is not { Container: ExecutableContainerKind.Pe } || info.Regions.Count <= LoaderSectionCount || info.EntryPoint == 0)
+      return false;
+    var imageBase = (uint)info.PreferredBaseAddress;
+    try {
+      if (!TryDecodeLoaderBlob(info, (uint)info.EntryPoint, imageBase, options, out var blob, out var blobBaseRva))
+        return false;
+      if (blob.Length < KeyBlobOffsetInLoaderBlob + SectionKeyBlobDwords * 4)
+        return false;
+      keyBlob = blob.AsSpan(KeyBlobOffsetInLoaderBlob, SectionKeyBlobDwords * 4).ToArray();
+      ApplyKeystream(keyBlob, imageBase + blobBaseRva + KeyBlobOffsetInLoaderBlob, SectionKeyKeystreamConstant);
+      return true;
+    } catch (Exception ex) when (ex is InvalidDataException or ArgumentException or IndexOutOfRangeException or ArgumentOutOfRangeException or OverflowException) {
+      return false;
+    }
+  }
+
   /// <summary>
   /// Decodes the loader blob at <c>EP+0x5F</c>: LCG-XOR from the next 4-byte
   /// boundary after its header to the end of the carrying section, then LZSS.

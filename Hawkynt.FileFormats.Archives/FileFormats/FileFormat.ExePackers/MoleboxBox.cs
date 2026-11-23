@@ -93,7 +93,7 @@ public sealed class MoleboxBox {
     if (file.Length < TrailerSize + HeaderSize || !TryReadHeader(file, file.Length, out var header))
       return null;
     var info = ExecutableContainerParsers.ParseBestEffort(file);
-    if (!MoleboxExecutablePackerHandler.TryReadLoaderKeys(file, info, new UnpackOptions(), out _, out var keyBlob))
+    if (!MoleboxExecutablePackerHandler.TryReadBoxKeyBlob(file, info, new UnpackOptions(), out var keyBlob))
       return null;
     var schedule = MoleboxIdea.InvertKey(MoleboxIdea.ExpandKey(keyBlob.AsSpan(0x20, 16)));
     var nameField = keyBlob.AsSpan(0x30, 0x40);

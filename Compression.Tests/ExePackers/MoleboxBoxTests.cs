@@ -42,9 +42,10 @@ public class MoleboxBoxTests {
     return (offset, item.Flags);
   }
 
-  private static byte[] BuildBoxed(IReadOnlyList<Item> items, Item? main = null, uint magic = 0xCAFEBABE, Func<byte[], byte[]>? tamperDirectory = null, bool withSlot = true) {
+  private static byte[] BuildBoxed(IReadOnlyList<Item> items, Item? main = null, uint magic = 0xCAFEBABE, Func<byte[], byte[]>? tamperDirectory = null, bool withSlot = true, bool undecodableConfiguration = false) {
     var pe = MoleboxExecutablePackerHandlerTests.BuildMoleboxPe(
-      MoleboxExecutablePackerHandlerTests.BuildSectionBody(0x800, 0x11), MoleboxExecutablePackerHandlerTests.BuildSectionBody(0x400, 0x77), BoxName);
+      MoleboxExecutablePackerHandlerTests.BuildSectionBody(0x800, 0x11), MoleboxExecutablePackerHandlerTests.BuildSectionBody(0x400, 0x77), BoxName,
+      undecodableConfiguration);
     using var ms = new MemoryStream();
     ms.Write(pe);
     var (mainOffset, mainFlags) = main != null ? WriteItem(ms, main) : (0u, 0u);
@@ -156,6 +157,15 @@ public class MoleboxBoxTests {
     // The last dword differs between MoleBox builds; the length field and the MD5 identify the box.
     var extracted = ExtractAll(BuildBoxed(Files, magic: 0x92A8EA49));
     Assert.That(extracted["data/level1.dat"], Is.EqualTo(Files[1].Data));
+  }
+
+  [Test]
+  [Category("EdgeCase")]
+  public void Given_ABuildWhoseConfigurationRecordDoesNotDecode_When_Read_Then_TheKeyBlobAtItsFixedPlaceOpensTheBox() {
+    var boxed = BuildBoxed(Files, undecodableConfiguration: true);
+    var extracted = ExtractAll(boxed);
+    Assert.That(extracted["data/level1.dat"], Is.EqualTo(Files[1].Data));
+    Assert.That(MoleboxBox.TryOpen(boxed)!.BoxName, Is.EqualTo(BoxName));
   }
 
   [Test]
