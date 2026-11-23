@@ -161,6 +161,23 @@ public class MoleboxBoxTests {
 
   [Test]
   [Category("EdgeCase")]
+  public void Given_DataAppendedAfterTheBox_When_Read_Then_TheBoxIsFoundWhereItsTrailerEnds() {
+    var boxed = BuildBoxed(Files);
+    var appended = boxed.Concat(Pattern(300_000, 13)).Concat(Encoding.ASCII.GetBytes("A249C920E12E2CFC93C8E4B5")).ToArray();
+    var extracted = ExtractAll(appended);
+    Assert.That(extracted["data/level1.dat"], Is.EqualTo(Files[1].Data));
+    Assert.That(extracted.Keys, Is.EquivalentTo(Files.Select(f => f.Name)));
+    var path = Path.Combine(Path.GetTempPath(), "cwb-molebox-" + Guid.NewGuid().ToString("N") + ".exe");
+    try {
+      File.WriteAllBytes(path, appended);
+      Assert.That(Compression.Lib.FormatDetector.Detect(path).ToString(), Is.EqualTo("Molebox"));
+    } finally {
+      File.Delete(path);
+    }
+  }
+
+  [Test]
+  [Category("EdgeCase")]
   public void Given_ABuildWhoseConfigurationRecordDoesNotDecode_When_Read_Then_TheKeyBlobAtItsFixedPlaceOpensTheBox() {
     var boxed = BuildBoxed(Files, undecodableConfiguration: true);
     var extracted = ExtractAll(boxed);
@@ -279,5 +296,29 @@ public class MoleboxBoxTests {
       }
     }
     Assert.That(compared, Is.GreaterThan(0), "no reference files matched a box entry");
+  }
+
+  /// <summary>
+  /// Real programs without a reference extraction (<c>CWB_MOLEBOX_SAMPLES</c>, folders listed in
+  /// <c>expect-box.txt</c> there): the box must open and every file pass the checks the format
+  /// stores (directory MD5, per-block Adler-32 and lengths).
+  /// </summary>
+  [Test]
+  [Category("ExternalInterop")]
+  public void Given_RealMoleboxProgramsWithoutReference_When_Extracted_Then_EveryStoredCheckPasses() {
+    var root = Environment.GetEnvironmentVariable("CWB_MOLEBOX_SAMPLES");
+    var list = string.IsNullOrEmpty(root) ? null : Path.Combine(root, "expect-box.txt");
+    if (list == null || !File.Exists(list))
+      Assert.Ignore("Set CWB_MOLEBOX_SAMPLES to a directory of real MoleBox samples with expect-box.txt.");
+    var files = 0;
+    foreach (var name in File.ReadAllLines(list).Where(l => l.Trim().Length > 0)) {
+      var box = MoleboxBox.TryOpen(File.ReadAllBytes(Path.Combine(root!, name.Trim(), "packed.bin")));
+      Assert.That(box, Is.Not.Null, $"{name}: box not read");
+      foreach (var entry in box!.Entries) {
+        Assert.That(box.Extract(entry), Has.Length.EqualTo(entry.Size), $"{name}: {entry.Name}");
+        ++files;
+      }
+    }
+    Assert.That(files, Is.GreaterThan(0));
   }
 }
