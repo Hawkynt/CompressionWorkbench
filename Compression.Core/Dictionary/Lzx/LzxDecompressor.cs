@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
@@ -72,6 +73,12 @@ public sealed class LzxDecompressor {
   private readonly bool _e8Translation;
   private long _totalDecompressedBytes;
 
+  // Cabinet-arrangement streams whose header announces x86 call translation: the translation size
+  // from that header, and how many frames (calls into Decompress) have been decoded so far.
+  private int _callTranslationSize;
+  private int _framesDecoded;
+  private const int MaxTranslatedFrames = 32768;
+
   /// <summary>
   /// Initializes a new <see cref="LzxDecompressor"/>.
   /// </summary>
@@ -129,8 +136,9 @@ public sealed class LzxDecompressor {
       else {
         this._readStreamHeader = true;
         if (this.ReadBits(1) == 1) {
-          this.ReadBits(16);
-          this.ReadBits(16);
+          var high = this.ReadBits(16);
+          var low = this.ReadBits(16);
+          this._callTranslationSize = (int)((high << 16) | low);
         }
       }
     }
@@ -174,6 +182,9 @@ public sealed class LzxDecompressor {
 
     if (this._e8Translation && uncompressedSize > 10)
       ApplyE8Translation(output, this._totalDecompressedBytes);
+    else if (this._callTranslationSize != 0 && uncompressedSize > 10 && this._framesDecoded < MaxTranslatedFrames)
+      ReverseCallTranslation(output, this._totalDecompressedBytes, this._callTranslationSize);
+    ++this._framesDecoded;
 
     this._totalDecompressedBytes += uncompressedSize;
     return output;
@@ -596,6 +607,28 @@ public sealed class LzxDecompressor {
   /// (used by WIM format). Scans for 0xE8 and 0xE9 opcodes and translates the
   /// following 4-byte relative address back from absolute form.
   /// </summary>
+  /// <summary>
+  /// Undoes the encoder's x86 CALL translation in one frame, as the LZX format defines it for the
+  /// cabinet arrangement: every 0xE8 byte before the frame's last ten bytes is followed by a 32-bit
+  /// value that the encoder turned from a relative into an absolute target; a value <c>v</c> with
+  /// <c>-position &lt;= v &lt; translationSize</c> becomes <c>v - position</c> (or <c>v + translationSize</c>
+  /// when negative), where <c>position</c> is the 0xE8 byte's offset in the whole stream.
+  /// </summary>
+  private static void ReverseCallTranslation(byte[] frame, long frameStart, int translationSize) {
+    var end = frame.Length - 10;
+    for (var i = 0; i < end; ++i) {
+      if (frame[i] != 0xE8)
+        continue;
+      var position = frameStart + i;
+      var value = BinaryPrimitives.ReadInt32LittleEndian(frame.AsSpan(i + 1));
+      if (value >= -position && value < translationSize) {
+        var relative = value >= 0 ? value - position : value + translationSize;
+        BinaryPrimitives.WriteInt32LittleEndian(frame.AsSpan(i + 1), unchecked((int)relative));
+      }
+      i += 4;
+    }
+  }
+
   private static void ApplyE8Translation(byte[] data, long fileOffset) {
     long limit = data.Length >= 6 ? data.Length - 5 : 0;
     for (long i = 0; i < limit; ++i) {

@@ -431,6 +431,10 @@
     <EmbeddedResource Include="Cab\QuantumVectors\*.cab">
       <LogicalName>CabQuantumVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- An LZX cabinet with x86 call translation written by makecab; see Cab/LzxVectors/README.md. -->
+    <EmbeddedResource Include="Cab\LzxVectors\*.cab">
+      <LogicalName>CabLzxVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- ZIP archives from libarchive's test suite; see Zip/LibarchiveVectors/README.md. -->
     <EmbeddedResource Include="Zip\LibarchiveVectors\*.zipx">
       <LogicalName>ZipLibarchiveVectors.%(Filename)%(Extension)</LogicalName>
