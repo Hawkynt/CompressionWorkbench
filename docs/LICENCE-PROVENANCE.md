@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 81 | |
+| A | 83 | |
 | B | 33 | FFmpeg alone covers 38 codec folders |
 | C | 0 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 14 | |
@@ -163,6 +163,8 @@ None open: every class C claim site has been rewritten and is listed under R.
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.EnigmaVirtualBox/EnigmaVirtualBoxReader.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.EnigmaVirtualBox/EnigmaVirtualBoxFormatDescriptor.cs` | evbunpack (mos9527) `evbunpack/__main__.py`, `evbunpack/const.py`, revision `ee7b647acf2a46617b0c448dfa83d63132ea917b` | Apache-2.0 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.EnigmaVirtualBox/THIRD-PARTY-NOTICE.evbunpack.txt` |
 | `Compression.Core/Transforms/BranchConverter.cs`, `Compression.Core/Transforms/Bcj2Filter.cs` | LZMA SDK 9.20 (Igor Pavlov) `C/Bra.c`, `C/Bra86.c`, `C/BraIA64.c`, `C/Bcj2.c`; the BCJ2 encoder from 7-Zip 9.20 `CPP/7zip/Compress/Bcj2Coder.cpp`; ARM64 / RISC-V restated from the liblzma conversions | public domain; LGPL-2.1-or-later (7-Zip CPP) — taken under LGPL-3.0; 0BSD | `Compression.Core/Transforms/THIRD-PARTY-NOTICE.lzma-sdk.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.NowCompress/NowCompressArchive.cs` | XADMaster `XADNowCompressParser.m`, `XADNowCompressHandle.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.NowCompress/THIRD-PARTY-NOTICE.XADMaster.txt` |
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.CompactPro/CompactProCipher.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.CompactPro/CompactProReader.cs` (encrypted-entry preamble) | MacExtract `src/unc_crypt.c`, `src/fmt_cpt.c`, revision `4b507c21c03377e2224c5c0f4a7eb9be69bbb30e` | 0BSD | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.CompactPro/THIRD-PARTY-NOTICE.MacExtract.txt` |
+| `Compression.Core/Dictionary/Lzh/ZoomLzhufDecoder.cs` | horsicq/XArchive `Algos/xlzhufdecoder.cpp` (Zoom options), revision `6403af857d33f7f2a958bc5caad39916932f37e6` | MIT | `Compression.Core/Dictionary/Lzh/THIRD-PARTY-NOTICE.XArchive.txt` |
 
 ## R — not a code port
 
