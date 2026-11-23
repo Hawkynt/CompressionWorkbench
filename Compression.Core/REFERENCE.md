@@ -606,6 +606,7 @@ Compresses data in the DEFLATE format (RFC 1951).
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DeflateCompressor` | `DeflateCompressor(Stream output, DeflateCompressionLevel level = 6)` | Initializes a new `DeflateCompressor` for streaming compression. |
+| `CodeLengthOrder` | `ReadOnlySpan<int> CodeLengthOrder { get; init; }` | Order in which dynamic blocks list their code-length code lengths: RFC 1951's `CodeLengthOrder` unless replaced by a permutation, as ALZip's obfuscated deflate (method 3) does. |
 | `DistanceCountBits` | `int DistanceCountBits { get; init; }` | Width of the HDIST field of dynamic blocks: 5 bits in RFC 1951 (the default), 6 in the modified Deflate of StuffIt X. |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, DeflateCompressionLevel level = 6)` | Compresses data in one shot. |
 | `Finish` | `void Finish()` | Writes the final block and flushes all remaining data. |
@@ -644,6 +645,7 @@ Decompresses data in the DEFLATE format (RFC 1951).
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DeflateDecompressor` | `DeflateDecompressor(Stream input)` | Initializes a new `DeflateDecompressor` for streaming decompression. |
+| `CodeLengthOrder` | `ReadOnlySpan<int> CodeLengthOrder { get; init; }` | Order in which a dynamic block lists its code-length code lengths: RFC 1951's `CodeLengthOrder` unless replaced by a permutation, as ALZip's obfuscated deflate (method 3) does. |
 | `DistanceCountBits` | `int DistanceCountBits { get; init; }` | Width of a dynamic block's distance-code count (HDIST): 5 bits in RFC 1951, 6 in the modified Deflate of StuffIt X. |
 | `IsFinished` | `bool IsFinished { get; }` | Gets a value indicating whether the final block has been decoded. |
 | `StoredBlocksOmitComplement` | `bool StoredBlocksOmitComplement { get; set; }` | Gets or sets a value indicating whether stored blocks carry only LEN and no NLEN. |
