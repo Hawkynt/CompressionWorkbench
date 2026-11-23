@@ -10,8 +10,8 @@ namespace FileFormat.AlZip;
 
 /// <summary>
 /// Reads ALZip archives (split sets through <see cref="Open"/> or <see cref="AlZipVolumes.Join"/>): "ALZ\x01" + 4 bytes, local file headers ("BLZ\x01"), then the
-/// central-directory and end records ("CLZ\x01", "CLZ\x02"). Members are stored, deflated or
-/// ALZ-bzip2'd, optionally ZipCrypto-encrypted. Names are CP949.
+/// central-directory and end records ("CLZ\x01", "CLZ\x02"). Members are stored, deflated, obfuscated-deflated
+/// (method 3) or ALZ-bzip2'd, optionally ZipCrypto-encrypted. Names are CP949.
 /// </summary>
 public sealed class AlZipReader : IDisposable {
   internal static ReadOnlySpan<byte> Magic => "ALZ\x01"u8;
@@ -187,7 +187,7 @@ public sealed class AlZipReader : IDisposable {
         0 => packed,
         1 => AlzBzip2.Decompress(packed, entry.OriginalSize),
         2 => DeflateDecompressor.Decompress(packed),
-        3 => throw new NotSupportedException($"ALZip member '{entry.FileName}' uses obfuscated deflate (method 3), which is not supported."),
+        3 => AlZipObfuscatedDeflate.Decompress(packed, entry.OriginalSize),
         _ => throw new NotSupportedException($"ALZip member '{entry.FileName}' uses unknown method {entry.Method}."),
       };
     } catch (Exception e) when (e is not (NotSupportedException or InvalidDataException)) {

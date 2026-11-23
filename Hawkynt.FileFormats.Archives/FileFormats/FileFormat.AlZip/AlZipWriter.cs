@@ -6,7 +6,7 @@ namespace FileFormat.AlZip;
 
 /// <summary>
 /// Writes single-volume ALZip archives as ALZip 8 lays them out: the "ALZ\x01" header with version
-/// 0x0A, one "BLZ\x01" local header per member (stored, deflated or ALZ-bzip2'd, size fields as narrow as the
+/// 0x0A, one "BLZ\x01" local header per member (stored, deflated, obfuscated-deflated or ALZ-bzip2'd, size fields as narrow as the
 /// sizes allow, CP949 names, optional ZipCrypto), then the "CLZ\x01" and "CLZ\x02" end records.
 /// </summary>
 public sealed class AlZipWriter : IDisposable {
@@ -15,11 +15,16 @@ public sealed class AlZipWriter : IDisposable {
   private readonly string? _password;
   private readonly bool _store;
   private readonly bool _bzip2;
+  private readonly bool _obfuscated;
   private bool _finished;
 
   /// <param name="bzip2">Compress with ALZip's bzip2 variant (method 1) instead of deflate.</param>
-  public AlZipWriter(Stream stream, bool leaveOpen = false, string? password = null, bool store = false, bool bzip2 = false) {
+  /// <param name="obfuscated">Compress with ALZip's obfuscated deflate (method 3) instead of deflate.</param>
+  public AlZipWriter(Stream stream, bool leaveOpen = false, string? password = null, bool store = false, bool bzip2 = false, bool obfuscated = false) {
+    if (bzip2 && obfuscated)
+      throw new ArgumentException("A member is either ALZ bzip2 or obfuscated deflate, not both.");
     this._bzip2 = bzip2;
+    this._obfuscated = obfuscated;
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
     this._password = string.IsNullOrEmpty(password) ? null : password;
@@ -39,9 +44,11 @@ public sealed class AlZipWriter : IDisposable {
     byte method = 0;
     var payload = data;
     if (!this._store && data.Length > 0) {
-      var packed = this._bzip2 ? FileFormat.Bzip2.AlzBzip2.Compress(data) : DeflateCompressor.Compress(data);
+      var packed = this._bzip2 ? FileFormat.Bzip2.AlzBzip2.Compress(data)
+        : this._obfuscated ? AlZipObfuscatedDeflate.Compress(data)
+        : DeflateCompressor.Compress(data);
       if (packed.Length < data.Length) {
-        method = (byte)(this._bzip2 ? 1 : 2);
+        method = (byte)(this._bzip2 ? 1 : this._obfuscated ? 3 : 2);
         payload = packed;
       }
     }

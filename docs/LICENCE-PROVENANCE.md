@@ -168,6 +168,7 @@ None open: every class C claim site has been rewritten and is listed under R.
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.NowCompress/NowCompressArchive.cs` | XADMaster `XADNowCompressParser.m`, `XADNowCompressHandle.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.NowCompress/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.CompactPro/CompactProCipher.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.CompactPro/CompactProReader.cs` (encrypted-entry preamble) | MacExtract `src/unc_crypt.c`, `src/fmt_cpt.c`, revision `4b507c21c03377e2224c5c0f4a7eb9be69bbb30e` | 0BSD | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.CompactPro/THIRD-PARTY-NOTICE.MacExtract.txt` |
 | `Compression.Core/Dictionary/Lzh/ZoomLzhufDecoder.cs` | horsicq/XArchive `Algos/xlzhufdecoder.cpp` (Zoom options), revision `6403af857d33f7f2a958bc5caad39916932f37e6` | MIT | `Compression.Core/Dictionary/Lzh/THIRD-PARTY-NOTICE.XArchive.txt` |
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.AlZip/AlZipObfuscatedDeflate.cs` | XADMaster `XADALZipParser.m` (method 3's code-length order) and `XADDeflateHandle.m` (`setMetaTableOrder`), revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.AlZip/THIRD-PARTY-NOTICE.XADMaster.txt` |
 
 ## R — not a code port
 

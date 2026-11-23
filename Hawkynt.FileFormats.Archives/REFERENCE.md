@@ -8725,7 +8725,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.AlZip`
 
-[`AlZipEntry`](#alzipentry) · [`AlZipFormatDescriptor`](#alzipformatdescriptor) · [`AlZipReader`](#alzipreader) · [`AlZipVolumes`](#alzipvolumes) · [`AlZipWriter`](#alzipwriter)
+[`AlZipEntry`](#alzipentry) · [`AlZipFormatDescriptor`](#alzipformatdescriptor) · [`AlZipObfuscatedDeflate`](#alzipobfuscateddeflate) · [`AlZipReader`](#alzipreader) · [`AlZipVolumes`](#alzipvolumes) · [`AlZipWriter`](#alzipwriter)
 
 #### `AlZipEntry`
 
@@ -8748,7 +8748,7 @@ One local file header of an ALZip archive.
 
 #### `AlZipFormatDescriptor`
 
-ALZip (ESTsoft), the Korean archiver: stored, deflate and ALZ-bzip2 members, ZipCrypto encryption. References: `https://github.com/alkegi/unalz` — unalz (MIT), its CC0 test archives, and the reader the layout follows`https://github.com/MacPaw/XADMaster` — XADALZipParser (LGPL-2.1)
+ALZip (ESTsoft), the Korean archiver: stored, deflate, obfuscated-deflate and ALZ-bzip2 members, ZipCrypto encryption. References: `https://github.com/alkegi/unalz` — unalz (MIT), its CC0 test archives, and the reader the layout follows`https://github.com/MacPaw/XADMaster` — XADALZipParser (LGPL-2.1), the source of method 3's code-length order
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
 
@@ -8774,9 +8774,19 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
+#### `AlZipObfuscatedDeflate`
+
+ALZip's obfuscated deflate (method 3): RFC 1951 Deflate whose dynamic blocks list their 19 code-length code lengths in a permuted order instead of RFC 1951's, the permutation keyed on the member's uncompressed size modulo 16. Everything else in the bit stream is plain Deflate.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CodeLengthOrder` | `static int[] CodeLengthOrder(long uncompressedSize)` | The code-length order for a member of `uncompressedSize` bytes: start from the identity order 0..18, then for each position i swap it with (i mod 6)·3 + (size mod 16), that index reduced modulo 18 when it exceeds 18. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, DeflateCompressionLevel level = 6)` | Encodes `data` as a method-3 member. |
+| `Decompress` | `static byte[] Decompress(byte[] packed, long uncompressedSize)` | Decodes a method-3 member whose uncompressed size is `uncompressedSize`. |
+
 #### `AlZipReader`
 
-Reads ALZip archives (split sets through `Open` or `Join`): "ALZ\x01" + 4 bytes, local file headers ("BLZ\x01"), then the central-directory and end records ("CLZ\x01", "CLZ\x02"). Members are stored, deflated or ALZ-bzip2'd, optionally ZipCrypto-encrypted. Names are CP949.
+Reads ALZip archives (split sets through `Open` or `Join`): "ALZ\x01" + 4 bytes, local file headers ("BLZ\x01"), then the central-directory and end records ("CLZ\x01", "CLZ\x02"). Members are stored, deflated, obfuscated-deflated (method 3) or ALZ-bzip2'd, optionally ZipCrypto-encrypted. Names are CP949.
 
 Implements `IDisposable`.
 
@@ -8802,13 +8812,13 @@ ALZip split sets: `name.alz`, `name.a00`, `name.a01`, …. Every volume starts w
 
 #### `AlZipWriter`
 
-Writes single-volume ALZip archives as ALZip 8 lays them out: the "ALZ\x01" header with version 0x0A, one "BLZ\x01" local header per member (stored, deflated or ALZ-bzip2'd, size fields as narrow as the sizes allow, CP949 names, optional ZipCrypto), then the "CLZ\x01" and "CLZ\x02" end records.
+Writes single-volume ALZip archives as ALZip 8 lays them out: the "ALZ\x01" header with version 0x0A, one "BLZ\x01" local header per member (stored, deflated, obfuscated-deflated or ALZ-bzip2'd, size fields as narrow as the sizes allow, CP949 names, optional ZipCrypto), then the "CLZ\x01" and "CLZ\x02" end records.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AlZipWriter` | `AlZipWriter(Stream stream, bool leaveOpen = false, string password = null, bool store = false, bool bzip2 = false)` |  |
+| `AlZipWriter` | `AlZipWriter(Stream stream, bool leaveOpen = false, string password = null, bool store = false, bool bzip2 = false, bool obfuscated = false)` |  |
 | `AddDirectory` | `void AddDirectory(string dirName, DateTime? modified = null)` |  |
 | `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? modified = null)` |  |
 | `Dispose` | `void Dispose()` |  |
