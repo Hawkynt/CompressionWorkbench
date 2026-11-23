@@ -1837,7 +1837,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Dictionary.Lzh`
 
-[`Lh1Decoder`](#lh1decoder) · [`Lh1Encoder`](#lh1encoder) · [`Lh2Decoder`](#lh2decoder) · [`Lh3Decoder`](#lh3decoder) · [`Lz5Decoder`](#lz5decoder) · [`Lz5Encoder`](#lz5encoder) · [`LzhBuildingBlock`](#lzhbuildingblock) · [`LzhConstants`](#lzhconstants) · [`LzhDecoder`](#lzhdecoder) · [`LzhEncoder`](#lzhencoder) · [`LzsDecoder`](#lzsdecoder) · [`LzsEncoder`](#lzsencoder) · [`Pm1Decoder`](#pm1decoder) · [`Pm2Decoder`](#pm2decoder)
+[`Lh1Decoder`](#lh1decoder) · [`Lh1Encoder`](#lh1encoder) · [`Lh2Decoder`](#lh2decoder) · [`Lh3Decoder`](#lh3decoder) · [`Lz5Decoder`](#lz5decoder) · [`Lz5Encoder`](#lz5encoder) · [`LzhBuildingBlock`](#lzhbuildingblock) · [`LzhConstants`](#lzhconstants) · [`LzhDecoder`](#lzhdecoder) · [`LzhEncoder`](#lzhencoder) · [`LzsDecoder`](#lzsdecoder) · [`LzsEncoder`](#lzsencoder) · [`Pm1Decoder`](#pm1decoder) · [`Pm2Decoder`](#pm2decoder) · [`ZoomLzhufDecoder`](#zoomlzhufdecoder)
 
 #### `Lh1Decoder`
 
@@ -1986,6 +1986,14 @@ Decodes PMarc `-pm2-`: LZSS over an 8 KiB window with literals coded against a m
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decodes `originalSize` bytes of `-pm2-` data. |
+
+#### `ZoomLzhufDecoder`
+
+Decodes the LZHUF stage of the Amiga Zoom disk archiver: Yoshizaki/Okumura LZHUF with Zoom's own parameters.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> packed, int size)` | Decodes `packed` to exactly `size` bytes. |
 
 ### Namespace `Compression.Core.Dictionary.Lzjb`
 
