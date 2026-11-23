@@ -21,6 +21,19 @@ compressed files hold the same bytes: `testdir1/compressed1`, `3` and `5` are
 `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30`) — the bytes of the
 uncompressed `testdir1/TestFile2` on the same volume.
 
+## Encrypted volume (downloaded at test time)
+
+`ApfsEncryptionTests` reads fox-it/dissect.apfs's `tests/_data/encrypted.bin.gz`
+(https://github.com/fox-it/dissect.apfs, revision `a5626763922a16182a670e4906cfb8b88cf4baa6`,
+SHA-256 `9780647470fd4a818c0c7ae86f70f2b7d39c48a5ccf2f89f0f2bd47d35915f1d`), a 4 MiB
+container holding a FileVault volume whose password is `password`. The project is
+AGPL-3.0, so the image is downloaded when the test runs and never committed; the test is
+skipped without network access.
+
+`dissect-encrypted.manifest` is what apfs-fuse (https://github.com/sgan81/apfs-fuse,
+revision `66b86bd`), mounted with `-r password`, read from that volume: `f <sha256> <path>`
+per file, `l <target> <path>` per symbolic link, `o - <path>` per device node or FIFO.
+
 ## Licence
 
 keramics: Apache License 2.0, Copyright 2024-2026 Joachim Metz
