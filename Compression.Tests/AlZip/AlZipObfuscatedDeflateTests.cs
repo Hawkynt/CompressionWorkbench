@@ -250,7 +250,7 @@ public sealed class AlZipObfuscatedDeflateInteropTests {
     Directory.CreateDirectory(output);
     try {
       var run = FsInteropToolbox.RunWsl(
-        $"set -e; unar -q -D -o '{FsInteropToolbox.WinToWsl(output)}' '{FsInteropToolbox.WinToWsl(path)}' >/dev/null; cd '{FsInteropToolbox.WinToWsl(output)}'; find . -type f -print0 | sort -z | xargs -0 -r sha256sum");
+        $"set -e; unar -q -D -o {FsInteropToolbox.WinToWsl(output)} {FsInteropToolbox.WinToWsl(path)} >/dev/null; cd {FsInteropToolbox.WinToWsl(output)}; find . -type f -print0 | sort -z | xargs -0 -r sha256sum");
       Assert.That(run.ExitCode, Is.Zero, run.StdOut + run.StdErr);
       Assert.That(Parse(run.StdOut), Is.EquivalentTo(Expected()));
     } finally {

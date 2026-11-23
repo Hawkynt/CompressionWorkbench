@@ -8,11 +8,12 @@
 # 6cf6de8a), built for the kernel the libguestfs appliance boots, writes the files, makes
 # clones with `cp --reflink=always`, and a snapshot with apfs-snap; apfs-fuse
 # (https://github.com/sgan81/apfs-fuse) reads the result back for the manifest.
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -euo pipefail
 OUT=$(cd "$(dirname "$0")" && pwd)
 PROGS=$1; KMOD=$2; FUSE=$3
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+trap 'cwb_rmtree "$WORK"' EXIT
 mkdir -p "$WORK/pay"
 cp "$KMOD/apfs.ko" "$PROGS/apfs-snap/apfs-snap" "$WORK/pay/"
 python3 - "$WORK/pay" <<'PY'

@@ -7,11 +7,12 @@
 # container over a main device and a tier-2 device; apfsck checks both; apfs-fuse -f reads
 # the pair back. Only the main device is kept: everything a fresh container reaches lies on
 # it, and the tier-2 device is all zeros apart from its superblock copy.
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -euo pipefail
 OUT=$(cd "$(dirname "$0")" && pwd)
 PROGS=$1; FUSE=$2
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+trap 'cwb_rmtree "$WORK"' EXIT
 truncate -s 32M "$WORK/main.img"; truncate -s 64M "$WORK/tier2.img"
 "$PROGS/mkapfs/mkapfs" -F "$WORK/tier2.img" -L fusion -U 11111111-2222-3333-4444-555555555555 "$WORK/main.img"
 "$PROGS/apfsck/apfsck" -F "$WORK/tier2.img" "$WORK/main.img"
