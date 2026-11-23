@@ -1,0 +1,25 @@
+packMP3 v1.0g — MP3 recompressor (PMP format), converted to C#
+
+Source:   https://github.com/packjpg/packMP3
+Revision: e61c11941552f4ffe6e219a847f441d9520d2e50
+Files:    source/packmp3.cpp (frame parsing and rebuilding, frame analysis, PMP
+          header, context-modelled coding of side information and main data),
+          source/aricoder.cpp, source/aricoder.h (arithmetic coder, model_s,
+          model_b), source/bitops.cpp (bit reader/writer), source/huffmp3.cpp
+          (MP3 Huffman reader/writer), source/pmp3tbl.h, source/huffmp3tbl.h
+          (tables)
+Author:   Copyright 2010...2014 by Ratisbon University and Matthias Stirner
+Licence:  GNU Lesser General Public License, version 3 or (at your option) any
+          later version. This repository is LGPL-3.0-or-later.
+
+PackMp3Codec.cs, PackMp3Arithmetic.cs and PackMp3BitIO.cs convert the files
+above; PackMp3Tables.cs copies the frame-size, band-bound, CRC-16,
+bandwidth-conversion and bitrate-prediction tables and the ISO/IEC 11172-3
+Huffman code tables exactly. ZIP method 94 (WinZip MP3) carries this stream.
+
+Modifications: converted to C#; works on memory buffers instead of files;
+malformed input raises InvalidDataException (or NotSupportedException for MP3
+features packMP3 does not support) instead of reading past buffers; Huffman
+decoding walks trees built from the encoding tables.
+
+The full LGPL-3.0 text: https://www.gnu.org/licenses/lgpl-3.0.txt

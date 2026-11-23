@@ -157,6 +157,17 @@ public sealed class ZipWriter : IDisposable {
           method = ZipCompressionMethod.Store;
         }
         break;
+      case ZipCompressionMethod.Mp3:
+        // Only an MP3 packMP3 can carry is recompressed; anything else falls back to Deflate, as WinZip does.
+        if (!Compression.Core.Entropy.PackMp3.PackMp3Codec.TryCompress(data, out compressedData)) {
+          compressedData = DeflateCompressor.Compress(data, this._compressionLevel);
+          method = ZipCompressionMethod.Deflate;
+        }
+        if (compressedData.Length >= data.Length) {
+          compressedData = data;
+          method = ZipCompressionMethod.Store;
+        }
+        break;
       default:
         throw new NotSupportedException($"Unsupported compression method for writing: {method}");
     }

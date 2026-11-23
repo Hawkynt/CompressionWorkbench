@@ -43,6 +43,8 @@
           Pack="true" PackagePath="notices/Botan/" />
     <None Update="Dictionary\Sqx\THIRD-PARTY-NOTICE.Squeez-c.txt"
           Pack="true" PackagePath="notices/Sqx/" />
+    <None Update="Entropy\PackMp3\THIRD-PARTY-NOTICE.packMP3.txt"
+          Pack="true" PackagePath="notices/PackMp3/" />
   </ItemGroup>
 
   <ItemGroup>

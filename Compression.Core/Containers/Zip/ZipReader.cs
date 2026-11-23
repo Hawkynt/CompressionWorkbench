@@ -162,6 +162,9 @@ public sealed partial class ZipReader : IDisposable {
       case ZipCompressionMethod.Xz:
         data = ZipXzHelper.Decompress(compressedData);
         break;
+      case ZipCompressionMethod.Mp3:
+        data = Compression.Core.Entropy.PackMp3.PackMp3Codec.Decompress(compressedData);
+        break;
       case ZipCompressionMethod.Ppmd:
         data = ZipPpmdHelper.Decompress(compressedData, (int)entry.UncompressedSize);
         break;
