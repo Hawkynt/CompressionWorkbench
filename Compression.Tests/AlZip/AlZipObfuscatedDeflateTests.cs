@@ -246,13 +246,16 @@ public sealed class AlZipObfuscatedDeflateInteropTests {
   public void GivenOurMethod3Archive_WhenUnarExtractsIt_ThenEveryFileComesBack() {
     if (!Unar.Value) Assert.Ignore("unar is not installed.");
     var path = WriteOurs();
+    var output = Path.Combine(Path.GetTempPath(), "cwb-alz3-unar-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(output);
     try {
       var run = FsInteropToolbox.RunWsl(
-        $"set -e; T=$(mktemp -d); unar -q -D -o $T '{FsInteropToolbox.WinToWsl(path)}' >/dev/null; cd $T; find . -type f -print0 | sort -z | xargs -0 -r sha256sum; rm -rf $T");
+        $"set -e; unar -q -D -o '{FsInteropToolbox.WinToWsl(output)}' '{FsInteropToolbox.WinToWsl(path)}' >/dev/null; cd '{FsInteropToolbox.WinToWsl(output)}'; find . -type f -print0 | sort -z | xargs -0 -r sha256sum");
       Assert.That(run.ExitCode, Is.Zero, run.StdOut + run.StdErr);
       Assert.That(Parse(run.StdOut), Is.EquivalentTo(Expected()));
     } finally {
       File.Delete(path);
+      Directory.Delete(output, recursive: true);
     }
   }
 
