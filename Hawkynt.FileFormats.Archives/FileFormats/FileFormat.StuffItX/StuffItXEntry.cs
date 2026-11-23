@@ -14,6 +14,9 @@ public sealed class StuffItXEntry {
   /// <summary>Whether this entry is the resource fork of a file.</summary>
   public bool IsResourceFork { get; init; }
 
+  /// <summary>Whether this entry's stream is encrypted, so extracting it needs the password.</summary>
+  public bool IsEncrypted { get; init; }
+
   /// <summary>Uncompressed size in bytes.</summary>
   public long OriginalSize { get; init; }
 

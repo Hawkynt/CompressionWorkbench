@@ -51,7 +51,9 @@ MD5 hash function (RFC 1321). Produces 16-byte (128-bit) message digests. Used f
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `Compress` | `static void Compress(Span<uint> state, ReadOnlySpan<byte> block)` | Runs the compression function of RFC 1321 section 3.4 over one 64-byte block and adds the result into the four chaining words: the step for a caller that pads or finishes in its own way. |
 | `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the MD5 hash of the given data. |
+| `Initialize` | `static void Initialize(Span<uint> state)` | Sets the four chaining words to the initial A, B, C, D of RFC 1321 section 3.3. |
 
 #### `Md5HashSizeExtensions`
 

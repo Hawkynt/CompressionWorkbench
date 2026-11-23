@@ -19,7 +19,8 @@ namespace FileFormat.StuffItX;
 /// <para>
 /// Supported stream codings are none, Brimstone (method 0), Cyanide (1), Darkhorse (2), Deflate
 /// (3), Blend (4), the RC4-obscured stored method (5) and Iron (6), each optionally followed by the
-/// English or the x86 preprocessor. Method 7 and encrypted streams are listed but not extracted.
+/// English or the x86 preprocessor, and behind AES, Blowfish, DES or RC4 encryption given the
+/// password (see <see cref="StuffItXCrypto"/>). Method 7 streams are listed but not extracted.
 /// </para>
 /// <para>Converted from XADMaster's <c>XADStuffItXParser.m</c>, <c>StuffItXUtilities.m</c>,
 /// <c>XADStuffItXBlockHandle.m</c> and <c>XADRC4Handle.m</c> (LGPL-2.1-or-later, see
@@ -48,13 +49,17 @@ public sealed class StuffItXReader : IDisposable {
   private readonly List<StuffItXEntry> _entries = [];
   private readonly Dictionary<long, DataStream> _streams = [];
   private readonly Dictionary<long, byte[]> _decoded = [];
+  private readonly Dictionary<string, StuffItXCrypto> _crypto = [];
+  private readonly string? _password;
 
   /// <summary>Opens a StuffIt X archive and reads its directory.</summary>
   /// <exception cref="InvalidDataException">The data is not a well-formed StuffIt X archive.</exception>
   /// <exception cref="NotSupportedException">The archive uses a base-N text encoding or an unknown catalog tag.</exception>
-  public StuffItXReader(Stream stream, bool leaveOpen = false) {
+  /// <exception cref="Compression.Registry.ArchivePasswordException">The catalog is encrypted and <paramref name="password"/> is missing or wrong.</exception>
+  public StuffItXReader(Stream stream, bool leaveOpen = false, string? password = null) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
+    this._password = password;
     using (var ms = new MemoryStream()) {
       stream.CopyTo(ms);
       this._data = ms.ToArray();
@@ -115,6 +120,7 @@ public sealed class StuffItXReader : IDisposable {
     public int Type;
     public readonly long[] Attributes = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1];
     public readonly long[] Algorithms = [-1, -1, -1, -1, -1, -1];
+    public readonly List<(long Cipher, long KeyLength)> Ciphers = [];
     public int DataOffset;
   }
 
@@ -153,7 +159,7 @@ public sealed class StuffItXReader : IDisposable {
       if (key == 0) break;
       var value = (long)input.ReadP2();
       if (key <= 6) element.Algorithms[key - 1] = value;
-      if (key == 4) input.ReadP2();
+      if (key == 4) element.Ciphers.Add((value, (long)input.ReadP2()));
     }
     element.DataOffset = input.Position;
     return element;
@@ -306,7 +312,7 @@ public sealed class StuffItXReader : IDisposable {
     return new StuffItXEntry {
       Name = name, FullPath = path, IsResourceFork = resource,
       OriginalSize = f.Fork.Length, CompressedSize = compressed,
-      Method = MethodName(stream.Element), DataOffset = stream.Element.DataOffset,
+      Method = MethodName(stream.Element), DataOffset = stream.Element.DataOffset, IsEncrypted = stream.Element.Ciphers.Count > 0,
       LastModified = node.Modified, Created = node.Created, Comment = node.Comment,
       StreamId = f.Stream, StreamOffset = f.Offset,
     };
@@ -324,12 +330,13 @@ public sealed class StuffItXReader : IDisposable {
       6 => "Iron",
       var m => $"Method {m}",
     };
-    return element.Algorithms[2] switch {
+    method = element.Algorithms[2] switch {
       -1 => method,
       0 => method + "+English",
       2 => method + "+x86",
       var p => $"{method}+Preprocess {p}",
     };
+    return element.Ciphers.Count > 0 ? method + "+" + StuffItXCrypto.Describe(element.Ciphers) : method;
   }
 
   // ── stream decoding ──────────────────────────────────────────────────────────
@@ -347,12 +354,12 @@ public sealed class StuffItXReader : IDisposable {
   }
 
   private byte[] Decode(Element element, long length) {
-    if (element.Algorithms[3] >= 0) throw new NotSupportedException("Encrypted StuffIt X streams are not supported.");
     var preprocess = element.Algorithms[2];
     if (preprocess is >= 0 and not (0 or 2)) throw new NotSupportedException($"StuffIt X stream preprocessing '{MethodName(element)}' is not supported.");
     if (length < 0 || length > int.MaxValue) throw new InvalidDataException("StuffIt X stream length is out of range.");
 
     var payload = this.ReadBlocks(element);
+    if (element.Ciphers.Count > 0) payload = this.Decrypt(element, payload);
     var input = new StuffItXInput(payload);
     // The English filter changes the length, so its coder runs to its own end; x86 keeps it.
     var coded = preprocess == 0 ? long.MaxValue : length;
@@ -372,6 +379,15 @@ public sealed class StuffItXReader : IDisposable {
       2 => StuffItXX86.Decode(decoded, length),
       _ => decoded,
     };
+  }
+
+  /// <summary>Strips the cipher layers off a stream, deriving the keys once per layer layout.</summary>
+  private byte[] Decrypt(Element element, byte[] payload) {
+    if (this._password == null)
+      throw new Compression.Registry.ArchivePasswordException("This StuffIt X archive is encrypted: a password is needed.", false);
+    var layout = string.Join(",", element.Ciphers);
+    if (!this._crypto.TryGetValue(layout, out var crypto)) this._crypto[layout] = crypto = new StuffItXCrypto(this._password, element.Ciphers);
+    return crypto.Decrypt(payload);
   }
 
   /// <summary>Method 3: a window-size byte (always 15) and Deflate with a six-bit distance-code count.</summary>

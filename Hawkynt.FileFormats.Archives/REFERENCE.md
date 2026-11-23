@@ -32558,6 +32558,7 @@ One file, directory or resource fork of a StuffIt X (.sitx) archive.
 | `DataOffset` | `long DataOffset { get; init; }` | Offset of the stream's first data block in the archive. |
 | `FullPath` | `string FullPath { get; init; }` | Full path within the archive, '/'-separated; resource forks end in `.rsrc`. |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry is a directory. |
+| `IsEncrypted` | `bool IsEncrypted { get; init; }` | Whether this entry's stream is encrypted, so extracting it needs the password. |
 | `IsResourceFork` | `bool IsResourceFork { get; init; }` | Whether this entry is the resource fork of a file. |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Last modification time, when the catalog records one. |
 | `Method` | `string Method { get; init; }` | Name of the stream's compression method. |
@@ -32607,7 +32608,7 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `StuffItXReader` | `StuffItXReader(Stream stream, bool leaveOpen = false)` | Opens a StuffIt X archive and reads its directory. |
+| `StuffItXReader` | `StuffItXReader(Stream stream, bool leaveOpen = false, string password = null)` | Opens a StuffIt X archive and reads its directory. |
 | `Comment` | `string Comment { get; }` | The archive's own comment, from the catalog of the archive object, if it has one. |
 | `Entries` | `IReadOnlyList<StuffItXEntry> Entries { get; }` | The archive's files, directories and resource forks. |
 | `Dispose` | `void Dispose()` |  |
