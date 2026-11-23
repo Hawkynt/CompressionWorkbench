@@ -22,7 +22,18 @@ DISP=:$((90 + RANDOM % 9))
 Xvfb "$DISP" -screen 0 1024x768x24 >/dev/null 2>&1 &
 XP=$!
 W=$(mktemp -d "$WINEPREFIX/drive_c/cwb-XXXXXX")
-trap 'WINEPREFIX=$WINEPREFIX wineserver -k 2>/dev/null; kill $XP 2>/dev/null; rm -rf "$W"' EXIT
+# Removes only what this run made: the files in its own mktemp directory, then the emptied directories.
+cleanup() {
+  WINEPREFIX=$WINEPREFIX wineserver -k 2>/dev/null
+  kill "$XP" 2>/dev/null
+  case "$W" in
+    "$WINEPREFIX"/drive_c/cwb-??????) ;;
+    *) return ;;
+  esac
+  find "$W" -depth -type f -exec rm -f -- {} +
+  find "$W" -depth -type d -exec rmdir -- {} +
+}
+trap cleanup EXIT
 sleep 1
 cp "$1" "$W/in.alz"
 N=$(basename "$W")
