@@ -3,12 +3,13 @@
 # prefix of its own: WINEPREFIX=$CWB_POWERISO_PREFIX, default ~/.cache/cwb/poweriso-prefix) from
 # generated inputs, and records PowerISO's own conversion of each back to ISO as SHA-256.
 #   make-110.sh <output dir>
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -e
 out=$(realpath "$1")
 export WINEPREFIX=${CWB_POWERISO_PREFIX:-$HOME/.cache/cwb/poweriso-prefix} WINEDEBUG=-all
 P="$WINEPREFIX/drive_c/Program Files/PowerISO/piso.exe"
 W=$WINEPREFIX/drive_c/cwb110
-rm -rf "$W" && mkdir -p "$W/src/sub" && cd "$W"
+cwb_rmtree "$W"; mkdir -p "$W/src/sub" && cd "$W"
 python3 - <<'EOF'
 import random
 r = random.Random(110)
@@ -32,4 +33,4 @@ for f in v110-better v110-best v110-password; do
   echo "$(sha256sum < $f.iso | cut -d' ' -f1)  $(stat -c %s $f.iso)  $f.daa" >> "$out/v110-iso.sha256"
 done
 cat "$out/v110-iso.sha256"
-cd / && rm -rf "$W"
+cd / && cwb_rmtree "$W"

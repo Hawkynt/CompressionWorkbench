@@ -5,13 +5,14 @@
 # WINEPREFIX=$CWB_SC22_PREFIX, default ~/.cache/cwb/sc22-prefix). Squeez CommandLine 5.2 for
 # Linux refuses -rr ("Access is denied"); this sqc.exe writes it.
 #   make-internal-rr.sh <output dir>
+. "$(dirname "$(readlink -f "$0")")/../../../Support/cwb-rmtree.sh"
 set -e
 mkdir -p "$1"
 out=$(realpath "$1")
 export WINEPREFIX=${CWB_SC22_PREFIX:-$HOME/.cache/cwb/sc22-prefix} WINEDEBUG=-all
 SQ="$WINEPREFIX/drive_c/Program Files (x86)/SpeedProject/SpeedCommander 22/sqc.exe"
 W=$WINEPREFIX/drive_c/rr
-rm -rf "$W" && mkdir -p "$W" && cd "$W"
+cwb_rmtree "$W"; mkdir -p "$W" && cd "$W"
 python3 -c "
 import random
 r = random.Random(40)

@@ -87,7 +87,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 
 | # | Format | Status | Weight | What would make it real |
 | ---: | --- | --- | :---: | --- |
-| 1 | ZIP | PARTIAL | 3 | WinZip JPEG (96) has an LGPL decoder in XADMaster but needs a WinZip-written sample. Certificate, 3DES and RC2 strong encryption need SecureZIP samples. |
+| 1 | ZIP | PARTIAL | 3 | Done: WinZip JPEG (96) is read (a WinZip 21 sample) and written (unar extracts ours); WinZip MP3 (94) is read and written (a WinZip 21 sample and packMP3 output). WavPack (97) is read only, with no WinZip-written sample. Certificate, 3DES and RC2 strong encryption need SecureZIP samples. |
 | 2 | NSIS | PARTIAL | 3 | Creation uses externally supplied NSIS 3 Unicode stubs; zlib, bzip2 and LZMA, solid or not, are verified with the original stubs and 7-Zip. Uninstallers and custom scripts are not written. |
 | 3 | UPX | PARTIAL (read-only) | 3 | Writing refused: provable output needs UPX's GPL loader stubs. |
 | 4 | PECompact | MISSING | 3 | The handler locates the payload. Decode its block series (the aPLib and LZMA cores exist) against the 130 PackingData samples, then wrap it in a descriptor. |

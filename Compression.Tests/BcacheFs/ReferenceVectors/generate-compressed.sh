@@ -6,13 +6,14 @@
 #   BCACHEFS_NEW     a current bcachefs-tools build (used: v1.39.6)
 #   KERNEL_IMAGES=1  also let the distribution kernel (Ubuntu 24.04, 6.8) write a
 #                    zstd volume through the libguestfs appliance
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -euo pipefail
 NEW=${BCACHEFS_NEW:?set BCACHEFS_NEW to a current bcachefs-tools binary}
 DISTRO=${BCACHEFS_DISTRO:-bcachefs}
 OUT=$(cd "$(dirname "$0")" && pwd)
 SRC=$(mktemp -d)
 WORK=$(mktemp -d)
-trap 'sudo rm -rf "$SRC" "$WORK"' EXIT
+trap 'cwb_rmtree --sudo "$SRC" "$WORK"' EXIT
 
 # A tree that compresses: text spanning many 64 KiB extents, a repeating binary
 # pattern, a file of incompressible noise (stored plain beside the rest), a file

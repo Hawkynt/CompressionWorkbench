@@ -1,9 +1,10 @@
 #!/bin/bash
 # Builds the AFD and AFM reference sets with AFFLIB's affconvert (afflib-tools 3.7.20) and records
 # affcat's reconstruction of each. Run on Linux: make-fixtures.sh <workdir> <outdir>
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -e
 work="$1"; out="$2"
-rm -rf "$work"; mkdir -p "$work" "$out"; cd "$work"
+cwb_fresh_dir "$work" || exit 1; mkdir -p "$out"; cd "$work"
 python3 - <<'PY'
 import random
 r = random.Random(4242)

@@ -94,7 +94,7 @@ public class Bzip021ReferenceInteropTests {
     foreach (var tool in new[] { "gcc", "curl", "tar", "sha256sum" })
       if (!FsInteropToolbox.WslHasTool(tool)) return $"'{tool}' is required to build bzip 0.21.";
     var r = FsInteropToolbox.RunWsl(
-      $"test -x {Tool} && exit 0; set -e; rm -rf {Dir}; mkdir -p {Dir}; cd {Dir}; " +
+      $"test -x {Tool} && exit 0; set -e; {FsInteropToolbox.RemoveScratch(Dir)}; mkdir -p {Dir}; cd {Dir}; " +
       "curl -sSfL -o bzip-0.21.tar.gz http://distcache.freebsd.org/ports-distfiles/bzip-0.21.tar.gz; " +
       $"echo '{Sha256}  bzip-0.21.tar.gz' | sha256sum -c -; tar xzf bzip-0.21.tar.gz; cd bzip-0.21; " +
       "gcc -O2 -w -o bzip bzip.c");

@@ -17,3 +17,21 @@ their contents.
 
 The banner file is the 28 bytes `CWB test banner\nsecond line\n`; X-Mash stores it with a
 terminating NUL (29 bytes).
+
+## Reproducibility
+
+The archives were written by X-Mash 1.2 on FS-UAE 3.1.66 (A1200, AROS ROM of 2015-05-20) and
+regenerated later on the Linux build of the same FS-UAE version and the same ROM build, with the
+ROM's memory-debugging option switched off. Which of these differences changes the SQSH and
+banner output was not isolated.
+
+| File | Regenerated | Note |
+| --- | --- | --- |
+| `full-nuke.xms` | byte for byte | |
+| `part-nuke.xms` | byte for byte | |
+| `full-sqsh.xms` | no | every SQSH stream of the regenerated archive is 4 bytes longer (53,683 bytes in all) |
+| `banner-rlen.xms` | no | only the banner's XPK stream differs: here its one chunk is RLEN-packed (31 bytes for 29), in the regenerated archive it is stored |
+
+Both archives that did not reproduce are kept: each is genuine X-Mash 1.2 output, and each
+rebuilds the source floppy byte for byte (SHA-256 above) with our reader, as do the regenerated
+ones. The regenerated `banner-rlen.xms` also carries the same 29-byte banner.

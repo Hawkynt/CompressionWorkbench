@@ -8,6 +8,7 @@
 # ALZip is ESTsoft's Windows freeware; install it once into a wine prefix of its own (it is untrusted
 # software): ALZip1238.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR=C:\ALZip with
 # WINEPREFIX=$CWB_ALZIP_PREFIX (default ~/.cache/cwb/alzip-prefix).
+. "$(dirname "$(readlink -f "$0")")/../Support/cwb-rmtree.sh"
 export WINEPREFIX=${CWB_ALZIP_PREFIX:-$HOME/.cache/cwb/alzip-prefix} WINEDEBUG=-all
 CON=$WINEPREFIX/drive_c/ALZip/ALZipCon.exe
 if [ "$1" = "--check" ]; then
@@ -16,7 +17,7 @@ if [ "$1" = "--check" ]; then
 fi
 set -e
 W=$(mktemp -d "$WINEPREFIX/drive_c/cwb-XXXXXX")
-trap 'rm -rf "$W"' EXIT
+trap 'cwb_rmtree "$W"' EXIT
 cp "$1"/* "$W/"
 cd "$W"
 PW=()

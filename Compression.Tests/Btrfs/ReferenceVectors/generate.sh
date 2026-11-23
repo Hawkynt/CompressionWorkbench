@@ -4,11 +4,12 @@
 # need no Linux tools. Needs mkfs.btrfs / btrfs (btrfs-progs) and guestfish
 # (libguestfs-tools); no root — the Linux kernel inside the libguestfs appliance
 # writes the files, so every extent is one the kernel's own btrfs driver produced.
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -euo pipefail
 OUT=$(cd "$(dirname "$0")" && pwd)
 SRC=$(mktemp -d)
 WORK=$(mktemp -d)
-trap 'rm -rf "$SRC" "$WORK"' EXIT
+trap 'cwb_rmtree "$SRC" "$WORK"' EXIT
 
 # Deterministic tree. Mostly compressible so the images stay small after gzip, with
 # enough incompressible data to make the kernel fall back to plain extents too.

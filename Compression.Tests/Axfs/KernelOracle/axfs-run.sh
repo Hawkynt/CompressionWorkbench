@@ -14,6 +14,7 @@
 # Everything lives in $CWB_AXFS_KERNEL (default ~/.cache/cwb/axfs-kernel). The busybox for the
 # initramfs is Ubuntu's busybox-static. Nothing here is a build input: the tests skip when it
 # cannot run.
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -e
 K=${CWB_AXFS_KERNEL:-$HOME/.cache/cwb/axfs-kernel}
 KV=4.19.0-21-amd64
@@ -67,7 +68,7 @@ fi
 
 M=$K/x/lib/modules/$KV/kernel
 R=$(mktemp -d)
-trap 'rm -rf "$R" "$R.cpio.gz" "$R.log" "$R.img"' EXIT
+trap 'cwb_rmtree "$R" "$R.cpio.gz" "$R.log" "$R.img"' EXIT
 mkdir -p "$R/bin" "$R/mods" "$R/dev" "$R/proc" "$R/sys" "$R/mnt"
 cp "$K/bb/usr/bin/busybox" "$R/bin/"
 for a in $("$K/bb/usr/bin/busybox" --list); do [ "$a" = busybox ] || ln -s busybox "$R/bin/$a"; done

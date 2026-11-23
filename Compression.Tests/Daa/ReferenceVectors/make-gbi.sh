@@ -5,12 +5,13 @@
 # virtual X display (Xvfb, openbox, xdotool; the coordinates are those of a 1280x900 screen).
 # The ISOs are built here from generated files; gbi-iso.sha256 records which ISO each GBI holds.
 #   make-gbi.sh <output dir>
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -e
 mkdir -p "$1"
 out=$(realpath "$1")
 export WINEPREFIX=${CWB_GBURNER_PREFIX:-$HOME/.cache/cwb/gburner-prefix} WINEDEBUG=-all DISPLAY=:78
 W=$WINEPREFIX/drive_c/cwbgbi
-rm -rf "$W" && mkdir -p "$W/src/sub" && cd "$W"
+cwb_rmtree "$W"; mkdir -p "$W/src/sub" && cd "$W"
 python3 - <<'EOF'
 import random
 r = random.Random(110)
@@ -68,4 +69,4 @@ cp gbi-*.gbi "$out/"
 } > "$out/gbi-iso.sha256"
 ls -la "$out"/gbi-*
 cat "$out/gbi-iso.sha256"
-cd / && rm -rf "$W"
+cd / && cwb_rmtree "$W"

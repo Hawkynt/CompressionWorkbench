@@ -266,7 +266,7 @@ public class DarExternalConformanceTests {
       Assert.That(stat.StdOut, Does.Contain("d drwx------"));
       Assert.That(stat.StdOut, Does.Contain("run.sh\n../no where"));
     } finally {
-      Shell($"{(root ? "sudo " : "")}rm -rf {wslOut}");
+      Shell(FsInteropToolbox.RemoveScratch(wslOut, root ? "sudo" : null));
     }
   }
 

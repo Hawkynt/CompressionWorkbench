@@ -4,12 +4,13 @@
 # ../KernelOracle/kernel-run.sh), and the kernel's read-back is kept as <name>.manifest.
 # journal-replay.img is captured between a kernel commit and its write-back. Documentation, not a
 # build input; run from this directory under Linux or WSL with qemu-system-x86_64.
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 RUN="$HERE/../KernelOracle/kernel-run.sh"
 bash "$RUN" --prepare
 W=$(mktemp -d)
-trap 'rm -rf "$W"' EXIT
+trap 'cwb_rmtree "$W"' EXIT
 mkdir -p "$W/payload"
 for n in 0 1 100 4095 4096 4097; do head -c $n /dev/urandom > "$W/payload/f_$n"; done
 for i in $(seq 1 1200); do echo "line $i: the quick brown fox jumps over the lazy dog $((i*7919 % 1000))"; done > "$W/payload/f_text"

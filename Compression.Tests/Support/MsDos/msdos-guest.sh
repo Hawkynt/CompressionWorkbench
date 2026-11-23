@@ -10,12 +10,13 @@
 #   kind win98 : <boot> is a Windows 98 CD image; its boot floppy, DRVSPACE.BIN and SCANDISK come
 #                from the CD.
 #   product    : DBLSPACE or DRVSPACE — names the volume file (<product>.000), the INI file and the tool.
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -u
 exec < /dev/null          # mtools must never stop to ask
 KIND="$1"; BOOT="$2"; TOOLSRC="$3"; PRODUCT="$4"; CVF="$5"; RES="$6"; AUTO="$7"; PAY="$8"; CYL="$9"; MAXWAIT="${10}"
 W=$(mktemp -d /tmp/cwbdos.XXXXXX)
 QP=0
-trap '[ $QP -ne 0 ] && kill $QP 2>/dev/null; rm -rf "$W"' EXIT
+trap '[ $QP -ne 0 ] && kill $QP 2>/dev/null; cwb_rmtree "$W"' EXIT
 mkdir -p "$RES"
 FLOPPY_B=()
 PRE=""

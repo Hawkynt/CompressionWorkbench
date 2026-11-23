@@ -8,6 +8,7 @@
 # (linux-image-5.4.0-3+reizer4.0.2-cloud-amd64). It is fetched once into $CWB_REISER4_KERNEL
 # (default ~/.cache/cwb/reiser4-kernel) together with Ubuntu's busybox-static for the initramfs.
 # Nothing here is a build input: the tests that use it skip when it cannot run.
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -e
 K=${CWB_REISER4_KERNEL:-$HOME/.cache/cwb/reiser4-kernel}
 KV=5.4.0-3+reizer4.0.2-cloud-amd64
@@ -32,7 +33,7 @@ fi
 
 M=$K/x/lib/modules/$KV/kernel
 R=$(mktemp -d)
-trap 'rm -rf "$R" "$R.cpio.gz" "$R.log"' EXIT
+trap 'cwb_rmtree "$R" "$R.cpio.gz" "$R.log"' EXIT
 mkdir -p "$R/bin" "$R/mods" "$R/dev" "$R/proc" "$R/sys" "$R/mnt" "$R/payload"
 cp "$K/bb/usr/bin/busybox" "$R/bin/"
 for a in $("$K/bb/usr/bin/busybox" --list); do [ "$a" = busybox ] || ln -s busybox "$R/bin/$a"; done

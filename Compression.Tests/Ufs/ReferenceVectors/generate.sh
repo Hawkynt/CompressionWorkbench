@@ -3,10 +3,11 @@
 # Needs: makefs (apt: makefs, the NetBSD tool, Debian 20190105-3), python3, gzip,
 # and FreeBSD 8.2's newfs/fsck_ffs as packaged by Debian (ufsutils_8.2-3_amd64.deb
 # from archive.debian.org, unpacked; pass its sbin directory as $1).
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -euo pipefail
 UFSUTILS=${1:?path to the unpacked ufsutils sbin directory}
 OUT=$(cd "$(dirname "$0")" && pwd)
-T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
+T=$(mktemp -d); trap 'cwb_rmtree "$T"' EXIT
 S=$T/src
 mkdir -p "$S/sub/deeper" "$S/emptydir"
 printf 'hello ufs\n' > "$S/hello.txt"

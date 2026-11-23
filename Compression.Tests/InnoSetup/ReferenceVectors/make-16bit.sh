@@ -4,10 +4,11 @@
 # usage: make-16bit.sh <dir holding COMPIL16.EXE, SETUP.E16, SETUPLDR.E16, UNINST.E16> <workdir> [innoextract]
 # Needs wine (16-bit support) and xvfb-run. The compiler directory is innoextract's "app" folder
 # of isetup16-1.2.16.exe (see README.md).
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 APP=${1:?compiler directory}
 W=${2:?work directory}
 IE=${3:-innoextract}
-rm -rf $W && mkdir -p $W/in/sub && cd $W || exit 1
+cwb_fresh_dir "$W" && mkdir -p $W/in/sub && cd $W || exit 1
 export WINEDEBUG=-all
 python3 - <<'EOF'
 import random

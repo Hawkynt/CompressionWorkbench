@@ -127,7 +127,7 @@ public class XpkAncientInteropTests {
       if (!FsInteropToolbox.WslHasTool(tool)) return $"'{tool}' is required to build ancient.";
     var dir = $"/tmp/cwb-ancient-{Revision}";
     var r = FsInteropToolbox.RunWsl(
-      $"test -x {Tool} && exit 0; set -e; rm -rf {dir}; mkdir -p {dir}; cd {dir}; " +
+      $"test -x {Tool} && exit 0; set -e; {FsInteropToolbox.RemoveScratch(dir)}; mkdir -p {dir}; cd {dir}; " +
       $"curl -sSL https://github.com/temisu/ancient/archive/{Revision}.tar.gz | tar xz --strip-components=1; " +
       "make -s -j2 -f Makefile.unix obj/ancient > build.log 2>&1 || (tail -30 build.log; exit 1)");
     return r.ExitCode == 0 ? null : $"building ancient failed:\n{r.StdOut}\n{r.StdErr}";

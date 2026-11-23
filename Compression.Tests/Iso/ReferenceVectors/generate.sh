@@ -5,10 +5,11 @@
 # xorriso writes the images; the Linux kernel's isofs driver (inside the libguestfs
 # appliance) reads them back, resolving Rock Ridge names, symbolic links, relocated deep
 # directories and zisofs compression on its own. manifest-*.txt is what it saw.
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -euo pipefail
 OUT=$(cd "$(dirname "$0")" && pwd)
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+trap 'cwb_rmtree "$WORK"' EXIT
 T="$WORK/tree"
 mkdir -p "$T/sub" "$T/a/b/c/d/e/f/g/h/i/j"
 

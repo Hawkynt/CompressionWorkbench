@@ -6,10 +6,11 @@
 #     -DSPIFFS_ALIGNED_OBJECT_INDEX_TABLES=1"`, `BUILD_CONFIG_NAME=-generic`, and
 #     `BUILD_CONFIG_NAME=-arduino-esp32 CPPFLAGS="-DSPIFFS_OBJ_META_LEN=4"`)
 #     and spiffsgen.py from ESP-IDF v5.2.2 (components/spiffs/spiffsgen.py).
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -euo pipefail
 T=${1:?directory with the mkspiffs builds and spiffsgen.py}
 OUT=$(cd "$(dirname "$0")" && pwd)
-W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
+W=$(mktemp -d); trap 'cwb_rmtree "$W"' EXIT
 S=$W/src; mkdir -p "$S/dir/sub"
 printf 'hello spiffs\n' > "$S/hello.txt"
 : > "$S/empty.bin"

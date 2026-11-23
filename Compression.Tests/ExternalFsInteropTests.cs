@@ -1670,7 +1670,7 @@ public class ExternalFsInteropTests {
     // Use a tmp HOME to avoid collisions across parallel test runs.
     var hfsHome = $"/tmp/cwb_hfs_{Guid.NewGuid():N}";
     var bash = $"mkdir -p {hfsHome} && HOME={hfsHome} hmount {FsInteropToolbox.WinToWsl(imgPath)} && " +
-               $"HOME={hfsHome} hls && HOME={hfsHome} humount; rc=$?; rm -rf {hfsHome}; exit $rc";
+               $"HOME={hfsHome} hls && HOME={hfsHome} humount; rc=$?; {FsInteropToolbox.RemoveScratch(hfsHome)}; exit $rc";
     var result = FsInteropToolbox.RunWsl(bash);
     Assert.That(result.ExitCode, Is.EqualTo(0),
       $"hmount/hls/humount rejected our HFS image:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
@@ -2497,6 +2497,23 @@ internal static class FsInteropToolbox {
     var found = result.ExitCode == 0 && !string.IsNullOrWhiteSpace(result.StdOut);
     _wslToolCache[tool] = found;
     return found;
+  }
+
+  /// <summary>
+  /// A shell command that removes scratch paths a WSL / Linux command made for itself (below
+  /// <c>/tmp</c>, or inside a wine prefix's <c>drive_c</c>): it deletes their files, then the emptied
+  /// directories, through <c>cwb_rmtree</c> in <c>Support/cwb-rmtree.sh</c>, and never runs
+  /// <c>rm -rf</c>. Any other path is refused and left alone.
+  /// </summary>
+  /// <param name="paths">The shell words naming the paths, e.g. <c>$d</c>; expanded by the calling shell.</param>
+  /// <param name="sudoPrefix">A command prefix that runs the removal as root (e.g. <c>sudo</c>), for
+  /// scratch trees a root-run tool wrote; <see langword="null"/> removes as the current user.</param>
+  public static string RemoveScratch(string paths, string? sudoPrefix = null) {
+    // WinToWsl already quotes a Windows path for bash
+    var helper = ". " + WinToWsl(Path.Combine(Documentation.FilesystemReadmeIsCurrentTests.RepositoryRoot(), "Compression.Tests", "Support", "cwb-rmtree.sh"));
+    return sudoPrefix == null
+      ? $"{helper}; cwb_rmtree {paths}"
+      : $"{sudoPrefix} bash -c \"{helper}; cwb_rmtree {paths}\"";
   }
 
   /// <summary>

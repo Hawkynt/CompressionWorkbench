@@ -41,7 +41,7 @@ public sealed class SqxSqueezTests {
       var tmp = $"/tmp/cwb_sqxsq_{Guid.NewGuid():N}";
       var cmds = from f in new[] { "SQX1", "SQX2" } from m in new[] { 1, 2, 3, 4 } from n in Inputs.Keys
                  select $"timeout 60 {sqc} a -q -ep -fmt {f} -m{m} {tmp}/{n}.{f}.m{m}.sqx {tmp}/{n} < /dev/null > /dev/null 2>&1";
-      FsInteropToolbox.RunWsl($"mkdir -p {tmp} && cp {w}/*.bin {w}/*.txt {tmp}/ && cd {tmp} && {string.Join(" ; ", cmds)} ; cp {tmp}/*.sqx {w}/; rm -rf {tmp}");
+      FsInteropToolbox.RunWsl($"mkdir -p {tmp} && cp {w}/*.bin {w}/*.txt {tmp}/ && cd {tmp} && {string.Join(" ; ", cmds)} ; cp {tmp}/*.sqx {w}/; {FsInteropToolbox.RemoveScratch(tmp)}");
       var archives = Directory.GetFiles(dir, "*.sqx").Order().ToList();
       Assert.That(archives, Has.Count.EqualTo(24));
       foreach (var path in archives) {
@@ -77,7 +77,7 @@ public sealed class SqxSqueezTests {
       var tmp = $"/tmp/cwb_sqxsq_{Guid.NewGuid():N}";
       var cmds = names.Select(n => $"mkdir -p {tmp}/{n}.out && timeout 60 {sqc} x -q -o {tmp}/{n} {tmp}/{n}.out/ < /dev/null > /dev/null 2>&1; echo \"{n} RC=$?\"; for f in {string.Join(' ', Inputs.Keys)}; do cmp -s {tmp}/{n}.out/$f {w}/$f && echo \"{n} $f same\" || echo \"{n} $f DIFFERENT\"; done");
       foreach (var (name, data) in Inputs) File.WriteAllBytes(Path.Combine(dir, name), data);
-      var run = FsInteropToolbox.RunWsl($"mkdir -p {tmp} && cp {w}/*.sqx {tmp}/ && cd {tmp} && {string.Join(" ; ", cmds)} ; rm -rf {tmp}");
+      var run = FsInteropToolbox.RunWsl($"mkdir -p {tmp} && cp {w}/*.sqx {tmp}/ && cd {tmp} && {string.Join(" ; ", cmds)} ; {FsInteropToolbox.RemoveScratch(tmp)}");
       var lines = run.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
       Assert.That(lines.Where(l => l.Contains("RC=")), Is.All.EndsWith("RC=0"), run.StdOut);
       Assert.That(lines.Where(l => !l.Contains("RC=")).ToList(), Has.Count.EqualTo(names.Count * Inputs.Count).And.All.EndsWith("same"), run.StdOut);

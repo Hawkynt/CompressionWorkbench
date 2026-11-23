@@ -2,11 +2,12 @@
 # Builds the legacy-format reference archives (README.md, "Older dar releases") with dar releases
 # built from the SourceForge source tarballs into /opt/cwb-dar/<version> (configure --prefix), by
 # default into the directory holding this script. The source tree is the one make-fixtures.sh uses.
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -e
 OUT=${1:-$(dirname "$(readlink -f "$0")")}
 VERSIONS=${VERSIONS:-"2.4.24 2.5.22 2.6.0 2.6.16 2.7.0 2.7.1 2.7.10 2.8.6"}
 S=/tmp/cwbdar-legacy/src
-rm -rf /tmp/cwbdar-legacy; mkdir -p $S/dir/deeper "$OUT"
+cwb_rmtree /tmp/cwbdar-legacy; mkdir -p $S/dir/deeper "$OUT"
 cd $S
 printf 'hello dar\n' > hello.txt
 : > empty.bin

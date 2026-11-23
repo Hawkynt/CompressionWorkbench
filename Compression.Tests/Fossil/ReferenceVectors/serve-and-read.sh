@@ -5,6 +5,7 @@
 # With a second argument the server then creates and writes /active/added.txt, syncs, and the
 # changed volume is copied to that path.
 # Usage: serve-and-read.sh <volume> [changed-volume]   (expects plan9port built in ~/plan9port)
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -u
 img="${1:?usage: serve-and-read.sh <volume> [changed-volume]}"
 export PLAN9=$HOME/plan9port PATH=$PATH:$HOME/plan9port/bin:$HOME/plan9port/bin/fossil
@@ -47,4 +48,4 @@ exec 3>&- 2>/dev/null
 pkill -f "$d/cons.txt" 2>/dev/null; sleep 1
 [ -n "${2:-}" ] && cp $d/v.img "$2"
 echo "== log"; tr -d '\r' < $d/fossil.log | grep -v '^$' | head -20
-rm -rf "$d"
+cwb_rmtree "$d"
