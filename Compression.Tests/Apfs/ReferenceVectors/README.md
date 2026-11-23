@@ -46,6 +46,16 @@ mounted with `-o snap=<xid>`, from snapshots 1-3, every 100th and the last (`s <
 lines head each; `.fseventsd` entries kept only for the first three snapshots), listed
 under `.snapshots/<name>/` the way the reader lists them; `n` gives the snapshot count.
 
+## Clones and a kernel-written snapshot
+
+`apfs-clones.img.gz` (64 MiB container, gzip-compressed) was formatted by mkapfs from
+apfsprogs (`b9c4cb40`) and filled by the linux-apfs-rw kernel module (`6cf6de8a`) inside a
+libguestfs appliance: two files, a whole-file clone of each (`cp --reflink=always`), a
+symbolic link, a snapshot `before` (apfs-snap), then a write into the source, a write into
+one clone and an append to the other. apfsck passes it. `apfs-clones.manifest` is what
+apfs-fuse read from the live volume and the snapshot. `generate-clones.sh` documents the
+steps. Captured 2026-11-23 on Ubuntu under WSL2 (appliance kernel 6.8.0-149-generic).
+
 ## Licence
 
 keramics: Apache License 2.0, Copyright 2024-2026 Joachim Metz
