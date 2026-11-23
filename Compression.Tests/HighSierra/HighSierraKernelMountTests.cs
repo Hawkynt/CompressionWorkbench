@@ -94,7 +94,7 @@ public sealed class HighSierraKernelMountTests {
     if (!FsInteropToolbox.WslAvailable || !FsInteropToolbox.WslHasTool("guestfish"))
       Assert.Ignore("'guestfish' not available (install libguestfs-tools).");
     _capable ??= FsInteropToolbox.RunWsl(ApplianceEnv + " d=$(mktemp -d); truncate -s 1M $d/p.img; " +
-      "printf 'run\\nmkfs ext2 /dev/sda\\nmount /dev/sda /\\nls /\\numount /\\n' | timeout 600 guestfish -a $d/p.img 2>&1; rm -rf $d")
+      "printf 'run\\nmkfs ext2 /dev/sda\\nmount /dev/sda /\\nls /\\numount /\\n' | timeout 600 guestfish -a $d/p.img 2>&1; " + FsInteropToolbox.RemoveScratch("$d"))
       .StdOut.Contains("lost+found", StringComparison.Ordinal);
     if (_capable != true)
       Assert.Ignore("the libguestfs appliance does not start here (no kernel image or no KVM).");

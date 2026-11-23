@@ -4,10 +4,11 @@
 # image is written by qemu-img / qemu-io (qemu-utils); manifest.txt holds the SHA-256
 # and length of what `qemu-img convert -O raw` makes of each, which is what the reader
 # has to reproduce.
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -euo pipefail
 OUT=$(cd "$(dirname "$0")" && pwd)
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+trap 'cwb_rmtree "$WORK"' EXIT
 cd "$WORK"
 
 # An 8 MiB guest: text, incompressible runs and zero stretches, so grains are

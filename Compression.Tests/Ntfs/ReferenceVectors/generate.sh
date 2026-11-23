@@ -14,11 +14,12 @@
 # IO_REPARSE_TAG_WOF reparse point naming the algorithm — and
 # then the kernel's ntfs3 driver, which decodes system compression on its own, reads every
 # file back. manifest.txt is what ntfs3 returned.
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -euo pipefail
 OUT=$(cd "$(dirname "$0")" && pwd)
 SRC=$(cd "$1" && pwd)
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+trap 'cwb_rmtree "$WORK"' EXIT
 size=$(stat -c %s "$SRC/source.bin")
 
 truncate -s 16M "$WORK/ntfs.img"

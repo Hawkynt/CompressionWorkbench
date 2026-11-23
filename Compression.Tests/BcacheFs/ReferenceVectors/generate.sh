@@ -5,13 +5,14 @@
 #
 #   BCACHEFS_DISTRO  bcachefs-tools as Debian/Ubuntu ship it (1.3.x); default: bcachefs
 #   BCACHEFS_NEW     a current bcachefs-tools build (used: v1.39.6)
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -euo pipefail
 DISTRO=${BCACHEFS_DISTRO:-bcachefs}
 NEW=${BCACHEFS_NEW:?set BCACHEFS_NEW to a current bcachefs-tools binary}
 OUT=$(cd "$(dirname "$0")" && pwd)
 SRC=$(mktemp -d)
 WORK=$(mktemp -d)
-trap 'sudo rm -rf "$SRC" "$WORK"' EXIT
+trap 'cwb_rmtree --sudo "$SRC" "$WORK"' EXIT
 
 # The tree the populated image is made from. Contents are deterministic, so the
 # manifest below is reproducible apart from the change times the kernel stamps.

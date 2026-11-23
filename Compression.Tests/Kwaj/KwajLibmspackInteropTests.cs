@@ -31,7 +31,7 @@ public class KwajLibmspackInteropTests {
       if (!FsInteropToolbox.WslHasTool(tool)) return $"'{tool}' is required to build libmspack's msexpand.";
     var dir = $"/tmp/cwb-libmspack-{Revision}";
     var r = FsInteropToolbox.RunWsl(
-      $"test -x {Tool} && exit 0; set -e; rm -rf {dir}; mkdir -p {dir}; cd {dir}; " +
+      $"test -x {Tool} && exit 0; set -e; {FsInteropToolbox.RemoveScratch(dir)}; mkdir -p {dir}; cd {dir}; " +
       $"curl -sSL https://github.com/kyz/libmspack/archive/{Revision}.tar.gz | tar xz --strip-components=2 libmspack-{Revision}/libmspack; " +
       "gcc -O1 -w -I mspack -I test -o msexpand examples/msexpand.c $(ls mspack/*.c | grep -v debug.c)");
     return r.ExitCode == 0 ? null : $"building msexpand failed:\n{r.StdOut}\n{r.StdErr}";

@@ -6,6 +6,7 @@
 #   e.g. make-iscc-headers.sh ~/.cache/cwb/inno-prefix IS605 IS612 IS622 ... IS711
 # Each release was installed into the prefix from its official installer
 # (https://github.com/jrsoftware/issrc/releases, tag is-<version>) with /VERYSILENT /DIR=C:\IS<ver>.
+. "$(dirname "$(readlink -f "$0")")/../../../Support/cwb-rmtree.sh"
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 export WINEPREFIX="$1" WINEDEBUG=-all
@@ -26,4 +27,4 @@ for d in "$@"; do
   echo "$d $(python3 "$HERE/iscc-headers.py" out/ref.exe)"
 done
 cd /
-rm -rf "$W"
+cwb_rmtree "$W"

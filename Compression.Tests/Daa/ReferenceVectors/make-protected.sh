@@ -2,10 +2,11 @@
 # Builds two ISOs of generated files and converts them with PowerISO 1.3: a password-protected DAA
 # (small ISO) and a split, password-protected DAA (larger ISO, -volsize 300K, its minimum).
 # usage: make-protected.sh <poweriso binary> <work directory> <this directory>
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 P=${1:?poweriso binary}
 W=${2:?work directory}
 V=${3:?reference vector directory}
-rm -rf $W && mkdir -p $W/a/sub $W/b && cd $W || exit 1
+cwb_fresh_dir "$W" && mkdir -p $W/a/sub $W/b && cd $W || exit 1
 python3 - <<'EOF'
 import random
 r = random.Random(30)

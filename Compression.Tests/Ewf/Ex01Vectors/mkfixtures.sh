@@ -3,10 +3,11 @@
 # release that writes EWF2; built from source, in WSL). Usage: sh mkfixtures.sh <workdir> <outdir>
 # (documentation, not a build input). The images are stored gzipped; sources.sha256 holds the
 # SHA-256 of the media each was acquired from.
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -e
 work=$1; out=$2
 export PATH=$HOME/libewf-exp/bin:$PATH
-rm -rf "$work"; mkdir -p "$work"; cd "$work"
+cwb_fresh_dir "$work" || exit 1; cd "$work"
 python3 -c "
 import random
 r = random.Random(17)

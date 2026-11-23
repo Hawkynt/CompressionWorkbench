@@ -168,7 +168,7 @@ public class PartImageExternalConformanceTests {
       $"{sudo} losetup -d $L",
       $"{sudo} cp $w/img.000 $w/back.img {FsInteropToolbox.WinToWsl(this._tmp)}/",
       $"{sudo} chmod 0644 {FsInteropToolbox.WinToWsl(this._tmp)}/img.000 {FsInteropToolbox.WinToWsl(this._tmp)}/back.img",
-      $"{sudo} rm -rf $w");
+      FsInteropToolbox.RemoveScratch("$w", sudo));
     var r = FsInteropToolbox.RunWsl(script);
     TestContext.Out.WriteLine($"{r.ExitCode}\n{r.StdOut}\n{r.StdErr}");
     Assert.That(r.ExitCode, Is.EqualTo(0));

@@ -181,7 +181,7 @@ public class InnoSetupWriterTests {
           $"export WINEPREFIX='{prefix}' WINEDEBUG=-all; t=$(mktemp -d); cp '{linuxExe}' \"$t/setup.exe\"; cd \"$t\"; " +
           "d=$(winepath -w \"$t/target\"); " +
           "timeout 300 wine \"$t/setup.exe\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART \"/DIR=$d\" < /dev/null; " +
-          $"echo exit=$?; [ -d \"$t/target\" ] && cp -r \"$t/target\" '{linuxTarget}'; cd /; rm -rf \"$t\"; wineserver -k");
+          $"echo exit=$?; [ -d \"$t/target\" ] && cp -r \"$t/target\" '{linuxTarget}'; cd /; {FsInteropToolbox.RemoveScratch("\"$t\"")}; wineserver -k");
         Assert.That(run.StdOut, Does.Contain("exit=0"), $"{who} failed under wine:\n{run.StdOut}\n{run.StdErr}");
       } else {
         // the setup program is third-party native code: it runs on the host only when asked to

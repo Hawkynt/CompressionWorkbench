@@ -1,6 +1,7 @@
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -u
 OUT="$1"
-rm -rf "$OUT"; mkdir -p "$OUT/arj" "$OUT/xar" "$OUT/in"
+cwb_fresh_dir "$OUT" || exit 1; mkdir -p "$OUT/arj" "$OUT/xar" "$OUT/in"
 cd "$OUT/in"
 # Inputs: numbered text lines (long-distance repeats every 50 lines => matches far beyond 2 KiB),
 # and a pseudo-random binary block from a fixed seed (no external entropy).

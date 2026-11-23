@@ -76,7 +76,7 @@ public sealed class SqxVolumeTests {
       var w = FsInteropToolbox.WinToWsl(dir);
       // Squeez writes its volumes in a Linux directory (it fails on the Windows mount)
       var tmp = $"/tmp/cwb_sqxvol_{Guid.NewGuid():N}";
-      var run = FsInteropToolbox.RunWsl($"mkdir -p {tmp} && cp {w}/noise.bin {w}/words.txt {w}/last.bin {tmp}/ && cd {tmp} && timeout 120 {sqc} a -q -ep -fmt {format} {switches} {(volumes ? "-mv 140000" : "")} {tmp}/set.sqx {tmp}/noise.bin {tmp}/words.txt {tmp}/last.bin < /dev/null; echo RC=$?; cp {tmp}/set.* {w}/; rm -rf {tmp}");
+      var run = FsInteropToolbox.RunWsl($"mkdir -p {tmp} && cp {w}/noise.bin {w}/words.txt {w}/last.bin {tmp}/ && cd {tmp} && timeout 120 {sqc} a -q -ep -fmt {format} {switches} {(volumes ? "-mv 140000" : "")} {tmp}/set.sqx {tmp}/noise.bin {tmp}/words.txt {tmp}/last.bin < /dev/null; echo RC=$?; cp {tmp}/set.* {w}/; {FsInteropToolbox.RemoveScratch(tmp)}");
       Assert.That(run.StdOut, Does.Contain("RC=0"), run.StdOut + run.StdErr);
       Assert.That(File.Exists(Path.Combine(dir, "set.001")), Is.EqualTo(volumes), "a multi-volume set");
       using var reader = new SqxReader(File.OpenRead(Path.Combine(dir, "set.sqx")));

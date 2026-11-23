@@ -2,10 +2,11 @@
 # Builds the dar 2.7.13 reference archives (README.md) with the system dar, by default into the
 # directory holding this script. The encrypted archive's size varies from run to run (dar pads it
 # with random-length elastic buffers); the checked-in one is the smallest of several runs.
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -e
 OUT=${1:-$(dirname "$(readlink -f "$0")")}
 S=/tmp/cwbdar/src
-rm -rf /tmp/cwbdar; mkdir -p $S/dir/deeper "$OUT" /tmp/cwbdar/empty
+cwb_rmtree /tmp/cwbdar; mkdir -p $S/dir/deeper "$OUT" /tmp/cwbdar/empty
 rm -f "$OUT"/tree*.1.dar "$OUT"/multi.*.dar "$OUT"/empty.1.dar "$OUT"/encrypted.1.dar
 cd $S
 printf 'hello dar\n' > hello.txt

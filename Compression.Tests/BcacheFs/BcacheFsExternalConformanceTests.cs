@@ -376,7 +376,7 @@ public sealed class BcacheFsExternalConformanceTests {
       + $"cp {FsInteropToolbox.WinToWsl(imagePath)} $img; mkdir -p $mnt; "
       + $"( timeout 300 {fuse} fusemount -f $img $mnt > /tmp/cwb-{id}.log 2>&1 & ); "
       + "for i in $(seq 1 100); do mountpoint -q $mnt && break; sleep 0.1; done; mountpoint -q $mnt; "
-      + $"( cd $mnt; {commands} ) > $out; fusermount3 -u $mnt; cat $out; rm -rf $img $mnt /tmp/cwb-{id}.*";
+      + $"( cd $mnt; {commands} ) > $out; fusermount3 -u $mnt; cat $out; {FsInteropToolbox.RemoveScratch($"$img $mnt /tmp/cwb-{id}.*")}";
     var result = FsInteropToolbox.RunWsl(script);
     var output = Combined(result);
     TestContext.Out.WriteLine(output);

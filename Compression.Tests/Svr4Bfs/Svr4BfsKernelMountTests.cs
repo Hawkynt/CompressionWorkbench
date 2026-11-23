@@ -159,7 +159,7 @@ public sealed class Svr4BfsKernelMountTests {
   private static bool ProbeKernel() {
     var r = FsInteropToolbox.RunWsl(
       ApplianceEnv + " d=$(mktemp -d); truncate -s 64K $d/p.img; mkfs.bfs $d/p.img >/dev/null 2>&1; " +
-      "printf 'run\\nmount-vfs \"\" bfs /dev/sda /\\nwrite /probe ok\\nls /\\numount /\\n' | timeout 600 guestfish -a $d/p.img 2>&1; rm -rf $d");
+      "printf 'run\\nmount-vfs \"\" bfs /dev/sda /\\nwrite /probe ok\\nls /\\numount /\\n' | timeout 600 guestfish -a $d/p.img 2>&1; " + FsInteropToolbox.RemoveScratch("$d"));
     return r.StdOut.Contains("probe", StringComparison.Ordinal);
   }
 }
