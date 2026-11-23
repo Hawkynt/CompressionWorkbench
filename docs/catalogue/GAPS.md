@@ -115,7 +115,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 | 26 | WinUpack | MISSING | 2 | The handler already unpacks it; wrap it in a descriptor. |
 | 27 | VMProtect | PARTIAL (read-only) | 2 | Virtualising protector: detection is the honest ceiling. |
 | 28 | FreeArc | PARTIAL | 1 | mm and external compressors; FreeArc (GPL) is an oracle only. |
-| 29 | Compact Pro | PARTIAL | 1 | Multi-volume and encrypted archives; samples needed. |
+| 29 | Compact Pro | PARTIAL | 1 | Multi-volume archives; encrypted entries are read but not written (no producer accepts ours). |
 | 30 | KGB Archiver | PARTIAL | 1 | KGB Archiver 2 (PAQ7-based) and encrypted .kge are not read; KGB is GPL, so rung 2 with the kgb2 binary as oracle. |
 
 The other 46 are rare (weight 1). In rank order: BlakHole, GCA
