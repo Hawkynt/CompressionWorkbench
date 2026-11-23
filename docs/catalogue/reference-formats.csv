@@ -306,7 +306,7 @@ TAP (C64 tape),tap,disk-image,,,,,,fmt/802,,,1,http://unusedino.de/ec64/technica
 PZX (ZX tape),pzx,disk-image,,,,,,fmt/1898,,,1,https://github.com/raxoft/pzxtools,Pzx,Y,Y,,OK,,"every block listed losslessly, standard-loader data as TAP; writer byte-identical to tap2pzx"
 CrunchDisk (Amiga),,disk-image,,,R,,,,,,1,,,,,,MISSING,,
 IFF-CDAF,cdaf,disk-image,,,R,,,,,,1,,IffCdaf,Y,Y,Y,OK,,
-PackDev (Amiga),,disk-image,,,R,,,,,,1,,,,,,MISSING,,
+PackDev (Amiga),pkd;dsq,disk-image,,,R,,,,,,1,https://github.com/MacPaw/XADMaster/blob/master/libxad/clients/PackDev.c,PackDev,Y,,,PARTIAL,,"stored images (both header versions, free-block map, sector labels) read and proven on 7 real Amiga Format reader-disk images; XPK-packed images are refused for want of a real sample"
 PackDisk (Amiga),pdsk,disk-image,,,R,,,,,,1,,,,,,MISSING,,"our earlier descriptor used an invented layout and was removed; the real DISKPACK layout (libxad) packs cylinders with XPK, and neither a real sample nor a reader that runs here (unar leaves libxad's PackDisk client out) is available to prove an implementation"
 SuperDuper3 (Amiga),,disk-image,,,R,,,,,,1,,,,,,MISSING,,
 Zoom (Amiga),,disk-image,,,R,,,,,,1,,,,,,MISSING,,

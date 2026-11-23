@@ -26692,6 +26692,54 @@ The parsed contents of a single Pack200 (JSR-200) segment: the archive header fi
 | `Status` | `Pack200DecodeStatus Status { get; init; }` | Whether the segment was fully decoded or only partially. |
 | `Utf8Count` | `int Utf8Count { get; init; }` | Number of constant-pool UTF-8 entries. |
 
+### Namespace `FileFormat.PackDev`
+
+[`PackDevFormatDescriptor`](#packdevformatdescriptor) · [`PackDevReader`](#packdevreader)
+
+#### `PackDevFormatDescriptor`
+
+Amiga PackDev device image (".pkd", ".dsq"; magic "PKD\x13" or the older "PKD\x11"): a floppy or other block device stored track by track, free blocks left out. Read-only: the single entry is the rebuilt image, `disk.adf` for a DD or HD floppy and `disk.img` otherwise. Reference: `https://github.com/MacPaw/XADMaster` — libxad's PackDev client (`libxad/clients/PackDev.c`).
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PackDevFormatDescriptor` | `PackDevFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `PackDevReader`
+
+Reads an Amiga PackDev device image ("PKD\x13", or the older "PKD\x11") and rebuilds the device's blocks.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PackDevReader` | `PackDevReader(Stream stream)` | Reads and checks the header. |
+| `LabelSize` | `const int LabelSize` | Bytes of one sector label after each stored block. |
+| `BlockCount` | `int BlockCount { get; }` | Number of blocks on the device. |
+| `BlockSize` | `int BlockSize { get; }` | Bytes per block. |
+| `HasFreeBlockMap` | `bool HasFreeBlockMap { get; }` | True when a free-block map is present and free blocks were left out. |
+| `ImageSize` | `long ImageSize { get; }` | Size of the rebuilt image in bytes. |
+| `IsOldFormat` | `bool IsOldFormat { get; }` | True for the older "PKD\x11" header. |
+| `PackerName` | `string PackerName { get; }` | The XPK packer name of a "PKD\x13" image, empty otherwise. |
+| `ReservedBlocks` | `int ReservedBlocks { get; }` | Leading blocks the free-block map does not cover. |
+| `TrackBlocks` | `int TrackBlocks { get; }` | Blocks per track. |
+| `XpkPacker` | `uint XpkPacker { get; }` | XPK packer id (0 when the blocks are stored). |
+| `ExtractImage` | `byte[] ExtractImage()` | Rebuilds the device image; free blocks are zero. |
+| `IsPackDev` | `static bool IsPackDev(ReadOnlySpan<byte> data)` | Returns true when `data` starts with a PackDev magic. |
+
 ### Namespace `FileFormat.PackIt`
 
 [`PackItEntry`](#packitentry) · [`PackItFormatDescriptor`](#packitformatdescriptor) · [`PackItModifier`](#packitmodifier) · [`PackItReader`](#packitreader) · [`PackItWriter`](#packitwriter)
