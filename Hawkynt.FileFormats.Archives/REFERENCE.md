@@ -38112,6 +38112,52 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Finalises linked directory offsets and flushes the archive. |
 
+### Namespace `FileFormat.Zoom`
+
+[`ZoomFormatDescriptor`](#zoomformatdescriptor) · [`ZoomReader`](#zoomreader)
+
+#### `ZoomFormatDescriptor`
+
+Amiga Zoom disk archiver (".zom", magic "ZOM5" or the older "ZOOM"): an 880 KiB floppy packed cylinder by cylinder with LZHUF and run-length coding. Read-only: `disk.adf` is the floppy image, `text.txt` the attached text when there is one. References: `https://github.com/MacPaw/XADMaster` — libxad's Zoom client (`libxad/clients/Zoom.c`)`https://github.com/horsicq/XArchive` — `Algos/xzoomdecoder.cpp`
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZoomFormatDescriptor` | `ZoomFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `ZoomReader`
+
+Reads an Amiga Zoom disk archive ("ZOM5", or the older "ZOOM") and rebuilds its floppy image.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZoomReader` | `ZoomReader(Stream stream)` | Parses and checks the header and the attached text. |
+| `CylinderSize` | `const int CylinderSize` | Bytes in one cylinder: 2 tracks × 11 sectors × 512 bytes. |
+| `Cylinders` | `const int Cylinders` | Number of cylinders on a DD floppy. |
+| `FirstCylinder` | `int FirstCylinder { get; }` | Gets the first cylinder stored. |
+| `HasSectorLabels` | `bool HasSectorLabels { get; }` | Gets whether each stored sector carries its 16-byte label. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether the archive is password-encrypted. |
+| `IsOldFormat` | `bool IsOldFormat { get; }` | Gets whether this is the older "ZOOM" variant. |
+| `LastCylinder` | `int LastCylinder { get; }` | Gets the last cylinder stored. |
+| `Text` | `byte[] Text { get; }` | Gets the attached text, or `null`. |
+| `ExtractDisk` | `byte[] ExtractDisk()` | Rebuilds the 901,120-byte floppy image. |
+| `IsZoom` | `static bool IsZoom(ReadOnlySpan<byte> header)` | Returns whether `header` starts a Zoom archive. |
+
 ### Namespace `FileFormat.Zpaq`
 
 [`ZpaqBuildingBlock`](#zpaqbuildingblock) · [`ZpaqEntry`](#zpaqentry) · [`ZpaqFormatDescriptor`](#zpaqformatdescriptor) · [`ZpaqIndex`](#zpaqindex) · [`ZpaqReader`](#zpaqreader) · [`ZpaqWriter`](#zpaqwriter)
