@@ -147,7 +147,7 @@ public sealed class SqxRecoveryTests {
         $"mkdir -p {l}/out && cp '{dir}/ours.sqx' '{dir}/broken.sqx' {l}/ && cd {l} && " +
         $"timeout 60 {sqc} t ours.sqx < /dev/null > /dev/null 2>&1; echo ours=$?; " +
         $"timeout 60 {sqc} t broken.sqx < /dev/null > /dev/null 2>&1; echo broken=$?; " +
-        $"timeout 60 {sqc} x -q -o ours.sqx out/ < /dev/null > /dev/null 2>&1; cp out/* '{dir}/' ; cd / ; rm -rf {l}");
+        $"timeout 60 {sqc} x -q -o ours.sqx out/ < /dev/null > /dev/null 2>&1; cp out/* '{dir}/' ; cd / ; {FsInteropToolbox.RemoveScratch(l)}");
       Assert.That(run.StdOut, Does.Contain("ours=0"), $"sqc t on ours:\n{run.StdOut}\n{run.StdErr}");
       Assert.That(run.StdOut, Does.Contain("broken=4"), $"sqc t on ours with a broken record header:\n{run.StdOut}\n{run.StdErr}");
       Assert.That(File.ReadAllBytes(Path.Combine(tmp, "text.txt")), Is.EqualTo(text));

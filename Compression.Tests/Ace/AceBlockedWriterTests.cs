@@ -142,7 +142,7 @@ public sealed class AceBlockedWriterTests {
       Assert.That(test.ExitCode, Is.Zero, "unace t refused our archive");
       // Extract on the Linux side: on a mounted Windows drive unace cannot set directory times and reports that as an error.
       var extract = FsInteropToolbox.RunWsl(
-        $"d=$(mktemp -d) && cp {FsInteropToolbox.WinToWsl(path)} $d/ && cd $d && timeout 120 unace x -y {pw} ours.ace >/dev/null && sha256sum dir/*; r=$?; rm -rf $d; exit $r");
+        $"d=$(mktemp -d) && cp {FsInteropToolbox.WinToWsl(path)} $d/ && cd $d && timeout 120 unace x -y {pw} ours.ace >/dev/null && sha256sum dir/*; r=$?; {FsInteropToolbox.RemoveScratch("$d")}; exit $r");
       TestContext.Out.WriteLine(extract.StdOut + extract.StdErr);
       Assert.That(extract.ExitCode, Is.Zero, "unace x refused our archive");
       foreach (var (name, data) in Members())

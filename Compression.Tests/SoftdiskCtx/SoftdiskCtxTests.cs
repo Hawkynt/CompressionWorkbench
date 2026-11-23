@@ -85,7 +85,7 @@ public class SoftdiskCtxReferenceTests {
       if (!FsInteropToolbox.WslHasTool(tool)) return $"'{tool}' is required.";
     var files = string.Join(' ', Names);
     var r = FsInteropToolbox.RunWsl(
-      $"test -x {Dir}/ctx_decompress && exit 0; set -e; rm -rf {Dir}; mkdir -p {Dir}; cd {Dir}; " +
+      $"test -x {Dir}/ctx_decompress && exit 0; set -e; {FsInteropToolbox.RemoveScratch(Dir)}; mkdir -p {Dir}; cd {Dir}; " +
       $"curl -sSfL -o ctx_decompress.c https://git.fsfe.org/art1pirat/ctxer/raw/branch/{CtxerRevision}/src/ctx_decompress.c; " +
       "gcc -O1 -w -o ctx_decompress ctx_decompress.c; " +
       $"for f in {files}; do curl -sSfL --max-time 60 -o $f {Samples}$f; done");

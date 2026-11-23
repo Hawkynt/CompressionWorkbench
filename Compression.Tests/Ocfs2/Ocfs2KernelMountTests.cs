@@ -440,7 +440,7 @@ public sealed class Ocfs2KernelMountTests {
     var r = FsInteropToolbox.RunWsl(
       ApplianceEnv + " d=$(mktemp -d); truncate -s 32M $d/p.img; " +
       "mkfs.ocfs2 -q -M local -b 4096 -C 4096 -N 1 --force $d/p.img >/dev/null 2>&1; " +
-      "printf 'run\\nmount-vfs \"\" ocfs2 /dev/sda /\\nls /\\numount /\\n' | timeout 600 guestfish -a $d/p.img 2>&1; rm -rf $d");
+      "printf 'run\\nmount-vfs \"\" ocfs2 /dev/sda /\\nls /\\numount /\\n' | timeout 600 guestfish -a $d/p.img 2>&1; " + FsInteropToolbox.RemoveScratch("$d"));
     return r.StdOut.Contains("lost+found", StringComparison.Ordinal);
   }
 

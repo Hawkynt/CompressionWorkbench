@@ -5,6 +5,7 @@
 # PowerISO converts the set to.
 #   piso-split-110.sh --check
 #   piso-split-110.sh <output dir>
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 export WINEPREFIX=${CWB_POWERISO_PREFIX:-$HOME/.cache/cwb/poweriso-prefix} WINEDEBUG=-all
 P="$WINEPREFIX/drive_c/Program Files/PowerISO/piso.exe"
 if [ "$1" = "--check" ]; then
@@ -14,7 +15,7 @@ fi
 set -e
 out=$(realpath "$1")
 W=$(mktemp -d "$WINEPREFIX/drive_c/cwbsplit-XXXXXX")
-trap 'rm -rf "$W"' EXIT
+trap 'cwb_rmtree "$W"' EXIT
 cd "$W" && mkdir src
 python3 -c "
 import random

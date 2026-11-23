@@ -3,6 +3,7 @@
 # itself (paq8l.cpp of paq8l.zip, built with g++ -O2 -DUNIX -DNOASM; byte-identical to the
 # archive's paq8l.exe). Writes <name>.paq8l files and inputs.tar.gz into $1.
 #   generate.sh <output dir> [paq8l binary, default ~/paq8l/paq8l-linux]
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -e
 out=$(realpath "${1:?usage: generate.sh <output dir> [paq8l]}")
 tool=$(realpath "${2:-$HOME/paq8l/paq8l-linux}")
@@ -20,5 +21,5 @@ for f in fax.bin records.bin; do
   mv $f.paq8l "$out/${f%.*}-l5.paq8l"
 done
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -czf "$out/inputs.tar.gz" .
-cd / && rm -rf "$w"
+cd / && cwb_rmtree "$w"
 ls -la "$out"

@@ -265,7 +265,7 @@ public sealed class AceMediaWriterTests {
       var path = Path.Combine(dir, "media.ace");
       File.WriteAllBytes(path, archive);
       var run = FsInteropToolbox.RunWsl(
-        $"d=$(mktemp -d) && cp {FsInteropToolbox.WinToWsl(path)} $d/ && cd $d && timeout 120 unace t -y media.ace >/dev/null && timeout 120 unace x -y media.ace >/dev/null && sha256sum *; r=$?; rm -rf $d; exit $r");
+        $"d=$(mktemp -d) && cp {FsInteropToolbox.WinToWsl(path)} $d/ && cd $d && timeout 120 unace t -y media.ace >/dev/null && timeout 120 unace x -y media.ace >/dev/null && sha256sum *; r=$?; {FsInteropToolbox.RemoveScratch("$d")}; exit $r");
       TestContext.Out.WriteLine(run.StdOut + run.StdErr);
       Assert.That(run.ExitCode, Is.Zero, "unace refused our archive");
       foreach (var (name, data) in members)

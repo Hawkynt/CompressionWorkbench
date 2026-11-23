@@ -48,7 +48,7 @@ public class TarSparseGnuTarInteropTests {
       "printf middle | dd of=sparse.bin bs=1 seek=300000 conv=notrunc status=none; " +
       "printf 'tail\\n\\0' | dd of=sparse.bin bs=1 seek=1048570 conv=notrunc status=none; " +
       $"tar --sparse {formatArgs} -cf out.tar sparse.bin; " +
-      $"tar --version | head -1; cp out.tar {FsInteropToolbox.WinToWsl(archive)}; rm -rf {work}");
+      $"tar --version | head -1; cp out.tar {FsInteropToolbox.WinToWsl(archive)}; {FsInteropToolbox.RemoveScratch(work)}");
     Assert.That(r.ExitCode, Is.EqualTo(0), $"GNU tar failed:\n{r.StdOut}\n{r.StdErr}");
 
     using var reader = new TarReader(File.OpenRead(archive));

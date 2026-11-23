@@ -121,7 +121,7 @@ public sealed class SevenZipSecondReaderTests {
 
     var archive = Path.Combine(this._root, "unix-links.7z");
     Directory.CreateDirectory(this._root);
-    var linux = $"d=$(mktemp -d) && cd $d && printf target-content > target.txt && ln -s target.txt link.txt && mkdir sub && ln -s sub linkdir && chmod 640 target.txt && {tool} a -snl {FsInteropToolbox.WinToWsl(archive)} target.txt link.txt sub linkdir >/dev/null && rm -rf $d";
+    var linux = $"d=$(mktemp -d) && cd $d && printf target-content > target.txt && ln -s target.txt link.txt && mkdir sub && ln -s sub linkdir && chmod 640 target.txt && {tool} a -snl {FsInteropToolbox.WinToWsl(archive)} target.txt link.txt sub linkdir >/dev/null && {FsInteropToolbox.RemoveScratch("$d")}";
     var result = FsInteropToolbox.RunWsl(linux);
     Assert.That(result.ExitCode, Is.Zero, $"{tool} failed:\n{result.StdOut}\n{result.StdErr}");
 

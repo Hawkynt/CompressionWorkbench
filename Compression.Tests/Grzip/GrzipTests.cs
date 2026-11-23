@@ -110,7 +110,7 @@ public class GrzipReferenceInteropTests {
     var dir = $"/tmp/cwb-grzip-{Revision}";
     var files = "grzip.c BWT.c CRC32.c GRZipII.c LZP.c MTF_Ari.c Rec_Flt.c ST4.c WFC_Ari.c WFC_MTF.h grzip.h intl.h libGRZip.h libgrzip.c main.c";
     var r = FsInteropToolbox.RunWsl(
-      $"test -x {Tool} && exit 0; set -e; rm -rf {dir}; mkdir -p {dir}; cd {dir}; " +
+      $"test -x {Tool} && exit 0; set -e; {FsInteropToolbox.RemoveScratch(dir)}; mkdir -p {dir}; cd {dir}; " +
       $"for f in {files}; do curl -sSfL -o $f https://raw.githubusercontent.com/mistydemeo/quickbms/{Revision}/libs/grzip/$f; done; " +
       "gcc -O2 -w -DSMALLENDIAN -o grzip grzip.c libgrzip.c -lm");
     return r.ExitCode == 0 ? null : $"building grzip failed:\n{r.StdOut}\n{r.StdErr}";

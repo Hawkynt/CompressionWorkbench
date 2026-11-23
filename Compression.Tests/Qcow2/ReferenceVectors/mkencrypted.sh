@@ -3,9 +3,10 @@
 # Usage: sh mkencrypted.sh <workdir> <outdir>   (documentation, not a build input)
 # The password of every image is Secr3t. qemu-img itself converts each image back to raw; the
 # hashes of those guest disks go to qemu-encrypted.sha256; the images are stored gzipped.
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -e
 work=$1; out=$2
-rm -rf "$work"; mkdir -p "$work"; cd "$work"
+cwb_fresh_dir "$work" || exit 1; cd "$work"
 python3 -c "
 import random
 r = random.Random(11)

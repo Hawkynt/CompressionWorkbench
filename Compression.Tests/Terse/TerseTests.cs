@@ -137,7 +137,7 @@ public class TerseReferenceDecoderInteropTests {
       if (!FsInteropToolbox.WslHasTool(tool)) return $"'{tool}' is required to build TerseDecompress.";
     var dir = $"/tmp/cwb-tersedecompress-{Revision}";
     var r = FsInteropToolbox.RunWsl(
-      $"test -x {Tool} && exit 0; set -e; rm -rf {dir}; mkdir -p {dir}; cd {dir}; " +
+      $"test -x {Tool} && exit 0; set -e; {FsInteropToolbox.RemoveScratch(dir)}; mkdir -p {dir}; cd {dir}; " +
       $"curl -sSL https://github.com/openmainframeproject/tersedecompress/archive/{Revision}.tar.gz | tar xz --strip-components=1; " +
       "g++ -O1 -w -std=c++17 -DGIT_TAG=0 -o tersedecompress cpp/src/*.cpp");
     return r.ExitCode == 0 ? null : $"building TerseDecompress failed:\n{r.StdOut}\n{r.StdErr}";

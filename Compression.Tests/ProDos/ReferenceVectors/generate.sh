@@ -1,10 +1,11 @@
 #!/bin/bash
 # Regenerates the DOS-order ProDOS reference disk. Not a build input; run on Ubuntu 24.04 (WSL2).
 # $1: CiderPress II command-line tool (cp2 1.2.0, linux-x64 self-contained release).
+. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -euo pipefail
 CP=${1:?path to cp2}
 OUT=$(cd "$(dirname "$0")" && pwd)
-W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
+W=$(mktemp -d); trap 'cwb_rmtree "$W"' EXIT
 mkdir -p "$W/src/SUBDIR"
 printf 'HELLO FROM CIDERPRESS\r' > "$W/src/HELLO.TXT"
 python3 -c "import sys; sys.stdout.buffer.write(bytes((i*31+1) & 255 for i in range(512)))" > "$W/src/SEEDLING"

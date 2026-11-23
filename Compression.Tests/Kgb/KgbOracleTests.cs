@@ -57,7 +57,7 @@ public sealed class KgbOracleTests {
     // directory times, so it runs in a Linux temporary directory.
     var run = FsInteropToolbox.RunWsl(
       $"d=$(mktemp -d) && cd \"$d\" && mkdir sub && kgb {FsInteropToolbox.WinToWsl(archive)} >/dev/null && " +
-      "sha256sum notes.txt random.bin sub/call.exe empty; rc=$?; rm -rf \"$d\"; exit $rc");
+      "sha256sum notes.txt random.bin sub/call.exe empty; rc=$?; " + FsInteropToolbox.RemoveScratch("\"$d\"") + "; exit $rc");
     Assert.That(run.ExitCode, Is.Zero, run.StdErr + run.StdOut);
     var sums = run.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries)
       .Select(l => l.Split("  ", 2)).ToDictionary(p => p[1].Trim(), p => p[0]);
