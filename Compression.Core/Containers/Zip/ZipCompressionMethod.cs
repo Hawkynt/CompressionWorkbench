@@ -40,6 +40,9 @@ public enum ZipCompressionMethod : ushort {
   /// <summary>Zstandard compression.</summary>
   Zstd = 93,
 
+  /// <summary>WinZip MP3: lossless recompression of an MP3 file as a packMP3 stream; decoded by <see cref="Compression.Core.Entropy.PackMp3.PackMp3Codec"/>.</summary>
+  Mp3 = 94,
+
   /// <summary>XZ compression (a complete .xz stream, APPNOTE 4.4.5 method 95).</summary>
   Xz = 95,
 

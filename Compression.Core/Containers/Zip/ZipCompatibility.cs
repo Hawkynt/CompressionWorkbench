@@ -103,8 +103,9 @@ public static class ZipCompatibility {
     ZipCompressionMethod.Reduce3 or
     ZipCompressionMethod.Reduce4 or
     ZipCompressionMethod.Implode => ZipConstants.VersionNeeded10,
-    // WinZip writes 2.0 as the version needed for its WavPack method (kb.winzip.com/en/130539).
-    ZipCompressionMethod.Deflate or ZipCompressionMethod.WavPack => ZipConstants.VersionNeeded20,
+    // WinZip writes 2.0 as the version needed for its WavPack method (kb.winzip.com/en/130539),
+    // and for its MP3 method 94 as well.
+    ZipCompressionMethod.Deflate or ZipCompressionMethod.Mp3 or ZipCompressionMethod.WavPack => ZipConstants.VersionNeeded20,
     ZipCompressionMethod.Deflate64 => ZipConstants.VersionNeeded21,
     ZipCompressionMethod.BZip2 => ZipConstants.VersionNeeded46,
     ZipCompressionMethod.Lzma or
