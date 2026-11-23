@@ -451,6 +451,7 @@ format,Otf,OTF (OpenType font — glyphs),Archive,,.otf,Y,Y,,
 format,Ova,OVA/OVF Virtual Appliance,Archive,,.ova,Y,Y,Y,
 format,Pack200,Pack200,Archive,,.pack;.pack.gz,Y,,,
 format,PackDev,PackDev (Amiga),Archive,,.pkd;.dsq,Y,Y,,
+format,PackDisk,PackDisk (Amiga),Archive,,,Y,Y,,
 format,PackIt,PackIt,Archive,,.pit,Y,Y,Y,Y
 format,Paf,PARIS Audio File (Ensoniq),Audio,,.paf,Y,Y,Y,
 format,Pak,PAK,Archive,,.pak,Y,Y,Y,Y
@@ -706,6 +707,7 @@ format,Xi,XI (FastTracker II Instrument),Audio,,.xi,Y,Y,,
 format,Xls,XLS,Archive,,.xls,Y,Y,Y,Y
 format,Xlsx,XLSX,Archive,,.xlsx,Y,Y,Y,Y
 format,Xm,XM (FastTracker II),Audio,,.xm,Y,Y,,
+format,XMash,X-Mash (Amiga),Archive,,,Y,Y,,
 format,Xmi,Miles XMIDI,Audio,,.xmi,Y,Y,,
 format,Xml,XML object graph,Archive,,.xml;.cwb.xml,Y,Y,Y,
 format,Xp3,KiriKiri XP3,Archive,,.xp3,Y,Y,Y,Y

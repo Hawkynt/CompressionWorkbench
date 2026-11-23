@@ -1,0 +1,25 @@
+XADMaster (libxad PackDisk client) - converted to C#
+
+Source:   https://github.com/MacPaw/XADMaster
+Revision: 7cb9ee0abbb163f261e4cb74501e15067032319c
+File:     libxad/clients/PackDisk.c (Dirk Stoecker and contributors)
+Licence:  GNU Lesser General Public License, version 2.1 or (at your option)
+          any later version. This repository is LGPL-3.0-or-later, which the
+          "or any later version" grant permits; the full LGPL text is in the
+          repository's LICENSE file.
+
+Upstream notice:
+
+  Copyright (C) 1998 and later by Dirk Stoecker <soft@dstoecker.de>
+
+  This library is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  Lesser General Public License for more details.
+
+Converted into: PackDiskReader.cs (header and cylinder table layout).

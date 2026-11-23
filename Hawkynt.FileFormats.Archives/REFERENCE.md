@@ -26795,12 +26795,55 @@ Reads an Amiga PackDev device image ("PKD\x13", or the older "PKD\x11") and rebu
 | `HasFreeBlockMap` | `bool HasFreeBlockMap { get; }` | True when a free-block map is present and free blocks were left out. |
 | `ImageSize` | `long ImageSize { get; }` | Size of the rebuilt image in bytes. |
 | `IsOldFormat` | `bool IsOldFormat { get; }` | True for the older "PKD\x11" header. |
+| `PackerId` | `string PackerId { get; }` | The XPK packer id as its four characters (e.g. "NUKE"), empty when the blocks are stored. |
 | `PackerName` | `string PackerName { get; }` | The XPK packer name of a "PKD\x13" image, empty otherwise. |
 | `ReservedBlocks` | `int ReservedBlocks { get; }` | Leading blocks the free-block map does not cover. |
 | `TrackBlocks` | `int TrackBlocks { get; }` | Blocks per track. |
 | `XpkPacker` | `uint XpkPacker { get; }` | XPK packer id (0 when the blocks are stored). |
 | `ExtractImage` | `byte[] ExtractImage()` | Rebuilds the device image; free blocks are zero. |
 | `IsPackDev` | `static bool IsPackDev(ReadOnlySpan<byte> data)` | Returns true when `data` starts with a PackDev magic. |
+
+### Namespace `FileFormat.PackDisk`
+
+[`PackDiskFormatDescriptor`](#packdiskformatdescriptor) · [`PackDiskReader`](#packdiskreader)
+
+#### `PackDiskFormatDescriptor`
+
+Amiga PackDisk archive (magic "DISKPACK"): an 880 KiB floppy packed cylinder by cylinder with XPK. Read-only: `disk.adf` is the floppy image. PackDisk gives its archives no extension, so detection is by magic. Reference: `https://github.com/MacPaw/XADMaster` — libxad's PackDisk client (`libxad/clients/PackDisk.c`).
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PackDiskFormatDescriptor` | `PackDiskFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `PackDiskReader`
+
+Reads an Amiga PackDisk archive (magic "DISKPACK", version 1) and rebuilds its floppy image.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PackDiskReader` | `PackDiskReader(Stream stream)` | Reads the header and the cylinder table. |
+| `CylinderSize` | `const int CylinderSize` | Bytes in one cylinder: 2 tracks × 11 sectors × 512 bytes. |
+| `Cylinders` | `const int Cylinders` | Cylinders on a DD floppy. |
+| `Packers` | `IReadOnlyList<string> Packers { get; }` | Names of the XPK sub-libraries the cylinders use ("RAW" for stored cylinders). |
+| `VolumeName` | `string VolumeName { get; }` | The volume name recorded in the header. |
+| `ExtractDisk` | `byte[] ExtractDisk()` | Rebuilds the 880 KiB floppy. |
+| `IsPackDisk` | `static bool IsPackDisk(ReadOnlySpan<byte> data)` | Returns true when `data` starts with the PackDisk magic and version 1. |
 
 ### Namespace `FileFormat.PackIt`
 
@@ -37112,6 +37155,51 @@ Parses a Wwise SoundBank (.bnk) file as a sequence of RIFF-style 4CC+uint32-size
 | `Wems` | `List<WemEntry> Wems { get; }` | Gets the wems. |
 | `ExtractChunk` | `byte[] ExtractChunk(string tag)` | Reads a top-level chunk's raw body bytes by its 4CC tag. |
 | `ExtractWem` | `byte[] ExtractWem(WemEntry e)` | Performs the extract wem operation. |
+
+### Namespace `FileFormat.XMash`
+
+[`XMashFormatDescriptor`](#xmashformatdescriptor) · [`XMashReader`](#xmashreader)
+
+#### `XMashFormatDescriptor`
+
+Amiga X-Mash disk archive (".xms", magic "MSH"): an 880 KiB floppy packed track by track with XPK. Read-only: `disk.adf` is the floppy image; `banner.txt` and `file_id.diz` are the attached texts when present. ".xms" is shared with unrelated formats, so detection is by magic. References: X-Mash 1.2 (Hydra/LSD, Aminet `util/pack/lsdxms12.lha`) — `File_Format.DOC``https://github.com/MacPaw/XADMaster` — libxad's xMash client (`libxad/clients/xMash.c`)
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XMashFormatDescriptor` | `XMashFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `XMashReader`
+
+Reads an Amiga X-Mash disk archive (".xms", magic "MSH") and rebuilds its floppy image.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XMashReader` | `XMashReader(Stream stream)` | Reads the block list. |
+| `TrackSize` | `const int TrackSize` | Bytes in one track: 11 sectors × 512 bytes. |
+| `Tracks` | `const int Tracks` | Tracks on a DD floppy: 80 cylinders × 2 heads. |
+| `Banners` | `IReadOnlyList<byte[]> Banners { get; }` | Banner texts, in file order (decoded on first use). |
+| `Descriptions` | `IReadOnlyList<byte[]> Descriptions { get; }` | File descriptions (FILE_ID.DIZ), in file order. |
+| `EndTrack` | `int EndTrack { get; }` | One past the last track any block covers. |
+| `FirstTrack` | `int FirstTrack { get; }` | First track any block covers. |
+| `Packers` | `IReadOnlyList<string> Packers { get; }` | Names of the XPK sub-libraries the track data uses. |
+| `ExtractDisk` | `byte[] ExtractDisk()` | Rebuilds the 880 KiB floppy; tracks not stored are zero. |
+| `IsXMash` | `static bool IsXMash(ReadOnlySpan<byte> data)` | Returns true when `data` starts like an X-Mash archive. |
 
 ### Namespace `FileFormat.Xa`
 
