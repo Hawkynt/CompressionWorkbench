@@ -103,9 +103,13 @@ public sealed class ArchiveOverlayFilesystemSession : IFilesystemSession {
       if (File.Exists(JournaledArchiveWriteback.JournalPath(archivePath)))
         throw new IOException("The original archive has an unfinished native undo journal.");
       source = new FileStream(archivePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+      // An existing overlay is bound to the exact source it was written against. Check that
+      // binding before probing: a changed source may no longer even parse, and must be reported
+      // as a mismatch with the overlay rather than as an archive that cannot carry one.
+      var identity = Fingerprint(archivePath, descriptor.Id, source);
+      RejectOverlayOfChangedSource(archivePath + ".cwb-overlay", identity);
       var profile = Probe(descriptor, source, password)
         ?? throw new NotSupportedException("The archive does not qualify for a writable sidecar overlay.");
-      var identity = Fingerprint(archivePath, descriptor.Id, source);
       source.Position = 0;
       underlying = FilesystemDriverDerivation.Open(descriptor, source,
         new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true), password, preserveFileIdentity: true);
@@ -196,6 +200,23 @@ public sealed class ArchiveOverlayFilesystemSession : IFilesystemSession {
       hash.AppendData(buffer);
     }
     return hash.GetHashAndReset();
+  }
+
+  /// <summary>
+  /// Throws <see cref="InvalidDataException"/> when an overlay journal already exists for a
+  /// source whose identity has changed since the journal was started. A missing or empty journal
+  /// is not checked here; an incomplete or foreign header is left to <see cref="Load"/>.
+  /// </summary>
+  private static void RejectOverlayOfChangedSource(string journalPath, byte[] identity) {
+    var info = new FileInfo(journalPath);
+    if (!info.Exists || info.Length < Magic.Length + identity.Length)
+      return;
+    Span<byte> header = stackalloc byte[Magic.Length + identity.Length];
+    using (var journal = new FileStream(journalPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+      journal.ReadExactly(header);
+    if (header[..Magic.Length].SequenceEqual(Magic) && !header[Magic.Length..].SequenceEqual(identity))
+      throw new InvalidDataException(
+        "The original archive changed after its overlay was started; the overlay is not replayed.");
   }
 
   private void Load(byte[] identity) {

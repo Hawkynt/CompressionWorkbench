@@ -12,8 +12,8 @@ public sealed class ArchiveOverlayFilesystemSessionTests {
   [Test, Category("Driver")]
   public void WormProbe_IsLogStructuredOnlyWhenExplicitlyRequested() {
     using var archive = BuildArchive();
-    var ordinary = MountNamespaceResolver.Probe("Pea", archive);
-    var overlay = MountNamespaceResolver.Probe("Pea", archive, preferArchiveOverlay: true);
+    var ordinary = MountNamespaceResolver.Probe("StuffItX", archive);
+    var overlay = MountNamespaceResolver.Probe("StuffItX", archive, preferArchiveOverlay: true);
     Assert.Multiple(() => {
       Assert.That(ordinary.Profile.MutationModel, Is.EqualTo(FilesystemMutationModel.WholeImageRebuild));
       Assert.That(overlay.Profile.MutationModel, Is.EqualTo(FilesystemMutationModel.LogStructured));
@@ -27,7 +27,7 @@ public sealed class ArchiveOverlayFilesystemSessionTests {
   public void Overlay_PersistsSparseWritesRenamesAndDeletes_WithoutChangingArchive() {
     WithArchive(path => {
       var original = File.ReadAllBytes(path);
-      using (var session = MountNamespaceResolver.OpenOverlayArchivePath("Pea", path)) {
+      using (var session = MountNamespaceResolver.OpenOverlayArchivePath("StuffItX", path)) {
         var root = session.RootNodeId;
         var existing = session.Lookup(root, "existing.txt")!.Value;
         using var originalHandle = session.OpenFile(existing, FileAccess.ReadWrite);
@@ -60,7 +60,7 @@ public sealed class ArchiveOverlayFilesystemSessionTests {
         Assert.That(File.ReadAllBytes(path), Is.EqualTo(original));
       }
 
-      using (var reopened = MountNamespaceResolver.OpenOverlayArchivePath("Pea", path)) {
+      using (var reopened = MountNamespaceResolver.OpenOverlayArchivePath("StuffItX", path)) {
         var root = reopened.RootNodeId;
         Assert.That(reopened.Lookup(root, "existing.txt"), Is.Null);
         Assert.That(reopened.Lookup(root, "deleted.dat"), Is.Null);
@@ -74,12 +74,12 @@ public sealed class ArchiveOverlayFilesystemSessionTests {
         reopened.Flush();
       }
 
-      using var final = MountNamespaceResolver.OpenOverlayArchivePath("Pea", path);
+      using var final = MountNamespaceResolver.OpenOverlayArchivePath("StuffItX", path);
       Assert.That(final.Lookup(final.RootNodeId, "newdir"), Is.Null);
       Assert.That(File.ReadAllBytes(path), Is.EqualTo(original));
       using var originalReadOnly = new MemoryStream(original, writable: false);
       using var untouched = MountNamespaceResolver.Open(
-        "Pea", originalReadOnly, new FilesystemOpenOptions(ReadOnly: true));
+        "StuffItX", originalReadOnly, new FilesystemOpenOptions(ReadOnly: true));
       Assert.That(Read(untouched, untouched.Lookup(untouched.RootNodeId, "existing.txt")!.Value),
         Is.EqualTo("before"u8.ToArray()));
     });
@@ -88,7 +88,7 @@ public sealed class ArchiveOverlayFilesystemSessionTests {
   [Test, Category("Driver")]
   public void TruncateThenExtend_DoesNotResurrectSourceBytes() {
     WithArchive(path => {
-      using (var session = MountNamespaceResolver.OpenOverlayArchivePath("Pea", path)) {
+      using (var session = MountNamespaceResolver.OpenOverlayArchivePath("StuffItX", path)) {
         var node = session.Lookup(session.RootNodeId, "existing.txt")!.Value;
         using var handle = session.OpenFile(node, FileAccess.ReadWrite);
         handle.SetLength(2);
@@ -96,7 +96,7 @@ public sealed class ArchiveOverlayFilesystemSessionTests {
         Assert.That(Read(session, node), Is.EqualTo("be\0\0\0\0"u8.ToArray()));
         session.Flush();
       }
-      using var reopened = MountNamespaceResolver.OpenOverlayArchivePath("Pea", path);
+      using var reopened = MountNamespaceResolver.OpenOverlayArchivePath("StuffItX", path);
       var id = reopened.Lookup(reopened.RootNodeId, "existing.txt")!.Value;
       Assert.That(Read(reopened, id), Is.EqualTo("be\0\0\0\0"u8.ToArray()));
     });
@@ -105,7 +105,7 @@ public sealed class ArchiveOverlayFilesystemSessionTests {
   [Test, Category("Driver")]
   public void Recover_OnlyTruncatesInterruptedFinalRecord() {
     WithArchive(path => {
-      using (var session = MountNamespaceResolver.OpenOverlayArchivePath("Pea", path)) {
+      using (var session = MountNamespaceResolver.OpenOverlayArchivePath("StuffItX", path)) {
         var id = session.CreateFile(session.RootNodeId, "survives.txt");
         using var file = session.OpenFile(id, FileAccess.Write);
         file.Write(0, "persisted"u8);
@@ -116,7 +116,7 @@ public sealed class ArchiveOverlayFilesystemSessionTests {
       var completeLength = new FileInfo(journal).Length;
       using (var corruptTail = new FileStream(journal, FileMode.Append, FileAccess.Write))
         corruptTail.Write([0x17, 0x00]); // torn record-length prefix
-      using (var recovered = MountNamespaceResolver.OpenOverlayArchivePath("Pea", path)) {
+      using (var recovered = MountNamespaceResolver.OpenOverlayArchivePath("StuffItX", path)) {
         Assert.That(Read(recovered, recovered.Lookup(recovered.RootNodeId, "survives.txt")!.Value),
           Is.EqualTo("persisted"u8.ToArray()));
       }
@@ -127,7 +127,7 @@ public sealed class ArchiveOverlayFilesystemSessionTests {
   [Test, Category("Driver")]
   public void CorruptedCompletedRecord_FailsClosedWithoutDiscardingJournal() {
     WithArchive(path => {
-      using (var session = MountNamespaceResolver.OpenOverlayArchivePath("Pea", path)) {
+      using (var session = MountNamespaceResolver.OpenOverlayArchivePath("StuffItX", path)) {
         session.CreateFile(session.RootNodeId, "new");
         session.Flush();
       }
@@ -136,7 +136,7 @@ public sealed class ArchiveOverlayFilesystemSessionTests {
       bytes[40 + 4 + 32] ^= 0x40; // first byte of the record body
       File.WriteAllBytes(journal, bytes);
       Assert.Throws<InvalidDataException>(() =>
-        MountNamespaceResolver.OpenOverlayArchivePath("Pea", path));
+        MountNamespaceResolver.OpenOverlayArchivePath("StuffItX", path));
       Assert.That(File.ReadAllBytes(journal), Is.EqualTo(bytes));
     });
   }
@@ -144,22 +144,22 @@ public sealed class ArchiveOverlayFilesystemSessionTests {
   [Test, Category("Driver")]
   public void ChangedOriginalArchive_RejectsExistingOverlay() {
     WithArchive(path => {
-      using (var session = MountNamespaceResolver.OpenOverlayArchivePath("Pea", path)) {
+      using (var session = MountNamespaceResolver.OpenOverlayArchivePath("StuffItX", path)) {
         session.CreateFile(session.RootNodeId, "modified");
         session.Flush();
       }
       using (var archive = new FileStream(path, FileMode.Append, FileAccess.Write))
         archive.WriteByte(0x55);
       Assert.Throws<InvalidDataException>(() =>
-        MountNamespaceResolver.OpenOverlayArchivePath("Pea", path));
+        MountNamespaceResolver.OpenOverlayArchivePath("StuffItX", path));
     });
   }
 
   [Test, Category("Driver")]
   public void SameArchive_CannotHaveTwoOverlayWriters() {
     WithArchive(path => {
-      using var first = MountNamespaceResolver.OpenOverlayArchivePath("Pea", path);
-      Assert.Throws<IOException>(() => MountNamespaceResolver.OpenOverlayArchivePath("Pea", path));
+      using var first = MountNamespaceResolver.OpenOverlayArchivePath("StuffItX", path);
+      Assert.Throws<IOException>(() => MountNamespaceResolver.OpenOverlayArchivePath("StuffItX", path));
     });
   }
 
@@ -184,8 +184,8 @@ public sealed class ArchiveOverlayFilesystemSessionTests {
 
   private static MemoryStream BuildArchive() {
     var archive = new MemoryStream();
-    var creator = (IArchiveCreatable)(FormatRegistry.GetById("Pea")
-      ?? throw new AssertionException("PEA is not registered."));
+    var creator = (IArchiveCreatable)(FormatRegistry.GetById("StuffItX")
+      ?? throw new AssertionException("StuffIt X is not registered."));
     creator.Create(archive, [ArchiveInputInfo.InMemory("existing.txt", "before"u8.ToArray())],
       new FormatCreateOptions());
     archive.Position = 0;
@@ -195,7 +195,7 @@ public sealed class ArchiveOverlayFilesystemSessionTests {
   private static void WithArchive(Action<string> test) {
     var dir = Path.Combine(Path.GetTempPath(), "cwb-overlay-test-" + Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(dir);
-    var path = Path.Combine(dir, "sample.pea");
+    var path = Path.Combine(dir, "sample.sitx");
     try {
       using (var source = BuildArchive())
         File.WriteAllBytes(path, source.ToArray());
