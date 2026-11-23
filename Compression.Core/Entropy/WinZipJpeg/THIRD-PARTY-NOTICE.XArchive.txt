@@ -12,7 +12,9 @@ LZMA metadata, the marker parser, the log-domain arithmetic decoder, the coeffic
 model, and the Huffman re-encoder. WinZipJpegTables.cs copies its log/antilog
 tables exactly. The decoder follows WinZip's "JPEG Compression - Method 96"
 specification (2008) and U.S. patent 4,791,403, with corrections to the printed
-formulas that real WinZip streams require.
+formulas that real WinZip streams require. WinZipJpegEncoder.cs is our own inverse of
+that decoder. It uses the same model and tables, and an arithmetic encoder that mirrors
+the decoder.
 
 MIT License
 

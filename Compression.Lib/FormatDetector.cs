@@ -563,6 +563,8 @@ public static partial class FormatDetector {
       if (isPe && FileFormat.GenteeInstaller.GenteeInstallerReader.IsGentee(fs)) return Format.GenteeInstaller;
       // Enigma Virtual Box: the virtual filesystem's "EVB\0" header in the ".enigma1" section.
       if (isPe && FileFormat.EnigmaVirtualBox.EnigmaVirtualBoxReader.IsEnigmaVirtualBox(fs)) return Format.EnigmaVirtualBox;
+      // MoleBox 2.x: a box trailer whose length field is the file length and whose directory fits.
+      if (isPe && FileFormat.ExePackers.MoleboxBox.HasBoxTrailer(fs)) return Format.Molebox;
 
       // Other installer markers can live anywhere in the file, so scan the whole file when it
       // is small and the tail otherwise — independent of the MZ check, so a stub-less

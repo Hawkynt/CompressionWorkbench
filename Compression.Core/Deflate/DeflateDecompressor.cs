@@ -114,6 +114,18 @@ public sealed class DeflateDecompressor {
   /// </remarks>
   public bool StoredBlocksOmitComplement { get; set; }
 
+  private readonly int[]? _codeLengthOrder;
+
+  /// <summary>
+  /// Order in which a dynamic block lists its code-length code lengths: RFC 1951's
+  /// <see cref="DeflateConstants.CodeLengthOrder"/> unless replaced by a permutation, as
+  /// ALZip's obfuscated deflate (method 3) does.
+  /// </summary>
+  public ReadOnlySpan<int> CodeLengthOrder {
+    get => this._codeLengthOrder is { } order ? order : DeflateConstants.CodeLengthOrder;
+    init => this._codeLengthOrder = DeflateConstants.CopyCodeLengthOrder(value);
+  }
+
   /// <summary>
   /// Decompresses all data from the stream.
   /// </summary>
@@ -727,7 +739,7 @@ public sealed class DeflateDecompressor {
 
     Span<int> codeLengthLengths = stackalloc int[DeflateConstants.CodeLengthAlphabetSize];
     codeLengthLengths.Clear();
-    var order = DeflateConstants.CodeLengthOrder;
+    var order = this.CodeLengthOrder;
     for (var i = 0; i < hclen; ++i)
       codeLengthLengths[order[i]] = (int)this.GetBits(3);
 

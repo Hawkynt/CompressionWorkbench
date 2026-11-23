@@ -51,5 +51,8 @@ public sealed class ApfsEntry {
   public bool IsCompressed => this.Decmpfs is not null;
 }
 
-/// <summary>One FILE_EXTENT record: logical offset, length in bytes, first physical block (0 = sparse).</summary>
-internal readonly record struct ApfsExtent(ulong Logical, long Length, ulong PhysBlock);
+/// <summary>
+/// One FILE_EXTENT record: logical offset, length in bytes, first physical block (0 = sparse),
+/// and crypto_id — on an encrypted volume the 512-byte-sector tweak base, in blocks, of the extent.
+/// </summary>
+internal readonly record struct ApfsExtent(ulong Logical, long Length, ulong PhysBlock, ulong CryptoId = 0);

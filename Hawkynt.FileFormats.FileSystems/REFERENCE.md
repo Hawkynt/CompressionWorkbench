@@ -7522,8 +7522,13 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ApfsReader` | `ApfsReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `ApfsReader`. |
+| `ApfsReader` | `ApfsReader(Stream stream, string password, bool leaveOpen = false)` | Opens a container, unlocking a software-encrypted volume with `password`. |
+| `SnapshotFolder` | `const string SnapshotFolder` | Folder under which every snapshot's tree is listed, one sub-folder per snapshot name. |
 | `BlockSize` | `uint BlockSize { get; }` | Container block size from the superblock. |
 | `Entries` | `IReadOnlyList<ApfsEntry> Entries { get; }` | Gets the entries. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | True when the volume is software-encrypted (and was unlocked to be read). |
+| `IsFusion` | `bool IsFusion { get; }` | True for a Fusion container (NX_INCOMPAT_FUSION): a fast main device and a tier-2 device. |
+| `Snapshots` | `IReadOnlyList<ValueTuple<string, ulong>> Snapshots { get; }` | The volume's snapshots, oldest first: name and the transaction they were taken at. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `ExtractTo` | `void ExtractTo(ApfsEntry entry, Stream destination)` | Copies an entry's bytes into `destination` a block at a time. An APFS file may be far larger than the byte[] `Extract` returns could hold. |
 | `Extract` | `byte[] Extract(ApfsEntry entry)` | Extracts a file's bytes: its data stream's extents in logical order (gaps and sparse extents read as zeros), or, for a transparently compressed file, the decoded decmpfs content. |

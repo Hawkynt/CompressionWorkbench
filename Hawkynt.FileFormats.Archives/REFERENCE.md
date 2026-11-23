@@ -8725,7 +8725,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.AlZip`
 
-[`AlZipEntry`](#alzipentry) · [`AlZipFormatDescriptor`](#alzipformatdescriptor) · [`AlZipReader`](#alzipreader) · [`AlZipVolumes`](#alzipvolumes) · [`AlZipWriter`](#alzipwriter)
+[`AlZipEntry`](#alzipentry) · [`AlZipFormatDescriptor`](#alzipformatdescriptor) · [`AlZipObfuscatedDeflate`](#alzipobfuscateddeflate) · [`AlZipReader`](#alzipreader) · [`AlZipVolumes`](#alzipvolumes) · [`AlZipWriter`](#alzipwriter)
 
 #### `AlZipEntry`
 
@@ -8748,7 +8748,7 @@ One local file header of an ALZip archive.
 
 #### `AlZipFormatDescriptor`
 
-ALZip (ESTsoft), the Korean archiver: stored, deflate and ALZ-bzip2 members, ZipCrypto encryption. References: `https://github.com/alkegi/unalz` — unalz (MIT), its CC0 test archives, and the reader the layout follows`https://github.com/MacPaw/XADMaster` — XADALZipParser (LGPL-2.1)
+ALZip (ESTsoft), the Korean archiver: stored, deflate, obfuscated-deflate and ALZ-bzip2 members, ZipCrypto encryption. References: `https://github.com/alkegi/unalz` — unalz (MIT), its CC0 test archives, and the reader the layout follows`https://github.com/MacPaw/XADMaster` — XADALZipParser (LGPL-2.1), the source of method 3's code-length order
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
 
@@ -8774,9 +8774,19 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
+#### `AlZipObfuscatedDeflate`
+
+ALZip's obfuscated deflate (method 3): RFC 1951 Deflate whose dynamic blocks list their 19 code-length code lengths in a permuted order instead of RFC 1951's, the permutation keyed on the member's uncompressed size modulo 16. Everything else in the bit stream is plain Deflate.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CodeLengthOrder` | `static int[] CodeLengthOrder(long uncompressedSize)` | The code-length order for a member of `uncompressedSize` bytes: start from the identity order 0..18, then for each position i swap it with (i mod 6)·3 + (size mod 16), that index reduced modulo 18 when it exceeds 18. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, DeflateCompressionLevel level = 6)` | Encodes `data` as a method-3 member. |
+| `Decompress` | `static byte[] Decompress(byte[] packed, long uncompressedSize)` | Decodes a method-3 member whose uncompressed size is `uncompressedSize`. |
+
 #### `AlZipReader`
 
-Reads ALZip archives (split sets through `Open` or `Join`): "ALZ\x01" + 4 bytes, local file headers ("BLZ\x01"), then the central-directory and end records ("CLZ\x01", "CLZ\x02"). Members are stored, deflated or ALZ-bzip2'd, optionally ZipCrypto-encrypted. Names are CP949.
+Reads ALZip archives (split sets through `Open` or `Join`): "ALZ\x01" + 4 bytes, local file headers ("BLZ\x01"), then the central-directory and end records ("CLZ\x01", "CLZ\x02"). Members are stored, deflated, obfuscated-deflated (method 3) or ALZ-bzip2'd, optionally ZipCrypto-encrypted. Names are CP949.
 
 Implements `IDisposable`.
 
@@ -8802,13 +8812,13 @@ ALZip split sets: `name.alz`, `name.a00`, `name.a01`, …. Every volume starts w
 
 #### `AlZipWriter`
 
-Writes single-volume ALZip archives as ALZip 8 lays them out: the "ALZ\x01" header with version 0x0A, one "BLZ\x01" local header per member (stored, deflated or ALZ-bzip2'd, size fields as narrow as the sizes allow, CP949 names, optional ZipCrypto), then the "CLZ\x01" and "CLZ\x02" end records.
+Writes single-volume ALZip archives as ALZip 8 lays them out: the "ALZ\x01" header with version 0x0A, one "BLZ\x01" local header per member (stored, deflated, obfuscated-deflated or ALZ-bzip2'd, size fields as narrow as the sizes allow, CP949 names, optional ZipCrypto), then the "CLZ\x01" and "CLZ\x02" end records.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AlZipWriter` | `AlZipWriter(Stream stream, bool leaveOpen = false, string password = null, bool store = false, bool bzip2 = false)` |  |
+| `AlZipWriter` | `AlZipWriter(Stream stream, bool leaveOpen = false, string password = null, bool store = false, bool bzip2 = false, bool obfuscated = false)` |  |
 | `AddDirectory` | `void AddDirectory(string dirName, DateTime? modified = null)` |  |
 | `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? modified = null)` |  |
 | `Dispose` | `void Dispose()` |  |
@@ -13556,7 +13566,7 @@ One file or folder of a Compact Pro archive's directory.
 
 #### `CompactProFormatDescriptor`
 
-Compact Pro (Bill Goodman / Cyclos, 1990-1995), the classic Mac archiver. Each file's forks are RLE-coded, optionally LZH-compressed below that. A resource fork is exposed as "name.rsrc". References: `https://github.com/MacPaw/XADMaster` — The Unarchiver's XADCompactProParser and fork handles (LGPL-2.1), converted for the reader`https://github.com/uzTools/MacExtract` — MacExtract's Compact Pro cipher (0BSD), converted for reading encrypted entries`http://justsolve.archiveteam.org/wiki/Compact_Pro` — format overview
+Compact Pro (Bill Goodman / Cyclos, 1990-1995), the classic Mac archiver. Each file's forks are RLE-coded, optionally LZH-compressed below that. A resource fork is exposed as "name.rsrc". References: `https://github.com/MacPaw/XADMaster` — The Unarchiver's XADCompactProParser and fork handles (LGPL-2.1), converted for the reader`https://github.com/uzTools/MacExtract` — MacExtract's Compact Pro cipher (0BSD), converted for reading encrypted entries; decryption verified against MacExtract (rev 4b507c2…) only; no real Compact Pro-encrypted sample`http://justsolve.archiveteam.org/wiki/Compact_Pro` — format overview
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
@@ -15983,7 +15993,7 @@ Implements `IEquatable<ParsedEsps>`.
 
 ### Namespace `FileFormat.ExePackers`
 
-[`AlienyzeExecutablePackerHandler`](#alienyzeexecutablepackerhandler) · [`AmberExecutablePackerHandler`](#amberexecutablepackerhandler) · [`ApackFormatDescriptor`](#apackformatdescriptor) · [`ApackUnpacker`](#apackunpacker) · [`AplibSectionPackerHandler`](#aplibsectionpackerhandler) · [`AplibSectionPackerHandler.Decoded`](#aplibsectionpackerhandlerdecoded) · [`AsPackExecutablePackerHandler`](#aspackexecutablepackerhandler) · [`AsPackFormatDescriptor`](#aspackformatdescriptor) · [`AsProtectFormatDescriptor`](#asprotectformatdescriptor) · [`AxeFormatDescriptor`](#axeformatdescriptor) · [`AxeUnpacker`](#axeunpacker) · [`BeRoExecutablePackerHandler`](#beroexecutablepackerhandler) · [`BzexeExecutablePackerHandler`](#bzexeexecutablepackerhandler) · [`BzexeFormatDescriptor`](#bzexeformatdescriptor) · [`CrinklerFormatDescriptor`](#crinklerformatdescriptor) · [`DescriptorExecutablePackerHandler`](#descriptorexecutablepackerhandler) · [`DietFormatDescriptor`](#dietformatdescriptor) · [`DietUnpacker`](#dietunpacker) · [`DosExePackerHandler`](#dosexepackerhandler) · [`DosPackedExeDescriptor`](#dospackedexedescriptor) · [`DosTraceUnpacker`](#dostraceunpacker) · [`DosUnpacked`](#dosunpacked) · [`EnigmaVirtualBoxExecutablePackerHandler`](#enigmavirtualboxexecutablepackerhandler) · [`EronanaExecutablePackerHandler`](#eronanaexecutablepackerhandler) · [`Exe32packExecutablePackerHandler`](#exe32packexecutablepackerhandler) · [`ExeLiteFormatDescriptor`](#exeliteformatdescriptor) · [`ExeLiteUnpacker`](#exeliteunpacker) · [`ExePackFormatDescriptor`](#exepackformatdescriptor) · [`ExePackUnpacker`](#exepackunpacker) · [`ExpressorExecutablePackerHandler`](#expressorexecutablepackerhandler) · [`EzuriExecutablePackerHandler`](#ezuriexecutablepackerhandler) · [`FsgExecutablePackerHandler`](#fsgexecutablepackerhandler) · [`FsgFallbackExecutablePackerHandler`](#fsgfallbackexecutablepackerhandler) · [`FsgFormatDescriptor`](#fsgformatdescriptor) · [`GenericAplibPackedPeHandler`](#genericaplibpackedpehandler) · [`GenericNrvPackedPeHandler`](#genericnrvpackedpehandler) · [`GoPackerExecutablePackerHandler`](#gopackerexecutablepackerhandler) · [`GoPackerFormatDescriptor`](#gopackerformatdescriptor) · [`GzexeExecutablePackerHandler`](#gzexeexecutablepackerhandler) · [`GzexeFormatDescriptor`](#gzexeformatdescriptor) · [`HuanExecutablePackerHandler`](#huanexecutablepackerhandler) · [`HuanFormatDescriptor`](#huanformatdescriptor) · [`HxorExecutablePackerHandler`](#hxorexecutablepackerhandler) · [`IDosExeUnpacker`](#idosexeunpacker) · [`JdpackExecutablePackerHandler`](#jdpackexecutablepackerhandler) · [`KkrunchyFormatDescriptor`](#kkrunchyformatdescriptor) · [`LzExeFormatDescriptor`](#lzexeformatdescriptor) · [`LzExeUnpacker`](#lzexeunpacker) · [`M0dernP4ckerExecutablePackerHandler`](#m0dernp4ckerexecutablepackerhandler) · [`MPressExecutablePackerHandler`](#mpressexecutablepackerhandler) · [`MPressFormatDescriptor`](#mpressformatdescriptor) · [`MewExecutablePackerHandler`](#mewexecutablepackerhandler) · [`MewFormatDescriptor`](#mewformatdescriptor) · [`MidgetPackExecutablePackerHandler`](#midgetpackexecutablepackerhandler) · [`MinorExecutablePackerHandlerBase`](#minorexecutablepackerhandlerbase) · [`MoleboxExecutablePackerHandler`](#moleboxexecutablepackerhandler) · [`MoleboxIdea`](#moleboxidea) · [`NeoliteExecutablePackerHandler`](#neoliteexecutablepackerhandler) · [`NsPackExecutablePackerHandler`](#nspackexecutablepackerhandler) · [`NsPackFormatDescriptor`](#nspackformatdescriptor) · [`OrigamiExecutablePackerHandler`](#origamiexecutablepackerhandler) · [`OrigamiFormatDescriptor`](#origamiformatdescriptor) · [`PackmanExecutablePackerHandler`](#packmanexecutablepackerhandler) · [`PakkeroExecutablePackerHandler`](#pakkeroexecutablepackerhandler) · [`PapawExecutablePackerHandler`](#papawexecutablepackerhandler) · [`PapawFormatDescriptor`](#papawformatdescriptor) · [`PeCompactExecutablePackerHandler`](#pecompactexecutablepackerhandler) · [`PePackerExecutablePackerHandler`](#pepackerexecutablepackerhandler) · [`PeToyExecutablePackerHandler`](#petoyexecutablepackerhandler) · [`PetiteExecutablePackerHandler`](#petiteexecutablepackerhandler) · [`PetiteFormatDescriptor`](#petiteformatdescriptor) · [`PetiteInflate`](#petiteinflate) · [`PetiteUnpacker`](#petiteunpacker) · [`PetiteUnpacker.PetiteBlock`](#petiteunpackerpetiteblock) · [`PetiteUnpacker.PetiteImage`](#petiteunpackerpetiteimage) · [`PgmpakFormatDescriptor`](#pgmpakformatdescriptor) · [`PgmpakUnpacker`](#pgmpakunpacker) · [`PkLiteFormatDescriptor`](#pkliteformatdescriptor) · [`PkLiteUnpacker`](#pkliteunpacker) · [`ProtectorExecutablePackerHandlerBase`](#protectorexecutablepackerhandlerbase) · [`PyPePackerExecutablePackerHandler`](#pypepackerexecutablepackerhandler) · [`RlPackExecutablePackerHandler`](#rlpackexecutablepackerhandler) · [`ShrinklerFormatDescriptor`](#shrinklerformatdescriptor) · [`SilentPackerExecutablePackerHandler`](#silentpackerexecutablepackerhandler) · [`SilentPackerFormatDescriptor`](#silentpackerformatdescriptor) · [`SimpleDpackExecutablePackerHandler`](#simpledpackexecutablepackerhandler) · [`SquishyExecutablePackerHandler`](#squishyexecutablepackerhandler) · [`TelockExecutablePackerHandler`](#telockexecutablepackerhandler) · [`ThemidaExecutablePackerHandler`](#themidaexecutablepackerhandler) · [`ThemidaFormatDescriptor`](#themidaformatdescriptor) · [`TinyProgFormatDescriptor`](#tinyprogformatdescriptor) · [`TinyProgUnpacker`](#tinyprogunpacker) · [`VmProtectFormatDescriptor`](#vmprotectformatdescriptor) · [`WardExecutablePackerHandler`](#wardexecutablepackerhandler) · [`WinUpackExecutablePackerHandler`](#winupackexecutablepackerhandler) · [`WinUpackFallbackExecutablePackerHandler`](#winupackfallbackexecutablepackerhandler) · [`WwpackFormatDescriptor`](#wwpackformatdescriptor) · [`WwpackUnpacker`](#wwpackunpacker) · [`XorPackerExecutablePackerHandler`](#xorpackerexecutablepackerhandler) · [`YodaByteOp`](#yodabyteop) · [`YodaByteOpKind`](#yodabyteopkind) · [`YodaCrypterExecutablePackerHandler`](#yodacrypterexecutablepackerhandler) · [`YodaCrypterFormatDescriptor`](#yodacrypterformatdescriptor) · [`YodaCrypterStub`](#yodacrypterstub) · [`YodaCrypterStubInfo`](#yodacrypterstubinfo) · [`YodaProtectorExecutablePackerHandler`](#yodaprotectorexecutablepackerhandler)
+[`AlienyzeExecutablePackerHandler`](#alienyzeexecutablepackerhandler) · [`AmberExecutablePackerHandler`](#amberexecutablepackerhandler) · [`ApackFormatDescriptor`](#apackformatdescriptor) · [`ApackUnpacker`](#apackunpacker) · [`AplibSectionPackerHandler`](#aplibsectionpackerhandler) · [`AplibSectionPackerHandler.Decoded`](#aplibsectionpackerhandlerdecoded) · [`AsPackExecutablePackerHandler`](#aspackexecutablepackerhandler) · [`AsPackFormatDescriptor`](#aspackformatdescriptor) · [`AsProtectFormatDescriptor`](#asprotectformatdescriptor) · [`AxeFormatDescriptor`](#axeformatdescriptor) · [`AxeUnpacker`](#axeunpacker) · [`BeRoExecutablePackerHandler`](#beroexecutablepackerhandler) · [`BzexeExecutablePackerHandler`](#bzexeexecutablepackerhandler) · [`BzexeFormatDescriptor`](#bzexeformatdescriptor) · [`CrinklerFormatDescriptor`](#crinklerformatdescriptor) · [`DescriptorExecutablePackerHandler`](#descriptorexecutablepackerhandler) · [`DietFormatDescriptor`](#dietformatdescriptor) · [`DietUnpacker`](#dietunpacker) · [`DosExePackerHandler`](#dosexepackerhandler) · [`DosPackedExeDescriptor`](#dospackedexedescriptor) · [`DosTraceUnpacker`](#dostraceunpacker) · [`DosUnpacked`](#dosunpacked) · [`EnigmaVirtualBoxExecutablePackerHandler`](#enigmavirtualboxexecutablepackerhandler) · [`EronanaExecutablePackerHandler`](#eronanaexecutablepackerhandler) · [`Exe32packExecutablePackerHandler`](#exe32packexecutablepackerhandler) · [`ExeLiteFormatDescriptor`](#exeliteformatdescriptor) · [`ExeLiteUnpacker`](#exeliteunpacker) · [`ExePackFormatDescriptor`](#exepackformatdescriptor) · [`ExePackUnpacker`](#exepackunpacker) · [`ExpressorExecutablePackerHandler`](#expressorexecutablepackerhandler) · [`EzuriExecutablePackerHandler`](#ezuriexecutablepackerhandler) · [`FsgExecutablePackerHandler`](#fsgexecutablepackerhandler) · [`FsgFallbackExecutablePackerHandler`](#fsgfallbackexecutablepackerhandler) · [`FsgFormatDescriptor`](#fsgformatdescriptor) · [`GenericAplibPackedPeHandler`](#genericaplibpackedpehandler) · [`GenericNrvPackedPeHandler`](#genericnrvpackedpehandler) · [`GoPackerExecutablePackerHandler`](#gopackerexecutablepackerhandler) · [`GoPackerFormatDescriptor`](#gopackerformatdescriptor) · [`GzexeExecutablePackerHandler`](#gzexeexecutablepackerhandler) · [`GzexeFormatDescriptor`](#gzexeformatdescriptor) · [`HuanExecutablePackerHandler`](#huanexecutablepackerhandler) · [`HuanFormatDescriptor`](#huanformatdescriptor) · [`HxorExecutablePackerHandler`](#hxorexecutablepackerhandler) · [`IDosExeUnpacker`](#idosexeunpacker) · [`JdpackExecutablePackerHandler`](#jdpackexecutablepackerhandler) · [`KkrunchyFormatDescriptor`](#kkrunchyformatdescriptor) · [`LzExeFormatDescriptor`](#lzexeformatdescriptor) · [`LzExeUnpacker`](#lzexeunpacker) · [`M0dernP4ckerExecutablePackerHandler`](#m0dernp4ckerexecutablepackerhandler) · [`MPressExecutablePackerHandler`](#mpressexecutablepackerhandler) · [`MPressFormatDescriptor`](#mpressformatdescriptor) · [`MewExecutablePackerHandler`](#mewexecutablepackerhandler) · [`MewFormatDescriptor`](#mewformatdescriptor) · [`MidgetPackExecutablePackerHandler`](#midgetpackexecutablepackerhandler) · [`MinorExecutablePackerHandlerBase`](#minorexecutablepackerhandlerbase) · [`MoleboxBox`](#moleboxbox) · [`MoleboxBoxEntry`](#moleboxboxentry) · [`MoleboxExecutablePackerHandler`](#moleboxexecutablepackerhandler) · [`MoleboxFormatDescriptor`](#moleboxformatdescriptor) · [`MoleboxIdea`](#moleboxidea) · [`NeoliteExecutablePackerHandler`](#neoliteexecutablepackerhandler) · [`NsPackExecutablePackerHandler`](#nspackexecutablepackerhandler) · [`NsPackFormatDescriptor`](#nspackformatdescriptor) · [`OrigamiExecutablePackerHandler`](#origamiexecutablepackerhandler) · [`OrigamiFormatDescriptor`](#origamiformatdescriptor) · [`PackmanExecutablePackerHandler`](#packmanexecutablepackerhandler) · [`PakkeroExecutablePackerHandler`](#pakkeroexecutablepackerhandler) · [`PapawExecutablePackerHandler`](#papawexecutablepackerhandler) · [`PapawFormatDescriptor`](#papawformatdescriptor) · [`PeCompactExecutablePackerHandler`](#pecompactexecutablepackerhandler) · [`PePackerExecutablePackerHandler`](#pepackerexecutablepackerhandler) · [`PeToyExecutablePackerHandler`](#petoyexecutablepackerhandler) · [`PetiteExecutablePackerHandler`](#petiteexecutablepackerhandler) · [`PetiteFormatDescriptor`](#petiteformatdescriptor) · [`PetiteInflate`](#petiteinflate) · [`PetiteUnpacker`](#petiteunpacker) · [`PetiteUnpacker.PetiteBlock`](#petiteunpackerpetiteblock) · [`PetiteUnpacker.PetiteImage`](#petiteunpackerpetiteimage) · [`PgmpakFormatDescriptor`](#pgmpakformatdescriptor) · [`PgmpakUnpacker`](#pgmpakunpacker) · [`PkLiteFormatDescriptor`](#pkliteformatdescriptor) · [`PkLiteUnpacker`](#pkliteunpacker) · [`ProtectorExecutablePackerHandlerBase`](#protectorexecutablepackerhandlerbase) · [`PyPePackerExecutablePackerHandler`](#pypepackerexecutablepackerhandler) · [`RlPackExecutablePackerHandler`](#rlpackexecutablepackerhandler) · [`ShrinklerFormatDescriptor`](#shrinklerformatdescriptor) · [`SilentPackerExecutablePackerHandler`](#silentpackerexecutablepackerhandler) · [`SilentPackerFormatDescriptor`](#silentpackerformatdescriptor) · [`SimpleDpackExecutablePackerHandler`](#simpledpackexecutablepackerhandler) · [`SquishyExecutablePackerHandler`](#squishyexecutablepackerhandler) · [`TelockExecutablePackerHandler`](#telockexecutablepackerhandler) · [`ThemidaExecutablePackerHandler`](#themidaexecutablepackerhandler) · [`ThemidaFormatDescriptor`](#themidaformatdescriptor) · [`TinyProgFormatDescriptor`](#tinyprogformatdescriptor) · [`TinyProgUnpacker`](#tinyprogunpacker) · [`VmProtectFormatDescriptor`](#vmprotectformatdescriptor) · [`WardExecutablePackerHandler`](#wardexecutablepackerhandler) · [`WinUpackExecutablePackerHandler`](#winupackexecutablepackerhandler) · [`WinUpackFallbackExecutablePackerHandler`](#winupackfallbackexecutablepackerhandler) · [`WwpackFormatDescriptor`](#wwpackformatdescriptor) · [`WwpackUnpacker`](#wwpackunpacker) · [`XorPackerExecutablePackerHandler`](#xorpackerexecutablepackerhandler) · [`YodaByteOp`](#yodabyteop) · [`YodaByteOpKind`](#yodabyteopkind) · [`YodaCrypterExecutablePackerHandler`](#yodacrypterexecutablepackerhandler) · [`YodaCrypterFormatDescriptor`](#yodacrypterformatdescriptor) · [`YodaCrypterStub`](#yodacrypterstub) · [`YodaCrypterStubInfo`](#yodacrypterstubinfo) · [`YodaProtectorExecutablePackerHandler`](#yodaprotectorexecutablepackerhandler)
 
 #### `AlienyzeExecutablePackerHandler`
 
@@ -16935,6 +16945,34 @@ Implements `IExecutablePackerHandler`.
 | `Parse` | `PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection)` | Parses the value from the supplied data. |
 | `Unpack` | `virtual UnpackResult Unpack(PackedExecutable packed, UnpackOptions options)` | Performs the unpack operation. |
 
+#### `MoleboxBox`
+
+The file box MoleBox 2.x appends to a packed executable (layout in `docs/MOLEBOX-ON-DISK.md`). The box key is the section key of the loader chain `MoleboxExecutablePackerHandler` replays; every file is read in 64 KiB blocks, each a zlib stream (Adler-32 checked) or stored, and IDEA-ECB encrypted over its whole 8-byte blocks. The directory is checked against the MD5 the trailer stores.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BoxName` | `string BoxName { get; }` | Name the loader gives the box (e.g. `Game.exe.BOX`). |
+| `Entries` | `IReadOnlyList<MoleboxBoxEntry> Entries { get; }` | The files, the boxed main executable (if any) first. |
+| `Extract` | `byte[] Extract(MoleboxBoxEntry entry)` | Decodes one file, checking every block's Adler-32 and length. |
+| `HasBoxTrailer` | `static bool HasBoxTrailer(Stream stream)` | Cheap structural test of the trailer and box header, without any key: the trailer's length field equals the file length and the directory lies inside the file. |
+| `StoredLength` | `long StoredLength(MoleboxBoxEntry entry)` | Bytes the file occupies in the box (its blocks, without the length table). |
+| `TryOpen` | `static MoleboxBox TryOpen(byte[] file)` | Reads the box of a MoleBox 2.x packed executable; null when it carries none this reader knows. |
+
+#### `MoleboxBoxEntry`
+
+One file of a MoleBox 2.x file box.
+
+Implements `IEquatable<MoleboxBoxEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MoleboxBoxEntry` | `MoleboxBoxEntry(string Name, long DataOffset, long Size, uint Flags, bool IsMainExecutable)` | One file of a MoleBox 2.x file box. |
+| `DataOffset` | `long DataOffset { get; init; }` | File offset of the first block (the block-length table sits right before it). |
+| `Flags` | `uint Flags { get; init; }` | Item flags: bit 0 zlib blocks, bit 1 IDEA-encrypted blocks. |
+| `IsMainExecutable` | `bool IsMainExecutable { get; init; }` | The copy of the boxed application's own executable the box header points at. |
+| `Name` | `string Name { get; init; }` | Path inside the box, `/`-separated. |
+| `Size` | `long Size { get; init; }` | Original size. |
+
 #### `MoleboxExecutablePackerHandler`
 
 Static unpacker for MoleBox 2.x (Teggo) — a bundler that packs an application, and optionally a tree of data files, into one executable.
@@ -16950,6 +16988,30 @@ Inherits `MinorExecutablePackerHandlerBase`. Implements `IExecutablePackerHandle
 | `LiteralSignature` | `protected override ReadOnlySpan<byte> LiteralSignature { get; }` | Gets the literal signature. |
 | `IsPackerSection` | `protected override bool IsPackerSection(string name)` | Performs the is packer section operation. |
 | `Unpack` | `override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options)` | Performs the unpack operation. |
+
+#### `MoleboxFormatDescriptor`
+
+MoleBox 2.x: the files a MoleBox-packed executable carries in its appended file box, and the copy of the program itself when the box keeps one. Layout in `docs/MOLEBOX-ON-DISK.md`; the key comes from the loader chain the `MoleboxExecutablePackerHandler` replays.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MoleboxFormatDescriptor` | `MoleboxFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `MoleboxIdea`
 
@@ -32622,6 +32684,7 @@ One file, directory or resource fork of a StuffIt X (.sitx) archive.
 | `DataOffset` | `long DataOffset { get; init; }` | Offset of the stream's first data block in the archive. |
 | `FullPath` | `string FullPath { get; init; }` | Full path within the archive, '/'-separated; resource forks end in `.rsrc`. |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry is a directory. |
+| `IsEncrypted` | `bool IsEncrypted { get; init; }` | Whether this entry's stream is encrypted, so extracting it needs the password. |
 | `IsResourceFork` | `bool IsResourceFork { get; init; }` | Whether this entry is the resource fork of a file. |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Last modification time, when the catalog records one. |
 | `Method` | `string Method { get; init; }` | Name of the stream's compression method. |
@@ -32671,7 +32734,7 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `StuffItXReader` | `StuffItXReader(Stream stream, bool leaveOpen = false)` | Opens a StuffIt X archive and reads its directory. |
+| `StuffItXReader` | `StuffItXReader(Stream stream, bool leaveOpen = false, string password = null)` | Opens a StuffIt X archive and reads its directory. |
 | `Comment` | `string Comment { get; }` | The archive's own comment, from the catalog of the archive object, if it has one. |
 | `Entries` | `IReadOnlyList<StuffItXEntry> Entries { get; }` | The archive's files, directories and resource forks. |
 | `Dispose` | `void Dispose()` |  |

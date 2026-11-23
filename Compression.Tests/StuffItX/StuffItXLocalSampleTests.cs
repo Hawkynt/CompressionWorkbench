@@ -25,7 +25,7 @@ public class StuffItXLocalSampleTests {
     StuffItXReader r;
     try {
       r = new StuffItXReader(File.OpenRead(path));
-    } catch (NotSupportedException ex) {
+    } catch (Exception ex) when (ex is NotSupportedException or Compression.Registry.ArchivePasswordException) {
       Assert.Inconclusive($"refused as a whole: {ex.Message}"); // an encrypted catalog, for one
       return;
     }
@@ -36,12 +36,12 @@ public class StuffItXLocalSampleTests {
       try {
         var length = r.DecodeStream(id).Length;
         TestContext.Out.WriteLine($"stream {id}: {method}, {length} bytes, ok");
-      } catch (NotSupportedException ex) {
+      } catch (Exception ex) when (ex is NotSupportedException or Compression.Registry.ArchivePasswordException) {
         refused.Add($"stream {id}: {method}: {ex.Message}");
       }
     }
     foreach (var line in refused) TestContext.Out.WriteLine(line);
-    // a coding nobody can decode (method 7, encryption) is refused, never guessed: not a failure
+    // a layout this reader does not reproduce, or a stream behind an unknown password, is refused, never guessed: not a failure
     if (refused.Count > 0) Assert.Inconclusive($"{refused.Count} stream(s) use a refused coding; every other stream passed its CRC-32.");
   }
 

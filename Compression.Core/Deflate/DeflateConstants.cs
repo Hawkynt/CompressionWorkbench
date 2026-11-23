@@ -101,6 +101,23 @@ public static class DeflateConstants {
     [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 
   /// <summary>
+  /// Copies a replacement for <see cref="CodeLengthOrder"/>, which must list each of the 19
+  /// code-length symbols exactly once.
+  /// </summary>
+  internal static int[] CopyCodeLengthOrder(ReadOnlySpan<int> order) {
+    if (order.Length != CodeLengthAlphabetSize)
+      throw new ArgumentException($"A code-length order lists {CodeLengthAlphabetSize} symbols, not {order.Length}.", nameof(order));
+    var seen = 0;
+    foreach (var symbol in order) {
+      if ((uint)symbol >= CodeLengthAlphabetSize || (seen & (1 << symbol)) != 0)
+        throw new ArgumentException("A code-length order must list each symbol 0-18 exactly once.", nameof(order));
+      seen |= 1 << symbol;
+    }
+
+    return order.ToArray();
+  }
+
+  /// <summary>
   /// Returns the fixed literal/length code lengths as defined in RFC 1951 section 3.2.6.
   /// </summary>
   public static int[] GetStaticLiteralLengths() {

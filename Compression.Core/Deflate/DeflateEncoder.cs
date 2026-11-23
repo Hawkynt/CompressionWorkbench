@@ -100,6 +100,11 @@ internal sealed partial class DeflateEncoder {
   /// <summary>Width of the HDIST field of dynamic blocks (5 in RFC 1951, 6 for StuffIt X).</summary>
   public int DistanceCountBits { get; set; } = 5;
 
+  /// <summary>Replacement for RFC 1951's code-length order, already validated; <see langword="null"/> keeps the standard one.</summary>
+  public int[]? CodeLengthOrderOverride { get; set; }
+
+  private ReadOnlySpan<int> CodeLengthOrder => this.CodeLengthOrderOverride is { } order ? order : DeflateConstants.CodeLengthOrder;
+
   /// <summary>Creates an encoder writing to <paramref name="output"/> at zlib level <paramref name="level"/> (1–9).</summary>
   public DeflateEncoder(Stream output, int level) {
     ArgumentOutOfRangeException.ThrowIfLessThan(level, 1);
@@ -554,7 +559,7 @@ internal sealed partial class DeflateEncoder {
     ZopfliBlockCost.EnsureDistanceCode(distForTree);
     var litLengths = ZopfliBlockCost.BuildCodeLengths(litFreq, DeflateConstants.MaxBits);
     var distLengths = ZopfliBlockCost.BuildCodeLengths(distForTree, DeflateConstants.MaxBits);
-    var header = DynamicHeader.Create(litLengths, distLengths);
+    var header = DynamicHeader.Create(litLengths, distLengths, this.CodeLengthOrder);
 
     long extraBits = 0;
     for (var code = 0; code < 29; ++code)

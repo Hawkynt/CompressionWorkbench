@@ -38,18 +38,18 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public string Description =>
     "StuffIt X archive (Aladdin/Smith Micro): files, folders and resource forks (as .rsrc) from " +
     "Brimstone, Cyanide, Darkhorse, Deflate, Blend, Iron and stored streams, also behind the English " +
-    "and x86 preprocessors, each checked against its CRC-32; written stored, Deflate-, Brimstone-, Darkhorse-, Cyanide-, Blend-, " +
-    "Obscured- or Iron-coded, optionally behind the English or x86 preprocessor. Method 7 " +
-    "and encrypted streams are listed but not extracted.";
+    "and x86 preprocessors and behind AES, Blowfish, DES or RC4 encryption, each checked against its CRC-32; " +
+    "written stored, Deflate-, Brimstone-, Darkhorse-, Cyanide-, Blend-, Obscured- or Iron-coded, optionally " +
+    "behind the English or x86 preprocessor. Method 7 (JPEG recompression) restores the original JPEG file.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    using var r = new StuffItXReader(stream, leaveOpen: true);
+    using var r = new StuffItXReader(stream, leaveOpen: true, password);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.OriginalSize,
-      e.CompressedSize, e.Method, e.IsDirectory, false, e.LastModified)).ToList();
+      e.CompressedSize, e.Method, e.IsDirectory, e.IsEncrypted, e.LastModified)).ToList();
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    using var r = new StuffItXReader(stream, leaveOpen: true);
+    using var r = new StuffItXReader(stream, leaveOpen: true, password);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.FullPath, files)) continue;

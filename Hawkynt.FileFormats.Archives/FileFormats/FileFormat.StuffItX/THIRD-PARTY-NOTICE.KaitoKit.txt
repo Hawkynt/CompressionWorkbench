@@ -1,0 +1,34 @@
+StuffIt X encryption (StuffItXCrypto.cs) and method 7, JPEG recompression (StuffItXJpeg*.cs), in
+this folder are converted from KaitoKit; the tables in StuffItXJpegTables.cs are its tables, and
+the test streams in Compression.Tests/StuffItX/JpegVectors come from its JPEG fixture.
+
+Upstream:  https://github.com/shunnag/KaitoKit
+Revision:  bb14fb23753b57386f72caf64887cabb8d9fcaf2
+Files:     Sources/KaitoKit/Formats/StuffItX/StuffItXCrypto.swift,
+           Sources/KaitoKit/Codecs/StuffItX/JPEG/*.swift (Baseline, Blocks, Decoder, Envelope,
+           Mode1, Models, Progressive, Range, Support, Syntax),
+           Sources/KaitoKit/Codecs/StuffItX/StuffItXJPEGTables.swift,
+           Tests/Fixtures/stuffit/slice7-jpeg-vectors.json (the "cases" streams)
+Licence:   MIT License
+
+MIT License
+
+Copyright (c) 2026 shunnag
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

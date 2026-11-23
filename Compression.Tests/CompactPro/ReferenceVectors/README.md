@@ -21,6 +21,8 @@
 `encrypt-cpt.py` lays an archive out afresh with its entries encrypted. It uses MacExtract's
 reading of the cipher and a fixed preamble, so its output is reproducible.
 
+**Decryption verified against MacExtract (rev 4b507c2…) only; no real Compact Pro-encrypted sample.**
+MacExtract is the implementation the cipher was converted from, so it is not an independent oracle.
 No archive encrypted by Compact Pro itself is committed: encrypting needs a registered Compact Pro
 under 68k Mac emulation, and no encrypted `.cpt` with a known password is in the public corpora.
 

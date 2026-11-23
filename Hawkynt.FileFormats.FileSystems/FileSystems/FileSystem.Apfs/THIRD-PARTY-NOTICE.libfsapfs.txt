@@ -1,0 +1,32 @@
+libfsapfs (APFS key bags and volume unlock) - converted to C#
+
+Source:   https://github.com/libyal/libfsapfs
+Revision: 4456366ccaf586a7ff54c8cbf6a42f38a9ac8f4b
+Author:   Joachim Metz
+Licence:  GNU Lesser General Public License, version 3 or (at your option) any
+          later version - the same licence as this repository; the full text is
+          in the repository's LICENSE file.
+
+Upstream notice, as carried in each libfsapfs source file:
+
+  Copyright (C) 2018-2026, Joachim Metz <joachim.metz@gmail.com>
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Lesser General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+Files converted (into ApfsEncryption.cs and the unlock path of ApfsReader.cs):
+
+  libfsapfs_container_key_bag.c, libfsapfs_volume_key_bag.c,
+  libfsapfs_key_bag_header.c, libfsapfs_key_bag_entry.c,
+  libfsapfs_key_bag_value.c        -> key bag decryption and entries
+  libfsapfs_key_encrypted_key.c    -> packed key objects, password and key unwrap
+  libfsapfs_file_system_data_handle.c,
+  libfsapfs_data_block.c           -> the AES-XTS tweak of file data (crypto_id)
+  documentation/Apple File System (APFS).asciidoc -> key bag layout

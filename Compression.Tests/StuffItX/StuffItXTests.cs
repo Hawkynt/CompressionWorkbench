@@ -95,12 +95,12 @@ public class StuffItXTests {
   [TestCase("testfile.stuffit_deluxe_2009.win.sitx")]
   [TestCase("testfile.stuffit_deluxe_2010.win.sitx")]
   [Category("ThemVsUs")]
-  public void GivenArchiveWithMethod7_WhenExtracted_ThenIronForksMatchAndMethod7IsRefused(string vector) {
+  public void GivenArchiveWithMethod7_WhenExtracted_ThenTheJpegAndTheIronForksMatch(string vector) {
     using var r = new StuffItXReader(new MemoryStream(Vector(vector)));
     var jpg = r.Entries.Single(e => e.FullPath == "sources/testfile.jpg");
-    Assert.That(jpg.Method, Is.EqualTo("Method 7"));
+    Assert.That(jpg.Method, Is.EqualTo("JPEG"));
     Assert.That(jpg.OriginalSize, Is.EqualTo(220));
-    Assert.That(() => r.Extract(jpg), Throws.InstanceOf<NotSupportedException>());
+    Assert.That(Sha(r.Extract(jpg)), Is.EqualTo(Jpg));
     Assert.That(Sha(r.Extract(r.Entries.Single(e => e.FullPath == "sources/testfile.png"))), Is.EqualTo(Png));
     Assert.That(Sha(r.Extract(r.Entries.Single(e => e.FullPath == "sources/testfile.txt"))), Is.EqualTo(WinTxt));
     Assert.That(r.Entries.Single(e => e.FullPath == "sources").IsDirectory, Is.True);
@@ -109,16 +109,7 @@ public class StuffItXTests {
   [TestCaseSource(nameof(AllVectors)), Category("ThemVsUs")]
   public void GivenStuffItWrittenArchive_WhenEveryStreamIsDecoded_ThenEachPassesItsStoredCrc(string vector) {
     using var r = new StuffItXReader(new MemoryStream(Vector(vector)));
-    var checkedStreams = 0;
-    foreach (var id in r.StreamIds) {
-      try {
-        r.DecodeStream(id);
-        ++checkedStreams;
-      } catch (NotSupportedException) {
-        // method 7 has no decoder anywhere
-      }
-    }
-    Assert.That(checkedStreams, Is.GreaterThan(0));
+    foreach (var id in r.StreamIds) Assert.That(() => r.DecodeStream(id), Throws.Nothing, r.StreamMethod(id));
   }
 
   [Test, Category("ThemVsUs")]
@@ -236,7 +227,7 @@ public class StuffItXTests {
       FsInteropToolbox.RunWsl($"unar -q -f -k hidden -D -o '{FsInteropToolbox.WinToWsl(outDir)}' '{FsInteropToolbox.WinToWsl(archive)}'");
       using var r = new StuffItXReader(new MemoryStream(bytes));
       var compared = 0;
-      foreach (var e in r.Entries.Where(e => !e.IsDirectory && !e.IsResourceFork && e.Method != "Method 7")) {
+      foreach (var e in r.Entries.Where(e => !e.IsDirectory && !e.IsResourceFork && e.Method != "JPEG")) { // unar does not decode method 7
         var theirs = Path.Combine(outDir, e.FullPath.Replace('/', Path.DirectorySeparatorChar));
         Assert.That(File.Exists(theirs), Is.True, $"unar did not write {e.FullPath}");
         Assert.That(r.Extract(e), Is.EqualTo(File.ReadAllBytes(theirs)), e.FullPath);

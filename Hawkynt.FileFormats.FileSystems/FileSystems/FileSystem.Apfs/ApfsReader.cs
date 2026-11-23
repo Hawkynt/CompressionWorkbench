@@ -21,9 +21,17 @@ public sealed class ApfsReader : IDisposable {
   private readonly List<ApfsEntry> _entries = [];
   private uint _blockSize = DEFAULT_BLOCK_SIZE;
   private bool _hashedNames;
+  private readonly string? _password;
+  private FileFormat.Luks.LuksCipher? _volumeCipher;
+  private readonly HashSet<long> _encryptedBlocks = [];
+  /// <summary>Object-map trees already read: oid → every (xid, flags, paddr) version.</summary>
+  private readonly Dictionary<ulong, Dictionary<ulong, List<(ulong Xid, uint Flags, ulong Paddr)>>> _omapCache = [];
 
   /// <summary>Container block size from the superblock.</summary>
   public uint BlockSize => this._blockSize;
+
+  /// <summary>True when the volume is software-encrypted (and was unlocked to be read).</summary>
+  public bool IsEncrypted { get; private set; }
 
   /// <summary>
   /// Gets the entries.
@@ -33,17 +41,89 @@ public sealed class ApfsReader : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="ApfsReader"/>.
   /// </summary>
-  public ApfsReader(Stream stream, bool leaveOpen = false) {
+  public ApfsReader(Stream stream, bool leaveOpen = false) : this(stream, null, leaveOpen) { }
+
+  /// <summary>
+  /// Opens a container, unlocking a software-encrypted volume with <paramref name="password" />.
+  /// </summary>
+  /// <exception cref="Compression.Registry.ArchivePasswordException">The volume is encrypted and no password, or a wrong one, was given.</exception>
+  /// <exception cref="NotSupportedException">The volume uses an encryption scheme this reader does not implement.</exception>
+  public ApfsReader(Stream stream, string? password, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
+    this._password = password;
     this._data = new ImageAccessor(stream, leaveOpen: true);
     this.Parse();
   }
 
+  /// <summary>True for a Fusion container (NX_INCOMPAT_FUSION): a fast main device and a tier-2 device.</summary>
+  public bool IsFusion { get; private set; }
+
+  /// <summary>
+  /// Fusion addresses blocks on the tier-2 device with FUSION_TIER2_DEVICE_BYTE_ADDR
+  /// (0x4000000000000000) shifted down by the block size's log2. This reader reads only the
+  /// main device: a Fusion container is read as long as every object and extent it reaches
+  /// lies there, and anything on the tier-2 device is refused rather than read from the
+  /// wrong place.
+  /// </summary>
+  private void RefuseTier2(ulong block) {
+    if (!this.IsFusion) return;
+    var tier2 = 0x4000000000000000UL >> System.Numerics.BitOperations.TrailingZeroCount(this._blockSize);
+    if ((block & tier2) != 0)
+      throw new NotSupportedException($"APFS: block {block & ~tier2} lies on the Fusion tier-2 device, which this reader does not read.");
+  }
+
   private Span<byte> BlockSpan(long blockNum) {
+    this.RefuseTier2((ulong)blockNum);
     var off = blockNum * this._blockSize;
     if (off < 0 || off + this._blockSize > this._data.Length)
       throw new InvalidDataException($"APFS: block {blockNum} out of range.");
-    return this._data.Read(off, (int)this._blockSize).AsSpan();
+    var block = this._data.Read(off, (int)this._blockSize);
+    if (this._volumeCipher is { } cipher && this._encryptedBlocks.Contains(blockNum))
+      cipher.Decrypt(block, (ulong)blockNum * (this._blockSize / 512));
+    return block.AsSpan();
+  }
+
+  /// <summary>
+  /// Unlocks a software-encrypted volume (see <see cref="ApfsEncryption" />): the container key
+  /// bag (nx_keylocker, +1296) names the volume key bag, whose password entries unwrap the
+  /// key that unwraps the volume encryption key.
+  /// </summary>
+  private void UnlockVolume(ReadOnlySpan<byte> nxsb, ReadOnlySpan<byte> apsb, ulong fsFlags) {
+    this.IsEncrypted = true;
+    // APFS_FS_ONEKEY (0x8): every file uses the volume key. Without it, files carry their
+    // own keys wrapped by class keys (hardware-bound), which this reader does not have.
+    if ((fsFlags & 0x8) == 0)
+      throw new NotSupportedException("APFS: the volume encrypts files with per-file keys; only volumes with one volume key (FileVault) are supported.");
+    if (this._password is null)
+      throw new Compression.Registry.ArchivePasswordException("APFS: the volume is encrypted; a password is required.", passwordWasSupplied: false);
+
+    var containerUuid = nxsb.Slice(72, 16).ToArray();
+    var bagBlock = BinaryPrimitives.ReadUInt64LittleEndian(nxsb[1296..]);
+    var bagCount = BinaryPrimitives.ReadUInt64LittleEndian(nxsb[1304..]);
+    if (bagBlock == 0 || bagCount is 0 or > 64)
+      throw new InvalidDataException("APFS: the volume is encrypted but the container has no key bag.");
+    var container = ApfsEncryption.ReadKeyBag(this.ReadBlocks(bagBlock, bagCount), bagBlock, this._blockSize, containerUuid, 0x6B657973);
+
+    var volumeUuidBytes = apsb.Slice(APSB_VOL_UUID, 16).ToArray();
+    var volumeUuid = new Guid(volumeUuidBytes, bigEndian: true);
+    var extent = ApfsEncryption.VolumeKeyBagExtent(container, volumeUuid)
+      ?? throw new InvalidDataException("APFS: the container key bag names no key bag for this volume.");
+    if (extent.Count is 0 or > 64)
+      throw new InvalidDataException("APFS: the volume key bag extent is implausible.");
+    var volume = ApfsEncryption.ReadKeyBag(this.ReadBlocks(extent.Block, extent.Count), extent.Block, this._blockSize, volumeUuidBytes, 0x72656373);
+
+    var vek = ApfsEncryption.UnlockVolumeKey(container, volume, volumeUuid, this._password)
+      ?? throw new Compression.Registry.ArchivePasswordException("APFS: the password does not unlock this volume.", passwordWasSupplied: true);
+    this._volumeCipher = ApfsEncryption.Cipher(vek);
+  }
+
+  private byte[] ReadBlocks(ulong first, ulong count) {
+    this.RefuseTier2(first);
+    var off = checked((long)first * this._blockSize);
+    var len = checked((int)(count * this._blockSize));
+    if (off < 0 || off + len > this._data.Length)
+      throw new InvalidDataException("APFS: key bag lies outside the container.");
+    return this._data.Read(off, len);
   }
 
   private void Parse() {
@@ -68,6 +148,8 @@ public sealed class ApfsReader : IDisposable {
     // an Apple File System Partition"). Its nx_omap_oid (+160) is the physical block
     // of the container object map.
     var nxsb = this.LatestCheckpointSuperblock();
+    // nx_incompatible_features (+64): NX_INCOMPAT_FUSION (0x100).
+    this.IsFusion = ((nxsb is { } sb ? BinaryPrimitives.ReadUInt64LittleEndian(sb.AsSpan(64)) : this._data.ReadUInt64(64)) & 0x100) != 0;
     var ctrOmapPhys = this.ResolveCtrOmapPhys();
     if (nxsb is { } latest) {
       var omapOid = BinaryPrimitives.ReadUInt64LittleEndian(latest.AsSpan(160));
@@ -97,6 +179,11 @@ public sealed class ApfsReader : IDisposable {
     var rootTreeVirtOid = BinaryPrimitives.ReadUInt64LittleEndian(apsbBlock[APSB_ROOT_TREE_OID..]);
     if (volOmapPhys == 0 || rootTreeVirtOid == 0) return;
 
+    // apfs_fs_flags: APFS_FS_UNENCRYPTED clear means the volume's tree and files are encrypted.
+    var fsFlags = BinaryPrimitives.ReadUInt64LittleEndian(apsbBlock[APSB_FS_FLAGS..]);
+    if ((fsFlags & APFS_FS_UNENCRYPTED) == 0)
+      this.UnlockVolume(nxsb ?? this._data.Read(0, (int)this._blockSize), apsbBlock, fsFlags);
+
     var rootTreePhys = this.ResolveOidViaOmap(volOmapPhys, rootTreeVirtOid);
     if (rootTreePhys == 0) return;
 
@@ -107,7 +194,70 @@ public sealed class ApfsReader : IDisposable {
     // record keys carry a name hash beside the length.
     var incompat = BinaryPrimitives.ReadUInt64LittleEndian(apsbBlock[APSB_INCOMPAT_FEATURES..]);
     this._hashedNames = (incompat & 0x9UL) != 0;
-    this.ParseFsTree((long)rootTreePhys, volOmapPhys);
+    this.ParseFsTree((long)rootTreePhys, volOmapPhys, "");
+    this.ParseSnapshots(apsbBlock.ToArray());
+  }
+
+  /// <summary>Folder under which every snapshot's tree is listed, one sub-folder per snapshot name.</summary>
+  public const string SnapshotFolder = ".snapshots";
+
+  /// <summary>The volume's snapshots, oldest first: name and the transaction they were taken at.</summary>
+  public IReadOnlyList<(string Name, ulong Xid)> Snapshots => this._snapshots;
+  private readonly List<(string Name, ulong Xid)> _snapshots = [];
+
+  /// <summary>Newest object-map version a lookup may take; lowered while a snapshot is read.</summary>
+  private ulong _maxXid = ulong.MaxValue;
+
+  /// <summary>
+  /// Snapshots (Apple File System Reference, "Snapshot Metadata"): the volume's
+  /// snapshot metadata tree (apfs_snap_meta_tree_oid, physical) keys each snapshot by its
+  /// transaction id; j_snap_metadata_val names it (name_len @48, name @50) and gives the
+  /// physical block of the volume superblock as of then (sblock_oid @8). That superblock's
+  /// file-system tree is read through the object map with every lookup limited to
+  /// versions no newer than the snapshot's transaction, and listed under
+  /// <see cref="SnapshotFolder" />/&lt;name&gt;.
+  /// </summary>
+  private void ParseSnapshots(byte[] apsb) {
+    var volumeOmap = BinaryPrimitives.ReadUInt64LittleEndian(apsb.AsSpan(APSB_OMAP_OID));
+    var metaTree = BinaryPrimitives.ReadUInt64LittleEndian(apsb.AsSpan(APSB_SNAP_META_TREE_OID));
+    if (metaTree == 0 || !this.IsObjectOfType((long)metaTree, OBJECT_TYPE_BTREE)) return;
+    var snapshots = new List<(string Name, ulong Xid, ulong Superblock)>();
+    foreach (var (key, val) in this.CollectAllLeafRecords((long)metaTree)) {
+      if (key.Length < 8 || val.Length < 50) continue;
+      var oidAndType = BinaryPrimitives.ReadUInt64LittleEndian(key);
+      if ((int)(oidAndType >> 60) != APFS_TYPE_SNAP_METADATA) continue;
+      var nameLen = BinaryPrimitives.ReadUInt16LittleEndian(val.AsSpan(48));
+      if (50 + nameLen > val.Length) continue;
+      var name = Encoding.UTF8.GetString(val, 50, nameLen).TrimEnd('\0');
+      snapshots.Add((name, oidAndType & 0x0FFFFFFFFFFFFFFFUL, BinaryPrimitives.ReadUInt64LittleEndian(val.AsSpan(8))));
+    }
+    if (snapshots.Count == 0) return;
+
+    this._entries.Add(new ApfsEntry { Name = SnapshotFolder, IsDirectory = true });
+    foreach (var (name, xid, superblock) in snapshots.OrderBy(s => s.Xid)) {
+      var safe = name.Replace('/', '_');
+      if (safe.Length == 0 || safe is "." or "..") safe = $"xid-{xid}";
+      var folder = SnapshotFolder + "/" + safe;
+      this._snapshots.Add((name, xid));
+      this._entries.Add(new ApfsEntry { Name = folder, IsDirectory = true });
+      var snap = superblock == 0 ? null : this.BlockSpan((long)superblock).ToArray();
+      if (snap is null || BinaryPrimitives.ReadUInt32LittleEndian(snap.AsSpan(32)) != ApsbMagicLE)
+        throw new InvalidDataException($"APFS: snapshot '{name}' names no volume superblock (block {superblock}).");
+      // The snapshot's tree is reached through the volume's current object map, which
+      // keeps the older object versions a snapshot needs, limited to the snapshot
+      // superblock's transaction.
+      var rootVirt = BinaryPrimitives.ReadUInt64LittleEndian(snap.AsSpan(APSB_ROOT_TREE_OID));
+      var snapXid = BinaryPrimitives.ReadUInt64LittleEndian(snap.AsSpan(16));
+      this._maxXid = snapXid;
+      try {
+        var root = this.ResolveOidViaOmap(volumeOmap, rootVirt);
+        if (root == 0)
+          throw new InvalidDataException($"APFS: snapshot '{name}' file-system tree {rootVirt} is not in the object map at xid {snapXid}.");
+        this.ParseFsTree((long)root, volumeOmap, folder);
+      } finally {
+        this._maxXid = ulong.MaxValue;
+      }
+    }
   }
 
   // ── OMAP resolution ─────────────────────────────────────────────────────
@@ -181,19 +331,34 @@ public sealed class ApfsReader : IDisposable {
     // deeper than one node, and reading only its root finds nothing at all.
     // omap_key_t {ok_oid, ok_xid}: an object can have several versions; the one in
     // force is the newest (snapshots are not read here).
-    ulong found = 0, foundXid = 0;
-    var any = false;
-    foreach (var (key, value) in this.CollectAllLeafRecords((long)treePhys)) {
-      if (key.Length < 16) continue;
-      var ok = BinaryPrimitives.ReadUInt64LittleEndian(key);
-      if (ok != virtOid) continue;
-      if (value.Length < 16) continue;
-      var xid = BinaryPrimitives.ReadUInt64LittleEndian(key.AsSpan(8));
-      if (any && xid <= foundXid) continue;
-      found = BinaryPrimitives.ReadUInt64LittleEndian(value.AsSpan(8));
-      foundXid = xid;
-      any = true;
+    if (!this._omapCache.TryGetValue(treePhys, out var map)) {
+      map = [];
+      foreach (var (key, value) in this.CollectAllLeafRecords((long)treePhys)) {
+        if (key.Length < 16 || value.Length < 16) continue;
+        var oid = BinaryPrimitives.ReadUInt64LittleEndian(key);
+        if (!map.TryGetValue(oid, out var versions))
+          map[oid] = versions = [];
+        versions.Add((BinaryPrimitives.ReadUInt64LittleEndian(key.AsSpan(8)),
+          BinaryPrimitives.ReadUInt32LittleEndian(value), BinaryPrimitives.ReadUInt64LittleEndian(value.AsSpan(8))));
+      }
+      this._omapCache[treePhys] = map;
     }
+    ulong found = 0, foundXid = 0;
+    uint foundFlags = 0;
+    var any = false;
+    if (map.TryGetValue(virtOid, out var candidates))
+      foreach (var (xid, flags, paddr) in candidates) {
+        if (xid > this._maxXid) continue;
+        if (any && xid <= foundXid) continue;
+        found = paddr;
+        foundFlags = flags;
+        foundXid = xid;
+        any = true;
+      }
+    // omap_val_t.ov_flags OMAP_VAL_ENCRYPTED (0x4): the object is stored encrypted with
+    // the volume key, tweaked by its physical sector.
+    if (any && (foundFlags & 0x4) != 0)
+      this._encryptedBlocks.Add((long)found);
     return found;
   }
 
@@ -337,7 +502,7 @@ public sealed class ApfsReader : IDisposable {
     }
   }
 
-  private void ParseFsTree(long treePhys, ulong volOmapPhys) {
+  private void ParseFsTree(long treePhys, ulong volOmapPhys, string rootPath) {
     // Collect: inode name + size + isDir, drec: parent -> (name, child_ino), file_extent: ino -> (size, paddr).
     var inodeName = new Dictionary<ulong, string>();
     var inodeSize = new Dictionary<ulong, long>();
@@ -399,7 +564,8 @@ public sealed class ApfsReader : IDisposable {
           var logical = BinaryPrimitives.ReadUInt64LittleEndian(key.AsSpan(8));
           if (!fileExtents.TryGetValue(oid, out var extentList))
             fileExtents[oid] = extentList = [];
-          extentList.Add(new ApfsExtent(logical, len, paddr));
+          var cryptoId = val.Length >= 24 ? BinaryPrimitives.ReadUInt64LittleEndian(val.AsSpan(16)) : 0;
+          extentList.Add(new ApfsExtent(logical, len, paddr, cryptoId));
           break;
 
         case APFS_TYPE_XATTR:
@@ -449,7 +615,7 @@ public sealed class ApfsReader : IDisposable {
     // Recurse from the root directory, building full nested paths. A visited set
     // guards against malformed cyclic DIR_REC chains.
     var visited = new HashSet<ulong>();
-    EmitSubtree(APFS_ROOT_DIR_INO_NUM, parentPath: "");
+    EmitSubtree(APFS_ROOT_DIR_INO_NUM, parentPath: rootPath);
     return;
 
     void EmitSubtree(ulong dirIno, string parentPath) {
@@ -599,10 +765,29 @@ public sealed class ApfsReader : IDisposable {
         Zero(written + take);
         continue;
       }
+      this.RefuseTier2(extent.PhysBlock);
       var offset = checked((long)extent.PhysBlock * this._blockSize);
       if (offset < 0 || offset + take > this._data.Length)
         throw new InvalidDataException($"APFS: extent at block {extent.PhysBlock} lies outside the image.");
-      this._data.CopyTo(offset, destination, take);
+      if (this._volumeCipher is { } cipher) {
+        // Whole blocks, decrypted with the extent's crypto_id as the tweak base: block i of
+        // the extent starts at sector (crypto_id + i) * block_size / 512.
+        var sectorsPerBlock = this._blockSize / 512;
+        var buffer = new byte[(int)Math.Min(this._blockSize * 64L, 4 << 20)];
+        var blocksPerChunk = buffer.Length / (int)this._blockSize;
+        for (long done = 0, block = 0; done < take; block += blocksPerChunk) {
+          var chunk = (int)Math.Min(buffer.Length, (take - done + this._blockSize - 1) / this._blockSize * this._blockSize);
+          var span = buffer.AsSpan(0, chunk);
+          if (this._data.Read(offset + block * this._blockSize, span) < chunk)
+            throw new InvalidDataException($"APFS: extent at block {extent.PhysBlock} lies outside the image.");
+          cipher.Decrypt(span, (extent.CryptoId + (ulong)block) * sectorsPerBlock);
+          var n = (int)Math.Min(chunk, take - done);
+          destination.Write(buffer, 0, n);
+          done += n;
+        }
+      } else {
+        this._data.CopyTo(offset, destination, take);
+      }
       written += take;
     }
     Zero(size);
@@ -611,5 +796,5 @@ public sealed class ApfsReader : IDisposable {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-  public void Dispose() { }
+  public void Dispose() => this._volumeCipher?.Dispose();
 }

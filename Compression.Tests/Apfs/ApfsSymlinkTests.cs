@@ -77,6 +77,7 @@ public class ApfsSymlinkTests {
     BinaryPrimitives.WriteUInt32LittleEndian(apsb[32..], 0x42535041);    // "APSB"
     BinaryPrimitives.WriteUInt64LittleEndian(apsb[0x80..], VolOmapObj);      // apfs_omap_oid (phys)
     BinaryPrimitives.WriteUInt64LittleEndian(apsb[0x88..], RootTreeVirtOid); // apfs_root_tree_oid (virt)
+    BinaryPrimitives.WriteUInt64LittleEndian(apsb[0x108..], 1);             // apfs_fs_flags: APFS_FS_UNENCRYPTED
 
     // ── volume OMAP object (block 4) → its btree root ──
     WriteOmapObject(image, VolOmapObj, treeBlock: VolOmapTree);
