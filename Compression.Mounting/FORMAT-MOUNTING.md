@@ -28,9 +28,13 @@ primary file is not sufficient to reconstruct companion files. A native
 multi-stream mount path must bind and validate the complete source set. The
 single-file fallback never claims multi-file image reconstruction.
 
-WORM-grade creators (`IArchiveCreatable`) can qualify for a
-**staged writable mount** after the resolver checks the archive category,
-safe ordinary entries and a lossless reconstruction of creator-only sources.
+WORM-grade creators (`IArchiveCreatable`) can qualify for a writable
+filesystem projection after the resolver checks the archive category and safe
+ordinary entries. **Path-backed WORM mounts prefer a persistent append-only
+sidecar:** Flush syncs the sidecar, not the native archive. The original remains
+byte-for-byte unchanged and ordinary archive readers do not see the changes.
+Generic stream mounts retain the separately qualified staged rebuild path, which
+requires a lossless reconstruction of creator-only sources.
 The mutable namespace handles positional writes,
 stable identities, renames and deletes; Flush rebuilds into a temporary file,
 verifies every emitted entry's bytes, and publishes with rollback on recoverable
@@ -44,7 +48,7 @@ implementation of that method still buffers an entire entry, so true bounded
 memory also requires its descriptor to override the streaming writer (ZIP,
 7z and RAR provide implementations). Encrypted/linked/unsafe entries are rejected.
 
-For path-backed staged mounts, **ZIP's native delta path** uses its existing
+For path-backed staged native write-back mounts, **ZIP's native delta path** uses its existing
 `ZipModifier.Add/Remove` on a private candidate; unchanged ZIP records and
 compressed content are retained. Edits for all other formats currently use
 a complete streamed candidate rebuild. This path publishes a verified replacement
@@ -58,7 +62,7 @@ The resolver retains conservative large-member limits for formats without a
 qualified large streaming profile; disk-backed staging alone does not remove a
 descriptor's serializer limits. See [format-family qualification](../docs/MOUNTING-FORMAT-FAMILIES.md).
 
-For a mounted **local path**, Flush creates a candidate and a verified backup
+For a mounted **local path using staged native write-back**, Flush creates a candidate and a verified backup
 *in the archive's directory*, flushes both to disk, then writes a durable
 journal containing old/new SHA-256 hashes and candidate/backup names. Only
 after exact entry-content validation does it replace the archive pathname.
