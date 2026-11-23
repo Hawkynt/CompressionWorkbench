@@ -21,9 +21,15 @@ public sealed class ApfsReader : IDisposable {
   private readonly List<ApfsEntry> _entries = [];
   private uint _blockSize = DEFAULT_BLOCK_SIZE;
   private bool _hashedNames;
+  private readonly string? _password;
+  private FileFormat.Luks.LuksCipher? _volumeCipher;
+  private readonly HashSet<long> _encryptedBlocks = [];
 
   /// <summary>Container block size from the superblock.</summary>
   public uint BlockSize => this._blockSize;
+
+  /// <summary>True when the volume is software-encrypted (and was unlocked to be read).</summary>
+  public bool IsEncrypted { get; private set; }
 
   /// <summary>
   /// Gets the entries.
@@ -33,8 +39,16 @@ public sealed class ApfsReader : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="ApfsReader"/>.
   /// </summary>
-  public ApfsReader(Stream stream, bool leaveOpen = false) {
+  public ApfsReader(Stream stream, bool leaveOpen = false) : this(stream, null, leaveOpen) { }
+
+  /// <summary>
+  /// Opens a container, unlocking a software-encrypted volume with <paramref name="password" />.
+  /// </summary>
+  /// <exception cref="Compression.Registry.ArchivePasswordException">The volume is encrypted and no password, or a wrong one, was given.</exception>
+  /// <exception cref="NotSupportedException">The volume uses an encryption scheme this reader does not implement.</exception>
+  public ApfsReader(Stream stream, string? password, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
+    this._password = password;
     this._data = new ImageAccessor(stream, leaveOpen: true);
     this.Parse();
   }
@@ -43,7 +57,52 @@ public sealed class ApfsReader : IDisposable {
     var off = blockNum * this._blockSize;
     if (off < 0 || off + this._blockSize > this._data.Length)
       throw new InvalidDataException($"APFS: block {blockNum} out of range.");
-    return this._data.Read(off, (int)this._blockSize).AsSpan();
+    var block = this._data.Read(off, (int)this._blockSize);
+    if (this._volumeCipher is { } cipher && this._encryptedBlocks.Contains(blockNum))
+      cipher.Decrypt(block, (ulong)blockNum * (this._blockSize / 512));
+    return block.AsSpan();
+  }
+
+  /// <summary>
+  /// Unlocks a software-encrypted volume (see <see cref="ApfsEncryption" />): the container key
+  /// bag (nx_keylocker, +1296) names the volume key bag, whose password entries unwrap the
+  /// key that unwraps the volume encryption key.
+  /// </summary>
+  private void UnlockVolume(ReadOnlySpan<byte> nxsb, ReadOnlySpan<byte> apsb, ulong fsFlags) {
+    this.IsEncrypted = true;
+    // APFS_FS_ONEKEY (0x8): every file uses the volume key. Without it, files carry their
+    // own keys wrapped by class keys (hardware-bound), which this reader does not have.
+    if ((fsFlags & 0x8) == 0)
+      throw new NotSupportedException("APFS: the volume encrypts files with per-file keys; only volumes with one volume key (FileVault) are supported.");
+    if (this._password is null)
+      throw new Compression.Registry.ArchivePasswordException("APFS: the volume is encrypted; a password is required.", passwordWasSupplied: false);
+
+    var containerUuid = nxsb.Slice(72, 16).ToArray();
+    var bagBlock = BinaryPrimitives.ReadUInt64LittleEndian(nxsb[1296..]);
+    var bagCount = BinaryPrimitives.ReadUInt64LittleEndian(nxsb[1304..]);
+    if (bagBlock == 0 || bagCount is 0 or > 64)
+      throw new InvalidDataException("APFS: the volume is encrypted but the container has no key bag.");
+    var container = ApfsEncryption.ReadKeyBag(this.ReadBlocks(bagBlock, bagCount), bagBlock, this._blockSize, containerUuid, 0x6B657973);
+
+    var volumeUuidBytes = apsb.Slice(APSB_VOL_UUID, 16).ToArray();
+    var volumeUuid = new Guid(volumeUuidBytes, bigEndian: true);
+    var extent = ApfsEncryption.VolumeKeyBagExtent(container, volumeUuid)
+      ?? throw new InvalidDataException("APFS: the container key bag names no key bag for this volume.");
+    if (extent.Count is 0 or > 64)
+      throw new InvalidDataException("APFS: the volume key bag extent is implausible.");
+    var volume = ApfsEncryption.ReadKeyBag(this.ReadBlocks(extent.Block, extent.Count), extent.Block, this._blockSize, volumeUuidBytes, 0x72656373);
+
+    var vek = ApfsEncryption.UnlockVolumeKey(container, volume, volumeUuid, this._password)
+      ?? throw new Compression.Registry.ArchivePasswordException("APFS: the password does not unlock this volume.", passwordWasSupplied: true);
+    this._volumeCipher = ApfsEncryption.Cipher(vek);
+  }
+
+  private byte[] ReadBlocks(ulong first, ulong count) {
+    var off = checked((long)first * this._blockSize);
+    var len = checked((int)(count * this._blockSize));
+    if (off < 0 || off + len > this._data.Length)
+      throw new InvalidDataException("APFS: key bag lies outside the container.");
+    return this._data.Read(off, len);
   }
 
   private void Parse() {
@@ -96,6 +155,11 @@ public sealed class ApfsReader : IDisposable {
     var volOmapPhys = BinaryPrimitives.ReadUInt64LittleEndian(apsbBlock[APSB_OMAP_OID..]);
     var rootTreeVirtOid = BinaryPrimitives.ReadUInt64LittleEndian(apsbBlock[APSB_ROOT_TREE_OID..]);
     if (volOmapPhys == 0 || rootTreeVirtOid == 0) return;
+
+    // apfs_fs_flags: APFS_FS_UNENCRYPTED clear means the volume's tree and files are encrypted.
+    var fsFlags = BinaryPrimitives.ReadUInt64LittleEndian(apsbBlock[APSB_FS_FLAGS..]);
+    if ((fsFlags & APFS_FS_UNENCRYPTED) == 0)
+      this.UnlockVolume(nxsb ?? this._data.Read(0, (int)this._blockSize), apsbBlock, fsFlags);
 
     var rootTreePhys = this.ResolveOidViaOmap(volOmapPhys, rootTreeVirtOid);
     if (rootTreePhys == 0) return;
@@ -182,6 +246,7 @@ public sealed class ApfsReader : IDisposable {
     // omap_key_t {ok_oid, ok_xid}: an object can have several versions; the one in
     // force is the newest (snapshots are not read here).
     ulong found = 0, foundXid = 0;
+    uint foundFlags = 0;
     var any = false;
     foreach (var (key, value) in this.CollectAllLeafRecords((long)treePhys)) {
       if (key.Length < 16) continue;
@@ -191,9 +256,14 @@ public sealed class ApfsReader : IDisposable {
       var xid = BinaryPrimitives.ReadUInt64LittleEndian(key.AsSpan(8));
       if (any && xid <= foundXid) continue;
       found = BinaryPrimitives.ReadUInt64LittleEndian(value.AsSpan(8));
+      foundFlags = BinaryPrimitives.ReadUInt32LittleEndian(value);
       foundXid = xid;
       any = true;
     }
+    // omap_val_t.ov_flags OMAP_VAL_ENCRYPTED (0x4): the object is stored encrypted with
+    // the volume key, tweaked by its physical sector.
+    if (any && (foundFlags & 0x4) != 0)
+      this._encryptedBlocks.Add((long)found);
     return found;
   }
 
@@ -399,7 +469,8 @@ public sealed class ApfsReader : IDisposable {
           var logical = BinaryPrimitives.ReadUInt64LittleEndian(key.AsSpan(8));
           if (!fileExtents.TryGetValue(oid, out var extentList))
             fileExtents[oid] = extentList = [];
-          extentList.Add(new ApfsExtent(logical, len, paddr));
+          var cryptoId = val.Length >= 24 ? BinaryPrimitives.ReadUInt64LittleEndian(val.AsSpan(16)) : 0;
+          extentList.Add(new ApfsExtent(logical, len, paddr, cryptoId));
           break;
 
         case APFS_TYPE_XATTR:
@@ -602,7 +673,25 @@ public sealed class ApfsReader : IDisposable {
       var offset = checked((long)extent.PhysBlock * this._blockSize);
       if (offset < 0 || offset + take > this._data.Length)
         throw new InvalidDataException($"APFS: extent at block {extent.PhysBlock} lies outside the image.");
-      this._data.CopyTo(offset, destination, take);
+      if (this._volumeCipher is { } cipher) {
+        // Whole blocks, decrypted with the extent's crypto_id as the tweak base: block i of
+        // the extent starts at sector (crypto_id + i) * block_size / 512.
+        var sectorsPerBlock = this._blockSize / 512;
+        var buffer = new byte[(int)Math.Min(this._blockSize * 64L, 4 << 20)];
+        var blocksPerChunk = buffer.Length / (int)this._blockSize;
+        for (long done = 0, block = 0; done < take; block += blocksPerChunk) {
+          var chunk = (int)Math.Min(buffer.Length, (take - done + this._blockSize - 1) / this._blockSize * this._blockSize);
+          var span = buffer.AsSpan(0, chunk);
+          if (this._data.Read(offset + block * this._blockSize, span) < chunk)
+            throw new InvalidDataException($"APFS: extent at block {extent.PhysBlock} lies outside the image.");
+          cipher.Decrypt(span, (extent.CryptoId + (ulong)block) * sectorsPerBlock);
+          var n = (int)Math.Min(chunk, take - done);
+          destination.Write(buffer, 0, n);
+          done += n;
+        }
+      } else {
+        this._data.CopyTo(offset, destination, take);
+      }
       written += take;
     }
     Zero(size);
@@ -611,5 +700,5 @@ public sealed class ApfsReader : IDisposable {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-  public void Dispose() { }
+  public void Dispose() => this._volumeCipher?.Dispose();
 }

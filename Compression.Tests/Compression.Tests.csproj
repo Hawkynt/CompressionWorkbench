@@ -117,7 +117,7 @@
     <EmbeddedResource Include="Qm\ReferenceVectors\*.ts;Qm\ReferenceVectors\*.qm">
       <LogicalName>QmVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Apfs\ReferenceVectors\*.gz">
+    <EmbeddedResource Include="Apfs\ReferenceVectors\*.gz;Apfs\ReferenceVectors\*.manifest">
       <LogicalName>ApfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="Phar\ReferenceVectors\*.phar;Phar\ReferenceVectors\php-listing.txt">
