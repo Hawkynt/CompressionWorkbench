@@ -5682,6 +5682,22 @@ A clean-room neural compressor: an online-trained multi-layer perceptron (`Neura
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data with the online neural predictor. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses data produced by `Compress`. |
 
+### Namespace `Compression.Core.Entropy.PackMp3`
+
+[`PackMp3Codec`](#packmp3codec)
+
+#### `PackMp3Codec`
+
+packMP3 v1.0g (Matthias Stirner): lossless recompression of MPEG-1 Layer III files into the PMP format, and back. WinZip stores exactly this stream as ZIP method 94.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Version` | `const byte Version` | packMP3's format version byte (1.0). |
+| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The PMP signature, "MS". |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> mp3)` | Compresses an MP3 file to a PMP stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> pmp)` | Decompresses a PMP stream back to the original MP3 file. |
+| `TryCompress` | `static bool TryCompress(ReadOnlySpan<byte> mp3, out byte[] pmp)` | Compresses an MP3 file when packMP3 can carry it and the result decompresses to the very same bytes; returns false for anything else (other audio, unsupported MP3 features, non-MP3 data). |
+
 ### Namespace `Compression.Core.Entropy.Ppmd`
 
 [`IPpmd7RangeDecoder`](#ippmd7rangedecoder) · [`IPpmd7RangeEncoder`](#ippmd7rangeencoder) · [`Ppmd7`](#ppmd7) · [`Ppmd8`](#ppmd8) · [`Ppmd8RestoreMethod`](#ppmd8restoremethod) · [`PpmdBuildingBlock`](#ppmdbuildingblock) · [`PpmdContext`](#ppmdcontext) · [`PpmdModelBase`](#ppmdmodelbase) · [`PpmdModelBase.ContextKey`](#ppmdmodelbasecontextkey) · [`PpmdModelH`](#ppmdmodelh) · [`PpmdRangeDecoder`](#ppmdrangedecoder) · [`PpmdRangeEncoder`](#ppmdrangeencoder) · [`RarPpmdRangeDecoder`](#rarppmdrangedecoder) · [`SevenZipPpmd`](#sevenzipppmd) · [`SevenZipPpmdRangeDecoder`](#sevenzipppmdrangedecoder) · [`SevenZipPpmdRangeEncoder`](#sevenzipppmdrangeencoder)
@@ -5984,7 +6000,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Entropy.WinZipJpeg`
 
-[`WinZipJpegDecoder`](#winzipjpegdecoder)
+[`WinZipJpegDecoder`](#winzipjpegdecoder) · [`WinZipJpegEncoder`](#winzipjpegencoder)
 
 #### `WinZipJpegDecoder`
 
@@ -5993,6 +6009,14 @@ Decoder for ZIP compression method 96, WinZip's lossless JPEG recompression: LZM
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes a method-96 stream back to the original JPEG file. |
+
+#### `WinZipJpegEncoder`
+
+Encoder for ZIP compression method 96 (WinZip JPEG), the inverse of `WinZipJpegDecoder`: the JPEG's Huffman-coded scan is decoded to DCT coefficients, which are arithmetic-coded with the same context model; the marker segments around the scan travel as LZMA-packed metadata.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TryEncode` | `static bool TryEncode(ReadOnlySpan<byte> jpeg, out byte[] payload)` | Encodes a JPEG as a method-96 stream; false when method 96 cannot represent it. |
 
 ### Namespace `Compression.Core.ExecutableUnpacking`
 
@@ -10859,6 +10883,7 @@ ZIP compression methods.
 | `BZip2` | `12` | BZip2 compression. |
 | `Lzma` | `14` | LZMA compression. |
 | `Zstd` | `93` | Zstandard compression. |
+| `Mp3` | `94` | WinZip MP3: lossless recompression of an MP3 file as a packMP3 stream; decoded by `PackMp3Codec`. |
 | `Xz` | `95` | XZ compression (a complete .xz stream, APPNOTE 4.4.5 method 95). |
 | `Jpeg` | `96` | WinZip JPEG: lossless recompression of a JPEG file; decoded by `WinZipJpegDecoder`. |
 | `WavPack` | `97` | WinZip WavPack (a wrapped WavPack image of a WAV file); decoded through `ZipMethodCodecs`. |
