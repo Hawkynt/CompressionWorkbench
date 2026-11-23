@@ -13556,7 +13556,7 @@ One file or folder of a Compact Pro archive's directory.
 
 #### `CompactProFormatDescriptor`
 
-Compact Pro (Bill Goodman / Cyclos, 1990-1995), the classic Mac archiver. Each file's forks are RLE-coded, optionally LZH-compressed below that. A resource fork is exposed as "name.rsrc". References: `https://github.com/MacPaw/XADMaster` — The Unarchiver's XADCompactProParser and fork handles (LGPL-2.1), converted for the reader`https://github.com/uzTools/MacExtract` — MacExtract's Compact Pro cipher (0BSD), converted for reading encrypted entries`http://justsolve.archiveteam.org/wiki/Compact_Pro` — format overview
+Compact Pro (Bill Goodman / Cyclos, 1990-1995), the classic Mac archiver. Each file's forks are RLE-coded, optionally LZH-compressed below that. A resource fork is exposed as "name.rsrc". References: `https://github.com/MacPaw/XADMaster` — The Unarchiver's XADCompactProParser and fork handles (LGPL-2.1), converted for the reader`https://github.com/uzTools/MacExtract` — MacExtract's Compact Pro cipher (0BSD), converted for reading encrypted entries; decryption verified against MacExtract (rev 4b507c2…) only; no real Compact Pro-encrypted sample`http://justsolve.archiveteam.org/wiki/Compact_Pro` — format overview
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 

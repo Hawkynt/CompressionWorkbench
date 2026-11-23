@@ -11,7 +11,7 @@ namespace FileFormat.CompactPro;
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://github.com/MacPaw/XADMaster</c> — The Unarchiver's XADCompactProParser and fork handles (LGPL-2.1), converted for the reader</description></item>
-///   <item><description><c>https://github.com/uzTools/MacExtract</c> — MacExtract's Compact Pro cipher (0BSD), converted for reading encrypted entries</description></item>
+///   <item><description><c>https://github.com/uzTools/MacExtract</c> — MacExtract's Compact Pro cipher (0BSD), converted for reading encrypted entries; decryption verified against MacExtract (rev 4b507c2…) only; no real Compact Pro-encrypted sample</description></item>
 ///   <item><description><c>http://justsolve.archiveteam.org/wiki/Compact_Pro</c> — format overview</description></item>
 /// </list>
 /// </summary>
