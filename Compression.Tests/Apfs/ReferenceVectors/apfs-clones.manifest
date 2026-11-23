@@ -1,0 +1,12 @@
+# apfs-fuse 66b86bd; live volume, then snapshot 'before' (-o snap=<xid>)
+f 89fde9f3e40904cc67aa8d561e9c91aed4ed142f5e1ee8fbbf2cd0faac125eff big.bin
+f c314228667ce5d63172f856a9893b6b3a6376c2625f99e2b4e520269a10dde14 dir/big-clone.bin
+l dir/big-clone.bin link
+f 5f35944aa56bff5df4e02b85905d88a5272821ba0e5d54578ec61eba9a613cf8 text-clone.txt
+f 51a41aa4be8a71680d83df7029526aba9e1789a9a6ad1af973bf6d0d96484332 text.txt
+s 5 before
+f dbd717df70d12617077c05f19065c996fbe31d03cc147d2be5d67ffab3ecd5ce .snapshots/before/big.bin
+f dbd717df70d12617077c05f19065c996fbe31d03cc147d2be5d67ffab3ecd5ce .snapshots/before/dir/big-clone.bin
+l dir/big-clone.bin .snapshots/before/link
+f 51a41aa4be8a71680d83df7029526aba9e1789a9a6ad1af973bf6d0d96484332 .snapshots/before/text-clone.txt
+f 51a41aa4be8a71680d83df7029526aba9e1789a9a6ad1af973bf6d0d96484332 .snapshots/before/text.txt
