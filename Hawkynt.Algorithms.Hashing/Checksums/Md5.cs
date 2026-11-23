@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+
 namespace Compression.Core.Checksums;
 
 /// <summary>
@@ -11,11 +13,6 @@ public static class Md5 {
   /// <param name="data">The data to hash.</param>
   /// <returns>The 16-byte MD5 hash.</returns>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
-    uint a0 = 0x67452301;
-    var b0 = 0xEFCDAB89;
-    var c0 = 0x98BADCFE;
-    uint d0 = 0x10325476;
-
     var bitLen = (long)data.Length * 8;
 
     // Pad: append 0x80, then zeros, then 64-bit length (LE)
@@ -33,58 +30,78 @@ public static class Md5 {
     padded[padded.Length - 1] = (byte)(bitLen >> 56);
 
     // Process each 64-byte block
-    for (var offset = 0; offset < padded.Length; offset += 64) {
-      var m = new uint[16];
-      for (var i = 0; i < 16; ++i)
-        m[i] = BitConverter.ToUInt32(padded, offset + i * 4);
-
-      uint a = a0, b = b0, c = c0, d = d0;
-
-      // Round 1
-      for (var i = 0; i < 16; ++i) {
-        var f = (b & c) | (~b & d);
-        var g = (uint)i;
-        var temp = d; d = c; c = b;
-        b += RotateLeft(a + f + K[i] + m[g], S1[i]);
-        a = temp;
-      }
-
-      // Round 2
-      for (var i = 16; i < 32; ++i) {
-        var f = (d & b) | (~d & c);
-        var g = (uint)((5 * (i - 16) + 1) % 16);
-        var temp = d; d = c; c = b;
-        b += RotateLeft(a + f + K[i] + m[g], S2[i - 16]);
-        a = temp;
-      }
-
-      // Round 3
-      for (var i = 32; i < 48; ++i) {
-        var f = b ^ c ^ d;
-        var g = (uint)((3 * (i - 32) + 5) % 16);
-        var temp = d; d = c; c = b;
-        b += RotateLeft(a + f + K[i] + m[g], S3[i - 32]);
-        a = temp;
-      }
-
-      // Round 4
-      for (var i = 48; i < 64; ++i) {
-        var f = c ^ (b | ~d);
-        var g = (uint)((7 * (i - 48)) % 16);
-        var temp = d; d = c; c = b;
-        b += RotateLeft(a + f + K[i] + m[g], S4[i - 48]);
-        a = temp;
-      }
-
-      a0 += a; b0 += b; c0 += c; d0 += d;
-    }
+    Span<uint> state = stackalloc uint[4];
+    Initialize(state);
+    for (var offset = 0; offset < padded.Length; offset += 64)
+      Compress(state, padded.AsSpan(offset, 64));
 
     var result = new byte[16];
-    BitConverter.TryWriteBytes(result.AsSpan(0), a0);
-    BitConverter.TryWriteBytes(result.AsSpan(4), b0);
-    BitConverter.TryWriteBytes(result.AsSpan(8), c0);
-    BitConverter.TryWriteBytes(result.AsSpan(12), d0);
+    for (var i = 0; i < 4; ++i)
+      BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(i * 4), state[i]);
     return result;
+  }
+
+  /// <summary>Sets the four chaining words to the initial A, B, C, D of RFC 1321 section 3.3.</summary>
+  public static void Initialize(Span<uint> state) {
+    state[0] = 0x67452301;
+    state[1] = 0xEFCDAB89;
+    state[2] = 0x98BADCFE;
+    state[3] = 0x10325476;
+  }
+
+  /// <summary>
+  /// Runs the compression function of RFC 1321 section 3.4 over one 64-byte block and adds the result
+  /// into the four chaining words: the step for a caller that pads or finishes in its own way.
+  /// </summary>
+  public static void Compress(Span<uint> state, ReadOnlySpan<byte> block) {
+    if (state.Length < 4) throw new ArgumentException("MD5 has four chaining words.", nameof(state));
+    if (block.Length < 64) throw new ArgumentException("MD5 compresses 64-byte blocks.", nameof(block));
+    Span<uint> m = stackalloc uint[16];
+    for (var i = 0; i < 16; ++i)
+      m[i] = BinaryPrimitives.ReadUInt32LittleEndian(block[(i * 4)..]);
+
+    uint a = state[0], b = state[1], c = state[2], d = state[3];
+
+    // Round 1
+    for (var i = 0; i < 16; ++i) {
+      var f = (b & c) | (~b & d);
+      var g = i;
+      var temp = d; d = c; c = b;
+      b += RotateLeft(a + f + K[i] + m[g], S1[i]);
+      a = temp;
+    }
+
+    // Round 2
+    for (var i = 16; i < 32; ++i) {
+      var f = (d & b) | (~d & c);
+      var g = (5 * (i - 16) + 1) % 16;
+      var temp = d; d = c; c = b;
+      b += RotateLeft(a + f + K[i] + m[g], S2[i - 16]);
+      a = temp;
+    }
+
+    // Round 3
+    for (var i = 32; i < 48; ++i) {
+      var f = b ^ c ^ d;
+      var g = (3 * (i - 32) + 5) % 16;
+      var temp = d; d = c; c = b;
+      b += RotateLeft(a + f + K[i] + m[g], S3[i - 32]);
+      a = temp;
+    }
+
+    // Round 4
+    for (var i = 48; i < 64; ++i) {
+      var f = c ^ (b | ~d);
+      var g = (7 * (i - 48)) % 16;
+      var temp = d; d = c; c = b;
+      b += RotateLeft(a + f + K[i] + m[g], S4[i - 48]);
+      a = temp;
+    }
+
+    state[0] += a;
+    state[1] += b;
+    state[2] += c;
+    state[3] += d;
   }
 
   private static uint RotateLeft(uint x, int n) => (x << n) | (x >> (32 - n));

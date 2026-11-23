@@ -1,6 +1,6 @@
 # StuffIt X reference archives
 
-The ten `.sitx` files come unmodified from Stephan Sokolow's
+The twenty `.sitx` files come unmodified from Stephan Sokolow's
 [StuffIt Test Files](https://github.com/ssokolow/stuffit-test-files), released under CC0 (see
 `LICENSE.md`). StuffIt itself wrote each of them from the same small source files:
 
@@ -15,6 +15,9 @@ The ten `.sitx` files come unmodified from Stephan Sokolow's
 | `testfile.stuffit_deluxe_2010.win.sitx` | StuffIt Deluxe 2010, Windows | Iron, method 7 (JPEG), RC4-obscured preview |
 | `testfile.stuffit7_dlx.mac9.comment.sitx` | StuffIt Deluxe 7, Mac OS 9, with an archive comment | as `mac9`, plus a type-9 element and a second catalog holding the comment "Test Comment" |
 | `testfile.stuffit7_dlx.macx1.comment.sitx` | StuffIt Deluxe 7, Mac OS X 10.1, with an archive comment | structurally the same as `macx1`: no comment in the data fork |
+| `testfile.stuffit_deluxe_2009.win.password.{aes,blowfish,des,rc4}.sitx` | StuffIt Deluxe 2009, Windows, password `password` | Cyanide streams behind one cipher layer: AES-256, Blowfish (16-byte key), DES or RC4 (64-byte key). The DES archive instead holds Iron streams, a method-7 JPEG and an obscured preview, and encrypts its catalog too |
+| `testfile.stuffit_deluxe_2010.win.password.{aes,blowfish,des,rc4}.sitx` | StuffIt Deluxe 2010, Windows, password `password` | Cyanide streams behind the same four ciphers; plain catalog |
+| `testfile.stuffit7_dlx.{mac9,macx1}.password.sitx` | StuffIt Deluxe 7, Mac OS 9 / OS X 10.1, password `password` | as `mac9`/`macx1`, every stream behind AES-256 |
 | `testfile.stuffit7_dlx.mac9.recoverability.sitx` | StuffIt Deluxe 7, Mac OS 9, "recoverability" | a root marked with algorithm 5 and 255 checked blocks; refused, see `docs/STUFFITX-RECOVERY-ON-DISK.md` |
 
 The expected SHA-256 values in `StuffItXTests` are those of the repository's source files: the
