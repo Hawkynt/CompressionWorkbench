@@ -26802,6 +26802,48 @@ Reads an Amiga PackDev device image ("PKD\x13", or the older "PKD\x11") and rebu
 | `ExtractImage` | `byte[] ExtractImage()` | Rebuilds the device image; free blocks are zero. |
 | `IsPackDev` | `static bool IsPackDev(ReadOnlySpan<byte> data)` | Returns true when `data` starts with a PackDev magic. |
 
+### Namespace `FileFormat.PackDisk`
+
+[`PackDiskFormatDescriptor`](#packdiskformatdescriptor) · [`PackDiskReader`](#packdiskreader)
+
+#### `PackDiskFormatDescriptor`
+
+Amiga PackDisk archive (magic "DISKPACK"): an 880 KiB floppy packed cylinder by cylinder with XPK. Read-only: `disk.adf` is the floppy image. PackDisk gives its archives no extension, so detection is by magic. Reference: `https://github.com/MacPaw/XADMaster` — libxad's PackDisk client (`libxad/clients/PackDisk.c`).
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PackDiskFormatDescriptor` | `PackDiskFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `PackDiskReader`
+
+Reads an Amiga PackDisk archive (magic "DISKPACK", version 1) and rebuilds its floppy image.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PackDiskReader` | `PackDiskReader(Stream stream)` | Reads the header and the cylinder table. |
+| `CylinderSize` | `const int CylinderSize` | Bytes in one cylinder: 2 tracks × 11 sectors × 512 bytes. |
+| `Cylinders` | `const int Cylinders` | Cylinders on a DD floppy. |
+| `Packers` | `IReadOnlyList<string> Packers { get; }` | Names of the XPK sub-libraries the cylinders use ("RAW" for stored cylinders). |
+| `VolumeName` | `string VolumeName { get; }` | The volume name recorded in the header. |
+| `ExtractDisk` | `byte[] ExtractDisk()` | Rebuilds the 880 KiB floppy. |
+| `IsPackDisk` | `static bool IsPackDisk(ReadOnlySpan<byte> data)` | Returns true when `data` starts with the PackDisk magic and version 1. |
+
 ### Namespace `FileFormat.PackIt`
 
 [`PackItEntry`](#packitentry) · [`PackItFormatDescriptor`](#packitformatdescriptor) · [`PackItModifier`](#packitmodifier) · [`PackItReader`](#packitreader) · [`PackItWriter`](#packitwriter)
