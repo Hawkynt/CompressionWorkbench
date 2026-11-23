@@ -26,41 +26,41 @@ public sealed class WinZipJpegDecoder {
   private const long MaxSliceBlocks = 512L * 1024 * 1024 / (64 * 2);
 
   // Probability state table (specification section 6; index 48 is the fixed-statistics entry).
-  private static ReadOnlySpan<ushort> LogP => [
+  internal static ReadOnlySpan<ushort> LogP => [
     1024, 895, 795, 706, 628, 559, 493, 437, 379, 331, 287, 247, 212, 186, 158, 143, 127, 110, 98, 84, 72, 65, 59, 53, 48,
     45, 42, 40, 37, 35, 33, 30, 28, 26, 23, 21, 19, 17, 15, 13, 11, 9, 7, 5, 4, 3, 2, 1, 1024,
   ];
-  private static ReadOnlySpan<ushort> LogQP => [
+  internal static ReadOnlySpan<ushort> LogQP => [
     0, 272, 502, 726, 941, 1150, 1371, 1578, 1819, 2044, 2278, 2521, 2765, 2971, 3227, 3382, 3566, 3788, 3965, 4200, 4435, 4590, 4737, 4899, 5050,
     5147, 5250, 5325, 5441, 5527, 5617, 5758, 5863, 5976, 6157, 6295, 6447, 6616, 6806, 7024, 7278, 7585, 7972, 8495, 8884, 9309, 10065, 11689, 0,
   ];
-  private static ReadOnlySpan<ushort> NMaxLP => [
+  internal static ReadOnlySpan<ushort> NMaxLP => [
     16384, 16110, 15105, 14826, 14444, 13975, 13804, 13547, 13265, 13240, 12915, 12844, 12720, 12648, 12482, 12441, 12319,
     12320, 12250, 12180, 12168, 12155, 12154, 12084, 12096, 12105, 12096, 12080, 12062, 12075, 12078, 12060, 12068, 12090,
     12075, 12075, 12103, 12121, 12150, 12181, 12221, 12294, 12411, 12615, 13120, 13113, 14574, 21860, 0,
   ];
-  private static ReadOnlySpan<byte> HalfI => [
+  internal static ReadOnlySpan<byte> HalfI => [
     8, 8, 7, 7, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 9, 10, 10, 10, 10, 10, 10, 9, 9, 8, 8, 7, 7, 6, 6, 6, 5, 5, 4, 4, 3, 3, 3, 3, 2, 2, 1, 0, 0,
   ];
-  private static ReadOnlySpan<byte> DblI => [
+  internal static ReadOnlySpan<byte> DblI => [
     0, 1, 2, 3, 4, 5, 6, 7, 8, 7, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 8, 8, 9, 9, 10, 10, 10, 10, 10, 10, 9, 8, 7, 6, 6, 5, 4, 3, 3, 3, 2, 1, 0,
   ];
 
   // Zigzag geometry (ITU T.81).
-  private static ReadOnlySpan<byte> ZigZag => [
+  internal static ReadOnlySpan<byte> ZigZag => [
     0, 1, 5, 6, 14, 15, 27, 28, 2, 4, 7, 13, 16, 26, 29, 42, 3, 8, 12, 17, 25, 30, 41, 43, 9, 11, 18, 24, 31, 40, 44, 53,
     10, 19, 23, 32, 39, 45, 52, 54, 20, 22, 33, 38, 46, 51, 55, 60, 21, 34, 37, 47, 50, 56, 59, 61, 35, 36, 48, 49, 57, 58, 62, 63,
   ];
-  private static ReadOnlySpan<byte> RowOf => [
+  internal static ReadOnlySpan<byte> RowOf => [
     0, 0, 1, 2, 1, 0, 0, 1, 2, 3, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3,
     4, 5, 6, 7, 7, 6, 5, 4, 3, 2, 1, 2, 3, 4, 5, 6, 7, 7, 6, 5, 4, 3, 4, 5, 6, 7, 7, 6, 5, 6, 7, 7,
   ];
-  private static ReadOnlySpan<byte> ColumnOf => [
+  internal static ReadOnlySpan<byte> ColumnOf => [
     0, 1, 0, 0, 1, 2, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 6, 5, 4,
     3, 2, 1, 0, 1, 2, 3, 4, 5, 6, 7, 7, 6, 5, 4, 3, 2, 3, 4, 5, 6, 7, 7, 6, 5, 4, 5, 6, 7, 7, 6, 7,
   ];
 
-  private static readonly short[] ZeroBlock = new short[64];
+  internal static readonly short[] ZeroBlock = new short[64];
 
   // ── input ────────────────────────────────────────────────────────────
 
@@ -81,7 +81,7 @@ public sealed class WinZipJpegDecoder {
   // ── arithmetic decoder ───────────────────────────────────────────────
 
   /// <summary>One adaptive probability bin.</summary>
-  private struct Bin {
+  internal struct Bin {
     public int Index;
     public int Dlrm;
     public byte Mps;
@@ -107,7 +107,7 @@ public sealed class WinZipJpegDecoder {
     return this._currentByte;
   }
 
-  private static int LogX(uint x) {
+  internal static int LogX(uint x) {
     var high = x >> 12;
     if (high == 0) return 0x2000;
     var whole = 0;
@@ -121,7 +121,7 @@ public sealed class WinZipJpegDecoder {
     return (whole << 10) - negFraction;
   }
 
-  private static uint AntilogX(int lr) {
+  internal static uint AntilogX(int lr) {
     var whole = lr >> 10;
     var fraction = lr & 0x3FF;
     var shift = 7 - whole;
@@ -156,7 +156,7 @@ public sealed class WinZipJpegDecoder {
   }
 
   /// <summary>QSMALLER, saturating at index 47 (WinZip's modification).</summary>
-  private static void QSmaller(ref Bin bin) {
+  internal static void QSmaller(ref Bin bin) {
     if (bin.Index >= 47) return;
     ++bin.Index;
     if (bin.K <= 1) {
@@ -253,9 +253,9 @@ public sealed class WinZipJpegDecoder {
 
   private enum ParseResult { Scan, End }
 
-  private static int U16(ReadOnlySpan<byte> d, int at) => (d[at] << 8) | d[at + 1];
+  internal static int U16(ReadOnlySpan<byte> d, int at) => (d[at] << 8) | d[at + 1];
 
-  private static int SegmentSize(ReadOnlySpan<byte> d, int at) {
+  internal static int SegmentSize(ReadOnlySpan<byte> d, int at) {
     if (at + 2 > d.Length) throw new InvalidDataException("WinZip JPEG: truncated marker segment.");
     var size = U16(d, at);
     if (size < 2 || at + size > d.Length) throw new InvalidDataException("WinZip JPEG: bad marker segment size.");
@@ -402,7 +402,7 @@ public sealed class WinZipJpegDecoder {
   private readonly int[] _signContext = SignContexts();
 
   /// <summary>The 27 positions in the first two rows or columns get an adaptive sign context, numbered in zigzag order.</summary>
-  private static int[] SignContexts() {
+  internal static int[] SignContexts() {
     var table = new int[64];
     var next = 0;
     for (var k = 1; k < 64; ++k)
@@ -417,15 +417,15 @@ public sealed class WinZipJpegDecoder {
   }
 
   /// <summary>CAT (5.6.3): the bit length of the value.</summary>
-  private static int Category(uint value) => 32 - System.Numerics.BitOperations.LeadingZeroCount(value);
+  internal static int Category(uint value) => 32 - System.Numerics.BitOperations.LeadingZeroCount(value);
 
-  private static int At(int row, int column) => ZigZag[row * 8 + column];
+  internal static int At(int row, int column) => ZigZag[row * 8 + column];
 
-  private static bool FirstRow(int k) => RowOf[k] == 0;
-  private static bool FirstColumn(int k) => ColumnOf[k] == 0;
+  internal static bool FirstRow(int k) => RowOf[k] == 0;
+  internal static bool FirstColumn(int k) => ColumnOf[k] == 0;
 
   /// <summary>SUM (5.6.2.1): magnitudes below and to the right of k.</summary>
-  private static int Sum(int k, ReadOnlySpan<short> block) {
+  internal static int Sum(int k, ReadOnlySpan<short> block) {
     var sum = 0;
     int row = RowOf[k], column = ColumnOf[k];
     for (var i = 0; i < 64; ++i)
@@ -434,9 +434,9 @@ public sealed class WinZipJpegDecoder {
   }
 
   /// <summary>AVG (5.6.2.2). Erratum: the summed neighbour term is Bw[x], and DC never takes part.</summary>
-  private static int Both(ReadOnlySpan<short> n, ReadOnlySpan<short> w, int i) => Math.Abs((int)n[i]) + Math.Abs((int)w[i]);
+  internal static int Both(ReadOnlySpan<short> n, ReadOnlySpan<short> w, int i) => Math.Abs((int)n[i]) + Math.Abs((int)w[i]);
 
-  private static int Average(int k, ReadOnlySpan<short> n, ReadOnlySpan<short> w, ReadOnlySpan<ushort> q) {
+  internal static int Average(int k, ReadOnlySpan<short> n, ReadOnlySpan<short> w, ReadOnlySpan<ushort> q) {
     if (k is 0 or 1 or 2) return (Both(n, w, k) + 1) / 2;
     if (FirstRow(k)) {
       var left = At(RowOf[k], ColumnOf[k] - 1);
@@ -454,7 +454,7 @@ public sealed class WinZipJpegDecoder {
   }
 
   /// <summary>BDR (5.6.2.3). Erratum: the bracketed term is a sum.</summary>
-  private static int Bdr(int k, ReadOnlySpan<short> c, ReadOnlySpan<short> n, ReadOnlySpan<short> w, ReadOnlySpan<ushort> q) {
+  internal static int Bdr(int k, ReadOnlySpan<short> c, ReadOnlySpan<short> n, ReadOnlySpan<short> w, ReadOnlySpan<ushort> q) {
     if (FirstRow(k)) {
       var down = At(RowOf[k] + 1, ColumnOf[k]);
       return n[k] - (n[down] + c[down]) * q[down] / q[k];
@@ -541,7 +541,7 @@ public sealed class WinZipJpegDecoder {
     return this.DecodeAcSign(comp, k, abs, c, n, w, q) != 0 ? -abs : abs;
   }
 
-  private static int RoundedPrediction(long t) => (int)((t < 0 ? t - 5000 : t + 5000) / 10000);
+  internal static int RoundedPrediction(long t) => (int)((t < 0 ? t - 5000 : t + 5000) / 10000);
 
   private int DecodeDc(int comp, ReadOnlySpan<short> c, ReadOnlySpan<short> n, ReadOnlySpan<short> w, bool hasNorth, bool hasWest, ReadOnlySpan<ushort> q) {
     // DC prediction (5.6.7.1). Erratum: the neighbour AC terms are added to the current block's.
