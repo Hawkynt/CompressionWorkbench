@@ -13556,7 +13556,7 @@ One file or folder of a Compact Pro archive's directory.
 
 #### `CompactProFormatDescriptor`
 
-Compact Pro (Bill Goodman / Cyclos, 1990-1995), the classic Mac archiver. Each file's forks are RLE-coded, optionally LZH-compressed below that. A resource fork is exposed as "name.rsrc". References: `https://github.com/MacPaw/XADMaster` — The Unarchiver's XADCompactProParser and fork handles (LGPL-2.1), converted for the reader`http://justsolve.archiveteam.org/wiki/Compact_Pro` — format overview
+Compact Pro (Bill Goodman / Cyclos, 1990-1995), the classic Mac archiver. Each file's forks are RLE-coded, optionally LZH-compressed below that. A resource fork is exposed as "name.rsrc". References: `https://github.com/MacPaw/XADMaster` — The Unarchiver's XADCompactProParser and fork handles (LGPL-2.1), converted for the reader`https://github.com/uzTools/MacExtract` — MacExtract's Compact Pro cipher (0BSD), converted for reading encrypted entries`http://justsolve.archiveteam.org/wiki/Compact_Pro` — format overview
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
@@ -13592,7 +13592,7 @@ Reads Compact Pro (.cpt) archives: an 8-byte header (0x01, volume, magic, direct
 | `MacEpoch` | `static readonly DateTime MacEpoch` |  |
 | `Comment` | `string Comment { get; }` |  |
 | `Entries` | `IReadOnlyList<CompactProEntry> Entries { get; }` |  |
-| `ExtractForks` | `ValueTuple<byte[], byte[]> ExtractForks(CompactProEntry entry)` | Decodes both forks and verifies the entry's CRC (computed over resource, then data fork). |
+| `ExtractForks` | `ValueTuple<byte[], byte[]> ExtractForks(CompactProEntry entry, string password = null)` | Decodes both forks and verifies the entry's CRC (computed over resource, then data fork). |
 
 #### `CompactProWriter`
 
@@ -26692,6 +26692,54 @@ The parsed contents of a single Pack200 (JSR-200) segment: the archive header fi
 | `Status` | `Pack200DecodeStatus Status { get; init; }` | Whether the segment was fully decoded or only partially. |
 | `Utf8Count` | `int Utf8Count { get; init; }` | Number of constant-pool UTF-8 entries. |
 
+### Namespace `FileFormat.PackDev`
+
+[`PackDevFormatDescriptor`](#packdevformatdescriptor) · [`PackDevReader`](#packdevreader)
+
+#### `PackDevFormatDescriptor`
+
+Amiga PackDev device image (".pkd", ".dsq"; magic "PKD\x13" or the older "PKD\x11"): a floppy or other block device stored track by track, free blocks left out. Read-only: the single entry is the rebuilt image, `disk.adf` for a DD or HD floppy and `disk.img` otherwise. Reference: `https://github.com/MacPaw/XADMaster` — libxad's PackDev client (`libxad/clients/PackDev.c`).
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PackDevFormatDescriptor` | `PackDevFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `PackDevReader`
+
+Reads an Amiga PackDev device image ("PKD\x13", or the older "PKD\x11") and rebuilds the device's blocks.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PackDevReader` | `PackDevReader(Stream stream)` | Reads and checks the header. |
+| `LabelSize` | `const int LabelSize` | Bytes of one sector label after each stored block. |
+| `BlockCount` | `int BlockCount { get; }` | Number of blocks on the device. |
+| `BlockSize` | `int BlockSize { get; }` | Bytes per block. |
+| `HasFreeBlockMap` | `bool HasFreeBlockMap { get; }` | True when a free-block map is present and free blocks were left out. |
+| `ImageSize` | `long ImageSize { get; }` | Size of the rebuilt image in bytes. |
+| `IsOldFormat` | `bool IsOldFormat { get; }` | True for the older "PKD\x11" header. |
+| `PackerName` | `string PackerName { get; }` | The XPK packer name of a "PKD\x13" image, empty otherwise. |
+| `ReservedBlocks` | `int ReservedBlocks { get; }` | Leading blocks the free-block map does not cover. |
+| `TrackBlocks` | `int TrackBlocks { get; }` | Blocks per track. |
+| `XpkPacker` | `uint XpkPacker { get; }` | XPK packer id (0 when the blocks are stored). |
+| `ExtractImage` | `byte[] ExtractImage()` | Rebuilds the device image; free blocks are zero. |
+| `IsPackDev` | `static bool IsPackDev(ReadOnlySpan<byte> data)` | Returns true when `data` starts with a PackDev magic. |
+
 ### Namespace `FileFormat.PackIt`
 
 [`PackItEntry`](#packitentry) · [`PackItFormatDescriptor`](#packitformatdescriptor) · [`PackItModifier`](#packitmodifier) · [`PackItReader`](#packitreader) · [`PackItWriter`](#packitwriter)
@@ -32411,7 +32459,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 ### Namespace `FileFormat.StuffIt`
 
-[`StuffIt5Writer`](#stuffit5writer) · [`StuffItCompression`](#stuffitcompression) · [`StuffItEntry`](#stuffitentry) · [`StuffItFormatDescriptor`](#stuffitformatdescriptor) · [`StuffItReader`](#stuffitreader) · [`StuffItWriter`](#stuffitwriter)
+[`StuffIt5Writer`](#stuffit5writer) · [`StuffItCompression`](#stuffitcompression) · [`StuffItEntry`](#stuffitentry) · [`StuffItFormatDescriptor`](#stuffitformatdescriptor) · [`StuffItReader`](#stuffitreader) · [`StuffItSegments`](#stuffitsegments) · [`StuffItWriter`](#stuffitwriter)
 
 #### `StuffIt5Writer`
 
@@ -32484,6 +32532,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The container the writer emits. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files (verified rebuild); a segmented set is not edited. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the StuffIt archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the StuffIt archive per the requested mode. |
@@ -32492,6 +32541,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single StuffIt entry as a bounded read-only `Stream`. The reader's per-entry extractor returns the data-fork bytes; they are wrapped in a `BoundedEntryStream` sized to the entry's data-fork size. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes entries (verified rebuild); a segmented set is not edited. |
 
 #### `StuffItReader`
 
@@ -32509,6 +32559,20 @@ Implements `IDisposable`.
 | `ExtractResourceFork` | `byte[] ExtractResourceFork(StuffItEntry entry)` | Extracts and verifies the resource fork of `entry`. |
 | `Extract` | `byte[] Extract(StuffItEntry entry)` | Extracts and verifies the data fork of `entry`. |
 | `MethodName` | `static string MethodName(int method)` | Human-readable name of a StuffIt method number. |
+
+#### `StuffItSegments`
+
+Segmented ("split") StuffIt files: one file — typically a classic or StuffIt 5 archive, with its resource fork — cut into parts, each opening with a 100-byte header.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HeaderSize` | `const int HeaderSize` | Size of the header that opens every part. |
+| `FileName` | `static string FileName(ReadOnlySpan<byte> head)` | The name of the file a segmented set holds (header bytes 4-67). |
+| `IsSegment` | `static bool IsSegment(ReadOnlySpan<byte> head)` | Whether `head` (at least 100 bytes) opens a part of a segmented file. |
+| `Join` | `static byte[] Join(Stream opened)` | The file a segmented set holds, joined from all its parts: the data fork alone when it has no resource fork, otherwise a MacBinary file carrying both (which `StuffItReader` opens). |
+| `PartPath` | `static string PartPath(string setBase, int number)` | Where part `number` (2 and up) of the set `setBase` is written: `setBase.N`. |
+| `SetBase` | `static string SetBase(string path)` | The set's name a part path belongs to: the path with a trailing ".1" (or any part number) removed. |
+| `Write` | `static void Write(ReadOnlySpan<byte> file, string name, long partSize, Stream first, Func<int, Stream> openPart, DateTime? modified = null)` | Cuts `file` (an archive, or a MacBinary file with a resource fork) into parts of `partSize` bytes, header included: part 1 to `first`, the others to `openPart`. |
 
 #### `StuffItWriter`
 
@@ -38111,6 +38175,52 @@ Implements `IDisposable`.
 | `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, ZooCompressionMethod method = 1, ZooCompatibilityProfile compatibilityProfile = 1)` | Creates a Zoo archive split into multiple volumes. |
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Finalises linked directory offsets and flushes the archive. |
+
+### Namespace `FileFormat.Zoom`
+
+[`ZoomFormatDescriptor`](#zoomformatdescriptor) · [`ZoomReader`](#zoomreader)
+
+#### `ZoomFormatDescriptor`
+
+Amiga Zoom disk archiver (".zom", magic "ZOM5" or the older "ZOOM"): an 880 KiB floppy packed cylinder by cylinder with LZHUF and run-length coding. Read-only: `disk.adf` is the floppy image, `text.txt` the attached text when there is one. References: `https://github.com/MacPaw/XADMaster` — libxad's Zoom client (`libxad/clients/Zoom.c`)`https://github.com/horsicq/XArchive` — `Algos/xzoomdecoder.cpp`
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZoomFormatDescriptor` | `ZoomFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `ZoomReader`
+
+Reads an Amiga Zoom disk archive ("ZOM5", or the older "ZOOM") and rebuilds its floppy image.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZoomReader` | `ZoomReader(Stream stream)` | Parses and checks the header and the attached text. |
+| `CylinderSize` | `const int CylinderSize` | Bytes in one cylinder: 2 tracks × 11 sectors × 512 bytes. |
+| `Cylinders` | `const int Cylinders` | Number of cylinders on a DD floppy. |
+| `FirstCylinder` | `int FirstCylinder { get; }` | Gets the first cylinder stored. |
+| `HasSectorLabels` | `bool HasSectorLabels { get; }` | Gets whether each stored sector carries its 16-byte label. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether the archive is password-encrypted. |
+| `IsOldFormat` | `bool IsOldFormat { get; }` | Gets whether this is the older "ZOOM" variant. |
+| `LastCylinder` | `int LastCylinder { get; }` | Gets the last cylinder stored. |
+| `Text` | `byte[] Text { get; }` | Gets the attached text, or `null`. |
+| `ExtractDisk` | `byte[] ExtractDisk()` | Rebuilds the 901,120-byte floppy image. |
+| `IsZoom` | `static bool IsZoom(ReadOnlySpan<byte> header)` | Returns whether `header` starts a Zoom archive. |
 
 ### Namespace `FileFormat.Zpaq`
 

@@ -223,7 +223,7 @@ createCmd.SetAction((ParseResult ctx) => {
     if (eq < 0) formatSpecific[raw] = "true";
     else if (eq > 0) formatSpecific[raw[..eq]] = raw[(eq + 1)..];
   }
-  var usesNativeVolumes = FormatDetector.DetectByExtensionForCreate(archive.FullName) is FormatDetector.Format.Rar or FormatDetector.Format.Pea;
+  var usesNativeVolumes = FormatDetector.DetectByExtensionForCreate(archive.FullName) is FormatDetector.Format.Rar or FormatDetector.Format.Pea or FormatDetector.Format.StuffIt;
   if (usesNativeVolumes && volumeSizeText is { Length: > 0 })
     formatSpecific[Compression.Registry.FormatOptionKeys.VolumeSize] = volumeSizeText;
   if (headerCompression)

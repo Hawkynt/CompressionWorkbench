@@ -1837,7 +1837,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Dictionary.Lzh`
 
-[`Lh1Decoder`](#lh1decoder) · [`Lh1Encoder`](#lh1encoder) · [`Lh2Decoder`](#lh2decoder) · [`Lh3Decoder`](#lh3decoder) · [`Lz5Decoder`](#lz5decoder) · [`Lz5Encoder`](#lz5encoder) · [`LzhBuildingBlock`](#lzhbuildingblock) · [`LzhConstants`](#lzhconstants) · [`LzhDecoder`](#lzhdecoder) · [`LzhEncoder`](#lzhencoder) · [`LzsDecoder`](#lzsdecoder) · [`LzsEncoder`](#lzsencoder) · [`Pm1Decoder`](#pm1decoder) · [`Pm2Decoder`](#pm2decoder)
+[`Lh1Decoder`](#lh1decoder) · [`Lh1Encoder`](#lh1encoder) · [`Lh2Decoder`](#lh2decoder) · [`Lh3Decoder`](#lh3decoder) · [`Lz5Decoder`](#lz5decoder) · [`Lz5Encoder`](#lz5encoder) · [`LzhBuildingBlock`](#lzhbuildingblock) · [`LzhConstants`](#lzhconstants) · [`LzhDecoder`](#lzhdecoder) · [`LzhEncoder`](#lzhencoder) · [`LzsDecoder`](#lzsdecoder) · [`LzsEncoder`](#lzsencoder) · [`Pm1Decoder`](#pm1decoder) · [`Pm2Decoder`](#pm2decoder) · [`ZoomLzhufDecoder`](#zoomlzhufdecoder)
 
 #### `Lh1Decoder`
 
@@ -1986,6 +1986,14 @@ Decodes PMarc `-pm2-`: LZSS over an 8 KiB window with literals coded against a m
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decodes `originalSize` bytes of `-pm2-` data. |
+
+#### `ZoomLzhufDecoder`
+
+Decodes the LZHUF stage of the Amiga Zoom disk archiver: Yoshizaki/Okumura LZHUF with Zoom's own parameters.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> packed, int size)` | Decodes `packed` to exactly `size` bytes. |
 
 ### Namespace `Compression.Core.Dictionary.Lzjb`
 
@@ -5971,6 +5979,18 @@ Implements `IBuildingBlock`.
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes a complete pack file. |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes `data` as a pack file. |
+
+### Namespace `Compression.Core.Entropy.WinZipJpeg`
+
+[`WinZipJpegDecoder`](#winzipjpegdecoder)
+
+#### `WinZipJpegDecoder`
+
+Decoder for ZIP compression method 96, WinZip's lossless JPEG recompression: LZMA-packed JPEG metadata and arithmetic-coded DCT coefficients, re-entropy-coded into the original JPEG file bit for bit.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes a method-96 stream back to the original JPEG file. |
 
 ### Namespace `Compression.Core.ExecutableUnpacking`
 
@@ -10838,6 +10858,7 @@ ZIP compression methods.
 | `Lzma` | `14` | LZMA compression. |
 | `Zstd` | `93` | Zstandard compression. |
 | `Xz` | `95` | XZ compression (a complete .xz stream, APPNOTE 4.4.5 method 95). |
+| `Jpeg` | `96` | WinZip JPEG: lossless recompression of a JPEG file; decoded by `WinZipJpegDecoder`. |
 | `WavPack` | `97` | WinZip WavPack (a wrapped WavPack image of a WAV file); decoded through `ZipMethodCodecs`. |
 | `Ppmd` | `98` | PPMd version I, Rev 1 compression. |
 | `WinZipAes` | `99` | WinZip AES encryption (actual method stored in extra field). |

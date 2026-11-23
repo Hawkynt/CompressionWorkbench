@@ -165,6 +165,9 @@ public sealed partial class ZipReader : IDisposable {
       case ZipCompressionMethod.Ppmd:
         data = ZipPpmdHelper.Decompress(compressedData, (int)entry.UncompressedSize);
         break;
+      case ZipCompressionMethod.Jpeg:
+        data = Compression.Core.Entropy.WinZipJpeg.WinZipJpegDecoder.Decode(compressedData);
+        break;
       default:
         data = ZipMethodCodecs.TryGetDecoder((ushort)effectiveMethod, out var external)
           ? external(compressedData, entry.UncompressedSize)

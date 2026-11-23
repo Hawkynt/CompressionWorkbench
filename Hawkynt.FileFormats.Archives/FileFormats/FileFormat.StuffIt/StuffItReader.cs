@@ -60,7 +60,15 @@ public sealed class StuffItReader : IDisposable {
   /// <param name="leaveOpen"><see langword="true"/> to leave <paramref name="stream"/> open after disposal.</param>
   /// <exception cref="InvalidDataException">The stream is not a StuffIt archive or its directory is damaged.</exception>
   public StuffItReader(Stream stream, string? password, bool leaveOpen = false) {
-    this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
+    ArgumentNullException.ThrowIfNull(stream);
+    if (OpensSegment(stream)) {
+      // A part of a segmented set: read the archive its parts hold together.
+      var joined = StuffItSegments.Join(stream);
+      if (!leaveOpen) stream.Dispose();
+      stream = new MemoryStream(joined, writable: false);
+      leaveOpen = false;
+    }
+    this._stream = stream;
     this._leaveOpen = leaveOpen;
     this._password = password;
     this._base = stream.CanSeek ? stream.Position : 0;
@@ -91,6 +99,16 @@ public sealed class StuffItReader : IDisposable {
     } else {
       throw new InvalidDataException("Not a StuffIt archive (no 'SIT!'/'rLau' header and no StuffIt 5 banner).");
     }
+  }
+
+  /// <summary>Whether a seekable stream starts with the header of a segmented set's part (position kept).</summary>
+  private static bool OpensSegment(Stream stream) {
+    if (!stream.CanSeek) return false;
+    var at = stream.Position;
+    Span<byte> head = stackalloc byte[StuffItSegments.HeaderSize];
+    var got = stream.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
+    stream.Position = at;
+    return got == head.Length && StuffItSegments.IsSegment(head);
   }
 
   /// <summary>Gets whether the archive uses the StuffIt 5 layout.</summary>

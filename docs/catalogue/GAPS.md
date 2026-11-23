@@ -24,9 +24,9 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 167 | a source lists it; no descriptor or building block covers it |
+| `MISSING` | 164 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 31 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 52 | covered, but the reader handles only part of the format (see the table below) |
+| `PARTIAL` | 55 | covered, but the reader handles only part of the format (see the table below) |
 | `OK` | 336 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 442 | in our registry, listed by none of the eight sources |
 
@@ -92,7 +92,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 | 3 | UPX | PARTIAL (read-only) | 3 | Writing refused: provable output needs UPX's GPL loader stubs. |
 | 4 | PECompact | MISSING | 3 | The handler locates the payload. Decode its block series (the aPLib and LZMA cores exist) against the 130 PackingData samples, then wrap it in a descriptor. |
 | 5 | ACE | PARTIAL | 2 | The writer lacks the ACE 2.0 SOUND/PIC modes. Oracle: unace, acefile (BSD-2). |
-| 6 | StuffIt | PARTIAL | 2 | Method 8 and segmented sets; method 14 is read and verified with unar; classic DES and StuffIt 5 RC4 reads and writes are proven. Rung 1: XADMaster (LGPL); oracle: unar. |
+| 6 | StuffIt | PARTIAL | 2 | Method 8 (no sample); segmented sets are read and written, verified with unar on our own sets (no real sample); method 14 is read and verified with unar; classic DES and StuffIt 5 RC4 reads and writes are proven. Rung 1: XADMaster (LGPL); oracle: unar. |
 | 7 | StuffIt X | PARTIAL | 2 | Method 7 and encryption: no source and no decoder anywhere, unar refuses them too. Archives with a recovery record are refused; their layout is measured in [STUFFITX-RECOVERY-ON-DISK](../STUFFITX-RECOVERY-ON-DISK.md). Every other coding is read and the writer stores or codes Deflate, Brimstone, Darkhorse, Cyanide, Blend, Obscured and Iron streams, optionally behind the English or x86 preprocessor, all verified with unar. Rung 1: XADMaster (LGPL); oracle: unar. |
 | 8 | ALZip | PARTIAL | 2 | Split archives and method 3 need samples; ALZip is the oracle. |
 | 9 | PEA | OK | 2 | Done: volume sets, every single-cipher encryption and the TRI*/SRI*/HRI* triple cascades are read and written, single-file archives edited in place, all verified with pea. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
@@ -115,7 +115,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 | 26 | WinUpack | MISSING | 2 | The handler already unpacks it; wrap it in a descriptor. |
 | 27 | VMProtect | PARTIAL (read-only) | 2 | Virtualising protector: detection is the honest ceiling. |
 | 28 | FreeArc | PARTIAL | 1 | mm and external compressors; FreeArc (GPL) is an oracle only. |
-| 29 | Compact Pro | PARTIAL | 1 | Multi-volume and encrypted archives; samples needed. |
+| 29 | Compact Pro | PARTIAL | 1 | Multi-volume archives; encrypted entries are read but not written (no producer accepts ours). |
 | 30 | KGB Archiver | PARTIAL | 1 | KGB Archiver 2 (PAQ7-based) and encrypted .kge are not read; KGB is GPL, so rung 2 with the kgb2 binary as oracle. |
 
 The other 46 are rare (weight 1). In rank order: BlakHole, GCA

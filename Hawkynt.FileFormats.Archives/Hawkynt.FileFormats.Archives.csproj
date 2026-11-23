@@ -52,6 +52,8 @@
           Pack="true" PackagePath="notices/ExePackers/" />
     <None Update="FileFormats\FileFormat.Nsis\THIRD-PARTY-NOTICE.NSIS.txt"
           Pack="true" PackagePath="notices/Nsis/" />
+    <None Update="FileFormats\FileFormat.CompactPro\THIRD-PARTY-NOTICE.MacExtract.txt"
+          Pack="true" PackagePath="notices/CompactPro/" />
   </ItemGroup>
 
   <ItemGroup>
