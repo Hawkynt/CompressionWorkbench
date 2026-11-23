@@ -5,12 +5,12 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.AlZip;
 
 /// <summary>
-/// ALZip (ESTsoft), the Korean archiver: stored, deflate and ALZ-bzip2 members, ZipCrypto encryption.
+/// ALZip (ESTsoft), the Korean archiver: stored, deflate, obfuscated-deflate and ALZ-bzip2 members, ZipCrypto encryption.
 ///
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://github.com/alkegi/unalz</c> — unalz (MIT), its CC0 test archives, and the reader the layout follows</description></item>
-///   <item><description><c>https://github.com/MacPaw/XADMaster</c> — XADALZipParser (LGPL-2.1)</description></item>
+///   <item><description><c>https://github.com/MacPaw/XADMaster</c> — XADALZipParser (LGPL-2.1), the source of method 3's code-length order</description></item>
 /// </list>
 /// </summary>
 public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap, IFormatOptionsSchema {
@@ -37,10 +37,10 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<string> Extensions => [".alz"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [new("ALZ\x01"u8.ToArray(), Confidence: 0.95)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate"), new("store", "Store"), new("bzip2", "ALZ bzip2")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate"), new("store", "Store"), new("bzip2", "ALZ bzip2"), new("obfuscated-deflate", "Obfuscated deflate")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Korean ALZip archive (stored, deflate and ALZ-bzip2 members; ZipCrypto)";
+  public string Description => "Korean ALZip archive (stored, deflate, obfuscated-deflate and ALZ-bzip2 members; ZipCrypto)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = AlZipReader.Open(stream, leaveOpen: true);
@@ -102,7 +102,8 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   }
 
   private static void WriteArchive(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    using var w = new AlZipWriter(output, leaveOpen: true, password: options.Password, store: options.MethodName == "store", bzip2: options.MethodName == "bzip2");
+    using var w = new AlZipWriter(output, leaveOpen: true, password: options.Password, store: options.MethodName == "store", bzip2: options.MethodName == "bzip2",
+      obfuscated: options.MethodName == "obfuscated-deflate");
     foreach (var input in inputs) {
       if (string.IsNullOrEmpty(input.ArchiveName)) continue;
       var modified = input.Metadata?.LastWriteTimeUtc?.LocalDateTime
