@@ -20,7 +20,7 @@ internal sealed partial class DeflateEncoder {
       this.Bits = bits;
     }
 
-    public static DynamicHeader Create(int[] litLengths, int[] distLengths) {
+    public static DynamicHeader Create(int[] litLengths, int[] distLengths, ReadOnlySpan<int> order) {
       var (hlit, hdist) = ZopfliBlockCost.TrimTrees(litLengths, distLengths);
       var combined = new int[hlit + hdist];
       litLengths.AsSpan(0, hlit).CopyTo(combined);
@@ -32,7 +32,6 @@ internal sealed partial class DeflateEncoder {
         ++clFreq[run.Symbol];
 
       var clLengths = ZopfliBlockCost.BuildCodeLengths(clFreq, DeflateConstants.MaxCodeLengthBits);
-      var order = DeflateConstants.CodeLengthOrder;
       var hclen = DeflateConstants.CodeLengthAlphabetSize;
       while (hclen > 4 && clLengths[order[hclen - 1]] == 0)
         --hclen;
@@ -47,7 +46,7 @@ internal sealed partial class DeflateEncoder {
     public void Write(DeflateEncoder encoder) {
       var distBits = encoder.DistanceCountBits;
       encoder.PutBits((uint)(this._hlit - 257) | ((uint)(this._hdist - 1) << 5) | ((uint)(this._hclen - 4) << (5 + distBits)), 9 + distBits);
-      var order = DeflateConstants.CodeLengthOrder;
+      var order = encoder.CodeLengthOrder;
       for (var i = 0; i < this._hclen; ++i)
         encoder.PutBits((uint)this._clLengths[order[i]], 3);
 

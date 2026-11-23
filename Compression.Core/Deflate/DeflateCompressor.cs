@@ -47,6 +47,21 @@ public sealed class DeflateCompressor {
     }
   }
 
+  private readonly int[]? _codeLengthOrder;
+
+  /// <summary>
+  /// Order in which dynamic blocks list their code-length code lengths: RFC 1951's
+  /// <see cref="DeflateConstants.CodeLengthOrder"/> unless replaced by a permutation, as
+  /// ALZip's obfuscated deflate (method 3) does.
+  /// </summary>
+  public ReadOnlySpan<int> CodeLengthOrder {
+    get => this._codeLengthOrder is { } order ? order : DeflateConstants.CodeLengthOrder;
+    init {
+      this._codeLengthOrder = DeflateConstants.CopyCodeLengthOrder(value);
+      if (this._encoder != null) this._encoder.CodeLengthOrderOverride = this._codeLengthOrder;
+    }
+  }
+
   /// <summary>
   /// Initializes a new <see cref="DeflateCompressor"/> for streaming compression.
   /// </summary>
@@ -299,7 +314,8 @@ public sealed class DeflateCompressor {
 
     // Determine HCLEN (trim trailing zeros in permuted order)
     var hclen = DeflateConstants.CodeLengthAlphabetSize;
-    while (hclen > 4 && clLengths[DeflateConstants.CodeLengthOrder[hclen - 1]] == 0)
+    var order = this.CodeLengthOrder;
+    while (hclen > 4 && clLengths[order[hclen - 1]] == 0)
       --hclen;
 
     var clTable = new DeflateHuffmanTable(clLengths);
@@ -314,7 +330,7 @@ public sealed class DeflateCompressor {
 
     // Write code-length code lengths in permuted order
     for (var i = 0; i < hclen; ++i)
-      this._bitWriter.WriteBits((uint)clLengths[DeflateConstants.CodeLengthOrder[i]], 3);
+      this._bitWriter.WriteBits((uint)clLengths[order[i]], 3);
 
     // Write RLE-encoded code lengths
     foreach (var (symbol, extraBits, extraValue) in rleSymbols) {
