@@ -96,6 +96,8 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     new("SIT!\0\0\0\0\0\0rLau"u8.ToArray(), Offset: 128, Confidence: 0.9,
       Mask: [0xFF, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF]),
     new("StuffIt (c)1997-"u8.ToArray(), Offset: 128, Confidence: 0.9),
+    // A part of a segmented set (name.sit, name.sit.2, …): B0 56 00 and the part number.
+    new([0xB0, 0x56, 0x00], Confidence: 0.7),
   ];
   /// <summary>
   /// Gets the methods.
@@ -134,6 +136,13 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       Default: nameof(StuffItCompression.Smallest),
       AllowedValues: Enum.GetNames<StuffItCompression>(),
       Description: "Smallest tries Arsenic (method 15), LZ+Huffman (13) and RLE (1) for every fork and keeps the smallest; the others force one method (storing a fork it would enlarge)."),
+    new FormatOptionDescriptor(
+      Key: FormatOptionKeys.VolumeSize,
+      DisplayName: "Segment size",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Write a segmented set: parts of this size (bytes, or with k/m/g), each with a 100-byte header — name.sit, then name.sit.2, name.sit.3, … (a target named name.sit.1 is followed the same way). Empty writes one file.",
+      IsOptimizationAxis: false),
   ];
 
   private static StuffItCompression CompressionOf(FormatCreateOptions options)
@@ -214,6 +223,48 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// StuffIt's scheme, written as a MacBinary file whose resource fork holds the key check.
   /// </remarks>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var partSize = ParseVolumeSize(options.GetString(FormatOptionKeys.VolumeSize));
+    if (partSize <= 0) {
+      this.CreateArchive(output, inputs, options);
+      return;
+    }
+    // A segmented set: the archive, cut into parts name.sit, name.sit.2, … (a target named name.sit.1 gives name.sit.2, …).
+    if (!string.IsNullOrEmpty(options.Password) && !string.Equals(options.GetString(FormatOptionKeys.TargetCompatibility), StuffIt5, StringComparison.OrdinalIgnoreCase))
+      // its key check lives in the resource fork, which The Unarchiver does not carry into the archive inside a set
+      throw new NotSupportedException("A password-protected classic StuffIt archive is not segmented; use the StuffIt 5 container.");
+    var path = OutputFilePath(output) ?? throw new ArgumentException("A segmented StuffIt set must be written to a file, so its other parts can go beside it.");
+    var setBase = StuffItSegments.SetBase(path);
+    using var archive = new MemoryStream();
+    this.CreateArchive(archive, inputs, options);
+    var name = Path.GetFileName(setBase);
+    if (!name.EndsWith(".sit", StringComparison.OrdinalIgnoreCase)) name += ".sit"; // the name marks the content as an archive
+    StuffItSegments.Write(archive.GetBuffer().AsSpan(0, (int)archive.Length), name, partSize, output,
+      n => File.Create(StuffItSegments.PartPath(setBase, n)));
+  }
+
+  /// <summary>Adds or replaces files (verified rebuild); a segmented set is not edited.</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    RefuseSegmented(archive);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => RebuildVerb.StageInputs(tmpDir, inputs));
+  }
+
+  /// <summary>Removes entries (verified rebuild); a segmented set is not edited.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    RefuseSegmented(archive);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => RebuildVerb.DeleteNamedEntries(tmpDir, entryNames ?? []));
+  }
+
+  private static void RefuseSegmented(Stream archive) {
+    if (!archive.CanSeek) return;
+    var at = archive.Position;
+    var head = new byte[StuffItSegments.HeaderSize];
+    var got = archive.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
+    archive.Position = at;
+    if (got == head.Length && StuffItSegments.IsSegment(head))
+      throw new NotSupportedException("A segmented StuffIt set is not edited in place: its later parts would no longer match.");
+  }
+
+  private void CreateArchive(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     if (string.Equals(options.GetString(FormatOptionKeys.TargetCompatibility), StuffIt5, StringComparison.OrdinalIgnoreCase)) {
       using var w5 = new StuffIt5Writer(output, CompressionOf(options), options.Password, leaveOpen: true);
       foreach (var i in inputs) {

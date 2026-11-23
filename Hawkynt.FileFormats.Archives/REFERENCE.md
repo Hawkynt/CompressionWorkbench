@@ -32411,7 +32411,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 ### Namespace `FileFormat.StuffIt`
 
-[`StuffIt5Writer`](#stuffit5writer) · [`StuffItCompression`](#stuffitcompression) · [`StuffItEntry`](#stuffitentry) · [`StuffItFormatDescriptor`](#stuffitformatdescriptor) · [`StuffItReader`](#stuffitreader) · [`StuffItWriter`](#stuffitwriter)
+[`StuffIt5Writer`](#stuffit5writer) · [`StuffItCompression`](#stuffitcompression) · [`StuffItEntry`](#stuffitentry) · [`StuffItFormatDescriptor`](#stuffitformatdescriptor) · [`StuffItReader`](#stuffitreader) · [`StuffItSegments`](#stuffitsegments) · [`StuffItWriter`](#stuffitwriter)
 
 #### `StuffIt5Writer`
 
@@ -32484,6 +32484,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The container the writer emits. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files (verified rebuild); a segmented set is not edited. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the StuffIt archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the StuffIt archive per the requested mode. |
@@ -32492,6 +32493,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single StuffIt entry as a bounded read-only `Stream`. The reader's per-entry extractor returns the data-fork bytes; they are wrapped in a `BoundedEntryStream` sized to the entry's data-fork size. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes entries (verified rebuild); a segmented set is not edited. |
 
 #### `StuffItReader`
 
@@ -32509,6 +32511,20 @@ Implements `IDisposable`.
 | `ExtractResourceFork` | `byte[] ExtractResourceFork(StuffItEntry entry)` | Extracts and verifies the resource fork of `entry`. |
 | `Extract` | `byte[] Extract(StuffItEntry entry)` | Extracts and verifies the data fork of `entry`. |
 | `MethodName` | `static string MethodName(int method)` | Human-readable name of a StuffIt method number. |
+
+#### `StuffItSegments`
+
+Segmented ("split") StuffIt files: one file — typically a classic or StuffIt 5 archive, with its resource fork — cut into parts, each opening with a 100-byte header.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HeaderSize` | `const int HeaderSize` | Size of the header that opens every part. |
+| `FileName` | `static string FileName(ReadOnlySpan<byte> head)` | The name of the file a segmented set holds (header bytes 4-67). |
+| `IsSegment` | `static bool IsSegment(ReadOnlySpan<byte> head)` | Whether `head` (at least 100 bytes) opens a part of a segmented file. |
+| `Join` | `static byte[] Join(Stream opened)` | The file a segmented set holds, joined from all its parts: the data fork alone when it has no resource fork, otherwise a MacBinary file carrying both (which `StuffItReader` opens). |
+| `PartPath` | `static string PartPath(string setBase, int number)` | Where part `number` (2 and up) of the set `setBase` is written: `setBase.N`. |
+| `SetBase` | `static string SetBase(string path)` | The set's name a part path belongs to: the path with a trailing ".1" (or any part number) removed. |
+| `Write` | `static void Write(ReadOnlySpan<byte> file, string name, long partSize, Stream first, Func<int, Stream> openPart, DateTime? modified = null)` | Cuts `file` (an archive, or a MacBinary file with a resource fork) into parts of `partSize` bytes, header included: part 1 to `first`, the others to `openPart`. |
 
 #### `StuffItWriter`
 
