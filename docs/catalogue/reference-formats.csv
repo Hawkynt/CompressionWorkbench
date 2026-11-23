@@ -129,7 +129,7 @@ LZFSE,lzfse,compression,,,,R,,,,,1,https://github.com/lzfse/lzfse,Lzfse,Y,Y,,OK,
 zlib,zlib,compression,RW,,,R,,,,,2,https://www.rfc-editor.org/rfc/rfc1950,Zlib,Y,Y,,OK,,
 PowerPacker,pp;pp20,compression,,,R,,,,,,1,,PowerPacker,Y,Y,,OK,,ancient decodes ours; ancient's PP20 test file decodes
 XPK (Amiga),xpk,compression,,,R,,,,,,1,https://github.com/temisu/ancient,Xpk,Y,Y,,PARTIAL,,"NONE, RLEN, SQSH, NUKE, DUKE read (Amiga-made SQSH/NUKE/DUKE files match their originals); NONE and RLEN written; other sub-libraries refused"
-xMash (Amiga),xmsh,compression,,,R,,,,,,1,,,,,,MISSING,,"our earlier descriptor used an invented layout and was removed; the real format packs every cylinder with XPK, no decoder here implements XPK, and unar leaves libxad's client for it out"
+xMash (Amiga),xms,compression,,,R,,,,,,1,https://github.com/MacPaw/XADMaster/blob/master/libxad/clients/xMash.c,XMash,Y,,,PARTIAL,,"read-only; track blocks, banner and FILE_ID.DIZ texts; proven byte-exact on archives X-Mash 1.2 wrote (NUKE, SQSH, RLEN, partial cylinder range); XPK sub-libraries other than NONE/RLEN/SQSH/NUKE/DUKE are refused"
 DCS (Amiga Disk Archiver),dcs,compression,,,R,,,,,,1,,,,,,MISSING,,"our earlier descriptor used an invented layout and was removed; the real format packs every cylinder with XPK, no decoder here implements XPK, and unar leaves libxad's client for it out"
 x-PRESS (JET-Software),,compression,,,,,,,,Y,1,https://www.jet-software.com/,,,,,MISSING,,"not implemented: proprietary mainframe/host compressor; no published format, extension or sample"
 QUAD (Ilia Muraviev),quad;qd,compression,,,,,,,,Y,1,https://sourceforge.net/projects/quad/,,,,,MISSING,,not implemented: ROLZ compressor whose author published the sources (licence to be checked); PeaZip writes it
