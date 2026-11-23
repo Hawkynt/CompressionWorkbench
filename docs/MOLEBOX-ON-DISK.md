@@ -18,6 +18,13 @@ section-key blob the loader chain yields (the chain itself is described in
 NUL-terminated name the loader gives the box: `<program>.exe.BOX`, `<program>.BOX`, or a
 plain name such as `data`.
 
+In every build measured the section-key blob starts `0x32` bytes into the decoded loader
+blob, keystreamed with the same constant (`0x3C6EF35F`) seeded with its own address. Where
+the configuration record decodes, its key-blob address names exactly that place. Some
+builds (the Allok and Ultra Video programs of 2006) carry a configuration record that does
+not decode under the loader key; their key blob is read from that fixed place instead, and
+the directory's MD5 confirms the key.
+
 The cipher is IDEA in ECB mode, decryption direction (the inverted key schedule of the
 section key). Every region below is encrypted from its own first byte over its whole
 8-byte blocks; a trailing partial block is stored as is.
@@ -79,15 +86,30 @@ Adler-32 checks the block; a stored block is the raw bytes. Files sit a few byte
 
 ## Provenance
 
-Eighteen MoleBox-packed programs from magazine cover discs and ftp.winsite.com (2003–2013),
-as indexed by discmaster.textfiles.com (format "MoleBox Packed"), were measured. The
-loader chain yields the box key for nine of them; all nine boxes read with every block's
-check passing. For four of them (`zen.exe` 2005, `bruceLee.exe` 2008, `Encounter.exe` 2006,
-`Helium_Frog_2_06.exe` 2013), the files discmaster's extraction lists were fetched and
-compared: all 14 compared files are byte-identical, including a 2 MiB executable mixing
-compressed and stored blocks. The program copy of `Encounter.exe` equals the extractor's
-unpacked program except for 17 PE-header bytes the extractor rewrites.
+Nineteen MoleBox-packed programs from magazine cover discs and ftp.winsite.com (2003–2013),
+as indexed by discmaster.textfiles.com (format "MoleBox Packed"), were measured.
 
-Eight of the other nine come from a loader build whose chain does not yield the
-configuration record (it decodes to noise); the ninth could not be read on the measuring machine. Those boxes are refused, not
-guessed.
+- Fifteen of them carry a file box (length field equals the file length).
+- Twelve of those open: nine through the configuration record, three (Allok Video to PSP
+  Converter, Easy Video to Audio Converter, Ultra Video Splitter, all 2006) through the
+  key blob at its fixed place. Every directory passes its MD5 and every block its checks.
+- For seven of them (`zen.exe` 2005, `bruceLee.exe` 2008, `Encounter.exe` 2006,
+  `Helium_Frog_2_06.exe` 2013 and the three 2006 programs above) the files discmaster's
+  extraction lists were fetched and compared: all 19 compared files are byte-identical,
+  including a 2 MiB executable mixing compressed and stored blocks. The program copy of
+  `Encounter.exe` equals the extractor's unpacked program except for 17 PE-header bytes the
+  extractor rewrites.
+
+Refused, with what differs:
+
+- Primitive Duplicate Finder (2009) and Smart CD Catalog (2008): a valid box trailer, but
+  the executable is wrapped by a further protector (sections `.text`, `.data`, `.rsrc`,
+  `.adata`, entry outside the MoleBox stub), so no MoleBox loader blob is reachable in the
+  file.
+- An Enter the Matrix tool (2004): a valid box trailer without the program-copy slot, but
+  an older entry stub (`60 E8 4F 00 00 00`, without the leading `E8 00 00 00 00`) whose
+  loader blob does not decode with the keystream and LZSS above at any header position
+  from `EP+0x40` to `EP+0x70`, with the entry point shifted by up to 8 bytes either way.
+- Three programs of 2003/2004 (Desert Race, IMCast, a UT server tool) with the same older
+  stub carry no file box at all; there is nothing to list.
+- One further program could not be read on the measuring machine.
