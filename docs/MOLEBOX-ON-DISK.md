@@ -49,6 +49,11 @@ The last 56 bytes (the directory ends right before them):
 
 The length field and the MD5 identify the box; the marker is not relied on.
 
+The box normally ends the file. Programs built with authoring tools whose player is
+MoleBox-packed (Flash-based children's titles, Garden Planner, safey, 2008–2010) carry the
+tool's own data after it; there the length field names the end of the box, not of the file,
+and the box ends at the last place whose length field names exactly that place.
+
 The program-copy slot names a copy of the packed program's own executable kept inside the
 box. Some builds have no slot at all: the header is then the last 44 bytes and the
 directory ends right before its length fields (the `zen.exe` sample); where the directory
@@ -100,9 +105,20 @@ as indexed by discmaster.textfiles.com (format "MoleBox Packed"), were measured.
   `Encounter.exe` equals the extractor's unpacked program except for 17 PE-header bytes the
   extractor rewrites.
 
+Seven more programs of 2008–2010 (the newest in the index short of one 348 MiB file) were
+measured afterwards. Six carry a box followed by an authoring tool's data (see above) or
+end in one (The Bloobles Demo); all six open, every directory passing its MD5 and every
+block its checks. discmaster's extractor lists no box files for them, so there is no
+reference to compare with. The seventh (StuntPlane, 2009) is wrapped like the two below.
+
+None of the 26 programs carries the SVFS/`STELPACK` container of the later open-source
+MoleBox (no catalog or package header at the end, under the default or catalog password),
+and a search of archive.org for MoleBox found no program packed with it; that container is
+not implemented.
+
 Refused, with what differs:
 
-- Primitive Duplicate Finder (2009) and Smart CD Catalog (2008): a valid box trailer, but
+- Primitive Duplicate Finder (2009), Smart CD Catalog (2008), StuntPlane (2009): a valid box trailer, but
   the executable is wrapped by a further protector (sections `.text`, `.data`, `.rsrc`,
   `.adata`, entry outside the MoleBox stub), so no MoleBox loader blob is reachable in the
   file.

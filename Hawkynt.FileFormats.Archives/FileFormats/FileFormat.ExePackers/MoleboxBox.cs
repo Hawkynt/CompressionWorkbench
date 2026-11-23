@@ -59,7 +59,33 @@ public sealed class MoleboxBox {
     Span<byte> tail = stackalloc byte[TrailerSize + HeaderSize];
     stream.Position = length - tail.Length;
     stream.ReadExactly(tail);
-    return TryReadHeader(tail, length, out _);
+    if (TryReadHeader(tail, length, out _))
+      return true;
+    // Programs built with authoring tools carry the tool's own data after the box.
+    if (length > MaxScannedLength)
+      return false;
+    var all = new byte[length];
+    stream.Position = 0;
+    stream.ReadExactly(all);
+    return FindBoxEnd(all) > 0;
+  }
+
+  private const long MaxScannedLength = 512L * 1024 * 1024;
+
+  /// <summary>
+  /// End of the box: the file's end when the trailer sits there, otherwise the last place whose
+  /// trailer length field names exactly that place (authoring tools append their own data after
+  /// the box). Zero when there is none.
+  /// </summary>
+  private static long FindBoxEnd(ReadOnlySpan<byte> file) {
+    if (file.Length < TrailerSize + HeaderSize)
+      return 0;
+    if (TryReadHeader(file, file.Length, out _))
+      return file.Length;
+    for (var end = file.Length - 1; end >= TrailerSize + HeaderSize; --end)
+      if (BinaryPrimitives.ReadUInt32LittleEndian(file[(end - TrailerSize)..]) == end && TryReadHeader(file[..end], end, out _))
+        return end;
+    return 0;
   }
 
   private readonly record struct Header(uint MainOffset, uint MainSize, uint MainFlags, uint DirectoryLength, uint DirectoryOffset, uint NamesLength, uint Count);
@@ -90,7 +116,8 @@ public sealed class MoleboxBox {
 
   /// <summary>Reads the box of a MoleBox 2.x packed executable; null when it carries none this reader knows.</summary>
   public static MoleboxBox? TryOpen(byte[] file) {
-    if (file.Length < TrailerSize + HeaderSize || !TryReadHeader(file, file.Length, out var header))
+    var boxEnd = (int)FindBoxEnd(file);
+    if (boxEnd == 0 || !TryReadHeader(file.AsSpan(0, boxEnd), boxEnd, out var header))
       return null;
     var info = ExecutableContainerParsers.ParseBestEffort(file);
     if (!MoleboxExecutablePackerHandler.TryReadBoxKeyBlob(file, info, new UnpackOptions(), out var keyBlob))
@@ -103,7 +130,7 @@ public sealed class MoleboxBox {
     var directory = MoleboxIdea.ProcessEcb(file.AsSpan((int)header.DirectoryOffset, (int)header.DirectoryLength), schedule);
     // The trailer's 16 bytes are the MD5 of the decrypted directory: a wrong key or a damaged
     // directory stops here.
-    if (!Md5.Compute(directory).AsSpan().SequenceEqual(file.AsSpan(file.Length - 20, 16)))
+    if (!Md5.Compute(directory).AsSpan().SequenceEqual(file.AsSpan(boxEnd - 20, 16)))
       return null;
 
     var dataStart = OverlayStart(info);
