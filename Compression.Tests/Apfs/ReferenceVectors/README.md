@@ -34,6 +34,18 @@ skipped without network access.
 revision `66b86bd`), mounted with `-r password`, read from that volume: `f <sha256> <path>`
 per file, `l <target> <path>` per symbolic link, `o - <path>` per device node or FIFO.
 
+## Snapshots (downloaded at test time)
+
+`ApfsSnapshotTests` reads dissect.apfs's `tests/_data/snapshot.bin.gz` (same revision,
+SHA-256 `63dedb8142c17e6ab6709c9fe2c37c695f1caa617946bc8d499087c5299dcf2b`): a 32 MiB
+container whose volume "Snapshots" holds 512 snapshots, `file` reading `Snapshot i` and a
+newline when snapshot i was taken. AGPL-3.0, so downloaded and never committed.
+
+`dissect-snapshot.manifest` is what apfs-fuse (`66b86bd`) read from the live volume and,
+mounted with `-o snap=<xid>`, from snapshots 1-3, every 100th and the last (`s <xid> <name>`
+lines head each; `.fseventsd` entries kept only for the first three snapshots), listed
+under `.snapshots/<name>/` the way the reader lists them; `n` gives the snapshot count.
+
 ## Licence
 
 keramics: Apache License 2.0, Copyright 2024-2026 Joachim Metz

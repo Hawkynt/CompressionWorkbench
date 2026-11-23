@@ -24,6 +24,8 @@ public sealed class ApfsReader : IDisposable {
   private readonly string? _password;
   private FileFormat.Luks.LuksCipher? _volumeCipher;
   private readonly HashSet<long> _encryptedBlocks = [];
+  /// <summary>Object-map trees already read: oid → every (xid, flags, paddr) version.</summary>
+  private readonly Dictionary<ulong, Dictionary<ulong, List<(ulong Xid, uint Flags, ulong Paddr)>>> _omapCache = [];
 
   /// <summary>Container block size from the superblock.</summary>
   public uint BlockSize => this._blockSize;
@@ -171,7 +173,70 @@ public sealed class ApfsReader : IDisposable {
     // record keys carry a name hash beside the length.
     var incompat = BinaryPrimitives.ReadUInt64LittleEndian(apsbBlock[APSB_INCOMPAT_FEATURES..]);
     this._hashedNames = (incompat & 0x9UL) != 0;
-    this.ParseFsTree((long)rootTreePhys, volOmapPhys);
+    this.ParseFsTree((long)rootTreePhys, volOmapPhys, "");
+    this.ParseSnapshots(apsbBlock.ToArray());
+  }
+
+  /// <summary>Folder under which every snapshot's tree is listed, one sub-folder per snapshot name.</summary>
+  public const string SnapshotFolder = ".snapshots";
+
+  /// <summary>The volume's snapshots, oldest first: name and the transaction they were taken at.</summary>
+  public IReadOnlyList<(string Name, ulong Xid)> Snapshots => this._snapshots;
+  private readonly List<(string Name, ulong Xid)> _snapshots = [];
+
+  /// <summary>Newest object-map version a lookup may take; lowered while a snapshot is read.</summary>
+  private ulong _maxXid = ulong.MaxValue;
+
+  /// <summary>
+  /// Snapshots (Apple File System Reference, "Snapshot Metadata"): the volume's
+  /// snapshot metadata tree (apfs_snap_meta_tree_oid, physical) keys each snapshot by its
+  /// transaction id; j_snap_metadata_val names it (name_len @48, name @50) and gives the
+  /// physical block of the volume superblock as of then (sblock_oid @8). That superblock's
+  /// file-system tree is read through the object map with every lookup limited to
+  /// versions no newer than the snapshot's transaction, and listed under
+  /// <see cref="SnapshotFolder" />/&lt;name&gt;.
+  /// </summary>
+  private void ParseSnapshots(byte[] apsb) {
+    var volumeOmap = BinaryPrimitives.ReadUInt64LittleEndian(apsb.AsSpan(APSB_OMAP_OID));
+    var metaTree = BinaryPrimitives.ReadUInt64LittleEndian(apsb.AsSpan(APSB_SNAP_META_TREE_OID));
+    if (metaTree == 0 || !this.IsObjectOfType((long)metaTree, OBJECT_TYPE_BTREE)) return;
+    var snapshots = new List<(string Name, ulong Xid, ulong Superblock)>();
+    foreach (var (key, val) in this.CollectAllLeafRecords((long)metaTree)) {
+      if (key.Length < 8 || val.Length < 50) continue;
+      var oidAndType = BinaryPrimitives.ReadUInt64LittleEndian(key);
+      if ((int)(oidAndType >> 60) != APFS_TYPE_SNAP_METADATA) continue;
+      var nameLen = BinaryPrimitives.ReadUInt16LittleEndian(val.AsSpan(48));
+      if (50 + nameLen > val.Length) continue;
+      var name = Encoding.UTF8.GetString(val, 50, nameLen).TrimEnd('\0');
+      snapshots.Add((name, oidAndType & 0x0FFFFFFFFFFFFFFFUL, BinaryPrimitives.ReadUInt64LittleEndian(val.AsSpan(8))));
+    }
+    if (snapshots.Count == 0) return;
+
+    this._entries.Add(new ApfsEntry { Name = SnapshotFolder, IsDirectory = true });
+    foreach (var (name, xid, superblock) in snapshots.OrderBy(s => s.Xid)) {
+      var safe = name.Replace('/', '_');
+      if (safe.Length == 0 || safe is "." or "..") safe = $"xid-{xid}";
+      var folder = SnapshotFolder + "/" + safe;
+      this._snapshots.Add((name, xid));
+      this._entries.Add(new ApfsEntry { Name = folder, IsDirectory = true });
+      var snap = superblock == 0 ? null : this.BlockSpan((long)superblock).ToArray();
+      if (snap is null || BinaryPrimitives.ReadUInt32LittleEndian(snap.AsSpan(32)) != ApsbMagicLE)
+        throw new InvalidDataException($"APFS: snapshot '{name}' names no volume superblock (block {superblock}).");
+      // The snapshot's tree is reached through the volume's current object map, which
+      // keeps the older object versions a snapshot needs, limited to the snapshot
+      // superblock's transaction.
+      var rootVirt = BinaryPrimitives.ReadUInt64LittleEndian(snap.AsSpan(APSB_ROOT_TREE_OID));
+      var snapXid = BinaryPrimitives.ReadUInt64LittleEndian(snap.AsSpan(16));
+      this._maxXid = snapXid;
+      try {
+        var root = this.ResolveOidViaOmap(volumeOmap, rootVirt);
+        if (root == 0)
+          throw new InvalidDataException($"APFS: snapshot '{name}' file-system tree {rootVirt} is not in the object map at xid {snapXid}.");
+        this.ParseFsTree((long)root, volumeOmap, folder);
+      } finally {
+        this._maxXid = ulong.MaxValue;
+      }
+    }
   }
 
   // ── OMAP resolution ─────────────────────────────────────────────────────
@@ -245,21 +310,30 @@ public sealed class ApfsReader : IDisposable {
     // deeper than one node, and reading only its root finds nothing at all.
     // omap_key_t {ok_oid, ok_xid}: an object can have several versions; the one in
     // force is the newest (snapshots are not read here).
+    if (!this._omapCache.TryGetValue(treePhys, out var map)) {
+      map = [];
+      foreach (var (key, value) in this.CollectAllLeafRecords((long)treePhys)) {
+        if (key.Length < 16 || value.Length < 16) continue;
+        var oid = BinaryPrimitives.ReadUInt64LittleEndian(key);
+        if (!map.TryGetValue(oid, out var versions))
+          map[oid] = versions = [];
+        versions.Add((BinaryPrimitives.ReadUInt64LittleEndian(key.AsSpan(8)),
+          BinaryPrimitives.ReadUInt32LittleEndian(value), BinaryPrimitives.ReadUInt64LittleEndian(value.AsSpan(8))));
+      }
+      this._omapCache[treePhys] = map;
+    }
     ulong found = 0, foundXid = 0;
     uint foundFlags = 0;
     var any = false;
-    foreach (var (key, value) in this.CollectAllLeafRecords((long)treePhys)) {
-      if (key.Length < 16) continue;
-      var ok = BinaryPrimitives.ReadUInt64LittleEndian(key);
-      if (ok != virtOid) continue;
-      if (value.Length < 16) continue;
-      var xid = BinaryPrimitives.ReadUInt64LittleEndian(key.AsSpan(8));
-      if (any && xid <= foundXid) continue;
-      found = BinaryPrimitives.ReadUInt64LittleEndian(value.AsSpan(8));
-      foundFlags = BinaryPrimitives.ReadUInt32LittleEndian(value);
-      foundXid = xid;
-      any = true;
-    }
+    if (map.TryGetValue(virtOid, out var candidates))
+      foreach (var (xid, flags, paddr) in candidates) {
+        if (xid > this._maxXid) continue;
+        if (any && xid <= foundXid) continue;
+        found = paddr;
+        foundFlags = flags;
+        foundXid = xid;
+        any = true;
+      }
     // omap_val_t.ov_flags OMAP_VAL_ENCRYPTED (0x4): the object is stored encrypted with
     // the volume key, tweaked by its physical sector.
     if (any && (foundFlags & 0x4) != 0)
@@ -407,7 +481,7 @@ public sealed class ApfsReader : IDisposable {
     }
   }
 
-  private void ParseFsTree(long treePhys, ulong volOmapPhys) {
+  private void ParseFsTree(long treePhys, ulong volOmapPhys, string rootPath) {
     // Collect: inode name + size + isDir, drec: parent -> (name, child_ino), file_extent: ino -> (size, paddr).
     var inodeName = new Dictionary<ulong, string>();
     var inodeSize = new Dictionary<ulong, long>();
@@ -520,7 +594,7 @@ public sealed class ApfsReader : IDisposable {
     // Recurse from the root directory, building full nested paths. A visited set
     // guards against malformed cyclic DIR_REC chains.
     var visited = new HashSet<ulong>();
-    EmitSubtree(APFS_ROOT_DIR_INO_NUM, parentPath: "");
+    EmitSubtree(APFS_ROOT_DIR_INO_NUM, parentPath: rootPath);
     return;
 
     void EmitSubtree(ulong dirIno, string parentPath) {
