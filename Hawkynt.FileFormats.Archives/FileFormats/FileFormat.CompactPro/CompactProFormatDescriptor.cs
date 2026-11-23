@@ -11,6 +11,7 @@ namespace FileFormat.CompactPro;
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://github.com/MacPaw/XADMaster</c> — The Unarchiver's XADCompactProParser and fork handles (LGPL-2.1), converted for the reader</description></item>
+///   <item><description><c>https://github.com/uzTools/MacExtract</c> — MacExtract's Compact Pro cipher (0BSD), converted for reading encrypted entries</description></item>
 ///   <item><description><c>http://justsolve.archiveteam.org/wiki/Compact_Pro</c> — format overview</description></item>
 /// </list>
 /// </summary>
@@ -47,7 +48,7 @@ public sealed class CompactProFormatDescriptor : IFormatDescriptor, IArchiveForm
   public IReadOnlyList<FormatMethodInfo> Methods => [new("rle", "RLE")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Macintosh Compact Pro archive (RLE and LZH+RLE forks; resource forks as name.rsrc)";
+  public string Description => "Macintosh Compact Pro archive (RLE and LZH+RLE forks; resource forks as name.rsrc; encrypted entries read with their password)";
 
   private static IEnumerable<(string Name, CompactProEntry Entry, bool Resource)> Items(CompactProReader r) {
     foreach (var e in r.Entries) {
@@ -80,7 +81,7 @@ public sealed class CompactProFormatDescriptor : IFormatDescriptor, IArchiveForm
         Directory.CreateDirectory(Path.Combine(outputDir, name));
         continue;
       }
-      var (data, rsrc) = r.ExtractForks(entry);
+      var (data, rsrc) = r.ExtractForks(entry, password);
       WriteFile(outputDir, name, resource ? rsrc : data);
     }
   }
@@ -91,7 +92,7 @@ public sealed class CompactProFormatDescriptor : IFormatDescriptor, IArchiveForm
     var r = new CompactProReader(archive);
     foreach (var (name, entry, resource) in Items(r)) {
       if (entry.IsDirectory || !string.Equals(name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
-      var (data, rsrc) = r.ExtractForks(entry);
+      var (data, rsrc) = r.ExtractForks(entry, password);
       return resource ? rsrc : data;
     }
     throw new FileNotFoundException($"No entry '{entryName}' in the Compact Pro archive.");

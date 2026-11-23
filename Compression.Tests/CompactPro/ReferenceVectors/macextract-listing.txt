@@ -1,0 +1,41 @@
+# enc-trashcht.cpt password=ohsecret exit=0
+enc-trashcht.cpt	Trash Chute (Sys 7 only)	274965fe1727289efb4dce4e1834b9dd18c6c75cd1d3cb1d7192a1c8b474b05c
+enc-trashcht.cpt	Trash Chute 2.0	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+enc-trashcht.cpt	Trash Chute 2.0.rsrc	1d257d0a0119c6aad976dce78ecd6d803764fab72b89542945bc73fc36c5af27
+# enc-trashcht.cpt password=ohsecreT exit=1
+#   macextract: Trash Chute 2.0: wrong password, or none given
+#   macextract: Trash Chute (Sys 7 only): wrong password, or none given
+#   macextract: 2 of 2 entries failed
+# enc-dgsmrmcr.cpt password=correct horse battery exit=0
+enc-dgsmrmcr.cpt	4 or gate	62d9d6d6e0bfc377945a16174b512cca917ed28493b1ca06b2f88b472e044080
+enc-dgsmrmcr.cpt	Readme	a93a2090feff4a7fe645561160cfd0e4e990107fc9debd45cacd111bf1d5f2bf
+enc-dgsmrmcr.cpt	a.cpt.comment.txt	9e553732ce6857dab01b48ff43f7e36034745dd58097f55fb78478ab1db6c480
+enc-dgsmrmcr.cpt	byte	a6105ea506482e44dac0d08136e556723fe56968cf0c7ce69b550a2c82212397
+enc-dgsmrmcr.cpt	byte.16	868bce7835da2f5599a28037a025e0d4f5adf8b27e318756c622bcc5975b530c
+enc-dgsmrmcr.cpt	byte.4	81bcc76b56ac038eafffc277d8148ee786d15c3a79b3d82dab8b5e063272d07f
+enc-dgsmrmcr.cpt	monitor	a7f86d2790851327cf9931e71fd955ca0eb866f9f4eaf43e07c3cc8f0e2ad062
+enc-dgsmrmcr.cpt	nibble.add	5413bd0b0cdd6331188a45aa05a2a8df62e43d4a25a035c1716b2e7f09792341
+enc-dgsmrmcr.cpt	nibble.cmp	d6e298de3ec53ff314e43baa4d713a07de1619080f7a70ac04dbab77d4ce9ad1
+enc-dgsmrmcr.cpt	nibble.router	b30070bd4fa4b5b60e4f91ddd0b999adb6520657e4d43e0cad0f83cae4f7b855
+enc-dgsmrmcr.cpt	strobe1	6d7dac0cafa4cb3e3150d07fb94fc4b14101edf8d8b53f3275c849abe96ee593
+# enc-dgsmrmcr.cpt password=correct horse exit=1
+#   macextract: Readme: wrong password, or none given
+#   macextract: strobe1: wrong password, or none given
+#   macextract: 10 of 10 entries failed
+enc-dgsmrmcr.cpt	a.cpt.comment.txt	9e553732ce6857dab01b48ff43f7e36034745dd58097f55fb78478ab1db6c480
+# enc-ours-flat.cpt password=Kennw\x9Art exit=0
+enc-ours-flat.cpt	empty	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+enc-ours-flat.cpt	readme.txt	4b7132323a22f33748fa809f13b0cfe2e10b4c6d2877ae4fa7d843cb1974714c
+enc-ours-flat.cpt	readme.txt.rsrc	b672729508b93f64aef15e1fc3fff3585b8fc62530ac2500d52cbef9b5aeb7bf
+enc-ours-flat.cpt	tricky.bin	7a01cae31ab9fbd2f6926574f105a4303e26e124f1fb36529687366a5ea1f2f3
+# enc-ours-flat.cpt password=Kennwort exit=1
+#   macextract: readme.txt: wrong password, or none given
+#   macextract: 1 of 3 entries failed
+enc-ours-flat.cpt	empty	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+enc-ours-flat.cpt	tricky.bin	7a01cae31ab9fbd2f6926574f105a4303e26e124f1fb36529687366a5ea1f2f3
+# macextract-synth.cpt password=ohsecret exit=0
+macextract-synth.cpt	Plain Text	fd65cc71180a53a41b942fe947f2e1bee09b1a10eb89ec29b15c5c9e9498d0d8
+macextract-synth.cpt	Rsrc Only	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+macextract-synth.cpt	Rsrc Only.rsrc	ea72fed45d542b546f0902e7afcbcf3ca501ae58e7c1c3b6a58939762a7557f0
+macextract-synth.cpt	Two Forks	1783f1f6842889ff855d25b6d45d33dd7401ffa94eb93704f6a374c264cde486
+macextract-synth.cpt	Two Forks.rsrc	61840184ab44841b77dad56bdd53bd9ddd96fa053f61250d4638d16a60827e57

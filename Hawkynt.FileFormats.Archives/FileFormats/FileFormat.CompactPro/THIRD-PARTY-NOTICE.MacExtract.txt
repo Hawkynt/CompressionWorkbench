@@ -1,0 +1,21 @@
+The Compact Pro cipher (CompactProCipher.cs) and the handling of an encrypted entry's preamble in
+CompactProReader.cs are converted to C# from MacExtract:
+
+  Upstream: https://github.com/uzTools/MacExtract
+  Revision: 4b507c21c03377e2224c5c0f4a7eb9be69bbb30e (src/unc_crypt.c, src/fmt_cpt.c)
+  Licence:  0BSD
+
+----------------------------------------------------------------------------------------------------
+
+Copyright (C) 2026 by the MacExtract authors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.

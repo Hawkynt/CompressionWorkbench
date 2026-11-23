@@ -593,7 +593,7 @@
       <LogicalName>AceVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- Compact Pro archives from the Garbo Mac archive and ones our writer produced for unar; see CompactPro/ReferenceVectors/README.md. -->
-    <EmbeddedResource Include="CompactPro\ReferenceVectors\*.cpt;CompactPro\ReferenceVectors\unar-listing.txt">
+    <EmbeddedResource Include="CompactPro\ReferenceVectors\*.cpt;CompactPro\ReferenceVectors\unar-listing.txt;CompactPro\ReferenceVectors\macextract-listing.txt">
       <LogicalName>CompactProVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- G.722 streams FFmpeg 8.1.2 encoded and decoded; see Codecs/G722/ReferenceVectors/README.md. -->

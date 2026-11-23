@@ -3,6 +3,7 @@
 
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Registry;
 
 namespace FileFormat.CompactPro;
 
@@ -125,16 +126,46 @@ public sealed class CompactProReader {
   }
 
   /// <summary>Decodes both forks and verifies the entry's CRC (computed over resource, then data fork).</summary>
-  public (byte[] Data, byte[] Resource) ExtractForks(CompactProEntry entry) {
+  /// <param name="entry">The file to extract.</param>
+  /// <param name="password">The password of an encrypted entry; ignored for the others.</param>
+  /// <exception cref="ArchivePasswordException">
+  /// The entry is encrypted and no password was given, or the password is wrong. Compact Pro stores
+  /// no password check, so a wrong password shows only as a stream that does not decode to the
+  /// entry's CRC (which a damaged entry would also do).
+  /// </exception>
+  public (byte[] Data, byte[] Resource) ExtractForks(CompactProEntry entry, string? password = null) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory)
       return ([], []);
-    if (entry.IsEncrypted)
-      throw new NotSupportedException($"Compact Pro entry '{entry.FileName}' is encrypted; Compact Pro encryption is not supported.");
-    var resource = entry.ResourceForkCompressedSize == 0 ? []
-      : CompactProCodec.DecodeFork(this.Read(entry.ResourceOffset, entry.ResourceForkCompressedSize), entry.ResourceForkSize, entry.ResourceForkLzh);
-    var data = entry.DataForkCompressedSize == 0 ? []
-      : CompactProCodec.DecodeFork(this.Read(entry.DataOffset, entry.DataForkCompressedSize), entry.DataForkSize, entry.DataForkLzh);
+    var packedResource = entry.ResourceForkCompressedSize == 0 ? [] : this.Read(entry.ResourceOffset, entry.ResourceForkCompressedSize);
+    var packedData = entry.DataForkCompressedSize == 0 ? [] : this.Read(entry.DataOffset, entry.DataForkCompressedSize);
+    if (!entry.IsEncrypted)
+      return this.Decode(entry, packedResource, packedData);
+
+    if (password == null)
+      throw new ArchivePasswordException($"Compact Pro entry '{entry.FileName}' is encrypted; give its password.", passwordWasSupplied: false);
+    // One register runs over the resource fork and then the data fork; the first non-empty fork
+    // opens with the preamble, which is decrypted (it advances the register) and dropped.
+    var cipher = new CompactProCipher(MacRoman.GetBytes(password));
+    cipher.Decrypt(packedResource);
+    cipher.Decrypt(packedData);
+    if (packedResource.Length > 0)
+      packedResource = packedResource.Length < CompactProCipher.PreambleLength ? throw WrongPassword(entry) : packedResource[CompactProCipher.PreambleLength..];
+    else
+      packedData = packedData.Length < CompactProCipher.PreambleLength ? throw WrongPassword(entry) : packedData[CompactProCipher.PreambleLength..];
+    try {
+      return this.Decode(entry, packedResource, packedData);
+    } catch (Exception e) when (e is InvalidDataException or IndexOutOfRangeException or ArgumentException) {
+      throw WrongPassword(entry);
+    }
+  }
+
+  private static ArchivePasswordException WrongPassword(CompactProEntry entry)
+    => new($"Compact Pro entry '{entry.FileName}': the password is wrong (or the entry is damaged).", passwordWasSupplied: true);
+
+  private (byte[] Data, byte[] Resource) Decode(CompactProEntry entry, byte[] packedResource, byte[] packedData) {
+    var resource = packedResource.Length == 0 ? [] : CompactProCodec.DecodeFork(packedResource, entry.ResourceForkSize, entry.ResourceForkLzh);
+    var data = packedData.Length == 0 ? [] : CompactProCodec.DecodeFork(packedData, entry.DataForkSize, entry.DataForkLzh);
     if (resource.Length != entry.ResourceForkSize || data.Length != entry.DataForkSize)
       throw new InvalidDataException($"Compact Pro entry '{entry.FileName}': fork size mismatch.");
     var all = new byte[resource.Length + data.Length];
