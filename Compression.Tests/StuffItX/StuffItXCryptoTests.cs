@@ -64,11 +64,6 @@ public class StuffItXCryptoTests {
     foreach (var e in files.Where(e => e.OriginalSize > 0)) {
       Assert.That(e.IsEncrypted, Is.True, e.FullPath);
       Assert.That(e.Method, Does.EndWith("+" + cipher), e.FullPath);
-      if (e.Method.StartsWith("Method 7", StringComparison.Ordinal)) {
-        // the JPEG recompression is decrypted, then refused: it has no decoder here
-        Assert.That(() => r.Extract(e), Throws.InstanceOf<NotSupportedException>(), e.FullPath);
-        continue;
-      }
       Assert.That(Sha(r.Extract(e)), Is.EqualTo(expected[e.FullPath]), e.FullPath);
     }
   }
@@ -76,13 +71,16 @@ public class StuffItXCryptoTests {
   [TestCaseSource(nameof(EncryptedNames)), Category("ThemVsUs")]
   public void GivenEncryptedArchive_WhenEveryStreamIsDecoded_ThenEachPassesItsStoredCrc(string vector) {
     using var r = new StuffItXReader(new MemoryStream(Vector(vector)), password: Password);
-    var checkedStreams = 0;
-    foreach (var id in r.StreamIds) {
-      if (r.StreamMethod(id).StartsWith("Method 7", StringComparison.Ordinal)) continue;
-      r.DecodeStream(id);
-      ++checkedStreams;
-    }
-    Assert.That(checkedStreams, Is.GreaterThan(0));
+    foreach (var id in r.StreamIds) Assert.That(() => r.DecodeStream(id), Throws.Nothing, r.StreamMethod(id));
+  }
+
+  [Test, Category("ThemVsUs")]
+  public void GivenEncryptedJpeg_WhenExtracted_ThenTheOriginalFileIsRestored() {
+    // DES over method 7: the key-6 checksum covers the coded JPEG behind the password check and IV
+    using var r = new StuffItXReader(new MemoryStream(Vector("testfile.stuffit_deluxe_2009.win.password.des.sitx")), password: Password);
+    var jpg = r.Entries.Single(e => e.FullPath == "sources/testfile.jpg");
+    Assert.That(jpg.Method, Is.EqualTo("JPEG+DES"));
+    Assert.That(Sha(r.Extract(jpg)), Is.EqualTo(Jpg));
   }
 
   [TestCaseSource(nameof(EncryptedNames)), Category("Exception")]

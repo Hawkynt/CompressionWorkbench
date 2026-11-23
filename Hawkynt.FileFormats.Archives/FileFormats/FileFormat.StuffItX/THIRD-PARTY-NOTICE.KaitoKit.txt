@@ -1,8 +1,14 @@
-StuffIt X encryption in this folder (StuffItXCrypto.cs) is converted from KaitoKit.
+StuffIt X encryption (StuffItXCrypto.cs) and method 7, JPEG recompression (StuffItXJpeg*.cs), in
+this folder are converted from KaitoKit; the tables in StuffItXJpegTables.cs are its tables, and
+the test streams in Compression.Tests/StuffItX/JpegVectors come from its JPEG fixture.
 
 Upstream:  https://github.com/shunnag/KaitoKit
 Revision:  bb14fb23753b57386f72caf64887cabb8d9fcaf2
-Files:     Sources/KaitoKit/Formats/StuffItX/StuffItXCrypto.swift
+Files:     Sources/KaitoKit/Formats/StuffItX/StuffItXCrypto.swift,
+           Sources/KaitoKit/Codecs/StuffItX/JPEG/*.swift (Baseline, Blocks, Decoder, Envelope,
+           Mode1, Models, Progressive, Range, Support, Syntax),
+           Sources/KaitoKit/Codecs/StuffItX/StuffItXJPEGTables.swift,
+           Tests/Fixtures/stuffit/slice7-jpeg-vectors.json (the "cases" streams)
 Licence:   MIT License
 
 MIT License

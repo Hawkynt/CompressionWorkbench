@@ -20,7 +20,8 @@ namespace FileFormat.StuffItX;
 /// Supported stream codings are none, Brimstone (method 0), Cyanide (1), Darkhorse (2), Deflate
 /// (3), Blend (4), the RC4-obscured stored method (5) and Iron (6), each optionally followed by the
 /// English or the x86 preprocessor, and behind AES, Blowfish, DES or RC4 encryption given the
-/// password (see <see cref="StuffItXCrypto"/>). Method 7 streams are listed but not extracted.
+/// password (see <see cref="StuffItXCrypto"/>). Method 7 restores the original JPEG file (see
+/// <see cref="StuffItXJpeg"/>), refusing the layouts it does not reproduce.
 /// </para>
 /// <para>Converted from XADMaster's <c>XADStuffItXParser.m</c>, <c>StuffItXUtilities.m</c>,
 /// <c>XADStuffItXBlockHandle.m</c> and <c>XADRC4Handle.m</c> (LGPL-2.1-or-later, see
@@ -101,9 +102,20 @@ public sealed class StuffItXReader : IDisposable {
   internal byte[] DecodeStream(long id) {
     if (this._decoded.TryGetValue(id, out var cached)) return cached;
     if (!this._streams.TryGetValue(id, out var stream)) throw new InvalidDataException($"StuffIt X data stream {id} is missing.");
-    var decoded = this.Decode(stream.Element, stream.Length);
+    var element = stream.Element;
+    // A key-6 checksum covers the coded JPEG of method 7 (behind the password check and the one
+    // cipher layer's prefix); everywhere else a key-2 or key-6 checksum covers the decoded stream.
+    var coversInput = element.Algorithms[0] == 7 && element.Algorithms[5] >= 0;
+    if (coversInput && element.Algorithms[5] == 0 && stream.Crc is { } inputCrc) {
+      if (element.Ciphers.Count > 1) throw new NotSupportedException("StuffIt X JPEG checksums over several cipher layers are not supported.");
+      var skip = element.Ciphers.Count == 1 ? 2 + StuffItXCrypto.PrefixSize(element.Ciphers[0].Cipher, element.Ciphers[0].KeyLength) : 0;
+      var raw = this.ReadBlocks(element);
+      if (raw.Length < skip || Crc32.Compute(raw.AsSpan(skip)) != inputCrc) throw new InvalidDataException($"StuffIt X data stream {id} fails its CRC-32.");
+    }
+    var decoded = this.Decode(element, stream.Length);
     if (decoded.Length < stream.Length) throw new InvalidDataException($"StuffIt X data stream {id} is truncated.");
-    if (stream.Element.Algorithms[1] == 0 && stream.Crc is { } crc && Crc32.Compute(decoded.AsSpan(0, (int)stream.Length)) != crc)
+    var coversOutput = element.Algorithms[1] == 0 || (!coversInput && element.Algorithms[5] == 0);
+    if (coversOutput && stream.Crc is { } crc && Crc32.Compute(decoded.AsSpan(0, (int)stream.Length)) != crc)
       throw new InvalidDataException($"StuffIt X data stream {id} fails its CRC-32.");
     this._decoded[id] = decoded;
     return decoded;
@@ -328,6 +340,7 @@ public sealed class StuffItXReader : IDisposable {
       4 => "Blend",
       5 => "None",
       6 => "Iron",
+      7 => "JPEG",
       var m => $"Method {m}",
     };
     method = element.Algorithms[2] switch {
@@ -372,6 +385,7 @@ public sealed class StuffItXReader : IDisposable {
       4 => StuffItXBlend.Decode(input, coded),
       5 => Rc4(payload),
       6 => StuffItXIron.Decode(input, coded),
+      7 => StuffItXJpeg.Decode(payload, coded == long.MaxValue ? -1 : coded),
       _ => throw new NotSupportedException($"StuffIt X compression method '{MethodName(element)}' is not supported."),
     };
     return preprocess switch {
