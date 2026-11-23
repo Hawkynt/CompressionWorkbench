@@ -37050,6 +37050,51 @@ Parses a Wwise SoundBank (.bnk) file as a sequence of RIFF-style 4CC+uint32-size
 | `ExtractChunk` | `byte[] ExtractChunk(string tag)` | Reads a top-level chunk's raw body bytes by its 4CC tag. |
 | `ExtractWem` | `byte[] ExtractWem(WemEntry e)` | Performs the extract wem operation. |
 
+### Namespace `FileFormat.XMash`
+
+[`XMashFormatDescriptor`](#xmashformatdescriptor) · [`XMashReader`](#xmashreader)
+
+#### `XMashFormatDescriptor`
+
+Amiga X-Mash disk archive (".xms", magic "MSH"): an 880 KiB floppy packed track by track with XPK. Read-only: `disk.adf` is the floppy image; `banner.txt` and `file_id.diz` are the attached texts when present. ".xms" is shared with unrelated formats, so detection is by magic. References: X-Mash 1.2 (Hydra/LSD, Aminet `util/pack/lsdxms12.lha`) — `File_Format.DOC``https://github.com/MacPaw/XADMaster` — libxad's xMash client (`libxad/clients/xMash.c`)
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XMashFormatDescriptor` | `XMashFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `XMashReader`
+
+Reads an Amiga X-Mash disk archive (".xms", magic "MSH") and rebuilds its floppy image.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XMashReader` | `XMashReader(Stream stream)` | Reads the block list. |
+| `TrackSize` | `const int TrackSize` | Bytes in one track: 11 sectors × 512 bytes. |
+| `Tracks` | `const int Tracks` | Tracks on a DD floppy: 80 cylinders × 2 heads. |
+| `Banners` | `IReadOnlyList<byte[]> Banners { get; }` | Banner texts, in file order (decoded on first use). |
+| `Descriptions` | `IReadOnlyList<byte[]> Descriptions { get; }` | File descriptions (FILE_ID.DIZ), in file order. |
+| `EndTrack` | `int EndTrack { get; }` | One past the last track any block covers. |
+| `FirstTrack` | `int FirstTrack { get; }` | First track any block covers. |
+| `Packers` | `IReadOnlyList<string> Packers { get; }` | Names of the XPK sub-libraries the track data uses. |
+| `ExtractDisk` | `byte[] ExtractDisk()` | Rebuilds the 880 KiB floppy; tracks not stored are zero. |
+| `IsXMash` | `static bool IsXMash(ReadOnlySpan<byte> data)` | Returns true when `data` starts like an X-Mash archive. |
+
 ### Namespace `FileFormat.Xa`
 
 [`XaFormatDescriptor`](#xaformatdescriptor)
