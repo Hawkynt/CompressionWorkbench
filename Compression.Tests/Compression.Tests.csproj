@@ -447,6 +447,10 @@
     <EmbeddedResource Include="Zip\PpmdVectors\*.zip">
       <LogicalName>ZipPpmdVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- A WinZip 21 method-96 (JPEG) archive and its source JPEG; see Zip/WinZipJpegVectors/README.md. -->
+    <EmbeddedResource Include="Zip\WinZipJpegVectors\*.zipx;Zip\WinZipJpegVectors\*.jpg">
+      <LogicalName>ZipWinZipJpegVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- RAR 1.5 / 2.0 archives from other projects' test suites; see Rar/LegacyVectors/README.md. -->
     <EmbeddedResource Include="Rar\LegacyVectors\*.rar;Rar\LegacyVectors\manifest.tsv">
       <LogicalName>RarLegacyVectors.%(Filename)%(Extension)</LogicalName>

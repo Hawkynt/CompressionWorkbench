@@ -43,6 +43,9 @@ public enum ZipCompressionMethod : ushort {
   /// <summary>XZ compression (a complete .xz stream, APPNOTE 4.4.5 method 95).</summary>
   Xz = 95,
 
+  /// <summary>WinZip JPEG: lossless recompression of a JPEG file; decoded by <see cref="Compression.Core.Entropy.WinZipJpeg.WinZipJpegDecoder"/>.</summary>
+  Jpeg = 96,
+
   /// <summary>WinZip WavPack (a wrapped WavPack image of a WAV file); decoded through <see cref="ZipMethodCodecs"/>.</summary>
   WavPack = 97,
 
