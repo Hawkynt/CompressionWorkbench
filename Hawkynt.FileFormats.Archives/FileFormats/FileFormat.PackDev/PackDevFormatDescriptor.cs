@@ -36,7 +36,7 @@ public sealed class PackDevFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     try {
       var r = new PackDevReader(stream);
-      var method = r.XpkPacker == 0 ? "stored" : $"XPK {r.PackerName}".TrimEnd();
+      var method = r.XpkPacker == 0 ? "stored" : "XPK " + r.PackerId;
       return [new(0, ImageName(r), r.ImageSize, stream.CanSeek ? stream.Length : 0, method, false, false, null)];
     } catch (InvalidDataException) {
       var length = stream.CanSeek ? stream.Length : 0;

@@ -101,9 +101,93 @@ public class PackDevTests {
   }
 
   [Test, Category("Exception")]
-  public void XpkPacked_IsRefused() {
+  public void XpkPacked_WithoutBuffers_IsRejected() {
+    // A packer id over stored data: the first "buffer" size runs past the end.
     var r = new PackDevReader(new MemoryStream(Build(16, 0, 4, null, b => 1, packer: 0x53515348)));
-    Assert.Throws<NotSupportedException>(() => r.ExtractImage());
+    Assert.Throws<InvalidDataException>(() => r.ExtractImage());
+  }
+
+  // ── XPK images: synthetic buffers, then PackDev 1.9's own output ─────────────
+
+  private static byte[] XpkImage(byte[] stored, int bufferSize, bool old = false, bool breakChecksum = false) {
+    using var ms = new MemoryStream();
+    var header = Build(16, 0, 4, null, b => 0, old, packer: 0x524C454E)[..(old ? 32 : 52)];
+    ms.Write(header);
+    var be = new byte[4];
+    for (var at = 0; at < stored.Length; at += bufferSize) {
+      var xpk = FileFormat.Xpk.XpkStream.Encode(stored.AsSpan(at, Math.Min(bufferSize, stored.Length - at)));
+      BinaryPrimitives.WriteUInt32BigEndian(be, (uint)xpk.Length);
+      ms.Write(be);
+      ms.Write(xpk);
+      if (!old) {
+        var sum = 0;
+        foreach (var b in xpk) sum += (sbyte)b;
+        BinaryPrimitives.WriteUInt32BigEndian(be, (uint)(sum + (breakChecksum ? 1 : 0)));
+        ms.Write(be);
+      }
+    }
+    return ms.ToArray();
+  }
+
+  private static byte[] StoredLayout(int blocks, int trackBlocks) {
+    // Every block stored (no map): blocks of a track, then a label per block.
+    using var ms = new MemoryStream();
+    for (var t = 0; t < blocks / trackBlocks; ++t) {
+      for (var b = 0; b < trackBlocks; ++b) ms.Write(Enumerable.Repeat((byte)(t * trackBlocks + b + 1), 512).ToArray());
+      ms.Write(new byte[16 * trackBlocks]);
+    }
+    return ms.ToArray();
+  }
+
+  [Test, Category("HappyPath")]
+  [TestCase(false)]
+  [TestCase(true)]
+  public void XpkBuffers_SplitAcrossBlocksAndLabels_Rebuild(bool old) {
+    // 700-byte buffers cut blocks and labels at arbitrary points.
+    var image = new PackDevReader(new MemoryStream(XpkImage(StoredLayout(16, 4), 700, old))).ExtractImage();
+    for (var b = 0; b < 16; ++b)
+      Assert.That(image.AsSpan(b * 512, 512).ToArray(), Is.All.EqualTo(b + 1), $"block {b}");
+  }
+
+  [Test, Category("Exception")]
+  public void XpkBuffer_ChecksumMismatch_Throws() {
+    var data = XpkImage(StoredLayout(16, 4), 700, breakChecksum: true);
+    Assert.Throws<InvalidDataException>(() => new PackDevReader(new MemoryStream(data)).ExtractImage());
+  }
+
+  private const string FloppySha256 = "59c11eab0538310e808ccf254ab4c69d8aef25e6d515685e83676d771e9ff5c9";
+
+  private static string VectorPath(string name)
+    => Path.Combine(Documentation.FilesystemReadmeIsCurrentTests.RepositoryRoot(), "Compression.Tests", "PackDev", "ReferenceVectors", name);
+
+  /// <summary>
+  /// Images PackDev 1.9 wrote from one test floppy (see ReferenceVectors/README.md). Images with a
+  /// free-block map leave free blocks out, so they rebuild the floppy's used blocks with zeros
+  /// elsewhere; the ALL image keeps every block and rebuilds the floppy byte for byte.
+  /// </summary>
+  [Test, Category("RealFiles")]
+  [TestCase("rlenall.pkd", "RLEN", false)]
+  [TestCase("nuke.pkd", "NUKE", true)]
+  [TestCase("sqsh.pkd", "SQSH", true)]
+  [TestCase("stored.pkd", "", true)]
+  public void ProducerImage_RebuildsTheFloppy(string file, string packer, bool freeMap) {
+    var r = new PackDevReader(File.OpenRead(VectorPath(file)));
+    Assert.That(r.PackerId, Is.EqualTo(packer));
+    Assert.That(r.HasFreeBlockMap, Is.EqualTo(freeMap));
+    var image = r.ExtractImage();
+    var full = new PackDevReader(File.OpenRead(VectorPath("rlenall.pkd"))).ExtractImage();
+    Assert.That(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(full)), Is.EqualTo(FloppySha256));
+    for (var b = 0; b < 1760; ++b) {
+      var block = image.AsSpan(b * 512, 512);
+      if (block.ContainsAnyExcept((byte)0))
+        Assert.That(block.SequenceEqual(full.AsSpan(b * 512, 512)), Is.True, $"{file}: block {b}");
+    }
+    // Every file of the volume survives, so no used block was left out.
+    using var adf = new FileSystem.Adf.AdfReader(new MemoryStream(image));
+    using var src = new FileSystem.Adf.AdfReader(new MemoryStream(full));
+    Assert.That(adf.Entries.Select(e => e.FullPath), Is.EquivalentTo(src.Entries.Select(e => e.FullPath)));
+    foreach (var entry in adf.Entries)
+      Assert.That(adf.Extract(entry), Is.EqualTo(src.Extract(src.Entries.Single(e => e.FullPath == entry.FullPath))), entry.FullPath);
   }
 
   [Test, Category("Exception")]

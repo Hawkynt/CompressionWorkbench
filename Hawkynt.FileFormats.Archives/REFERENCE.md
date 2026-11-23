@@ -26733,6 +26733,7 @@ Reads an Amiga PackDev device image ("PKD\x13", or the older "PKD\x11") and rebu
 | `HasFreeBlockMap` | `bool HasFreeBlockMap { get; }` | True when a free-block map is present and free blocks were left out. |
 | `ImageSize` | `long ImageSize { get; }` | Size of the rebuilt image in bytes. |
 | `IsOldFormat` | `bool IsOldFormat { get; }` | True for the older "PKD\x11" header. |
+| `PackerId` | `string PackerId { get; }` | The XPK packer id as its four characters (e.g. "NUKE"), empty when the blocks are stored. |
 | `PackerName` | `string PackerName { get; }` | The XPK packer name of a "PKD\x13" image, empty otherwise. |
 | `ReservedBlocks` | `int ReservedBlocks { get; }` | Leading blocks the free-block map does not cover. |
 | `TrackBlocks` | `int TrackBlocks { get; }` | Blocks per track. |

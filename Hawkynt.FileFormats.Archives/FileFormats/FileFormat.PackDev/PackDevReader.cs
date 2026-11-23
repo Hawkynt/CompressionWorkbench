@@ -16,11 +16,14 @@ namespace FileFormat.PackDev;
 /// the least significant) is block <c>reserved + 32·w + j</c>; a set bit marks a free block, which is
 /// not stored and reads back as zeros. Stored images then hold, track by track, every stored block
 /// of the track followed by a 16-byte sector label per stored block.</para>
-/// <para>XPK-packed images (packer id ≠ 0) wrap the same byte stream in XPK buffers; they are refused,
-/// as no such image has been available to prove a reader.</para>
+/// <para>XPK-packed images (packer id ≠ 0) carry the same byte stream — free-block map included — in
+/// buffers, each a big-endian packed size, one XPK stream, and ("PKD\x13" only) the 32-bit sum of the
+/// packed bytes taken as signed bytes. Sub-libraries Compression.Core does not decode, and encrypted
+/// buffers, are refused.</para>
 /// <para>Sourcing: layout from libxad's PackDev client (The Unarchiver's XADMaster,
-/// <c>libxad/clients/PackDev.c</c>, LGPL-2.1-or-later); verified on real images, whose AmigaDOS
-/// volumes come out intact.</para>
+/// <c>libxad/clients/PackDev.c</c>, LGPL-2.1-or-later) and the PackDev 1.9 documentation; verified
+/// on real stored images, whose AmigaDOS volumes come out intact, and on XPK images PackDev 1.9 wrote,
+/// which rebuild their source floppy byte for byte.</para>
 /// </remarks>
 public sealed class PackDevReader {
   /// <summary>Bytes of one sector label after each stored block.</summary>
@@ -54,6 +57,9 @@ public sealed class PackDevReader {
 
   /// <summary>True when a free-block map is present and free blocks were left out.</summary>
   public bool HasFreeBlockMap { get; }
+
+  /// <summary>The XPK packer id as its four characters (e.g. "NUKE"), empty when the blocks are stored.</summary>
+  public string PackerId => this.XpkPacker == 0 ? "" : Encoding.Latin1.GetString(BitConverter.GetBytes(BinaryPrimitives.ReverseEndianness(this.XpkPacker)));
 
   /// <summary>Size of the rebuilt image in bytes.</summary>
   public long ImageSize => (long)this.BlockCount * this.BlockSize;
@@ -94,12 +100,10 @@ public sealed class PackDevReader {
 
   /// <summary>Rebuilds the device image; free blocks are zero.</summary>
   /// <exception cref="InvalidDataException">The data ends early or has bytes left over.</exception>
-  /// <exception cref="NotSupportedException">The image is XPK-packed.</exception>
+  /// <exception cref="NotSupportedException">An XPK sub-library is not implemented, or a buffer is encrypted.</exception>
   public byte[] ExtractImage() {
-    if (this.XpkPacker != 0)
-      throw new NotSupportedException("PackDev: XPK-packed images are not supported.");
-    var d = this._data;
-    var pos = this._payload;
+    var d = this.XpkPacker == 0 ? this._data.AsSpan(this._payload).ToArray() : this.UnpackXpkBuffers();
+    var pos = 0;
     var free = new bool[this.BlockCount];
     if (this.HasFreeBlockMap) {
       var mapSize = this.BlockCount >> 3;
@@ -134,6 +138,33 @@ public sealed class PackDevReader {
     if (pos != d.Length)
       throw new InvalidDataException($"PackDev: {d.Length - pos} bytes do not match the stored blocks.");
     return image;
+  }
+
+  // XPK images: buffers of [u32 packed size][XPK stream][u32 sum of the packed bytes taken as signed
+  // bytes — "PKD\x13" only], whose unpacked contents, concatenated, are the stored layout.
+  private byte[] UnpackXpkBuffers() {
+    var d = this._data;
+    var pos = this._payload;
+    using var output = new MemoryStream();
+    while (pos < d.Length) {
+      if (pos + 4 > d.Length)
+        throw new InvalidDataException($"PackDev: truncated buffer header at {pos}.");
+      var size = BinaryPrimitives.ReadUInt32BigEndian(d.AsSpan(pos));
+      pos += 4;
+      var trailer = this.IsOldFormat ? 0 : 4;
+      if (size == 0 || size > (uint)(d.Length - pos - trailer))
+        throw new InvalidDataException($"PackDev: buffer at {pos - 4} runs past the end of the file.");
+      var packed = d.AsSpan(pos, (int)size);
+      if (!this.IsOldFormat) {
+        var sum = 0;
+        foreach (var b in packed) sum += (sbyte)b;
+        if ((uint)sum != BinaryPrimitives.ReadUInt32BigEndian(d.AsSpan(pos + (int)size)))
+          throw new InvalidDataException($"PackDev: checksum mismatch in the buffer at {pos - 4}.");
+      }
+      output.Write(Xpk.XpkStream.Decode(packed.ToArray()));
+      pos += (int)size + trailer;
+    }
+    return output.ToArray();
   }
 
   private static uint TailWord(ReadOnlySpan<byte> tail) {
