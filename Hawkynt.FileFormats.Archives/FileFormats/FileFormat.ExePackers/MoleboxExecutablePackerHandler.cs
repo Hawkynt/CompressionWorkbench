@@ -79,11 +79,9 @@ namespace FileFormat.ExePackers;
 /// re-serialization of the pre-pack file.
 /// </para>
 /// <para>
-/// The corpus samples carry no bundled file tree: the loader supports one (its
-/// box payload is a trailer at the end of the file guarded by magic
-/// <c>0xCAFEBABE</c>), but none of the 130 samples has one, and the
-/// configuration's payload descriptors are zero throughout. When a trailer is
-/// present it is emitted as an artifact for further analysis.
+/// The corpus samples carry no bundled file tree. Programs that do carry one
+/// append a file box; it lists and extracts through
+/// <see cref="MoleboxFormatDescriptor"/> (layout in <c>docs/MOLEBOX-ON-DISK.md</c>).
 /// </para>
 /// </remarks>
 public sealed class MoleboxExecutablePackerHandler : MinorExecutablePackerHandlerBase {
@@ -133,10 +131,8 @@ public sealed class MoleboxExecutablePackerHandler : MinorExecutablePackerHandle
   private const uint KeystreamMultiplier = 0x19660D;
   private const int SectionKeyBlobDwords = 0x80;
   private const int SectionKeyOffsetInBlob = 0x20;
-  private const uint BoxTrailerMagic = 0xCAFEBABE;
-  private const int BoxTrailerSize = 0x14;
 
-  private readonly record struct MoleboxConfiguration(
+  internal readonly record struct MoleboxConfiguration(
     uint OriginalEntryPointVa,
     uint OriginalImageBase,
     uint CompressedMask,
@@ -162,28 +158,11 @@ public sealed class MoleboxExecutablePackerHandler : MinorExecutablePackerHandle
       return false;
 
     var entryRva = (uint)info.EntryPoint;
-    var imageBase = (uint)info.PreferredBaseAddress;
     var diagnostics = new List<ExecutableDiagnostic>();
 
-    byte[] blob;
-    uint blobBaseRva;
-    MoleboxConfiguration configuration;
-    ushort[] sectionSchedule;
-    try {
-      if (!TryDecodeLoaderBlob(info, entryRva, imageBase, options, out blob, out blobBaseRva))
-        return false;
-      if (!TryReadConfiguration(image, info, blob, blobBaseRva, entryRva, out configuration))
-        return false;
-      // The configuration is only believable if it agrees with the packed image
-      // about where the image is based; a wrong key decodes to noise instead.
-      if (configuration.OriginalImageBase != imageBase)
-        return false;
-      if (!TryReadSectionKey(blob, blobBaseRva, imageBase, configuration, out var sectionKey))
-        return false;
-      sectionSchedule = MoleboxIdea.InvertKey(MoleboxIdea.ExpandKey(sectionKey));
-    } catch (Exception ex) when (ex is InvalidDataException or ArgumentException or IndexOutOfRangeException or ArgumentOutOfRangeException or OverflowException) {
+    if (!TryReadLoaderKeys(image, info, options, out var configuration, out var keyBlob))
       return false;
-    }
+    var sectionSchedule = MoleboxIdea.InvertKey(MoleboxIdea.ExpandKey(keyBlob.AsSpan(SectionKeyOffsetInBlob, 16)));
 
     var originalNames = ReadOriginalSectionNames(image, info, entryRva);
     var recovered = new List<RecoveredSection>();
@@ -244,11 +223,10 @@ public sealed class MoleboxExecutablePackerHandler : MinorExecutablePackerHandle
       diagnostics.Add(new(ExecutableDiagnosticCode.DecompressionFailed,
         $"Molebox: {failures} of {recovered.Count} original sections could not be decoded.", true));
 
-    if (TryReadBoxTrailer(image, out var trailer))
-      artifacts.Add(new("box_trailer.bin", trailer, "stored"));
-    else
-      diagnostics.Add(new(ExecutableDiagnosticCode.PayloadNotFound,
-        "Molebox: no bundled-file trailer (magic 0xCAFEBABE) is present — this sample packs an executable only, with no virtual file tree."));
+    using (var probe = new MemoryStream(image, false))
+      if (!MoleboxBox.HasBoxTrailer(probe))
+        diagnostics.Add(new(ExecutableDiagnosticCode.PayloadNotFound,
+          "Molebox: no file box is appended — this sample packs an executable only, with no virtual file tree."));
 
     var patched = info with {
       EntryPoint = configuration.OriginalEntryPointVa - configuration.OriginalImageBase,
@@ -282,6 +260,35 @@ public sealed class MoleboxExecutablePackerHandler : MinorExecutablePackerHandle
     artifacts.Add(new("diagnostics.json", ExecutableDiagnosticsJson.Build(this.Id, packed.ImageInfo, built), "stored"));
     result = built with { Artifacts = artifacts };
     return true;
+  }
+
+  /// <summary>
+  /// Replays the loader chain up to the section-key blob: the decoded loader blob, the
+  /// configuration record (accepted only when it names the packed image's own base) and the
+  /// 0x80-dword key blob, whose offset 0x20 holds the 16-byte section key and offset 0x30 the
+  /// NUL-terminated name of the file box.
+  /// </summary>
+  internal static bool TryReadLoaderKeys(byte[] image, ExecutableImageInfo info, UnpackOptions options,
+      out MoleboxConfiguration configuration, out byte[] keyBlob) {
+    configuration = default;
+    keyBlob = [];
+    if (info is not { Container: ExecutableContainerKind.Pe } || info.Regions.Count <= LoaderSectionCount || info.EntryPoint == 0)
+      return false;
+    var entryRva = (uint)info.EntryPoint;
+    var imageBase = (uint)info.PreferredBaseAddress;
+    try {
+      if (!TryDecodeLoaderBlob(info, entryRva, imageBase, options, out var blob, out var blobBaseRva))
+        return false;
+      if (!TryReadConfiguration(image, info, blob, blobBaseRva, entryRva, out configuration))
+        return false;
+      // The configuration is only believable if it agrees with the packed image
+      // about where the image is based; a wrong key decodes to noise instead.
+      if (configuration.OriginalImageBase != imageBase)
+        return false;
+      return TryReadKeyBlob(blob, blobBaseRva, imageBase, configuration, out keyBlob);
+    } catch (Exception ex) when (ex is InvalidDataException or ArgumentException or IndexOutOfRangeException or ArgumentOutOfRangeException or OverflowException) {
+      return false;
+    }
   }
 
   /// <summary>
@@ -347,16 +354,16 @@ public sealed class MoleboxExecutablePackerHandler : MinorExecutablePackerHandle
     return true;
   }
 
-  private static bool TryReadSectionKey(byte[] blob, uint blobBaseRva, uint imageBase, MoleboxConfiguration configuration, out byte[] key) {
-    key = [];
+  private static bool TryReadKeyBlob(byte[] blob, uint blobBaseRva, uint imageBase, MoleboxConfiguration configuration, out byte[] keyBlob) {
+    keyBlob = [];
     if (configuration.SectionKeyBlobVa <= imageBase)
       return false;
     var keyBlobRva = configuration.SectionKeyBlobVa - imageBase;
     if (!TryGetBlobOffset(blob, blobBaseRva, keyBlobRva, SectionKeyBlobDwords * 4, out var offset))
       return false;
 
-    ApplyKeystream(blob.AsSpan(offset, SectionKeyBlobDwords * 4), imageBase + keyBlobRva, SectionKeyKeystreamConstant);
-    key = blob.AsSpan(offset + SectionKeyOffsetInBlob, 16).ToArray();
+    keyBlob = blob.AsSpan(offset, SectionKeyBlobDwords * 4).ToArray();
+    ApplyKeystream(keyBlob, imageBase + keyBlobRva, SectionKeyKeystreamConstant);
     return true;
   }
 
@@ -481,18 +488,6 @@ public sealed class MoleboxExecutablePackerHandler : MinorExecutablePackerHandle
       names.Add(name);
     }
     return names;
-  }
-
-  /// <summary>Locates the bundled-file trailer MoleBox writes at the very end of a boxed executable.</summary>
-  private static bool TryReadBoxTrailer(byte[] image, out byte[] trailer) {
-    trailer = [];
-    if (image.Length < BoxTrailerSize)
-      return false;
-    var start = image.Length - BoxTrailerSize;
-    if (BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(start, 4)) != BoxTrailerMagic)
-      return false;
-    trailer = image.AsSpan(start, BoxTrailerSize).ToArray();
-    return true;
   }
 
   private static ExecutableRegion? FindRegion(ExecutableImageInfo info, uint rva) {
