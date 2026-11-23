@@ -410,7 +410,7 @@ SQLite database,sqlite;sqlite3;db,document,,,,,R,,,,1,https://www.sqlite.org/fil
 Windows thumbnail cache,db;thumbs.db,document,,,,,R,,,,1,https://github.com/libyal/documentation/blob/main/Windows%20Explorer%20Thumbnail%20Cache%20database%20format.asciidoc,ThumbsDb;Thumbcache,Y,Y,Y,OK,,"Thumbs.db (ThumbsDb, R/W) and thumbcache_*.db (Thumbcache, read-only, Vista-11, checked against dissect.thumbcache)"
 Safari webarchive,webarchive,document,,,,,,fmt/866,,,1,https://developer.apple.com/documentation/webkit/webarchive,WebArchive,Y,Y,Y,OK,,
 Compressed MusicXML (MXL),mxl,document,,,,,,fmt/2005;fmt/897,,,1,https://www.w3.org/2021/06/musicxml40/tutorial/compressed-mxl-files/,Mxl,Y,Y,Y,OK,,
-OneNote package (ONEPKG),onepkg,document,,,,,,fmt/987,,,1,,OnePkg,Y,,,OK,,read-only: a CAB of .onetoc2/.one sections; no OneNote available to prove that a package we build opens
+OneNote package (ONEPKG),onepkg,document,,,,,,fmt/987,,,1,,OnePkg,Y,,,OK,,read-only: a CAB of .onetoc2/.one sections; Microsoft's packages are Authenticode-signed with encoder-specific LZX so cannot be reproduced and no OneNote is available to confirm ours (docs/ONEPKG-ON-DISK.md)
 NScripter archive (NSA/NS2),nsa;ns2,game,,,R,,R,,,,2,,Nsa,Y,Y,Y,OK,,
 NScripter SAR,sar,game,,,R,,R,,,,2,,Sar,Y,Y,Y,OK,,
 Nintendo DS ROM,nds,game,,,R,,,,,,1,,Nds,Y,Y,Y,OK,,
