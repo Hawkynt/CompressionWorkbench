@@ -136,12 +136,29 @@ public sealed class CabReader : IDisposable {
       while ((b = fileReader.ReadByte()) != 0)
         nameBytes.Add(b);
 
-      var isUtf8 = (attribs & CabConstants.AttribUtf8) != 0;
-      var name = isUtf8
-        ? System.Text.Encoding.UTF8.GetString([.. nameBytes])
-        : System.Text.Encoding.ASCII.GetString([.. nameBytes]);
+      var name = DecodeName([.. nameBytes], (attribs & CabConstants.AttribUtf8) != 0);
 
       this._entries.Add(new CabEntry(name, cbFile, uoffFolderStart, iFolderIdx, date, time, attribs));
+    }
+  }
+
+  private static readonly System.Text.Encoding StrictUtf8 = new System.Text.UTF8Encoding(false, throwOnInvalidBytes: true);
+
+  /// <summary>
+  /// Decodes a member name. With the UTF attribute the bytes are UTF-8. Without it they are in the
+  /// writer's code page, which the cabinet does not record: bytes that form valid UTF-8 are read as
+  /// UTF-8 (Microsoft's own OneNote packages store UTF-8 names without the attribute), anything else
+  /// byte for byte as Latin-1, so distinct names never collapse into the same string.
+  /// </summary>
+  internal static string DecodeName(byte[] bytes, bool utf8Attribute) {
+    if (utf8Attribute)
+      return System.Text.Encoding.UTF8.GetString(bytes);
+    if (Array.TrueForAll(bytes, b => b < 0x80))
+      return System.Text.Encoding.ASCII.GetString(bytes);
+    try {
+      return StrictUtf8.GetString(bytes);
+    } catch (System.Text.DecoderFallbackException) {
+      return System.Text.Encoding.Latin1.GetString(bytes);
     }
   }
 
