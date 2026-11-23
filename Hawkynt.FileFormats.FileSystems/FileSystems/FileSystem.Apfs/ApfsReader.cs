@@ -55,7 +55,25 @@ public sealed class ApfsReader : IDisposable {
     this.Parse();
   }
 
+  /// <summary>True for a Fusion container (NX_INCOMPAT_FUSION): a fast main device and a tier-2 device.</summary>
+  public bool IsFusion { get; private set; }
+
+  /// <summary>
+  /// Fusion addresses blocks on the tier-2 device with FUSION_TIER2_DEVICE_BYTE_ADDR
+  /// (0x4000000000000000) shifted down by the block size's log2. This reader reads only the
+  /// main device: a Fusion container is read as long as every object and extent it reaches
+  /// lies there, and anything on the tier-2 device is refused rather than read from the
+  /// wrong place.
+  /// </summary>
+  private void RefuseTier2(ulong block) {
+    if (!this.IsFusion) return;
+    var tier2 = 0x4000000000000000UL >> System.Numerics.BitOperations.TrailingZeroCount(this._blockSize);
+    if ((block & tier2) != 0)
+      throw new NotSupportedException($"APFS: block {block & ~tier2} lies on the Fusion tier-2 device, which this reader does not read.");
+  }
+
   private Span<byte> BlockSpan(long blockNum) {
+    this.RefuseTier2((ulong)blockNum);
     var off = blockNum * this._blockSize;
     if (off < 0 || off + this._blockSize > this._data.Length)
       throw new InvalidDataException($"APFS: block {blockNum} out of range.");
@@ -100,6 +118,7 @@ public sealed class ApfsReader : IDisposable {
   }
 
   private byte[] ReadBlocks(ulong first, ulong count) {
+    this.RefuseTier2(first);
     var off = checked((long)first * this._blockSize);
     var len = checked((int)(count * this._blockSize));
     if (off < 0 || off + len > this._data.Length)
@@ -129,6 +148,8 @@ public sealed class ApfsReader : IDisposable {
     // an Apple File System Partition"). Its nx_omap_oid (+160) is the physical block
     // of the container object map.
     var nxsb = this.LatestCheckpointSuperblock();
+    // nx_incompatible_features (+64): NX_INCOMPAT_FUSION (0x100).
+    this.IsFusion = ((nxsb is { } sb ? BinaryPrimitives.ReadUInt64LittleEndian(sb.AsSpan(64)) : this._data.ReadUInt64(64)) & 0x100) != 0;
     var ctrOmapPhys = this.ResolveCtrOmapPhys();
     if (nxsb is { } latest) {
       var omapOid = BinaryPrimitives.ReadUInt64LittleEndian(latest.AsSpan(160));
@@ -744,6 +765,7 @@ public sealed class ApfsReader : IDisposable {
         Zero(written + take);
         continue;
       }
+      this.RefuseTier2(extent.PhysBlock);
       var offset = checked((long)extent.PhysBlock * this._blockSize);
       if (offset < 0 || offset + take > this._data.Length)
         throw new InvalidDataException($"APFS: extent at block {extent.PhysBlock} lies outside the image.");

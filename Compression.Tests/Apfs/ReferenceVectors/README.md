@@ -56,6 +56,15 @@ one clone and an append to the other. apfsck passes it. `apfs-clones.manifest` i
 apfs-fuse read from the live volume and the snapshot. `generate-clones.sh` documents the
 steps. Captured 2026-11-23 on Ubuntu under WSL2 (appliance kernel 6.8.0-149-generic).
 
+## Fusion container
+
+`apfs-fusion-main.img.gz` is the 32 MiB main device of a Fusion container that
+`mkapfs -F` (apfsprogs `b9c4cb40`) formatted over it and a 64 MiB tier-2 device; apfsck
+checks the pair, and `apfs-fusion.manifest` is what apfs-fuse `-f` lists (an empty root).
+Only the main device is kept: everything a fresh container reaches lies on it. No tool
+outside macOS writes files into a Fusion container, so there is no sample with data on the
+tier-2 device; the reader refuses such blocks. `generate-fusion.sh` documents the steps.
+
 ## Licence
 
 keramics: Apache License 2.0, Copyright 2024-2026 Joachim Metz
