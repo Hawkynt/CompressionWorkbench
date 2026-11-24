@@ -275,16 +275,19 @@ internal static class BcacheFsInPlaceModifier {
   internal static IDisposable UseVolumeBuckets(Stream image) => UseVolumeBuckets([image]);
 
   /// <inheritdoc cref="UseVolumeBuckets(Stream)" />
-  /// <remarks>Every member has to have the same bucket size; a volume whose members differ is refused.</remarks>
+  /// <remarks>
+  /// Members may have buckets of different sizes: each is worked in its own
+  /// (<see cref="BcacheFsBucketGeometry.SectorsOf" />), and a run of data is never longer than the
+  /// smallest, so it fits a bucket on whichever members its copies go to.
+  /// </remarks>
   internal static IDisposable UseVolumeBuckets(IReadOnlyList<Stream> devices) {
     foreach (var device in devices) device.Position = 0;
     var core = BcacheFsCoreVolume.Open(devices);
     foreach (var device in devices) device.Position = 0;
-    var bucket = core.Members[0].BucketSizeSectors;
-    if (core.Members.Any(m => m.BucketSizeSectors != bucket))
-      throw new NotSupportedException(
-        $"bcachefs: the members' buckets differ ({string.Join(", ", core.Members.Select(m => m.BucketSizeSectors))} sectors); "
-        + "an edit here works in one bucket size.");
+    var bucket = core.Members.Min(m => (int)m.BucketSizeSectors);
+    IReadOnlyDictionary<byte, int>? memberBuckets = core.Members.Any(m => m.BucketSizeSectors != bucket)
+      ? core.Members.Select((m, i) => (Index: (byte)i, Size: (int)m.BucketSizeSectors)).ToDictionary(x => x.Index, x => x.Size)
+      : null;
     var node = core.Superblock.BtreeNodeSectors;
     var raw = core.Superblock.RawBytes;
     var timeBase = (Int128)BinaryPrimitives.ReadUInt64LittleEndian(raw.AsSpan(128))
@@ -298,7 +301,7 @@ internal static class BcacheFsInPlaceModifier {
       ? Math.Max(core.Checkpoint?.JournalSequence ?? 0, core.Journal.Sequences.Select(s => s.Sequence).DefaultIfEmpty(0UL).Max()) + 1
       : null;
     return BcacheFsBucketGeometry.Use(bucket, core.Superblock.BlockSizeSectors, timeBase, precision, node, replicas,
-      core.Superblock.Version, extentBpShift, journalSeq);
+      core.Superblock.Version, extentBpShift, journalSeq, memberBuckets);
   }
 
   /// <summary>
@@ -325,16 +328,28 @@ internal static class BcacheFsInPlaceModifier {
   }
 
   /// <summary>
-  /// How many copies of <paramref name="dataType" /> a commit writes: what the volume asks for
-  /// (<c>metadata_replicas</c> or <c>data_replicas</c>), at most one per supplied member allowed
-  /// to hold that type.
+  /// How many copies of <paramref name="dataType" /> a commit writes: as few members as, counted
+  /// by their durability (a copy on a member of durability two counts twice; a cache member, of
+  /// durability zero, holds none), make up what the volume asks for (<c>metadata_replicas</c> or
+  /// <c>data_replicas</c>) — or every eligible member where they cannot.
   /// </summary>
   private static int EffectiveReplicas(BcacheFsCoreVolume core, byte dataType) {
     var flags0 = core.Superblock.Flags.Length > 0 ? core.Superblock.Flags[0] : 0UL;
     var wanted = Math.Max(1, (int)((flags0 >> (dataType == DataBtree ? 48 : 52)) & 0xF));
-    var allowed = core.Devices.Keys.Count(d => d < core.Members.Count && (core.Members[d].DataAllowed & (1 << dataType)) != 0);
-    return Math.Max(1, Math.Min(wanted, allowed));
+    var durabilities = core.Devices.Keys
+      .Where(d => d < core.Members.Count && (core.Members[d].DataAllowed & (1 << dataType)) != 0)
+      .Select(d => MemberDurability(core.Members[d]))
+      .Where(d => d > 0)
+      .OrderDescending()
+      .ToArray();
+    var sum = 0;
+    for (var k = 0; k < durabilities.Length; ++k)
+      if ((sum += durabilities[k]) >= wanted) return k + 1;
+    return Math.Max(1, durabilities.Length);
   }
+
+  /// <summary><c>BCH_MEMBER_DURABILITY</c> is stored plus one; zero means the default, one copy.</summary>
+  private static int MemberDurability(BcacheFsMemberRecord member) => member.Durability == 0 ? 1 : member.Durability - 1;
 
   /// <summary>The members, geometry and effective replicas a commit on <paramref name="core" /> writes with.</summary>
   private static BcacheFsDevices DevicesOf(BcacheFsCoreVolume core) {
@@ -343,6 +358,7 @@ internal static class BcacheFsInPlaceModifier {
       Streams = devices.Streams,
       Geometry = devices.Geometry,
       DataAllowed = devices.DataAllowed,
+      Durability = devices.Durability,
       MetadataReplicas = EffectiveReplicas(core, DataBtree),
       DataReplicas = EffectiveReplicas(core, DataUser),
     };
@@ -375,15 +391,11 @@ internal static class BcacheFsInPlaceModifier {
         + (missing.Length == 0 ? "" : $" (member {string.Join(", ", missing)} missing)") + $"; {profile}.");
     for (var i = 0; i < core.Members.Count; ++i) {
       var member = core.Members[i];
-      if (member.BucketSizeSectors != BucketSectors)
+      if (member.BucketSizeSectors != BcacheFsBucketGeometry.SectorsOf((byte)i))
         throw new NotSupportedException(
-          $"bcachefs: member {i}'s buckets are {member.BucketSizeSectors} sectors, not {BucketSectors}; {profile}.");
+          $"bcachefs: member {i}'s buckets are {member.BucketSizeSectors} sectors, not {BcacheFsBucketGeometry.SectorsOf((byte)i)}; {profile}.");
       if (member.State != BcacheFsMemberState.ReadWrite)
         throw new NotSupportedException($"bcachefs: member {i} is {member.State}, not read-write; {profile}.");
-      // BCH_MEMBER_DURABILITY is stored plus one; zero means the default, one copy.
-      var durability = member.Durability == 0 ? 1 : member.Durability - 1;
-      if (durability != 1)
-        throw new NotSupportedException($"bcachefs: member {i} counts as {durability} copies; {profile}.");
     }
 
     var journaled = false;
@@ -435,13 +447,15 @@ internal static class BcacheFsInPlaceModifier {
     if (!inodeKeys.ContainsKey(RootInode))
       throw new InvalidDataException("bcachefs: root inode is missing.");
 
-    var extentKeys = ReadTree(BtreeExtents);
+    // A cached copy (on a cache member) is one the volume may drop at any time; the commit
+    // carries extents without them, so their buckets come back free.
+    var extentKeys = ReadTree(BtreeExtents).Select(DropCachedCopies).ToList();
     var foreignExtent = extentKeys.FirstOrDefault(k => k.Type is not (KeyExtent or KeyInlineData or KeyReservation or KeyReflinkP));
     if (foreignExtent.Value != null)
       throw new NotSupportedException(
         $"bcachefs in-place mutation carries pointer extents, inline data, reservations and reflinks; key type {foreignExtent.Type} "
         + "is left read-only.");
-    var reflink = ReadTree(BtreeReflink);
+    var reflink = ReadTree(BtreeReflink).Select(DropCachedCopies).ToList();
     RequireConsistentReflinks(extentKeys, reflink);
 
     var dirents = ReadTree(BtreeDirents)
@@ -753,7 +767,7 @@ internal static class BcacheFsInPlaceModifier {
     var result = new Dictionary<byte, Queue<long>>();
     foreach (var (device, geometry) in model.Devices.Geometry) {
       var firstDataBucket = (long)FirstMetadataBucket + MetadataBuckets;
-      var firstTailSbBucket = (geometry.DeviceSectors - SbSlotSectors) / BucketSectors;
+      var firstTailSbBucket = (geometry.DeviceSectors - SbSlotSectors) / geometry.BucketSize;
       var candidates = new List<long>();
       if (model.Devices.Allows(device, DataUser))
         for (var bucket = firstDataBucket; bucket < firstTailSbBucket; ++bucket)
@@ -770,9 +784,11 @@ internal static class BcacheFsInPlaceModifier {
   /// <paramref name="free" />, the members with the most left first, and returns them by
   /// <see cref="BcacheFsBucketId" />; null when fewer members than that have one.
   /// </summary>
-  private static long[]? TakeCopies(Dictionary<byte, Queue<long>> free, int copies) {
-    var members = free.Where(f => f.Value.Count != 0)
-      .OrderByDescending(f => f.Value.Count).ThenBy(f => f.Key)
+  private static long[]? TakeCopies(Dictionary<byte, Queue<long>> free, int copies, BcacheFsDevices devices) {
+    // The most durable members first (so few copies make up the replicas wanted), then the
+    // ones with the most room; a cache member holds no copy at all.
+    var members = free.Where(f => f.Value.Count != 0 && devices.DurabilityOf(f.Key) > 0)
+      .OrderByDescending(f => devices.DurabilityOf(f.Key)).ThenByDescending(f => f.Value.Count).ThenBy(f => f.Key)
       .Take(copies).ToArray();
     if (members.Length < copies) return null;
     return [.. members.OrderBy(f => f.Key).Select(f => BcacheFsBucketId.Of(f.Key, f.Value.Dequeue()))];
@@ -822,7 +838,9 @@ internal static class BcacheFsInPlaceModifier {
     var spared = live
       .Select(f => (f.Device, Offset: f.Sector * SectorSize, Length: (long)f.RegionSectors * SectorSize))
       .Concat(published.MetadataBuckets.Select(b =>
-        (Device: BcacheFsBucketId.Device(b), Offset: BcacheFsBucketId.Index(b) * BucketBytes, Length: (long)BucketBytes)))
+        (Device: BcacheFsBucketId.Device(b),
+          Offset: BcacheFsBucketId.Index(b) * BcacheFsBucketGeometry.SectorsOf(BcacheFsBucketId.Device(b)) * SectorSize,
+          Length: (long)BcacheFsBucketGeometry.SectorsOf(BcacheFsBucketId.Device(b)) * SectorSize)))
       .ToList();
     foreach (var (device, offset, length) in model.FreedRanges) {
       var onDevice = spared.Where(s => s.Device == device).Select(s => (s.Offset, s.Length)).ToList();
@@ -897,18 +915,19 @@ internal static class BcacheFsInPlaceModifier {
     var area = new Dictionary<byte, Queue<long>>();
     foreach (var (device, geometry) in devices.Geometry) {
       if (!devices.Allows(device, DataUser)) continue;
+      if (devices.DurabilityOf(device) == 0) continue;
       var first = (long)FirstMetadataBucket + MetadataBuckets;
-      var last = (geometry.DeviceSectors - SbSlotSectors) / BucketSectors;
+      var last = (geometry.DeviceSectors - SbSlotSectors) / geometry.BucketSize;
       var fixedBuckets = geometry.JournalBuckets.SelectMany(j => Enumerable.Range(0, (int)j.Count).Select(k => j.Start + k)).ToHashSet();
       foreach (var slot in geometry.SuperblockSectors)
-        for (var b = slot / BucketSectors; b <= (slot + SbSlotSectors - 1) / BucketSectors; ++b) fixedBuckets.Add(b);
+        for (var b = slot / geometry.BucketSize; b <= (slot + SbSlotSectors - 1) / geometry.BucketSize; ++b) fixedBuckets.Add(b);
       var order = Enumerable.Range(0, (int)Math.Max(0, last - first)).Select(k => first + k).Where(b => !fixedBuckets.Contains(b));
       area[device] = new Queue<long>(atEnd ? order.Reverse() : order);
     }
     var copies = devices.DataReplicas;
     long[] NextBuckets() {
       // The first members (in index order) that still have room, one bucket on each.
-      var members = area.Where(a => a.Value.Count != 0).OrderBy(a => a.Key).Take(copies).ToArray();
+      var members = area.Where(a => a.Value.Count != 0).OrderByDescending(a => devices.DurabilityOf(a.Key)).ThenBy(a => a.Key).Take(copies).ToArray();
       if (members.Length < copies)
         throw new IOException($"bcachefs: the members' data areas do not hold the volume's data in {copies} copies.");
       return [.. members.Select(m => BcacheFsBucketId.Of(m.Key, m.Value.Dequeue()))];
@@ -929,13 +948,13 @@ internal static class BcacheFsInPlaceModifier {
       for (var done = 0; done < sectors;) {
         var piece = (int)Math.Min(pieceSectors, sectors - done);
         var encoded = BcacheFsExtentEncoder.Encode(live.AsSpan(done * SectorSize, piece * SectorSize), piece, model.DataOptions);
-        if (current == null || fill + encoded.RegionSectors > BucketSectors) {
+        if (current == null || fill + encoded.RegionSectors > Capacity(current)) {
           current = NextBuckets();
           fill = 0;
         }
         foreach (var copy in current) {
           var stream = devices[BcacheFsBucketId.Device(copy)];
-          stream.Position = (BcacheFsBucketId.Index(copy) * BucketSectors + fill) * SectorSize;
+          stream.Position = (BucketStart(copy) + fill) * SectorSize;
           stream.Write(encoded.Region, 0, encoded.RegionSectors * SectorSize);
           model.OccupiedBuckets.Add(copy);
         }
@@ -943,7 +962,7 @@ internal static class BcacheFsInPlaceModifier {
         encoded.Entry.CopyTo(value, 0);
         for (var c = 0; c < current.Length; ++c)
           BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(encoded.Entry.Length + 8 * c),
-            ExtentPointer(BcacheFsBucketId.Index(current[c]) * BucketSectors + fill, BcacheFsBucketId.Device(current[c]),
+            ExtentPointer(BucketStart(current[c]) + fill, BcacheFsBucketId.Device(current[c]),
               model.BucketStates.GetValueOrDefault(current[c]).Generation));
         fill += encoded.RegionSectors;
         done += piece;
@@ -1001,6 +1020,35 @@ internal static class BcacheFsInPlaceModifier {
     throw new InvalidDataException($"bcachefs extent at {extent.Position} has no copy on a supplied member.");
   }
 
+  /// <summary>The first sector of a bucket named across members.</summary>
+  private static long BucketStart(long bucket) => BcacheFsBucketId.Index(bucket) * BcacheFsBucketGeometry.SectorsOf(BcacheFsBucketId.Device(bucket));
+
+  /// <summary>How many sectors a run written to all of <paramref name="copies" /> may take: the smallest of their buckets.</summary>
+  private static int Capacity(long[] copies) => copies.Min(c => BcacheFsBucketGeometry.SectorsOf(BcacheFsBucketId.Device(c)));
+
+  /// <summary>
+  /// An extent (or <c>reflink_v</c>, after its refcount) without its cached pointers: copies a
+  /// cache member keeps for speed, not as one of the volume's copies, which bcachefs may discard.
+  /// A key with none is returned as it is.
+  /// </summary>
+  private static Key DropCachedCopies(Key key) {
+    var skip = key.Type == KeyReflinkV ? 8 : 0;
+    if (key.Type is not (KeyExtent or KeyReflinkV) || key.Value.Length <= skip
+        || !BcacheFsExtentCodec.TryParseEntries(key.Value.AsSpan(skip), out var entries, out _))
+      return key;
+    var kept = new List<byte>(key.Value[..skip]);
+    var dropped = false;
+    foreach (var entry in entries) {
+      if (entry.KnownType == BcacheFsExtentEntryType.Pointer
+          && (BinaryPrimitives.ReadUInt64LittleEndian(entry.RawBytes) & (1UL << 1)) != 0) {
+        dropped = true;
+        continue;
+      }
+      kept.AddRange(entry.RawBytes);
+    }
+    return dropped ? key with { Value = [.. kept] } : key;
+  }
+
   private static void AssignNewDirentOffsets(Model model) {
     var used = new Dictionary<ulong, HashSet<ulong>>();
     foreach (var dir in model.Directories.Values) {
@@ -1052,7 +1100,7 @@ internal static class BcacheFsInPlaceModifier {
     foreach (var file in model.Files.Values.Where(f => f.Pending != null)) {
       var remaining = file.Pending!.Length;
       while (remaining > 0) {
-        file.Pending.Buckets.Add(TakeCopies(free, copies) ?? throw new IOException(
+        file.Pending.Buckets.Add(TakeCopies(free, copies, model.Devices) ?? throw new IOException(
           $"bcachefs: not enough free buckets on {copies} member(s) for in-place write of '{file.Path}'."));
         remaining -= Math.Min((long)BucketBytes, remaining);
       }
@@ -1093,7 +1141,7 @@ internal static class BcacheFsInPlaceModifier {
         var sectors = BcacheFsBucketGeometry.RoundUpSectors(got);
         Array.Clear(buffer, got, sectors * SectorSize - got);
         var encoded = BcacheFsExtentEncoder.Encode(buffer.AsSpan(0, sectors * SectorSize), sectors, model.DataOptions);
-        if (fill + encoded.RegionSectors > BucketSectors) {
+        if (fill + encoded.RegionSectors > Capacity(pending.Buckets[bucketIndex])) {
           ++bucketIndex;
           fill = 0;
         }
@@ -1104,7 +1152,7 @@ internal static class BcacheFsInPlaceModifier {
         var copies = pending.Buckets[bucketIndex];
         foreach (var copy in copies) {
           var stream = model.Devices[BcacheFsBucketId.Device(copy)];
-          stream.Position = (BcacheFsBucketId.Index(copy) * BucketSectors + fill) * SectorSize;
+          stream.Position = (BucketStart(copy) + fill) * SectorSize;
           stream.Write(encoded.Region, 0, encoded.RegionSectors * SectorSize);
         }
 
@@ -1113,7 +1161,7 @@ internal static class BcacheFsInPlaceModifier {
         encoded.Entry.CopyTo(value, 0);
         for (var c = 0; c < copies.Length; ++c)
           BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(encoded.Entry.Length + 8 * c),
-            ExtentPointer(BcacheFsBucketId.Index(copies[c]) * BucketSectors + fill, BcacheFsBucketId.Device(copies[c]),
+            ExtentPointer(BucketStart(copies[c]) + fill, BcacheFsBucketId.Device(copies[c]),
               model.BucketStates.GetValueOrDefault(copies[c]).Generation));
         logicalSector += sectors;
         fill += encoded.RegionSectors;
@@ -1206,6 +1254,7 @@ internal static class BcacheFsInPlaceModifier {
     // them metadata only. Each node has a copy on as many members as the volume
     // keeps metadata replicas: a row of buckets, one per copy, holds one bucket's
     // worth of nodes.
+    // Members may differ in bucket size; a row holds as many nodes as its smallest bucket.
     var perBucket = BucketSectors / NodeSectors;
     var copies = devices.MetadataReplicas;
     var nodeCount = shapes.Values.Sum(s => s.Count);
@@ -1216,16 +1265,19 @@ internal static class BcacheFsInPlaceModifier {
 
     var free = new Dictionary<byte, Queue<long>>();
     foreach (var (device, geometry) in devices.Geometry)
-      if (devices.Allows(device, DataBtree))
+      if (devices.Allows(device, DataBtree) && devices.DurabilityOf(device) > 0)
         free[device] = new Queue<long>(MetadataCandidates(device, geometry, count, userBuckets, states));
 
     var slots = new List<long>();
     for (var row = 0; row < count; ++row) {
-      var buckets = TakeCopies(free, copies) ?? throw new NotSupportedException(
+      var buckets = TakeCopies(free, copies, devices) ?? throw new NotSupportedException(
         $"bcachefs metadata needs {count} free buckets on {copies} member(s); fewer are available.");
       for (var k = 0; k < perBucket; ++k)
-        foreach (var bucket in buckets)
-          slots.Add(BcacheFsBucketId.Of(BcacheFsBucketId.Device(bucket), BcacheFsBucketId.Index(bucket) * perBucket + k));
+        foreach (var bucket in buckets) {
+          var device = BcacheFsBucketId.Device(bucket);
+          var nodesInBucket = BcacheFsBucketGeometry.SectorsOf(device) / NodeSectors;
+          slots.Add(BcacheFsBucketId.Of(device, BcacheFsBucketId.Index(bucket) * nodesInBucket + k));
+        }
     }
     var queue = new Queue<long>(slots);
 
@@ -1242,14 +1294,15 @@ internal static class BcacheFsInPlaceModifier {
   /// </summary>
   private static IEnumerable<long> MetadataCandidates(byte device, BcacheFsAllocationBuilder.Geometry geometry, int count,
       IReadOnlySet<long> userBuckets, IReadOnlyDictionary<long, BcacheFsMetadataCommit.BucketState> states) {
-    var lastSbBucket = (geometry.DeviceSectors - SbSlotSectors) / BucketSectors;
+    var size = geometry.BucketSize;
+    var lastSbBucket = (geometry.DeviceSectors - SbSlotSectors) / size;
     // A volume bcachefs format laid out keeps its superblock slots and journal wherever it chose;
     // no node goes there.
     var fixedBuckets = new HashSet<long>();
     // Every bucket a slot touches, its last included where the slot ends inside one.
-    for (var b = 0L; b <= (PrimarySbSector + SbSlotSectors - 1) / BucketSectors; ++b) fixedBuckets.Add(b);
+    for (var b = 0L; b <= (PrimarySbSector + SbSlotSectors - 1) / size; ++b) fixedBuckets.Add(b);
     foreach (var slot in geometry.SuperblockSectors)
-      for (var b = slot / BucketSectors; b <= (slot + SbSlotSectors - 1) / BucketSectors; ++b) fixedBuckets.Add(b);
+      for (var b = slot / size; b <= (slot + SbSlotSectors - 1) / size; ++b) fixedBuckets.Add(b);
     foreach (var (start, journalCount) in geometry.JournalBuckets)
       for (var b = start; b < start + journalCount; ++b) fixedBuckets.Add(b);
     // The reservation first, and within it the buckets still at generation zero:
@@ -1458,7 +1511,8 @@ internal static class BcacheFsInPlaceModifier {
     foreach (var at in copies) {
       if (!devices.Streams.ContainsKey(at.Device))
         throw new InvalidDataException($"bcachefs extent at inode {extent.Position.Inode} points at member {at.Device}, which was not supplied.");
-      if (extent.Size == 0 || at.Sector / BucketSectors != (at.Sector + Math.Max(at.RegionSectors, at.DiskSectors) - 1) / BucketSectors)
+      var size = BcacheFsBucketGeometry.SectorsOf(at.Device);
+      if (extent.Size == 0 || at.Sector / size != (at.Sector + Math.Max(at.RegionSectors, at.DiskSectors) - 1) / size)
         throw new NotSupportedException(
           $"bcachefs extent at inode {extent.Position.Inode} crosses a bucket boundary, which no writer produces.");
     }

@@ -33,7 +33,13 @@ internal static class BcacheFsAllocationBuilder {
     IReadOnlyList<long> SuperblockSectors,
     IReadOnlyList<(long Start, long Count)> JournalBuckets) {
 
-    internal long Buckets => this.DeviceSectors / BucketSectors;
+    /// <summary>Sectors per bucket of this member, where members differ; zero for the volume's.</summary>
+    internal int MemberBucketSectors { get; init; }
+
+    /// <summary>Sectors per bucket of this member.</summary>
+    internal int BucketSize => this.MemberBucketSectors > 0 ? this.MemberBucketSectors : BucketSectors;
+
+    internal long Buckets => this.DeviceSectors / this.BucketSize;
   }
 
   /// <summary>
@@ -122,10 +128,11 @@ internal static class BcacheFsAllocationBuilder {
       if (!types.TryGetValue(device, out var type))
         throw new InvalidOperationException($"bcachefs pointer names member {device}, which this volume does not have.");
       var dirty = dirtyBy[device];
+      var size = devices[device].BucketSize;
       while (sectors > 0) {
-        var bucket = sector / BucketSectors;
+        var bucket = sector / size;
         if (bucket >= type.LongLength) return;
-        var inBucket = Math.Min(sectors, (bucket + 1) * BucketSectors - sector);
+        var inBucket = Math.Min(sectors, (bucket + 1) * size - sector);
         if (type[bucket] != DataFree && type[bucket] != dataType)
           throw new InvalidOperationException(
             $"bcachefs bucket {bucket} of member {device} would hold both data type {type[bucket]} and {dataType}.");
@@ -144,7 +151,7 @@ internal static class BcacheFsAllocationBuilder {
 
       // A journal bucket counts whole, written or not.
       foreach (var (start, count) in geometry.JournalBuckets)
-        for (var b = start; b < start + count; ++b) Mark(device, b * BucketSectors, BucketSectors, DataJournal);
+        for (var b = start; b < start + count; ++b) Mark(device, b * geometry.BucketSize, geometry.BucketSize, DataJournal);
     }
 
     // A node costs its whole node size whatever was written of it, and the pointer
@@ -193,6 +200,7 @@ internal static class BcacheFsAllocationBuilder {
       var type = types[device];
       var dirty = dirtyBy[device];
       var buckets = type.LongLength;
+      var size = devices[device].BucketSize;
       var deviceUsage = usage.Devices[device] = new Usage();
       Generation GenerationOf(long bucket) => generations.GetValueOrDefault(BcacheFsBucketId.Of(device, bucket));
       var runStart = -1L;
@@ -205,11 +213,11 @@ internal static class BcacheFsAllocationBuilder {
           var gen = GenerationOf(b);
           ++deviceUsage.Buckets[t];
           deviceUsage.Sectors[t] += dirty[b];
-          if (t != DataFree) deviceUsage.Fragmented[t] += (ulong)(BucketSectors - dirty[b]);
+          if (t != DataFree) deviceUsage.Fragmented[t] += (ulong)(size - dirty[b]);
 
           if (t != DataFree || gen.Gen != 0 || gen.Oldest != 0) {
-            var fragmentation = IsMovable(t) && dirty[b] < BucketSectors
-              ? ((ulong)dirty[b] << 31) / (ulong)BucketSectors
+            var fragmentation = IsMovable(t) && dirty[b] < size
+              ? ((ulong)dirty[b] << 31) / (ulong)size
               : 0;
             alloc.Add(AllocKey(b, t, dirty[b], gen, fragmentation, device));
             // An LRU entry names its bucket as one word: the member above bit 48. From 1.39
@@ -382,7 +390,7 @@ internal static class BcacheFsAllocationBuilder {
     value[0] = (byte)btree;
     value[1] = (byte)level;
     value[2] = dataType;
-    var bucketOffset = ((ulong)(sector % BucketSectors) << BackpointerShift) + (ulong)regionOffset;
+    var bucketOffset = ((ulong)(sector % BcacheFsBucketGeometry.SectorsOf(device)) << BackpointerShift) + (ulong)regionOffset;
     for (var i = 0; i < 5; ++i) value[3 + i] = (byte)(bucketOffset >> (8 * i));
     BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(8), (uint)sectors);
     WriteBpos(value.AsSpan(12), target);

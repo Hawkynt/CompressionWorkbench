@@ -13,12 +13,19 @@ namespace FileSystem.BcacheFs;
 /// </summary>
 internal static class BcacheFsBucketGeometry {
   private sealed record Units(int Bucket, int Block, int Node, Int128 TimeBase, uint TimePrecision, int MetadataReplicas,
-    ushort Version, int ExtentBpShift, ulong JournalSeq);
+    ushort Version, int ExtentBpShift, ulong JournalSeq, IReadOnlyDictionary<byte, int>? MemberBuckets);
 
   private static readonly AsyncLocal<Units?> Current = new();
 
-  /// <summary>Sectors per bucket in effect.</summary>
+  /// <summary>
+  /// Sectors per bucket in effect: the volume's, or where its members' buckets differ the
+  /// smallest of them (what one run of data may span on any member).
+  /// </summary>
   internal static int Sectors => Current.Value?.Bucket ?? BcacheFsFormat.WriterBucketSectors;
+
+  /// <summary>Sectors per bucket of member <paramref name="device" />: its own where members differ, else <see cref="Sectors" />.</summary>
+  internal static int SectorsOf(byte device)
+    => Current.Value?.MemberBuckets is { } members && members.TryGetValue(device, out var sectors) ? sectors : Sectors;
 
   /// <summary>Sectors per b-tree node in effect: the bucket size unless the volume says otherwise.</summary>
   internal static int NodeSectors => Current.Value?.Node ?? Sectors;
@@ -65,13 +72,16 @@ internal static class BcacheFsBucketGeometry {
   /// </summary>
   internal static IDisposable Use(int sectors, int blockSectors = 1, Int128? timeBase = null, uint? timePrecision = null,
       int? nodeSectors = null, int metadataReplicas = 1, ushort? version = null, int? extentBpShift = null,
-      ulong? journalSeq = null) {
+      ulong? journalSeq = null, IReadOnlyDictionary<byte, int>? memberBuckets = null) {
     if (metadataReplicas is < 1 or > 4)
       throw new NotSupportedException($"bcachefs: {metadataReplicas} metadata replicas is outside the 1 to 4 a volume can ask for.");
     if (sectors < 8 || (sectors & (sectors - 1)) != 0)
       throw new NotSupportedException($"bcachefs: a bucket of {sectors} sectors is not a power of two of at least one 4 KiB block.");
     if (blockSectors < 1 || (blockSectors & (blockSectors - 1)) != 0 || blockSectors > sectors)
       throw new NotSupportedException($"bcachefs: a block of {blockSectors} sectors is not a power of two within a {sectors}-sector bucket.");
+    foreach (var member in memberBuckets?.Values ?? [])
+      if (member < sectors || (member & (member - 1)) != 0)
+        throw new NotSupportedException($"bcachefs: a member bucket of {member} sectors is not a power of two of at least {sectors}.");
     var node = nodeSectors ?? sectors;
     if (node < blockSectors || (node & (node - 1)) != 0 || node > sectors)
       throw new NotSupportedException($"bcachefs: a b-tree node of {node} sectors is not a power of two between a block and a {sectors}-sector bucket.");
@@ -79,7 +89,7 @@ internal static class BcacheFsBucketGeometry {
     Current.Value = new Units(sectors, blockSectors, node, timeBase ?? 0,
       Math.Max(1u, timePrecision ?? BcacheFsFormat.TimePrecisionNanoseconds), metadataReplicas,
       version ?? BcacheFsFormat.Version, extentBpShift is > 0 ? extentBpShift.Value : BcacheFsFormat.BackpointerShift,
-      Math.Max(BcacheFsFormat.CleanJournalSeq, journalSeq ?? BcacheFsFormat.CleanJournalSeq));
+      Math.Max(BcacheFsFormat.CleanJournalSeq, journalSeq ?? BcacheFsFormat.CleanJournalSeq), memberBuckets);
     return new Restore(previous);
   }
 

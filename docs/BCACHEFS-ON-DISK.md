@@ -331,8 +331,7 @@ volume whose every tree it either carries or rebuilds:
   need_discard, LRU, backpointers;
 - refused with the reason: a volume not cleanly shut down, at a metadata version
   other than **1.3**, **1.4** or **1.39** (see *Editing 1.39*),
-  edited without every member supplied, whose members differ in bucket size, with
-  a member not read-write or counting as other than one copy, declaring replicas
+  edited without every member supplied, with a member not read-write, declaring replicas
   with a required count (`replicas_v1`), with keys in any other tree (quotas,
   stripes, logged ops …), or with an inode no directory reaches.
 
@@ -361,6 +360,17 @@ is). What changes against one device:
   calls a device whose superblock is newer than its member record says
   "split brain" and refuses to mount (measured).
 - A volume holding two copies of everything is read from either member alone.
+- Members may differ in bucket size (`bcachefs format --bucket=64k a.img
+  --bucket=128k b.img`): every allocation key, bucket number and data offset on a
+  member is in its own buckets; a data run is never longer than the smallest
+  bucket, metadata rows hold as many nodes as their smallest bucket, so a run or a
+  node fits whichever members its copies land on.
+- Members count by durability (`BCH_MEMBER_DURABILITY`, stored plus one): copies go
+  to the most durable members first and as few are written as make up the replicas
+  wanted — two copies wanted and a member of durability two: one copy, on it. A
+  cache member (durability zero) gets no copy of data or metadata, and the cached
+  pointers the kernel left on extents are dropped when the extents are carried (a
+  cache copy is one the volume may discard), so their buckets come back free.
 
 Defragmenting several members (`DefragmentVolume`) reads every live run (checksum
 verified, compression decoded) into a temporary staging file, then lays each file's
@@ -378,6 +388,14 @@ copies; refusals unchanged), the kernel round trips below (each volume gathered 
 the front and the back after the kernel and we wrote into it, fsck clean, the
 kernel's listing equal to ours after each), and a mirrored 1.39 volume gathered and
 checked by 1.39 fsck.
+
+Different bucket sizes and durabilities are proven the same way: fsck over all
+members after edits on 64k/128k members, three members of 64k/128k/256k with two
+copies, durability 2+1 with two copies, and a cache member; the copies checked
+key by key (one copy, on the durability-2 member; nothing on the cache member);
+mirrored 64k/128k and durability-2 volumes gathered; and the kernel mounting
+64k/128k, durability-2 and cache-member volumes it wrote into, after our edit,
+reading what we read.
 
 Proven for edits by `BcacheFsMultiDeviceTests` (fsck over
 all members after edits on two members with one copy, two with two copies, three

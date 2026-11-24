@@ -26,11 +26,17 @@ public sealed class BcacheFsMultiDeviceTests {
     try { Directory.Delete(this._tmpDir, recursive: true); } catch { /* best effort */ }
   }
 
+  /// <summary>
+  /// Formats one image per entry of <paramref name="sizes" />: a size, optionally followed by
+  /// <c>:</c> and options for that member alone (bcachefs format applies a device option to the
+  /// devices named after it).
+  /// </summary>
   private string[] Format(string options, params string[] sizes) {
     var paths = sizes.Select((_, i) => Path.Combine(this._tmpDir, $"member{i}.img")).ToArray();
     var wsl = paths.Select(FsInteropToolbox.WinToWsl).ToArray();
-    var truncate = string.Join(" && ", wsl.Select((p, i) => $"truncate -s {sizes[i]} {p}"));
-    var run = FsInteropToolbox.RunWsl($"{truncate} && bcachefs format -q {options} {string.Join(" ", wsl)}");
+    var truncate = string.Join(" && ", wsl.Select((p, i) => $"truncate -s {sizes[i].Split(':')[0]} {p}"));
+    var members = string.Join(" ", wsl.Select((p, i) => (sizes[i].Contains(':') ? sizes[i][(sizes[i].IndexOf(':') + 1)..] + " " : "") + p));
+    var run = FsInteropToolbox.RunWsl($"{truncate} && bcachefs format -q {options} {members}");
     Assert.That(run.ExitCode, Is.Zero, $"bcachefs format {options}: {run.StdOut}{run.StdErr}");
     return paths;
   }
@@ -73,6 +79,10 @@ public sealed class BcacheFsMultiDeviceTests {
   [TestCase("--replicas=2", "64M", "96M", TestName = "GivenTwoMembersTwoCopies_WhenEditedThroughBoth_ThenFsckIsCleanAndEveryFileReadsBack")]
   [TestCase("--replicas=2", "64M", "64M", "64M", TestName = "GivenThreeMembersTwoCopies_WhenEditedThroughAll_ThenFsckIsCleanAndEveryFileReadsBack")]
   [TestCase("--bucket=64k --btree_node_size=32k --replicas=2", "64M", "64M", TestName = "GivenSmallNodesOnTwoMembersTwoCopies_WhenEdited_ThenFsckIsClean")]
+  [TestCase("", "64M:--bucket=64k", "128M:--bucket=128k", TestName = "GivenMembersWithDifferentBuckets_WhenEdited_ThenFsckIsClean")]
+  [TestCase("--replicas=2", "64M:--bucket=64k", "128M:--bucket=128k", "128M:--bucket=256k", TestName = "GivenThreeMembersOfThreeBucketSizesTwoCopies_WhenEdited_ThenFsckIsClean")]
+  [TestCase("--replicas=2", "64M:--durability=2", "96M:--durability=1", TestName = "GivenADurabilityTwoMember_WhenEditedWithTwoCopiesWanted_ThenFsckIsClean")]
+  [TestCase("", "64M:--durability=0", "96M:--durability=1", TestName = "GivenACacheMember_WhenEdited_ThenFsckIsClean")]
   [Category("ExternalFsInterop")]
   public void FormattedMembersEdited(string options, params string[] sizes) {
     BcacheFsOracleGate.RequireBcachefsTools();
@@ -99,6 +109,8 @@ public sealed class BcacheFsMultiDeviceTests {
   [TestCase("", DefragMode.ConsolidateAtEnd, "64M", "96M", TestName = "GivenTwoMembersOneCopy_WhenConsolidatedAtEnd_ThenFsckIsClean")]
   [TestCase("--replicas=2", DefragMode.ConsolidateAtStart, "64M", "96M", TestName = "GivenTwoMirroredMembers_WhenConsolidated_ThenFsckIsClean")]
   [TestCase("--replicas=2", DefragMode.ConsolidateAtStart, "64M", "64M", "64M", TestName = "GivenThreeMembersTwoCopies_WhenConsolidated_ThenFsckIsClean")]
+  [TestCase("--replicas=2", DefragMode.ConsolidateAtStart, "64M:--bucket=64k", "128M:--bucket=128k", TestName = "GivenMirroredMembersWithDifferentBuckets_WhenConsolidated_ThenFsckIsClean")]
+  [TestCase("--replicas=2", DefragMode.ConsolidateAtEnd, "64M:--durability=2", "96M:--durability=1", TestName = "GivenADurabilityTwoMember_WhenConsolidated_ThenFsckIsClean")]
   [Category("ExternalFsInterop")]
   public void DefragmentMembers(string options, DefragMode mode, params string[] sizes) {
     BcacheFsOracleGate.RequireBcachefsTools();
@@ -121,6 +133,37 @@ public sealed class BcacheFsMultiDeviceTests {
       }
     } finally {
       foreach (var member in members) member.Dispose();
+    }
+    BcacheFsKernel.AssertFsckClean(paths);
+  }
+
+  /// <summary>
+  /// Where a copy goes by durability: two copies wanted and a member counting twice — one copy,
+  /// on it; a cache member (durability zero) — no copy of ours at all.
+  /// </summary>
+  [TestCase("--replicas=2", 0, 1, "64M:--durability=2", "96M:--durability=1", TestName = "GivenADurabilityTwoMember_WhenTwoCopiesAreWanted_ThenOneCopyOnItIsWritten")]
+  [TestCase("", 1, 1, "64M:--durability=0", "96M:--durability=1", TestName = "GivenACacheMember_WhenFilesAreAdded_ThenNoneOfTheirDataIsOnIt")]
+  [Category("ExternalFsInterop")]
+  public void CopiesFollowDurability(string options, int member, int copies, params string[] sizes) {
+    BcacheFsOracleGate.RequireBcachefsTools();
+    var paths = this.Format(options, sizes);
+    var members = paths.Select(p => (Stream)new FileStream(p, FileMode.Open, FileAccess.ReadWrite)).ToArray();
+    try {
+      new BcacheFsFormatDescriptor().AddToVolume(members, [ArchiveInputInfo.InMemory("d.bin", Payload(400_000, 9))]);
+      ulong inode;
+      using (var reader = new BcacheFsReader(members))
+        inode = reader.Entries.Single(e => e.Name == "d.bin").Inode;
+      foreach (var m in members) m.Position = 0;
+      var core = BcacheFsCoreVolume.Open(members);
+      var keys = BcacheFsBtreeReader.ReadTree(core, BcacheFsBtreeId.Extents).MaterializedLeafSlots
+        .Where(k => k.Position.Inode == inode && k.RawType == BcacheFsFormat.KeyExtent)
+        .Select(k => BcacheFsAllocationBuilder.Footprints(new BcacheFsFormat.Key(k.RawType, k.Position, k.Size, k.Value)))
+        .ToArray();
+      Assert.That(keys, Is.Not.Empty);
+      Assert.That(keys.All(copiesOf => copiesOf.Count == copies && copiesOf.All(c => c.Device == member)), Is.True,
+        $"every run has {copies} copy(ies), all on member {member}");
+    } finally {
+      foreach (var m in members) m.Dispose();
     }
     BcacheFsKernel.AssertFsckClean(paths);
   }
