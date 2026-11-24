@@ -95,6 +95,7 @@ internal static class BcacheFsInPlaceModifier {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(inputs);
     EnsureWritable(image);
+    using var buckets = UseVolumeBuckets(image);
 
     var model = ReadModel(image);
     foreach (var input in inputs) {
@@ -149,6 +150,7 @@ internal static class BcacheFsInPlaceModifier {
   internal static void Remove(Stream image, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(image);
     EnsureWritable(image);
+    using var buckets = UseVolumeBuckets(image);
     entryNames ??= [];
 
     var model = ReadModel(image);
@@ -195,6 +197,7 @@ internal static class BcacheFsInPlaceModifier {
   internal static void NormalizeMetadata(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     EnsureWritable(image);
+    using var buckets = UseVolumeBuckets(image);
     Commit(image, ReadModel(image));
   }
 
@@ -240,15 +243,58 @@ internal static class BcacheFsInPlaceModifier {
   /// other than this package's writer lays a device out (bucket size and journal),
   /// or holding keys in a tree it neither carries nor rebuilds.</para>
   /// </remarks>
-  internal static Dictionary<int, List<Key>> RequireWritableProfile(Stream image) {
+  internal static Dictionary<int, List<Key>> RequireWritableProfile(Stream image) => RequireWritableProfile(image, writerLayout: true);
+
+  /// <summary>
+  /// Works in the bucket size of the volume <paramref name="image" /> holds for as long as the
+  /// result is not disposed: an edit of a volume <c>bcachefs format</c> made writes its nodes,
+  /// allocation keys and data in that volume's buckets. A b-tree node size other than the bucket
+  /// size is refused, as each node this editor writes fills a bucket of its own.
+  /// </summary>
+  private static IDisposable UseVolumeBuckets(Stream image) {
+    image.Position = 0;
+    var core = BcacheFsCoreVolume.Open(image);
+    image.Position = 0;
+    if (core.Members.Count != 1) return BcacheFsBucketGeometry.Use(WriterBucketSectors);   // refused by the profile check
+    var bucket = core.Members[0].BucketSizeSectors;
+    var node = core.Superblock.BtreeNodeSectors;
+    if (node != bucket)
+      throw new NotSupportedException(
+        $"bcachefs: the volume's b-tree nodes are {node} sectors but its buckets {bucket}; an edit here writes one node per bucket.");
+    var raw = core.Superblock.RawBytes;
+    var timeBase = (Int128)BinaryPrimitives.ReadUInt64LittleEndian(raw.AsSpan(128))
+      | ((Int128)BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(136)) << 64);
+    var precision = BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(140));
+    return BcacheFsBucketGeometry.Use(bucket, core.Superblock.BlockSizeSectors, timeBase, precision);
+  }
+
+  /// <summary>
+  /// Whether the volume is laid out as this package's writer lays one out: 64 KiB buckets and the
+  /// journal in buckets 33 to 48. Defragmentation and metadata relocation move things within that
+  /// layout only; adds and removes work on any single-device layout.
+  /// </summary>
+  internal static void RequireWriterLayout(Stream image) {
+    image.Position = 0;
+    var core = BcacheFsCoreVolume.Open(image);
+    image.Position = 0;
+    var geometry = BcacheFsSuperblockEditor.ReadGeometry(image);
+    image.Position = 0;
+    if (core.Members.Count != 1 || core.Members[0].BucketSizeSectors != WriterBucketSectors
+        || geometry.JournalBuckets.Count != 1
+        || geometry.JournalBuckets[0] != (BcacheFsWriter.JournalFirstBucket, BcacheFsWriter.JournalBuckets))
+      throw new NotSupportedException(
+        "bcachefs: the volume is not laid out as this package's writer lays one out (64 KiB buckets, journal in buckets 33-48); "
+        + "defragmentation and metadata relocation are implemented for that layout only.");
+  }
+
+  internal static Dictionary<int, List<Key>> RequireWritableProfile(Stream image, bool writerLayout) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
     var core = BcacheFsCoreVolume.Open(image);
     if (!core.Recoverable)
       throw new InvalidDataException("bcachefs: the volume could not be recovered: " + string.Join("; ", core.Diagnostics));
 
-    const string profile = "in-place edits are implemented for single-device volumes laid out by this package's writer, "
-      + "at metadata version 1.3 or 1.4";
+    const string profile = "in-place edits are implemented for single-device volumes at metadata version 1.3 or 1.4";
     var version = core.Superblock.Version;
     if (version < BcacheFsFormat.Version || version > MaxEditableVersion)
       throw new NotSupportedException(
@@ -263,9 +309,9 @@ internal static class BcacheFsInPlaceModifier {
 
     image.Position = 0;
     var geometry = BcacheFsSuperblockEditor.ReadGeometry(image);
-    if (geometry.JournalBuckets.Count != 1
-        || geometry.JournalBuckets[0] != (BcacheFsWriter.JournalFirstBucket, BcacheFsWriter.JournalBuckets))
-      throw new NotSupportedException($"bcachefs: the journal is not where this package's writer puts it; {profile}.");
+    if (geometry.JournalBuckets.Count == 0)
+      throw new InvalidDataException("bcachefs: the superblock names no journal buckets.");
+    if (writerLayout) RequireWriterLayout(image);
 
     var trees = new Dictionary<int, List<Key>>();
     foreach (var id in BcacheFsOnDiskCatalog.KnownBtrees) {
@@ -288,7 +334,7 @@ internal static class BcacheFsInPlaceModifier {
   }
 
   private static Model ReadModel(Stream image) {
-    var trees = RequireWritableProfile(image);
+    var trees = RequireWritableProfile(image, writerLayout: false);
     image.Position = 0;
     var volume = BcacheFsVolume.Open(image);
     if (!volume.Valid)
@@ -534,6 +580,7 @@ internal static class BcacheFsInPlaceModifier {
   internal static void Canonicalize(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     EnsureWritable(image);
+    RequireWriterLayout(image);
     var model = ReadModel(image);
     if (model.Reflink.Count != 0)
       throw new NotSupportedException("bcachefs: the volume holds reflinked (shared) data, which is not moved into the writer's layout.");
@@ -749,23 +796,29 @@ internal static class BcacheFsInPlaceModifier {
           got += n;
         }
 
-        var sectors = (got + SectorSize - 1) / SectorSize;
+        var sectors = BcacheFsBucketGeometry.RoundUpSectors(got);
         Array.Clear(buffer, got, sectors * SectorSize - got);
         var bucket = pending.Buckets[bucketIndex++];
-        var firstSector = bucket * BucketSectors;
-        image.Position = firstSector * SectorSize;
+        var bucketSector = bucket * BucketSectors;
+        image.Position = bucketSector * SectorSize;
         image.Write(buffer, 0, sectors * SectorSize);
 
-        var checksum = DataChecksum(buffer.AsSpan(0, sectors * SectorSize));
-        var value = new byte[16];
-        BinaryPrimitives.WriteUInt64LittleEndian(value, ExtentCrc32(sectors, checksum));
-        BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8),
-          ExtentPointer(firstSector, generation: model.BucketStates.GetValueOrDefault(bucket).Generation));
-        file.FinalExtents.Add(new Key(KeyExtent,
-          new Bpos(file.Inode, (ulong)(logicalSector + sectors), SnapshotIdMax),
-          (uint)sectors, value));
+        // A bucket larger than a crc32 entry can describe (bcachefs format's 128 KiB
+        // default) holds its data as several back-to-back extents.
+        for (var done = 0; done < sectors;) {
+          var piece = Math.Min(MaxCrc32ExtentSectors, sectors - done);
+          var checksum = DataChecksum(buffer.AsSpan(done * SectorSize, piece * SectorSize));
+          var value = new byte[16];
+          BinaryPrimitives.WriteUInt64LittleEndian(value, ExtentCrc32(piece, checksum));
+          BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8),
+            ExtentPointer(bucketSector + done, generation: model.BucketStates.GetValueOrDefault(bucket).Generation));
+          logicalSector += piece;
+          done += piece;
+          file.FinalExtents.Add(new Key(KeyExtent,
+            new Bpos(file.Inode, (ulong)logicalSector, SnapshotIdMax),
+            (uint)piece, value));
+        }
 
-        logicalSector += sectors;
         remaining -= got;
       }
     }
@@ -812,7 +865,7 @@ internal static class BcacheFsInPlaceModifier {
 
     foreach (var file in model.Files.Values) {
       var parentInode = model.Directories[file.ParentPath].Inode;
-      var sectors = (ulong)((file.Length + SectorSize - 1) / SectorSize);
+      var sectors = (ulong)BcacheFsBucketGeometry.RoundUpSectors(file.Length);
       // A file whose bytes are untouched keeps its inode as it is: its sector count
       // is what its extents hold, which for a sparse file or inline data is not its
       // length rounded up.
@@ -851,12 +904,20 @@ internal static class BcacheFsInPlaceModifier {
         $"bcachefs metadata needs {count} buckets; an in-place commit budgets {MetadataBuckets}.");
 
     var lastSbBucket = (geometry.DeviceSectors - SbSlotSectors) / BucketSectors;
+    // A volume bcachefs format laid out keeps its superblock slots and journal wherever it chose;
+    // no node goes there.
+    var fixedBuckets = new HashSet<long>();
+    for (var sector = 0L; sector < PrimarySbSector + SbSlotSectors; sector += BucketSectors) fixedBuckets.Add(sector / BucketSectors);
+    foreach (var slot in geometry.SuperblockSectors)
+      for (var sector = slot; sector < slot + SbSlotSectors; sector += BucketSectors) fixedBuckets.Add(sector / BucketSectors);
+    foreach (var (start, journalCount) in geometry.JournalBuckets)
+      for (var b = start; b < start + journalCount; ++b) fixedBuckets.Add(b);
     // The reservation first, and within it the buckets still at generation zero:
     // a backpointer into a reused bucket is one a newer bcachefs throws away and
     // rebuilds when it upgrades the volume (see FreeDataBuckets).
     var candidates = new List<long>();
     for (var bucket = (long)FirstMetadataBucket; bucket < lastSbBucket; ++bucket) {
-      if (userBuckets.Contains(bucket)) continue;
+      if (userBuckets.Contains(bucket) || fixedBuckets.Contains(bucket)) continue;
       candidates.Add(bucket);
       if (!IsMetadataReservation(bucket) && candidates.Count >= count + MetadataBuckets) break;
     }

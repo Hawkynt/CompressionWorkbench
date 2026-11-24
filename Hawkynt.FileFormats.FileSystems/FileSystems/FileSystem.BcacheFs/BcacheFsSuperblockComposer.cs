@@ -139,7 +139,7 @@ internal static class BcacheFsSuperblockComposer {
     Set(0, 1, 2, 1);                     // clean
     Set(0, 2, 8, CsumTypeCrc32CNonzero); // superblock checksum
     Set(0, 8, 12, 1);                    // on error: go read-only
-    Set(0, 12, 28, BucketSectors);       // btree node size, in sectors
+    Set(0, 12, 28, (ulong)BucketSectors);       // btree node size, in sectors
     Set(0, 28, 33, 8);                   // gc reserve, per cent
     // These name a choice, not a function: "crc32c" is one option, and which of
     // the two crc32c variants it becomes depends on what is being summed.
@@ -179,7 +179,7 @@ internal static class BcacheFsSuperblockComposer {
     WriteGuid(member, d.MemberUuid);
     BinaryPrimitives.WriteUInt64LittleEndian(member[16..], (ulong)(d.DeviceSectors / BucketSectors));
     BinaryPrimitives.WriteUInt16LittleEndian(member[24..], 0);                 // first_bucket
-    BinaryPrimitives.WriteUInt16LittleEndian(member[26..], BucketSectors);
+    BinaryPrimitives.WriteUInt16LittleEndian(member[26..], (ushort)BucketSectors);
     // Read-write, journal/btree/user allowed, durability one — stored one higher
     // so that zero can mean the default — and freespace initialised, without which
     // the checker skips the freespace tree and a mount stops to build it.
@@ -333,7 +333,7 @@ internal static class BcacheFsSuperblockComposer {
     var entries = ShutdownEntries(roots, usage, inodes);
     var payload = entries.Sum(e => e.Length);
     const int header = 56;
-    var jset = new byte[(header + payload + SectorSize - 1) / SectorSize * SectorSize];
+    var jset = new byte[BcacheFsBucketGeometry.RoundUpSectors(header + payload) * SectorSize];
     BinaryPrimitives.WriteUInt64LittleEndian(jset.AsSpan(16), superblockMagic ^ JsetMagic);
     BinaryPrimitives.WriteUInt64LittleEndian(jset.AsSpan(24), CleanJournalSeq);
     BinaryPrimitives.WriteUInt32LittleEndian(jset.AsSpan(32), BcacheFsFormat.Version);

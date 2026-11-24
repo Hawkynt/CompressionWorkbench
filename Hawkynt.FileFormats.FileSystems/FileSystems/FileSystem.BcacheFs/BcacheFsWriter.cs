@@ -511,14 +511,19 @@ public sealed class BcacheFsWriter {
   }
 
   /// <summary>
-  /// A time in the units an inode stores it in: this writer's superblock says one
-  /// unit is 100 ns from a time base of zero, so a unit is exactly one .NET tick
-  /// since the Unix epoch, and a time before it is negative.
+  /// A time in the units an inode stores it in: a signed count of the superblock's
+  /// time precision from its time base. This writer's superblock says 100 ns from
+  /// zero, so a unit is exactly one .NET tick since the Unix epoch; a volume
+  /// <c>bcachefs format</c> made counts nanoseconds from when it was formatted
+  /// (see <see cref="BcacheFsBucketGeometry" />). A time between two units is
+  /// rounded down.
   /// </summary>
   internal static ulong ToBcacheTime(DateTimeOffset? time) {
     if (time is not { } value) return 0;
-    var ticks = checked(value.UtcTicks - DateTimeOffset.UnixEpoch.UtcTicks);
-    return unchecked((ulong)ticks);
+    var nanoseconds = (Int128)(value.UtcTicks - DateTimeOffset.UnixEpoch.UtcTicks) * 100 - BcacheFsBucketGeometry.TimeBase;
+    var precision = (Int128)BcacheFsBucketGeometry.TimePrecision;
+    var units = Int128.DivRem(nanoseconds, precision) is var (q, r) && r < 0 ? q - 1 : q;
+    return unchecked((ulong)checked((long)units));
   }
 
   /// <summary>

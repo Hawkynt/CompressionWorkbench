@@ -13,7 +13,7 @@ internal static class BcacheFsTreeLayout {
   /// as over-full — a newer bcachefs asserts on such a node the moment it inserts
   /// into it.
   /// </remarks>
-  internal const int NodeCapacity = BucketBytes - 8;
+  internal static int NodeCapacity => BucketBytes - 8;
 
   internal static IReadOnlyList<BcacheFsTreeNodeShape> DescribeNodes(int btree, IReadOnlyList<Key> keys) {
     var sorted = keys.OrderBy(k => k,

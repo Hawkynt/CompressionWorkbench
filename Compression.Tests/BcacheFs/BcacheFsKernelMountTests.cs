@@ -111,6 +111,8 @@ public sealed class BcacheFsKernelMountTests {
 
   private static string Hex(byte[] value) => "0x" + Convert.ToHexStringLower(value);
 
+  private static (long Seconds, int Nanos) Ticks((long Seconds, int Nanos) time) => (time.Seconds, time.Nanos / 100 * 100);
+
   /// <summary>The same view of a volume, taken by this package's reader.</summary>
   private static IReadOnlyDictionary<string, Node> ReadOurselves(string path) {
     using var image = File.OpenRead(path);
@@ -156,9 +158,11 @@ public sealed class BcacheFsKernelMountTests {
         if (k.Kind == 'f') Assert.That(o.Mode, Is.EqualTo(k.Mode), $"{name} mode");
         Assert.That(o.Uid, Is.EqualTo(k.Uid), $"{name} owner");
         Assert.That(o.Gid, Is.EqualTo(k.Gid), $"{name} group");
-        Assert.That(o.Atime, Is.EqualTo(k.Atime), $"{name} atime");
-        Assert.That(o.Mtime, Is.EqualTo(k.Mtime), $"{name} mtime");
-        Assert.That(o.Ctime, Is.EqualTo(k.Ctime), $"{name} ctime");
+        // Our reader's times are DateTimeOffsets, 100 ns apart; a volume bcachefs
+        // format made stores nanoseconds.
+        Assert.That(o.Atime, Is.EqualTo(Ticks(k.Atime)), $"{name} atime");
+        Assert.That(o.Mtime, Is.EqualTo(Ticks(k.Mtime)), $"{name} mtime");
+        Assert.That(o.Ctime, Is.EqualTo(Ticks(k.Ctime)), $"{name} ctime");
       }
     });
   }
@@ -441,6 +445,65 @@ public sealed class BcacheFsKernelMountTests {
       Assert.Throws<NotSupportedException>(() =>
         descriptor.Defragment(image, new DefragOptions { Mode = DefragMode.ConsolidateAtStart }));
     Assert.That(File.ReadAllBytes(path).SequenceEqual(before), Is.True, "a refused defragmentation changes nothing");
+  }
+
+  /// <summary>
+  /// A volume <c>bcachefs format</c> laid out (its bucket size, 4 KiB blocks, its journal) that the
+  /// kernel then wrote into: after we add files spanning several buckets, replace one of the
+  /// kernel's and remove another, fsck is clean, the kernel reads what we read, and the kernel can
+  /// keep writing into it.
+  /// </summary>
+  [TestCase("", TestName = "GivenADefaultFormatVolumeTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
+  [TestCase("--bucket=32k --btree_node_size=32k", TestName = "GivenA32KBucketVolumeTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
+  [TestCase("--bucket=256k --btree_node_size=256k", TestName = "GivenA256KBucketVolumeTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
+  [Category("RoundTrip")]
+  public void ForeignLayoutKernelRoundTrip(string formatOptions) {
+    BcacheFsKernel.Require();
+    var path = Path.Combine(this._tmpDir, "formatted.img");
+    var wsl = FsInteropToolbox.WinToWsl(path);
+    var format = FsInteropToolbox.RunWsl($"truncate -s 128M {wsl} && bcachefs format -q {formatOptions} {wsl}");
+    Assert.That(format.ExitCode, Is.Zero, format.StdOut + format.StdErr);
+    BcacheFsKernel.Session(path, """
+      set -e
+      cd /sysroot
+      mkdir -p kernel/deep
+      seq 1 60000 > kernel/deep/seq.txt
+      printf 'tiny' > kernel/tiny.txt
+      setfattr -n user.origin -v kernel kernel/tiny.txt
+      ln -s tiny.txt kernel/link
+      truncate -s 3M kernel/sparse.bin
+      printf 'tail' >> kernel/sparse.bin
+      head -c 500000 /dev/urandom > big.bin
+      sync
+      """);
+
+    var added = Payload(600_000, 41);
+    var replacement = Payload(70_000, 42);
+    var descriptor = new BcacheFsFormatDescriptor();
+    using (var image = new FileStream(path, FileMode.Open, FileAccess.ReadWrite)) {
+      descriptor.Add(image, [
+        ArchiveInputInfo.InMemory("ours/added.bin", added, new ArchiveEntryMetadata(LastAccessTimeUtc: When,
+          LastWriteTimeUtc: When.AddHours(1), StatusChangeTimeUtc: When.AddHours(2), UnixUserId: 501, UnixGroupId: 20, UnixMode: 0x180)),
+        ArchiveInputInfo.InMemory("kernel/tiny.txt", replacement),
+      ]);
+      image.Position = 0;
+      descriptor.Remove(image, ["kernel/deep/seq.txt"]);
+    }
+    BcacheFsKernel.AssertFsckClean(path);
+
+    var kernel = ParseListing(BcacheFsKernel.Session(path, ListingScript));
+    AssertSameTree(kernel, ReadOurselves(path));
+    Assert.Multiple(() => {
+      Assert.That(kernel.Keys, Does.Not.Contain("kernel/deep/seq.txt"));
+      Assert.That(kernel["ours/added.bin"].Content, Is.EqualTo(Convert.ToHexStringLower(SHA256.HashData(added))));
+      Assert.That(kernel["ours/added.bin"].Mtime, Is.EqualTo(Split(When.AddHours(1))), "times in the volume's own units");
+      Assert.That(kernel["ours/added.bin"].Atime, Is.EqualTo(Split(When)));
+      Assert.That(kernel["kernel/tiny.txt"].Content, Is.EqualTo(Convert.ToHexStringLower(SHA256.HashData(replacement))));
+    });
+
+    var again = ParseListing(BcacheFsKernel.Session(path, "set -e; cd /sysroot; seq 1 1000 > ours/after.txt; rm -f big.bin; sync\n" + ListingScript));
+    BcacheFsKernel.AssertFsckClean(path);
+    AssertSameTree(again, ReadOurselves(path));
   }
 }
 

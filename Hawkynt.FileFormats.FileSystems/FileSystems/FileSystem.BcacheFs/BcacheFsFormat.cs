@@ -27,10 +27,20 @@ internal static class BcacheFsFormat {
 
   internal const int SectorSize = 512;
 
-  /// <summary>Sectors per bucket, and therefore per b-tree node.</summary>
-  internal const int BucketSectors = 128;
+  /// <summary>Sectors per bucket this package's writer lays a device out with (64 KiB), and so per b-tree node.</summary>
+  internal const int WriterBucketSectors = 128;
 
-  internal const int BucketBytes = BucketSectors * SectorSize;
+  /// <summary>The most sectors one extent with a <c>bch_extent_crc32</c> entry can describe (7-bit size, stored minus one).</summary>
+  internal const int MaxCrc32ExtentSectors = 128;
+
+  /// <summary>
+  /// Sectors per bucket, and therefore per b-tree node, of the volume being written: the writer's
+  /// 64 KiB, or within <see cref="BcacheFsBucketGeometry.Use" /> the bucket size of the volume an
+  /// edit works on.
+  /// </summary>
+  internal static int BucketSectors => BcacheFsBucketGeometry.Sectors;
+
+  internal static int BucketBytes => BucketSectors * SectorSize;
 
   /// <summary>Where the primary superblock starts.</summary>
   internal const long PrimarySbSector = 8;
@@ -228,7 +238,7 @@ internal static class BcacheFsFormat {
   /// Where a volume's own structures end and its files may begin: the two front
   /// superblock slots, the journal, and one bucket for each b-tree.
   /// </summary>
-  internal const long MetadataEndBytes = (33L + 16 + 64) * BucketBytes;
+  internal static long MetadataEndBytes => (33L + 16 + 64) * BucketBytes;
 
   /// <summary>The root directory's inode number.</summary>
   internal const ulong RootInode = 4096;
@@ -473,9 +483,12 @@ internal static class BcacheFsFormat {
   /// <remarks>
   /// The sizes are stored one less than they are, so a one-sector extent records
   /// zero; the entry type is two, which is the second bit rather than the second
-  /// value.
+  /// value. Each size field is seven bits wide, so one such extent covers at most
+  /// <see cref="MaxCrc32ExtentSectors" />.
   /// </remarks>
   internal static ulong ExtentCrc32(int sectors, uint checksum) {
+    if (sectors is < 1 or > MaxCrc32ExtentSectors)
+      throw new ArgumentOutOfRangeException(nameof(sectors), sectors, "a crc32 extent entry holds 1 to 128 sectors.");
     var word = 2UL;                                   // entry type: crc32
     word |= (ulong)(sectors - 1) << 2;                // compressed size
     word |= (ulong)(sectors - 1) << 9;                // uncompressed size
