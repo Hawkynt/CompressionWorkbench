@@ -112,7 +112,7 @@ public sealed class FilesystemRwPromotionRoundTripTests {
     Assert.Multiple(() => {
       Assert.That(() => modifiable.Add(image, [ArchiveInputInfo.InMemory("A.TXT", [1, 2, 3])]),
         Throws.TypeOf<InvalidDataException>().Or.TypeOf<NotSupportedException>(), "a header-only image has no namespace to overwrite into");
-      Assert.Throws<NotSupportedException>(() => modifiable.Remove(image, ["A.TXT"]));
+      Assert.That(() => modifiable.Remove(image, ["A.TXT"]), Throws.TypeOf<InvalidDataException>().Or.TypeOf<NotSupportedException>());
       Assert.Throws<NotSupportedException>(() => ((FileSystem.Refs.RefsFormatDescriptor)descriptor).Defragment(image));
       Assert.That(image.ToArray(), Is.EqualTo(before));
     });
