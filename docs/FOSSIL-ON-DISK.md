@@ -76,14 +76,52 @@ contains `snapshot/YYYY/MMDD/HHMM`, whose sources carry the snapshot epoch.
 
 It reads the whole local tree, files and directories with modes, owners and mtimes,
 snapshots included. Entries must be active and of the right generation, every block must
-lie in the data partition, and nesting is bounded. A Venti score is refused, because there
-is no Venti here. `FossilWriter` writes fresh volumes (see *Writing*).
+lie in the data partition, and nesting is bounded. A Venti score is read from a Venti arena
+partition when one is given (`new FossilReader(volume, new VentiArenaStore(arenas))`, see
+*Venti* below) and refused otherwise. `FossilWriter` writes fresh volumes (see *Writing*).
 
 Checked against a volume formatted by `flfmt` from plan9port and filled by plan9port's
 `fossil` server over 9P. It holds a two-level pointer tree, nested and empty directories,
 and a snapshot taken before a rewrite. It reads back byte-identical to what that server
 returned. `flchk` was not usable as an oracle: without Venti it reports errors even on a
 freshly formatted volume.
+
+## Venti
+
+Venti is the content-addressed block store Fossil archives to: a block is named by the SHA-1
+of its bytes (its *score*) and stored once. Sources (rung 1): plan9port's Venti server
+(`src/cmd/venti/srv`: `conv.c`, `arenas.c`, `arena.c`, `unwhack.c`) and libventi (`dtype.c`,
+`zero.c`, `entry.c`, `root.c`), MIT like Fossil. All integers are big-endian.
+
+| Where | What |
+| --- | --- |
+| byte 262144 (`PartBlank`) | partition header: magic `0xa9e4a5e7`, version 3, block size, start of the first arena |
+| next block boundary after the 512-byte header | the arena map, text: a count, then `name<TAB>start<TAB>stop` per line |
+| each arena's first block | arena header: magic `0xd15c4ead`, version 4 or 5, name (64 bytes), block size, size, and (version 5) the arena's clump magic |
+| each arena's last block | trailer: magic `0xf2a14ead`, version, name, clump count, compressed count, times, (v5) clump magic, bytes used, uncompressed bytes, sealed; then optionally a second copy of the counters ("memstats", flagged by a 1) that is what the log really holds |
+| from the arena's second block | the clump log: a 38-byte header (clump magic, disk type, stored size, uncompressed size, score, encoding 1 plain / 2 whack, creator, time) and the data, clump after clump |
+
+The disk type is the old numbering (1 root, 2 directory, 3-9 pointer levels, 13 data) and maps
+to the client types (directory/data plus pointer depth, root 16). Whack is Venti's LZ77 coder
+(literals of 8 or 9 bits depending on the recent literal history, lengths in short and long
+codes, offsets in 16 classes up to 16 KiB). Blocks are stored with trailing zeros removed;
+reading one back extends a data or directory block with zeros and a pointer block with the
+empty block's score (`da39a3ee…`), which Venti answers without storing anything.
+
+`VentiArenaStore` scans every arena's clump log (the index sections are not needed), and
+every block it hands out is checked against its score. A vac root (300 bytes: version 2, name,
+type `vac`, the score of a directory block, the block size, the previous root) names a
+directory block of three entries — the root directory's entry stream, its meta stream, and
+the meta block naming the root — which is the same tree format Fossil uses, so the Fossil
+reader walks it (`FossilReader.OpenVac`). A Fossil archive adds one level of indirection
+(entry 0 holds the three). The `Venti` descriptor lists every vac root of a partition as a
+folder named by its score.
+
+Checked against an arena partition plan9port's `venti` filled from `vac` and from a Fossil
+server archiving a snapshot (`fsys main snap -a`), and a Fossil volume made with
+`flfmt -v <score>` from that archive, every block of which is on Venti: the vac tree reads to
+the bytes `unvac` extracts, the volume to what the Fossil server reads back over 9P, and every
+clump of the partition hashes to its score.
 
 ## Writing
 
