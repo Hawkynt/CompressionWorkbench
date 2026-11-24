@@ -6194,13 +6194,13 @@ Implements `IEquatable<FvHeader>`.
 
 ### Namespace `FileFormat.Uif`
 
-[`UifFormatDescriptor`](#uifformatdescriptor) · [`UifImage`](#uifimage) · [`UifImage.Block`](#uifimageblock)
+[`UifFormatDescriptor`](#uifformatdescriptor) · [`UifImage`](#uifimage) · [`UifImage.Block`](#uifimageblock) · [`UifImage.Part`](#uifimagepart) · [`UifImage.PartKind`](#uifimagepartkind) · [`UifImage.SourceKind`](#uifimagesourcekind) · [`UifWriter`](#uifwriter)
 
 #### `UifFormatDescriptor`
 
-MagicISO UIF (Universal Image Format) disc image. The `bbis` signature sits in the trailer, not at the start, so the image is found by its extension. Lists `metadata.ini` and `image.iso`. Read-only: no free tool writes UIF.
+MagicISO UIF (Universal Image Format) disc image. The `bbis` signature sits in the trailer, not at the start, so the image is found by its extension. An ISO image lists `metadata.ini` and `image.iso`; a mixed-mode image lists its raw image (.bin/.mdf/.img/.nrg) and the original descriptor (.cue/.mds/.ccd+.sub) under the names MagicISO stored. Password-protected images need the password. Creation writes a version-1 ISO image, optionally password-protected (WORM: no in-place edit).
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -6217,28 +6217,42 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes the one image file among the inputs (metadata.ini is skipped) as a version-1 ISO UIF. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `UifImage`
 
-A MagicISO UIF image. A 64-byte `bbis` trailer ends the file. It points at a `blhr` block table (zlib-compressed when flagged); each 24-byte entry places a run of sectors in the output and says how it is stored: copied, zero-filled or zlib-compressed. Layout in `docs/UIF-ON-DISK.md`. Only what real files proved is read. Version 1 and 2 images of type 8 (a plain ISO image) without encryption are read; LZMA-compressed version 3 images, mixed-mode images (type 9) and encrypted images are refused.
+A MagicISO UIF image. A 64-byte `bbis` trailer ends the file. It points at a `blhr` block table (zlib-compressed when flagged); each 24-byte entry places a run of sectors in the output and says how it is stored: copied, zero-filled or zlib-compressed. A mixed-mode image (type 9) follows the table with a `blms` track layout and a `blss` block holding the original cue/mds/ccd descriptor. A password-protected image puts a `bsdr` block (the DES-encrypted real trailer) in front of the table and DES-encrypts the table and every stored run. Layout in `docs/UIF-ON-DISK.md`. Only what real files proved is read: version 1 and 2, types 8 and 9, plain or password-protected. LZMA-compressed version 3/4 images and the two key-in-trailer encryptions are refused.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UifImage` | `UifImage()` |  |
 | `EntrySize` | `const int EntrySize` |  |
+| `MaxPasswordLength` | `const int MaxPasswordLength` | MagicISO takes at most 31 password characters. |
+| `PasswordBlockSize` | `const int PasswordBlockSize` | The `bsdr` block: signature, size, then the 64-byte encrypted trailer. |
 | `TrailerSize` | `const int TrailerSize` |  |
 | `Blocks` | `IReadOnlyList<Block> Blocks { get; }` |  |
+| `Descriptor` | `byte[] Descriptor { get; }` | The original descriptor bytes (type 9; for CloneCD both lengths, the .ccd and the .sub). |
 | `Hash` | `byte[] Hash { get; }` |  |
 | `ImageType` | `ushort ImageType { get; }` |  |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | True when the image is password-protected (a `bsdr` block). |
 | `LastDiff` | `uint LastDiff { get; }` |  |
 | `Length` | `ulong Length { get; }` | Bytes of the image: all sectors, less the unused tail of the last one when the trailer says so. |
+| `NeedsPassword` | `bool NeedsPassword { get; }` | True when the image is protected and no password was given: only the trailer is known. |
+| `Parts` | `IReadOnlyList<Part> Parts { get; }` |  |
 | `SectorSize` | `uint SectorSize { get; }` |  |
 | `Sectors` | `uint Sectors { get; }` |  |
+| `Source` | `SourceKind Source { get; }` |  |
+| `StoredDescriptorName` | `string StoredDescriptorName { get; }` |  |
+| `StoredImageName` | `string StoredImageName { get; }` | The original image and descriptor names MagicISO stored (type 9), or null. |
+| `TrackLayout` | `byte[] TrackLayout { get; }` | The decoded `blms` track layout (type 9). |
 | `Version` | `ushort Version { get; }` |  |
 | `CopyTo` | `void CopyTo(Stream file, Stream output)` | Writes the image: every block decoded into place, sectors no block covers left as zeros. |
-| `Read` | `static UifImage Read(Stream file)` |  |
+| `PartBytes` | `byte[] PartBytes(Part part)` | The bytes of a descriptor or subchannel part. |
+| `PasswordKey` | `static byte[] PasswordKey(string password)` | The 8-byte DES key of a password: its first 31 bytes, zero-padded to 32, summed as four little-endian 64-bit words. |
+| `Read` | `static UifImage Read(Stream file, string password = null)` |  |
 | `RenderMetadata` | `string RenderMetadata()` |  |
 
 #### `UifImage.Block`
@@ -6255,6 +6269,49 @@ Implements `IEquatable<Block>`.
 | `Sectors` | `uint Sectors { get; init; }` |  |
 | `StoredSize` | `uint StoredSize { get; init; }` |  |
 | `Type` | `uint Type { get; init; }` |  |
+
+#### `UifImage.Part`
+
+One file the image decodes to.
+
+Implements `IEquatable<Part>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Part` | `Part(string Name, long Size, PartKind Kind)` | One file the image decodes to. |
+| `Kind` | `PartKind Kind { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `UifImage.PartKind`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Image` | `0` |  |
+| `Descriptor` | `1` |  |
+| `Subchannel` | `2` |  |
+
+#### `UifImage.SourceKind`
+
+The image format a type-9 UIF was made from, as its `blss` block records it.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Iso` | `0` |  |
+| `Cue` | `1` |  |
+| `Mds` | `2` |  |
+| `Ccd` | `3` |  |
+| `Nrg` | `4` |  |
+
+#### `UifWriter`
+
+Writes a version-1, type-8 UIF (an ISO image) the way MagicISO 5.5 writes one: the image cut into 128-sector runs, all-zero sectors as zero-fill entries and everything else zlib-compressed, a zlib-compressed `blhr` table and a `bbis` trailer carrying the MD5 of everything before it. With a password the runs and the table are DES-encrypted and a `bsdr` block holds the encrypted trailer, as MagicISO's password protection does. uif2iso and MagicISO 5.5.281 both decode what this writes to the original image.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RunSectors` | `const int RunSectors` | MagicISO starts a new run at every 128th sector. |
+| `SectorSize` | `const int SectorSize` |  |
+| `Write` | `static void Write(Stream output, Stream image, long length, string password = null)` | Compresses `length` bytes of `image` into a UIF at `output`. |
 
 ### Namespace `FileFormat.Vdi`
 
