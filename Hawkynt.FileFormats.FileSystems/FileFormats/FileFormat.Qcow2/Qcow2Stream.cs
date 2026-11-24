@@ -32,12 +32,12 @@ public sealed class Qcow2Stream : Stream {
   private long _position;
 
   private Qcow2Stream(Stream backing, Qcow2Header header, bool leaveOpen, Stream? parent, Qcow2Encryption? encryption,
-      Stream? dataFile) {
+      Stream? dataFile, bool readOnly = false) {
     _backing = backing;
     _header = header;
     _clusterSize = header.ClusterSize;
     _l2Entries = header.L2Entries;
-    _writableProfile = backing.CanWrite && Qcow2Structures.IsWritableProfile(header, keyed: encryption != null)
+    _writableProfile = !readOnly && backing.CanWrite && Qcow2Structures.IsWritableProfile(header, keyed: encryption != null)
       && (dataFile?.CanWrite ?? true);
     _leaveOpen = leaveOpen;
     _parent = parent;
@@ -82,16 +82,57 @@ public sealed class Qcow2Stream : Stream {
   /// <exception cref="UnauthorizedAccessException">The image is encrypted and the password is missing or wrong.</exception>
   public static Qcow2Stream Open(Stream backing, string? password, bool leaveOpen = true) => Open(backing, password, leaveOpen, depth: 0);
 
-  private static Qcow2Stream Open(Stream backing, string? password, bool leaveOpen, int depth) {
+  /// <summary>
+  /// An internal snapshot of an image: its name, id and the size it reads at - the image's current
+  /// virtual size, past the snapshot's own tables zeros, as <c>qemu-img convert -l snapshot.name=</c> reads it.
+  /// </summary>
+  public readonly record struct Snapshot(string Name, string Id, long Size);
+
+  /// <summary>The image's internal snapshots, in table order (none for an image without any).</summary>
+  public static IReadOnlyList<Snapshot> ListSnapshots(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var header = Qcow2Structures.ReadHeader(image);
+    if (header.SnapshotCount == 0) return [];
+    return Qcow2Structures.ReadSnapshotTable(image, header).Snapshots
+      .Select(s => new Snapshot(s.Name, s.Id, header.VirtualSize)).ToArray();
+  }
+
+  /// <summary>
+  /// Opens the guest disk as the internal snapshot <paramref name="nameOrId"/> holds it, read-only:
+  /// the snapshot's own L1 table, everything else (backing file, encryption, data file) the image's.
+  /// </summary>
+  /// <exception cref="ArgumentException">No snapshot has that name or id.</exception>
+  public static Qcow2Stream OpenSnapshot(Stream image, string nameOrId, string? password = null, bool leaveOpen = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(nameOrId);
+    var header = Qcow2Structures.ReadHeader(image);
+    var snapshots = header.SnapshotCount == 0 ? new List<Qcow2Structures.Qcow2Snapshot>() : Qcow2Structures.ReadSnapshotTable(image, header).Snapshots;
+    var snapshot = snapshots.FirstOrDefault(s => s.Name == nameOrId);
+    if (snapshot.Name == null) snapshot = snapshots.FirstOrDefault(s => s.Id == nameOrId);
+    if (snapshot.Name == null)
+      throw new ArgumentException($"QCOW2: the image has no snapshot '{nameOrId}'.", nameof(nameOrId));
+    return Open(image, password, leaveOpen, depth: 0, snapshot);
+  }
+
+  /// <summary>Opens the snapshot at <paramref name="index"/> of the snapshot table, read-only (names may repeat).</summary>
+  internal static Qcow2Stream OpenSnapshotAt(Stream image, int index, string? password = null, bool leaveOpen = true) {
+    var header = Qcow2Structures.ReadHeader(image);
+    var snapshots = Qcow2Structures.ReadSnapshotTable(image, header).Snapshots;
+    return Open(image, password, leaveOpen, depth: 0, snapshots[index]);
+  }
+
+  private static Qcow2Stream Open(Stream backing, string? password, bool leaveOpen, int depth, Qcow2Structures.Qcow2Snapshot? snapshot = null) {
     ArgumentNullException.ThrowIfNull(backing);
     var header = Qcow2Structures.ReadHeader(backing);
     Qcow2Structures.ValidateReadableProfile(header);
+    if (snapshot is { } s)
+      header = header with { L1TableOffset = s.L1TableOffset, L1Size = s.L1Size };
     var encryption = header.CryptMethod != Qcow2Structures.CryptNone ? Qcow2Encryption.Open(backing, header, password) : null;
     Stream? parent = null;
     try {
       parent = header.HasBackingFile ? OpenBackingFile(backing, header, password, depth) : null;
       var dataFile = header.ExternalData ? OpenDataFile(backing, header) : null;
-      return new Qcow2Stream(backing, header, leaveOpen, parent, encryption, dataFile);
+      return new Qcow2Stream(backing, header, leaveOpen, parent, encryption, dataFile, readOnly: snapshot != null);
     } catch {
       parent?.Dispose();
       encryption?.Dispose();
