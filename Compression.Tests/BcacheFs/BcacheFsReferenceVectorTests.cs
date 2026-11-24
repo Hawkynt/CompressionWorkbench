@@ -162,32 +162,4 @@ public sealed class BcacheFsReferenceVectorTests {
       try { Directory.Delete(output, true); } catch { /* best effort */ }
     }
   }
-
-  /// <summary>
-  /// The v1.39 volume is newer than the metadata an edit here re-publishes (1.4), so every edit is
-  /// refused. (The 1.3 volume bcachefs format made is edited; see <see cref="BcacheFsForeignLayoutTests" />.)
-  /// </summary>
-  [Test, Category("ErrorHandling")]
-  [TestCase(Populated)]
-  public void GivenAVolumeTheToolsWrote_WhenEditedInPlace_ThenTheEditIsRefusedAndNothingIsWritten(string name) {
-    var descriptor = new BcacheFsFormatDescriptor();
-    using var image = Image(name);
-    var before = image.ToArray();
-
-    Assert.Multiple(() => {
-      Assert.Throws<NotSupportedException>(() => {
-        image.Position = 0;
-        descriptor.Add(image, [ArchiveInputInfo.InMemory("new.txt", "x"u8.ToArray())]);
-      });
-      Assert.Throws<NotSupportedException>(() => {
-        image.Position = 0;
-        descriptor.Remove(image, ["hello.txt"]);
-      });
-      Assert.Throws<NotSupportedException>(() => {
-        image.Position = 0;
-        descriptor.Defragment(image, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
-      });
-    });
-    Assert.That(image.ToArray(), Is.EqualTo(before), "a refused edit must leave the volume exactly as it was");
-  }
 }

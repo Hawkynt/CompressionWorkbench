@@ -24,13 +24,13 @@ internal static class BcacheFsMetadataCommit {
   /// <summary>The order trees are laid down in, and the trees this profile owns.</summary>
   internal static readonly int[] TreeOrder = [
     BtreeExtents, BtreeInodes, BtreeDirents, BtreeXattrs, BtreeReflink,
-    BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees,
-    BtreeAlloc, BtreeBucketGens, BtreeFreespace, BtreeLru, BtreeBackpointers,
+    BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees, BtreeLoggedOps, BtreeSubvolumeChildren,
+    BtreeAlloc, BtreeBucketGens, BtreeFreespace, BtreeLru, BtreeBackpointers, BtreeAccounting,
   ];
 
-  /// <summary>The trees whose contents are derived rather than carried.</summary>
+  /// <summary>The trees whose contents are derived rather than carried (the accounting tree from 1.39).</summary>
   internal static readonly int[] DerivedTrees = [
-    BtreeAlloc, BtreeBucketGens, BtreeFreespace, BtreeLru, BtreeBackpointers,
+    BtreeAlloc, BtreeBucketGens, BtreeFreespace, BtreeLru, BtreeBackpointers, BtreeAccounting,
   ];
 
   /// <summary>A bucket as it was before this commit: its generations and what it held.</summary>
@@ -51,7 +51,10 @@ internal static class BcacheFsMetadataCommit {
     BcacheFsAllocationBuilder.VolumeUsage Usage,
     ulong Inodes,
     IReadOnlyDictionary<long, BucketState> FinalStates,
-    IReadOnlySet<long> MetadataBuckets);
+    IReadOnlySet<long> MetadataBuckets) {
+    /// <summary>Every copy of every node the generation wrote, by member and sector.</summary>
+    internal IReadOnlyList<BcacheFsAllocationBuilder.Node> Nodes { get; init; } = [];
+  }
 
   /// <summary>
   /// Lays out, derives and writes every tree, and returns what the superblock's
@@ -106,6 +109,7 @@ internal static class BcacheFsMetadataCommit {
     Dictionary<long, BucketState> final = [];
 
     var history = new List<string>();
+    List<BcacheFsAllocationBuilder.Node> placedNodes = [];
     // Buckets offered to the new generation at any attempt. One of them left empty
     // by the final layout keeps its generation: bumping it would add a bucket_gens
     // key, which can add a node, which takes the bucket back - a layout that never
@@ -118,7 +122,7 @@ internal static class BcacheFsMetadataCommit {
 
       placement = place(shapes);
       foreach (var slots in placement.Values) offered.UnionWith(slots.Select(BucketOfSlot));
-      var nodes = new List<BcacheFsAllocationBuilder.Node>();
+      var nodes = placedNodes = [];
       foreach (var (id, treeShapes) in shapes) {
         var slots = placement[id];
         if (slots.Length != treeShapes.Count * copies)
@@ -157,6 +161,9 @@ internal static class BcacheFsMetadataCommit {
       trees[BtreeLru] = derived.Lru;
       trees[BtreeBackpointers] = derived.Backpointers;
       trees[BtreeBucketGens] = derived.BucketGens;
+      // From 1.39 the space accounts are keys of their own tree, which counts its own nodes too.
+      if (BcacheFsBucketGeometry.Accounting)
+        trees[BtreeAccounting] = BcacheFsAccounting.Build(derived.Usage, nodes, trees);
 
       var next = Describe();
       history.Add(string.Join(",", next.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value.Count}"))
@@ -180,7 +187,7 @@ internal static class BcacheFsMetadataCommit {
     }
 
     var inodes = (ulong)trees[BtreeInodes].Count(k => k.Type == KeyInodeV3);
-    return new Published(roots, derived.Usage, inodes, final, metadataBuckets);
+    return new Published(roots, derived.Usage, inodes, final, metadataBuckets) { Nodes = placedNodes };
   }
 
   private static long BucketOfSlot(long slot)

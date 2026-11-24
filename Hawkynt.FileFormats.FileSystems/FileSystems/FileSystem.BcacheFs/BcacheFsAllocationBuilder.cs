@@ -154,7 +154,7 @@ internal static class BcacheFsAllocationBuilder {
       foreach (var node in copies) {
         Mark(node.Device, node.Sector, NodeSectors, DataBtree);
         backpointers.Add(BackpointerKey(node.Sector, node.Btree, node.Level + 1, DataBtree, NodeSectors, node.MaxKey,
-          device: node.Device));
+          device: node.Device, bucketGen: generations.GetValueOrDefault(BcacheFsBucketId.OfSector(node.Device, node.Sector)).Gen));
       }
       usage.Add(new ReplicaSet(DataBtree, [.. copies.Select(n => n.Device).Distinct().Order()]),
         (ulong)NodeSectors * (ulong)copies.Count());
@@ -170,7 +170,8 @@ internal static class BcacheFsAllocationBuilder {
       if (copies.Count == 0) return;
       foreach (var at in copies) {
         Mark(at.Device, at.Sector, at.DiskSectors, DataUser);
-        backpointers.Add(BackpointerKey(at.Sector, btree, 0, DataUser, at.DiskSectors, target, at.RegionOffset, at.Device));
+        backpointers.Add(BackpointerKey(at.Sector, btree, 0, DataUser, at.DiskSectors, target, at.RegionOffset, at.Device,
+          generations.GetValueOrDefault(BcacheFsBucketId.OfSector(at.Device, at.Sector)).Gen));
       }
       usage.Add(new ReplicaSet(DataUser, [.. copies.Select(c => c.Device).Distinct().Order()]),
         (ulong)copies.Sum(c => (long)c.DiskSectors));
@@ -211,9 +212,11 @@ internal static class BcacheFsAllocationBuilder {
               ? ((ulong)dirty[b] << 31) / (ulong)BucketSectors
               : 0;
             alloc.Add(AllocKey(b, t, dirty[b], gen, fragmentation, device));
-            // An LRU entry names its bucket as one word: the member above bit 48.
+            // An LRU entry names its bucket as one word: the member above bit 48. From 1.39
+            // each member has a fragmentation LRU of its own.
+            var lruId = BcacheFsBucketGeometry.Accounting ? LruBucketFragmentationStart + device : LruFragmentationId;
             if (fragmentation != 0)
-              lru.Add(new Key(KeySet, new Bpos((LruFragmentationId << LruTimeBits) | fragmentation,
+              lru.Add(new Key(KeySet, new Bpos((lruId << LruTimeBits) | fragmentation,
                 (ulong)BcacheFsBucketId.Of(device, b), 0), 0, []));
           }
         }
@@ -333,8 +336,11 @@ internal static class BcacheFsAllocationBuilder {
   /// need_discard, since that makes its data type need_discard rather than free.
   /// </remarks>
   internal static Key AllocKey(long bucket, byte dataType, uint dirtySectors, Generation gen, ulong fragmentation, byte device = 0) {
-    var value = new byte[AllocV4Bytes];
-    var flags = (uint)AllocV4U64s << 2;                                       // backpointers_start
+    // 1.39 drops the stored fragmentation word for journal_seq_empty and adds stripe_sectors;
+    // the LRU entry is computed from dirty_sectors instead.
+    var modern = BcacheFsBucketGeometry.Accounting;
+    var value = new byte[modern ? AllocV4BytesV139 : AllocV4Bytes];
+    var flags = (uint)(value.Length / 8) << 2;                                // backpointers_start
     if (dataType != DataFree) flags |= 0b11;                                  // need_discard, need_inc_gen
     BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(8), flags);
     value[12] = gen.Gen;
@@ -345,7 +351,7 @@ internal static class BcacheFsAllocationBuilder {
       BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(24), 1);          // io_time[READ]
       BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(32), 1);          // io_time[WRITE]
     }
-    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(48), fragmentation);
+    if (!modern) BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(48), fragmentation);
     return new Key(KeyAllocV4, new Bpos(device, (ulong)bucket, 0), 0, value);
   }
 
@@ -359,8 +365,20 @@ internal static class BcacheFsAllocationBuilder {
   /// it covers, and the position of the key that holds it.
   /// </remarks>
   internal static Key BackpointerKey(long sector, int btree, int level, byte dataType, int sectors, Bpos target,
-      int regionOffset = 0, byte device = 0) {
+      int regionOffset = 0, byte device = 0, byte bucketGen = 0) {
     var value = new byte[32];
+    if (BcacheFsBucketGeometry.Accounting) {
+      // 1.14 on: the bucket's generation where 1.3 kept the offset into the bucket, then flags,
+      // then the length; the key shifts the sector by the superblock's extent_bp_shift.
+      value[0] = (byte)btree;
+      value[1] = (byte)level;
+      value[2] = dataType;
+      value[3] = bucketGen;
+      BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(8), (uint)sectors);
+      WriteBpos(value.AsSpan(12), target);
+      return new Key(KeyBackpointer,
+        new Bpos(device, ((ulong)sector << BcacheFsBucketGeometry.ExtentBpShift) + (ulong)regionOffset, 0), 0, value);
+    }
     value[0] = (byte)btree;
     value[1] = (byte)level;
     value[2] = dataType;

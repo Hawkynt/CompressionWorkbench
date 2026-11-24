@@ -329,7 +329,8 @@ volume whose every tree it either carries or rebuilds:
   snapshots, snapshot trees;
 - rebuilt from what occupies the device: alloc, bucket_gens, freespace,
   need_discard, LRU, backpointers;
-- refused with the reason: a volume not cleanly shut down, newer than **1.4**,
+- refused with the reason: a volume not cleanly shut down, at a metadata version
+  other than **1.3**, **1.4** or **1.39** (see *Editing 1.39*),
   edited without every member supplied, whose members differ in bucket size, with
   a member not read-write or counting as other than one copy, declaring replicas
   with a required count (`replicas_v1`), with keys in any other tree (quotas,
@@ -417,6 +418,58 @@ by copying the live bytes of every other extent into a bucket of its own with a
 fresh crc32c; holes stay holes, inline data stays inline, and a compressed or
 encrypted extent, or one longer than a crc32 entry holds, is refused rather than
 decoded or split, before anything is written.
+
+## Editing 1.39
+
+A volume bcachefs-tools 1.39.6 wrote (metadata version 1.39,
+`per_dev_fragmentation_lru`) is edited with its derived trees and superblock rebuilt
+by that version's rules, measured with its `bcachefs list` / `show-super` and taken
+as layouts from its format headers (constants only):
+
+- **Accounting tree** (id 20) instead of the superblock's usage entries: a
+  `KEY_TYPE_accounting` (34) per account, positioned at its `disk_accounting_pos`
+  (type byte, then the type's packed fields) read as one 20-byte big-endian number
+  over inode, offset and snapshot. Kept: `nr_inodes`; `replicas` (b-tree and user
+  sets, sectors of every copy); `dev_data_type` (buckets, live sectors,
+  fragmentation per member and type); `snapshot` (per snapshot id and extents /
+  inodes / dirents / xattrs: keys, their bytes, data sectors); `btree` (node
+  sectors of every copy, nodes, interior nodes); `inum` (per inode: extents, their
+  size, on-disk sectors); `compression` (per type, "incompressible" included:
+  extents, size, compressed size). A key whose counters are all zero is left out.
+  The tree counts its own nodes, so it is part of the layout's fixed point.
+- **alloc_v4** is eight words: `journal_seq_empty` and `stripe_sectors` replace the
+  stored fragmentation, `backpointers_start` is 8.
+- **Fragmentation LRU** per member: id `8192 + member`, time the fragmentation.
+- **Backpointers** carry the bucket's generation and a flags word; the key shifts
+  the sector by `BCH_SB_EXTENT_BP_SHIFT` (`flags[6]` bits 40–47; 16 on a volume
+  1.39 formats, 10 when zero).
+- **Superblock**: `replicas_v0` declares b-tree sets only (1.36,
+  `no_sb_user_data_replicas`); the clean section and the shutdown journal entry
+  carry the key version, the clocks and the roots, nothing else; each member's
+  `btree_allocated_bitmap` gets the regions holding the new nodes (widened when a
+  node lies past what 64 bits of `btree_bitmap_shift` cover); bsets and the jset
+  say 1.39.
+- **Journal sequence** goes on from the volume's last one: an inode records the
+  sequence it was written at, and fsck calls one from a later sequence "in the
+  future".
+- Carried as they are: `logged_ops` (the inode allocation cursor; any other logged
+  operation, one a crash left to resume, is refused) and `subvolume_children`.
+
+Refused, before anything is written: reservations (their 1.39 accounting is per
+replica count), pending reconcile work (`bcachefs format --source` with two copies
+leaves some), and **adding data** to a volume asking for compression, background
+compression, a data checksum other than crc32c, erasure coding or a target — from
+1.33 an extent not matching the volume's options carries a reconcile entry, which
+this does not write. Removing files from such a volume works; its own compressed
+and incompressible extents are accounted.
+
+Proof is 1.39's own `fsck -n` (a 6.8 kernel stops at 1.4), with the tool named in
+`CWB_BCACHEFS_EXTRA`: `BcacheFs139EditTests` edits a populated 1.39 volume, an
+empty one with 128 KiB buckets, an empty mirrored one on two members and the
+checked-in 1.39 reference volume, each fsck-clean afterwards; removes a file from
+an lz4 volume (fsck-clean) and refuses adding to it unchanged; refuses a volume
+with pending reconcile work unchanged. The checked-in 1.39 reference volumes are
+edited (or, compressed, have a file removed) and read back everywhere.
 
 ## Upgrading past 1.14
 
