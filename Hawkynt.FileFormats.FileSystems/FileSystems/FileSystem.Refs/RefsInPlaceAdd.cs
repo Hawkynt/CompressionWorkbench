@@ -8,8 +8,8 @@ namespace FileSystem.Refs;
 /// measured by having Windows add a file: a name row (type 0x30, kind 1) whose value is the same
 /// record an existing file of the directory holds, with its timestamps, sizes, file number
 /// (value+0x80) and one extent for a newly allocated run; a file-number row (type 0x20, see
-/// <see cref="RefsDirectoryRows"/>); and, on ReFS 3.7, the directory header's last file number
-/// (type 0x10, value+0x80) advanced. The data goes into a free run of the allocator row that
+/// <see cref="RefsDirectoryRows"/>); the directory's last file number advanced in its object-table
+/// row and, on ReFS 3.7, in its header (type 0x10, value+0x80). The data goes into a free run of the allocator row that
 /// holds the template file's clusters. Every page-reference checksum up to the checkpoint is
 /// refreshed.
 /// </summary>
@@ -33,7 +33,7 @@ internal static class RefsInPlaceAdd {
     if (data.Length == 0) throw new NotSupportedException("ReFS: empty files are not added in place.");
 
     var metadata = RefsMetadataReader.Open(image);
-    var root = RefsInPlaceRename.ResolveDirectoryRoot(metadata, parent);
+    var (directoryOid, root) = RefsInPlaceRename.ResolveDirectory(metadata, parent);
     var rows = metadata.WalkTree(root, virtualAddresses: true).ToList();
     var page = rows.Count > 0 ? rows[0].PhysicalPageLcn : 0;
     if (rows.Count == 0 || rows.Any(r => r.PhysicalPageLcn != page) || metadata.TranslateVirtualLcn(root.Lcns[0]) != page)
@@ -90,7 +90,16 @@ internal static class RefsInPlaceAdd {
       ? BinaryPrimitives.ReadUInt64LittleEndian(header.Value.AsSpan(0x80)) : 0UL;
     var highest = rows.Where(static r => BinaryPrimitives.ReadUInt16LittleEndian(r.Key) == 0x20 && r.Key.Length >= 16)
       .Select(static r => BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(8))).DefaultIfEmpty(0UL).Max();
-    var fileNumber = Math.Max(counter, highest) + 1;
+    // The directory's object-table row keeps the same counter (RefsDirectoryRows.ObjectRow);
+    // it must agree with the rows, or the directory is not one this editor understands.
+    var objectRow = RefsDirectoryRows.ObjectRow(metadata, directoryOid)
+      ?? throw new NotSupportedException("ReFS: the directory's object-table row was not found.");
+    var objectCounter = BinaryPrimitives.ReadUInt64LittleEndian(objectRow.Row.Value.AsSpan(objectRow.CounterOffset));
+    if (objectCounter < highest || (counter > 0 && objectCounter != counter))
+      throw new NotSupportedException("ReFS: the directory's file-number counters disagree; it is not added to.");
+    var fileNumber = Math.Max(Math.Max(counter, highest), objectCounter) + 1;
+    var objectValue = objectRow.Row.Value.ToArray();
+    BinaryPrimitives.WriteUInt64LittleEndian(objectValue.AsSpan(objectRow.CounterOffset), fileNumber);
 
     var value = t.Row.Value.ToArray();
     var now = (ulong)DateTime.UtcNow.ToFileTimeUtc();
@@ -125,6 +134,9 @@ internal static class RefsInPlaceAdd {
     var idPosition = current.Count(r => collation.Compare(r.Key, idKey) < 0);
     RefsPageEditor.InsertRow(graph, page, idPosition, idKey, idValue, templateId?.Flags ?? 0);
     if (headerValue is not null) RefsPageEditor.ReplaceValue(graph, header!, headerValue);
-    graph.RefreshChecksumPaths([page]);
+    var objectPage = RefsPageEditor.ReplaceValue(graph, objectRow.Row, objectValue);
+    // The object-table page was repacked, so the offsets of the page references it holds moved:
+    // the checksums are refreshed through a graph built from the volume as it now is.
+    new RefsMetadataGraph(image, RefsMetadataReader.Open(image)).RefreshChecksumPaths([page, objectPage]);
   }
 }

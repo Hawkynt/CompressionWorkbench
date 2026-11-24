@@ -39,7 +39,7 @@ nothing else. Windows Server 2022 and 2025, at 4 KiB and 64 KiB clusters, mount 
 read-only and read-write, hash the file as written, pass `refsutil salvage -QS` and log no ReFS
 error. On the integrity-stream volumes the overwrite is refused and the image is left unchanged.
 
-Later runs (45433556177, 45441757023, 45447908924, 45479960118, 45485070018, 45495972996, 45498729400) judged the edits made in place the same way:
+Later runs (45433556177, 45441757023, 45447908924, 45479960118, 45485070018, 45495972996, 45498729400, 45506225287) judged the edits made in place the same way:
 
 | Edit | 3.7 4 KiB | 3.7 64 KiB | 3.7 integrity | 3.14 4 KiB | 3.14 64 KiB | 3.14 integrity |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -47,7 +47,7 @@ Later runs (45433556177, 45441757023, 45447908924, 45479960118, 45485070018, 454
 | Rename (also to a longer name) | accepted | accepted | accepted | accepted | accepted | accepted |
 | Rename to a non-ASCII name | accepted | accepted | not run | accepted | accepted | not run |
 | Add a new file | accepted | accepted | refused (no plain template) | accepted | refused (allocator) | refused (no plain template) |
-| Add a directory | refused | refused | refused | refused | refused | refused |
+| Add a directory | accepted | accepted | refused (no matching template) | refused (3.14 records) | refused | refused |
 | Remove | accepted | accepted | accepted | accepted | refused (Windows did not mount it) | accepted |
 | Replace, longer (new run) | accepted | accepted | refused | refused (leaf full) | refused | refused |
 | Replace, slightly longer (run extended) | accepted | accepted | refused | refused | refused | refused |

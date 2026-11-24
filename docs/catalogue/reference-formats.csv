@@ -477,7 +477,7 @@ OS-9 RBF,os9;rbf,filesystem,,,,,,,Y,,1,,Os9Rbf,Y,Y,Y,OK,,
 Amiga PFS,pfs;pfs2;pfs3,filesystem,,,,,,,Y,,1,,AmigaPfs,Y,Y,Y,OK,,
 ProDOS,po,filesystem,,,,,,,Y,,1,,ProDos,Y,Y,Y,OK,,140 KB DOS-order (.dsk/.do) images are read but not edited
 QNX4 FS,qnx4;qnx4fs,filesystem,,,,,,,Y,,1,,Qnx4,Y,Y,Y,OK,,
-ReFS,refs,filesystem,,,,,,,Y,,1,,Refs,Y,,Y,PARTIAL,format /fs:refs (Windows),"read checked file for file against volumes Windows Server 2022 (ReFS 3.7) and 2025 (ReFS 3.14) formatted; in place overwrite, length-changing replace, rename (any Unicode name), remove and adding files held in their directory row, each mounted read-only and read-write and hashed by Windows 2022/2025 (tools/foreign-os-oracles); creating directories and defragmenting refused"
+ReFS,refs,filesystem,,,,,,,Y,,1,,Refs,Y,,Y,PARTIAL,format /fs:refs (Windows),"read checked file for file against volumes Windows Server 2022 (ReFS 3.7) and 2025 (ReFS 3.14) formatted; in place overwrite, length-changing replace, rename (any Unicode name), remove and adding files held in their directory row and creating directories (3.7), each mounted read-only and read-write and hashed by Windows 2022/2025 (tools/foreign-os-oracles); defragmenting refused"
 Reiser4,,filesystem,,,,,,,Y,,1,,Reiser4,Y,Y,Y,OK,,
 ReiserFS,,filesystem,,,,,,,Y,,1,,ReiserFs,Y,Y,Y,OK,,
 Reliance / Reliance Nitro / Velocity / Edge (Datalight/Tuxera),datalight;tuxera,filesystem,,,,,,,Y,,1,,,,,,MISSING,,"refused: proprietary except Reliance Edge (GPL-2.0), whose on-disk layout depends on build-time configuration; no image found"

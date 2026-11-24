@@ -82,7 +82,11 @@ internal static class RefsInPlaceRename {
     graph.RefreshChecksumPaths([page]);
   }
 
-  internal static RefsPageReference ResolveDirectoryRoot(RefsMetadataReader metadata, string path) {
+  internal static RefsPageReference ResolveDirectoryRoot(RefsMetadataReader metadata, string path)
+    => ResolveDirectory(metadata, path).Root;
+
+  /// <summary>The object number and table root of the directory at <paramref name="path"/>.</summary>
+  internal static (ulong Oid, RefsPageReference Root) ResolveDirectory(RefsMetadataReader metadata, string path) {
     var objects = new Dictionary<ulong, RefsPageReference>();
     foreach (var row in metadata.WalkRoot(0)) {
       if (row.Key.Length < 16 || row.Value.Length < 0x40) continue;
@@ -98,6 +102,6 @@ internal static class RefsInPlaceRename {
       if (row is null || row.Value.Length < 0x10) throw new FileNotFoundException($"ReFS: directory '{part}' was not found.");
       oid = BinaryPrimitives.ReadUInt64LittleEndian(row.Value.AsSpan(0x08));
     }
-    return objects.TryGetValue(oid, out var directory) ? directory : throw new InvalidDataException("ReFS: the directory object is missing.");
+    return objects.TryGetValue(oid, out var directory) ? (oid, directory) : throw new InvalidDataException("ReFS: the directory object is missing.");
   }
 }
