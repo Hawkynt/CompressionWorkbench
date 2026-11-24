@@ -32,14 +32,14 @@ internal static class BcacheFsSuperblockComposer {
 
   /// <summary>Builds a whole superblock; the caller stamps the slot offset and the checksum.</summary>
   internal static byte[] Build(Description description, IReadOnlyList<Root> roots,
-      BcacheFsAllocationBuilder.Usage usage, ulong inodes) {
+      BcacheFsAllocationBuilder.VolumeUsage usage, ulong inodes) {
     ArgumentNullException.ThrowIfNull(description);
     var sections = new List<byte[]> {
       MembersV2Section(description),
       MembersV1Section(description),
-      ReplicasV0Section(),
+      ReplicasV0Section(WriterReplicas),
       JournalSection(description.JournalBuckets),
-      CleanSection(roots, usage, inodes),
+      CleanSection(roots, usage, inodes, WriterReplicas),
       ErrorsSection(),
     };
 
@@ -85,17 +85,53 @@ internal static class BcacheFsSuperblockComposer {
   }
 
   /// <summary>
+  /// The replicas entries a superblock declares (<c>replicas_v0</c>): data type, then the
+  /// members holding a copy. Empty when it has none.
+  /// </summary>
+  internal static List<BcacheFsAllocationBuilder.ReplicaSet> ReadReplicas(byte[] superblock) {
+    var result = new List<BcacheFsAllocationBuilder.ReplicaSet>();
+    foreach (var (type, offset, length) in BcacheFsSuperblockEditor.Sections(superblock)) {
+      if (type == FieldReplicasV1)
+        throw new NotSupportedException("bcachefs: the superblock declares replicas with a required count (replicas_v1), which an edit here does not rewrite.");
+      if (type != FieldReplicasV0) continue;
+      for (var at = offset + 8; at + 2 <= offset + length;) {
+        var dataType = superblock[at];
+        var count = superblock[at + 1];
+        if (count == 0) break;                                                 // padding
+        result.Add(new(dataType, [.. superblock.AsSpan(at + 2, count).ToArray().Order()]));
+        at += 2 + count;
+      }
+    }
+    return result;
+  }
+
+  /// <summary>
+  /// The replicas entries a commit declares: the ones the superblock already lists, in its order,
+  /// then any set <paramref name="usage" /> names that it does not.
+  /// </summary>
+  internal static List<BcacheFsAllocationBuilder.ReplicaSet> MergeReplicas(
+      IEnumerable<BcacheFsAllocationBuilder.ReplicaSet> declared, BcacheFsAllocationBuilder.VolumeUsage usage) {
+    var result = declared.Distinct().ToList();
+    foreach (var set in usage.Replicas.Keys.OrderBy(s => s.DataType).ThenBy(s => string.Join(",", s.Devices)))
+      if (!result.Contains(set)) result.Add(set);
+    return result;
+  }
+
+  /// <summary>
   /// Replaces the clean section of an existing superblock with one naming
-  /// <paramref name="roots" /> and carrying <paramref name="usage" />.
+  /// <paramref name="roots" /> and carrying <paramref name="usage" />, and its replicas section
+  /// with <paramref name="replicas" />.
   /// </summary>
   internal static byte[] ReplaceClean(byte[] superblock, IReadOnlyList<Root> roots,
-      BcacheFsAllocationBuilder.Usage usage, ulong inodes) {
-    var clean = CleanSection(roots, usage, inodes);
+      BcacheFsAllocationBuilder.VolumeUsage usage, ulong inodes, IReadOnlyList<BcacheFsAllocationBuilder.ReplicaSet> replicas) {
+    var clean = CleanSection(roots, usage, inodes, replicas);
+    var replicasSection = ReplicasV0Section(replicas);
     var before = new List<byte[]>();
     var offset = SbFixedBytes;
     var u64s = (int)BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(124));
     var end = SbFixedBytes + u64s * 8;
     var replaced = false;
+    var replacedReplicas = false;
     while (offset + 8 <= end) {
       var words = (int)BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(offset));
       if (words == 0) break;
@@ -103,10 +139,14 @@ internal static class BcacheFsSuperblockComposer {
       if (type == FieldClean) {
         before.Add(clean);
         replaced = true;
+      } else if (type == FieldReplicasV0) {
+        before.Add(replicasSection);
+        replacedReplicas = true;
       } else
         before.Add(superblock.AsSpan(offset, words * 8).ToArray());
       offset += words * 8;
     }
+    if (!replacedReplicas) before.Add(replicasSection);
     if (!replaced) before.Add(clean);
 
     var variable = before.Sum(s => s.Length);
@@ -201,19 +241,22 @@ internal static class BcacheFsSuperblockComposer {
     return section;
   }
 
-  /// <summary>The replicas entries the volume's content can name, in the order a formatter keeps them.</summary>
-  private static readonly byte[] ReplicaTypes = [DataBtree, DataJournal, DataUser];
+  /// <summary>The replicas entries this package's writer declares, in the order a formatter keeps them.</summary>
+  internal static readonly BcacheFsAllocationBuilder.ReplicaSet[] WriterReplicas =
+    [new(DataBtree, [0]), new(DataJournal, [0]), new(DataUser, [0])];
 
   /// <summary>
   /// Which sets of devices hold a copy of what. A usage total may only name a set
   /// declared here; the v0 entry is the content type, how many devices, and which.
   /// </summary>
-  private static byte[] ReplicasV0Section() {
-    var section = Section(FieldReplicasV0, 3 * ReplicaTypes.Length);
-    for (var i = 0; i < ReplicaTypes.Length; ++i) {
-      section[8 + 3 * i] = ReplicaTypes[i];
-      section[9 + 3 * i] = 1;                                                  // nr_devs
-      section[10 + 3 * i] = 0;                                                 // the one device
+  private static byte[] ReplicasV0Section(IReadOnlyList<BcacheFsAllocationBuilder.ReplicaSet> replicas) {
+    var section = Section(FieldReplicasV0, replicas.Sum(r => 2 + r.Devices.Length));
+    var at = 8;
+    foreach (var set in replicas) {
+      section[at] = set.DataType;
+      section[at + 1] = (byte)set.Devices.Length;                              // nr_devs
+      set.Devices.CopyTo(section, at + 2);
+      at += 2 + set.Devices.Length;
     }
     return section;
   }
@@ -244,7 +287,8 @@ internal static class BcacheFsSuperblockComposer {
   /// The same list goes into the clean section and into the one journal entry the
   /// volume carries; a checker compares the two root by root, byte for byte.
   /// </remarks>
-  private static List<byte[]> ShutdownEntries(IReadOnlyList<Root> roots, BcacheFsAllocationBuilder.Usage usage, ulong inodes) {
+  private static List<byte[]> ShutdownEntries(IReadOnlyList<Root> roots, BcacheFsAllocationBuilder.VolumeUsage usage, ulong inodes,
+      IReadOnlyList<BcacheFsAllocationBuilder.ReplicaSet> replicas) {
     var entries = new List<byte[]>();
 
     byte[] FsUsage(byte kind, byte level, ulong v) {
@@ -255,33 +299,33 @@ internal static class BcacheFsSuperblockComposer {
 
     entries.Add(FsUsage(FsUsageInodes, 0, inodes));
     entries.Add(FsUsage(FsUsageKeyVersion, 0, 0));
-    for (byte replicas = 0; replicas < 4; ++replicas)
-      entries.Add(FsUsage(FsUsageReserved, replicas, 0));
+    for (byte copies = 0; copies < 4; ++copies)
+      entries.Add(FsUsage(FsUsageReserved, copies, 0));
 
-    foreach (var dataType in ReplicaTypes) {
-      var sectors = dataType switch {
-        DataBtree => usage.BtreeSectors,
-        DataUser => usage.UserSectors,
-        _ => 0UL,
-      };
-      var e = Entry(2, JsetDataUsage);
-      BinaryPrimitives.WriteUInt64LittleEndian(e.AsSpan(8), sectors);
-      e[16] = dataType;
-      e[17] = 1;                                                               // nr_devs
+    // One data_usage per declared replicas entry, in the order the superblock declares them:
+    // the sectors, then the entry itself (type, how many devices, how many required, which).
+    foreach (var set in replicas) {
+      var e = Entry(1 + (3 + set.Devices.Length + 7) / 8, JsetDataUsage);
+      BinaryPrimitives.WriteUInt64LittleEndian(e.AsSpan(8), usage.Replicas.GetValueOrDefault(set));
+      e[16] = set.DataType;
+      e[17] = (byte)set.Devices.Length;                                        // nr_devs
       e[18] = 1;                                                               // nr_required
-      e[19] = 0;                                                               // the one device
+      set.Devices.CopyTo(e, 19);
       entries.Add(e);
     }
 
-    var dev = Entry(4 + 3 * DataTypeCount - 1, JsetDevUsage);
-    // dev, pad, buckets_ec and the retired buckets_unavailable, then one triple per type.
-    for (var t = 0; t < DataTypeCount; ++t) {
-      var at = 8 + 24 + 24 * t;
-      BinaryPrimitives.WriteUInt64LittleEndian(dev.AsSpan(at), usage.Buckets[t]);
-      BinaryPrimitives.WriteUInt64LittleEndian(dev.AsSpan(at + 8), usage.Sectors[t]);
-      BinaryPrimitives.WriteUInt64LittleEndian(dev.AsSpan(at + 16), usage.Fragmented[t]);
+    foreach (var (device, deviceUsage) in usage.Devices.OrderBy(d => d.Key)) {
+      var dev = Entry(4 + 3 * DataTypeCount - 1, JsetDevUsage);
+      // dev, pad, buckets_ec and the retired buckets_unavailable, then one triple per type.
+      BinaryPrimitives.WriteUInt32LittleEndian(dev.AsSpan(8), device);
+      for (var t = 0; t < DataTypeCount; ++t) {
+        var at = 8 + 24 + 24 * t;
+        BinaryPrimitives.WriteUInt64LittleEndian(dev.AsSpan(at), deviceUsage.Buckets[t]);
+        BinaryPrimitives.WriteUInt64LittleEndian(dev.AsSpan(at + 8), deviceUsage.Sectors[t]);
+        BinaryPrimitives.WriteUInt64LittleEndian(dev.AsSpan(at + 16), deviceUsage.Fragmented[t]);
+      }
+      entries.Add(dev);
     }
-    entries.Add(dev);
 
     for (byte clock = 0; clock < 2; ++clock) {
       var e = Entry(2, JsetClock);
@@ -298,8 +342,9 @@ internal static class BcacheFsSuperblockComposer {
     return entries;
   }
 
-  private static byte[] CleanSection(IReadOnlyList<Root> roots, BcacheFsAllocationBuilder.Usage usage, ulong inodes) {
-    var entries = ShutdownEntries(roots, usage, inodes);
+  private static byte[] CleanSection(IReadOnlyList<Root> roots, BcacheFsAllocationBuilder.VolumeUsage usage, ulong inodes,
+      IReadOnlyList<BcacheFsAllocationBuilder.ReplicaSet> replicas) {
+    var entries = ShutdownEntries(roots, usage, inodes, replicas);
 
     // flags, the two retired clock fields, and the journal sequence come first.
     var payload = 16 + entries.Sum(e => e.Length);
@@ -329,8 +374,8 @@ internal static class BcacheFsSuperblockComposer {
   /// The checksum covers everything from the magic on.</para>
   /// </remarks>
   internal static byte[] JournalEntry(ulong superblockMagic, IReadOnlyList<Root> roots,
-      BcacheFsAllocationBuilder.Usage usage, ulong inodes) {
-    var entries = ShutdownEntries(roots, usage, inodes);
+      BcacheFsAllocationBuilder.VolumeUsage usage, ulong inodes, IReadOnlyList<BcacheFsAllocationBuilder.ReplicaSet>? replicas = null) {
+    var entries = ShutdownEntries(roots, usage, inodes, replicas ?? WriterReplicas);
     var payload = entries.Sum(e => e.Length);
     const int header = 56;
     var jset = new byte[BcacheFsBucketGeometry.RoundUpSectors(header + payload) * SectorSize];

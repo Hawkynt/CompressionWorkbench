@@ -12,7 +12,7 @@ namespace FileSystem.BcacheFs;
 /// edit sets them for its own flow of control; everything else sees the writer's.
 /// </summary>
 internal static class BcacheFsBucketGeometry {
-  private sealed record Units(int Bucket, int Block, int Node, Int128 TimeBase, uint TimePrecision);
+  private sealed record Units(int Bucket, int Block, int Node, Int128 TimeBase, uint TimePrecision, int MetadataReplicas);
 
   private static readonly AsyncLocal<Units?> Current = new();
 
@@ -21,6 +21,9 @@ internal static class BcacheFsBucketGeometry {
 
   /// <summary>Sectors per b-tree node in effect: the bucket size unless the volume says otherwise.</summary>
   internal static int NodeSectors => Current.Value?.Node ?? Sectors;
+
+  /// <summary>Copies of every b-tree node, and so pointer entries in every pointer to one.</summary>
+  internal static int MetadataReplicas => Current.Value?.MetadataReplicas ?? 1;
 
   /// <summary>Sectors per block in effect: every node, extent and journal entry is a whole number of them.</summary>
   internal static int BlockSectors => Current.Value?.Block ?? 1;
@@ -36,7 +39,9 @@ internal static class BcacheFsBucketGeometry {
   /// times of <paramref name="timePrecision" /> ns from <paramref name="timeBase" /> until the result is disposed.
   /// </summary>
   internal static IDisposable Use(int sectors, int blockSectors = 1, Int128? timeBase = null, uint? timePrecision = null,
-      int? nodeSectors = null) {
+      int? nodeSectors = null, int metadataReplicas = 1) {
+    if (metadataReplicas is < 1 or > 4)
+      throw new NotSupportedException($"bcachefs: {metadataReplicas} metadata replicas is outside the 1 to 4 a volume can ask for.");
     if (sectors < 8 || (sectors & (sectors - 1)) != 0)
       throw new NotSupportedException($"bcachefs: a bucket of {sectors} sectors is not a power of two of at least one 4 KiB block.");
     if (blockSectors < 1 || (blockSectors & (blockSectors - 1)) != 0 || blockSectors > sectors)
@@ -46,7 +51,7 @@ internal static class BcacheFsBucketGeometry {
       throw new NotSupportedException($"bcachefs: a b-tree node of {node} sectors is not a power of two between a block and a {sectors}-sector bucket.");
     var previous = Current.Value;
     Current.Value = new Units(sectors, blockSectors, node, timeBase ?? 0,
-      Math.Max(1u, timePrecision ?? BcacheFsFormat.TimePrecisionNanoseconds));
+      Math.Max(1u, timePrecision ?? BcacheFsFormat.TimePrecisionNanoseconds), metadataReplicas);
     return new Restore(previous);
   }
 

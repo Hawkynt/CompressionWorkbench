@@ -31,7 +31,7 @@ public sealed class BcacheFsAllocationBuilderTests {
   [Test, Category("HappyPath")]
   public void GivenOnlySuperblocksAndJournal_WhenBuilt_ThenEveryBucketIsCountedOnceAndThePartSbBucketIsFragmented() {
     var result = BcacheFsAllocationBuilder.Build(Geometry(), [], []);
-    var usage = result.Usage;
+    var usage = result.Usage.Devices[0];
 
     Assert.Multiple(() => {
       Assert.That(usage.Buckets.Aggregate(0UL, (a, b) => a + b), Is.EqualTo(512UL));

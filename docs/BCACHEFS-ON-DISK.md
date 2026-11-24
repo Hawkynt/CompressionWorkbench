@@ -329,9 +329,47 @@ volume whose every tree it either carries or rebuilds:
   snapshots, snapshot trees;
 - rebuilt from what occupies the device: alloc, bucket_gens, freespace,
   need_discard, LRU, backpointers;
-- refused with the reason: a volume not cleanly shut down, of several members,
-  newer than **1.4**, with keys in any other tree (quotas, stripes, logged ops …),
-  or with an inode no directory reaches.
+- refused with the reason: a volume not cleanly shut down, newer than **1.4**,
+  edited without every member supplied, whose members differ in bucket size, with
+  a member not read-write or counting as other than one copy, declaring replicas
+  with a required count (`replicas_v1`), with keys in any other tree (quotas,
+  stripes, logged ops …), or with an inode no directory reaches.
+
+### Several members
+
+A volume `bcachefs format` spread over several devices is edited through all of
+them at once (`BcacheFsFormatDescriptor.AddToVolume` / `RemoveFromVolume`, read
+with `OpenVolume`; the images in any order, each superblock says which member it
+is). What changes against one device:
+
+- Every allocation key is per member: alloc, freespace and `bucket_gens` at
+  `(member, bucket)`, backpointers at `(member, sector << 10)`, and an LRU entry
+  names its bucket as one word, the member above bit 48.
+- Copies: `metadata_replicas` copies of every node and `data_replicas` of every
+  extent, each on a different member allowed that data type (`data_allowed`),
+  the members with the most free buckets first. A node pointer carries one entry
+  per copy; an extent its crc32 entry and then one pointer per copy, the same
+  bytes written to each.
+- The clean section and the journal entry carry one `dev_usage` per member and
+  one `data_usage` per replicas entry, which adds up the sectors of every copy; the
+  `replicas_v0` section is rewritten as the entries it had plus every set the
+  commit uses, the journal's included (the shutdown entry goes to every member
+  with journal buckets).
+- Every member's superblocks get the new sequence, and from 1.4 (`member_seq`)
+  every member record gets it too: a 6.8 kernel opening the members together
+  calls a device whose superblock is newer than its member record says
+  "split brain" and refuses to mount (measured).
+- A volume holding two copies of everything is read from either member alone.
+
+Defragmentation stays single-device. Proven by `BcacheFsMultiDeviceTests` (fsck over
+all members after edits on two members with one copy, two with two copies, three
+with two copies, and two with two copies of 32 KiB nodes in 64 KiB buckets; each
+member of a mirrored pair read alone; an edit through one member of two refused
+and both unchanged) and `…MembersTheKernelWroteInto_WhenWeEditInPlace…` (Linux 6.8
+mounted the members together and wrote into them, we edited through all of them,
+fsck is clean, the kernel mounting them again reads what we read and keeps
+writing). `bcachefs format` 1.3.3 does not finish formatting two members with
+`--bucket=32k --btree_node_size=16k --replicas=2`, so that layout is not covered.
 
 The volume's own layout is kept. Adds and removes work in whatever bucket size,
 block size and journal placement the superblock names — `bcachefs format`'s

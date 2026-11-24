@@ -367,6 +367,35 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <summary>
+  /// Opens a volume spread over several member <paramref name="devices" /> (every image
+  /// <c>bcachefs format</c> was given, in any order) for reading.
+  /// </summary>
+  public BcacheFsReader OpenVolume(IReadOnlyList<Stream> devices) {
+    ArgumentNullException.ThrowIfNull(devices);
+    return new BcacheFsReader(devices);
+  }
+
+  /// <summary>
+  /// Adds or replaces files in place in a volume spread over <paramref name="devices" />, every
+  /// member in any order, as <see cref="Add(Stream, IReadOnlyList{ArchiveInputInfo})" /> does for
+  /// one: data and nodes get as many copies, on different members, as the volume's replicas
+  /// settings ask for.
+  /// </summary>
+  public void AddToVolume(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(devices);
+    ArgumentNullException.ThrowIfNull(inputs);
+    BcacheFsInPlaceModifier.Add(devices, inputs);
+    foreach (var device in devices) BcacheFsSuperblockEditor.Restamp(device);
+  }
+
+  /// <summary>Removes files and directories in place from a volume spread over <paramref name="devices" />.</summary>
+  public void RemoveFromVolume(IReadOnlyList<Stream> devices, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(devices);
+    BcacheFsInPlaceModifier.Remove(devices, entryNames ?? []);
+    foreach (var device in devices) BcacheFsSuperblockEditor.Restamp(device);
+  }
+
+  /// <summary>
   /// Entries the reader derives rather than reads: the volume's own description,
   /// and the carver's view of an image that cannot be walked as a filesystem.
   /// </summary>

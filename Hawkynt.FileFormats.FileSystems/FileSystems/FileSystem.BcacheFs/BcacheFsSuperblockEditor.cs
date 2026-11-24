@@ -76,35 +76,80 @@ internal static class BcacheFsSuperblockEditor {
   /// a clean shutdown leaves, and every superblock copy gets a clean section naming
   /// <paramref name="published" />'s roots and totals, and the next sequence number.
   /// </summary>
-  internal static void PublishClean(Stream image, BcacheFsMetadataCommit.Published published) {
-    ArgumentNullException.ThrowIfNull(image);
-    ArgumentNullException.ThrowIfNull(published);
-    EnsureWritable(image);
+  internal static void PublishClean(Stream image, BcacheFsMetadataCommit.Published published)
+    => PublishClean(BcacheFsDevices.Single(image), published);
 
-    var primary = ReadSuperblock(image, PrimarySbSector);
-    var seq = BinaryPrimitives.ReadUInt64LittleEndian(primary.AsSpan(112)) + 1;
-    var magic = BinaryPrimitives.ReadUInt64LittleEndian(primary.AsSpan(40));
-    WriteJournal(image, ReadGeometry(image), magic, published);
-    foreach (var slot in SuperblockSlots(image)) {
-      var sb = BcacheFsSuperblockComposer.ReplaceClean(ReadSuperblock(image, slot),
-        published.Roots, published.Usage, published.Inodes);
-      BinaryPrimitives.WriteUInt64LittleEndian(sb.AsSpan(104), (ulong)slot);
-      BinaryPrimitives.WriteUInt64LittleEndian(sb.AsSpan(112), seq);
-      Stamp(sb);
-      image.Position = slot * SectorSize;
-      image.Write(sb);
+  /// <summary>
+  /// Publishes a new metadata generation on every member of <paramref name="devices" />: each
+  /// member's journal is replaced by the one entry a clean shutdown leaves, and every superblock
+  /// copy on it gets the replicas entries the generation names, a clean section with its roots
+  /// and totals, and the next sequence number, the same on every member.
+  /// </summary>
+  internal static void PublishClean(BcacheFsDevices devices, BcacheFsMetadataCommit.Published published) {
+    ArgumentNullException.ThrowIfNull(devices);
+    ArgumentNullException.ThrowIfNull(published);
+    foreach (var stream in devices.Streams.Values) EnsureWritable(stream);
+
+    var primaries = devices.Indices.ToDictionary(d => d, d => ReadSuperblock(devices[d], PrimarySbSector));
+    var seq = primaries.Values.Max(sb => BinaryPrimitives.ReadUInt64LittleEndian(sb.AsSpan(112))) + 1;
+    var magic = BinaryPrimitives.ReadUInt64LittleEndian(primaries.Values.First().AsSpan(40));
+
+    // The shutdown entry goes to every member with a journal; together they are one
+    // journal replicas entry, which the superblock has to declare.
+    var journaled = devices.Indices.Where(d => devices.Geometry[d].JournalBuckets.Count != 0).ToArray();
+    if (journaled.Length == 0)
+      throw new InvalidDataException("bcachefs: the superblock names no journal buckets.");
+    published.Usage.Add(new BcacheFsAllocationBuilder.ReplicaSet(DataJournal, journaled), 0);
+    var replicas = BcacheFsSuperblockComposer.MergeReplicas(
+      primaries.Values.SelectMany(BcacheFsSuperblockComposer.ReadReplicas), published.Usage);
+
+    foreach (var device in journaled)
+      WriteJournal(devices[device], devices.Geometry[device], magic, published, replicas);
+    foreach (var device in devices.Indices) {
+      var image = devices[device];
+      foreach (var slot in devices.Geometry[device].SuperblockSectors) {
+        var sb = BcacheFsSuperblockComposer.ReplaceClean(ReadSuperblock(image, slot),
+          published.Roots, published.Usage, published.Inodes, replicas);
+        BinaryPrimitives.WriteUInt64LittleEndian(sb.AsSpan(104), (ulong)slot);
+        BinaryPrimitives.WriteUInt64LittleEndian(sb.AsSpan(112), seq);
+        StampMemberSequences(sb, seq);
+        Stamp(sb);
+        image.Position = slot * SectorSize;
+        image.Write(sb);
+      }
     }
-    image.Flush();
+    devices.Flush();
   }
 
-  /// <summary>Empties the journal and writes the one entry a clean shutdown leaves in its first bucket.</summary>
+  /// <summary>
+  /// From metadata version 1.4 (<c>member_seq</c>) every member record carries the superblock
+  /// sequence its device was last written at, and a kernel opening the members together calls a
+  /// device whose own superblock is newer than its record says split-brained. Every member is
+  /// written by a commit, so every record gets the commit's sequence; a volume whose records
+  /// carry none (1.3) is left so.
+  /// </summary>
+  private static void StampMemberSequences(byte[] sb, ulong seq) {
+    const int seqOffset = 120;
+    foreach (var (type, offset, length) in Sections(sb)) {
+      if (type != FieldMembersV2 || length < 16) continue;
+      var memberBytes = BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(offset + 8));
+      if (memberBytes < seqOffset + 8) continue;
+      var members = new List<int>();
+      for (var at = offset + 16; at + memberBytes <= offset + length; at += memberBytes) members.Add(at);
+      if (members.All(at => BinaryPrimitives.ReadUInt64LittleEndian(sb.AsSpan(at + seqOffset)) == 0)) continue;
+      foreach (var at in members)
+        BinaryPrimitives.WriteUInt64LittleEndian(sb.AsSpan(at + seqOffset), seq);
+    }
+  }
+
+  /// <summary>Empties a member's journal and writes the one entry a clean shutdown leaves in its first bucket.</summary>
   internal static void WriteJournal(Stream image, BcacheFsAllocationBuilder.Geometry geometry, ulong magic,
-      BcacheFsMetadataCommit.Published published) {
+      BcacheFsMetadataCommit.Published published, IReadOnlyList<BcacheFsAllocationBuilder.ReplicaSet> replicas) {
     if (geometry.JournalBuckets.Count == 0)
       throw new InvalidDataException("bcachefs: the superblock names no journal buckets.");
     foreach (var (start, count) in geometry.JournalBuckets)
       BcacheFsMetadataCommit.ZeroRange(image, start * BucketBytes, count * BucketBytes);
-    var entry = BcacheFsSuperblockComposer.JournalEntry(magic, published.Roots, published.Usage, published.Inodes);
+    var entry = BcacheFsSuperblockComposer.JournalEntry(magic, published.Roots, published.Usage, published.Inodes, replicas);
     image.Position = geometry.JournalBuckets[0].Start * BucketBytes;
     image.Write(entry);
   }

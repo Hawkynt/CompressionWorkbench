@@ -36,8 +36,11 @@ internal static class BcacheFsAllocationBuilder {
     internal long Buckets => this.DeviceSectors / BucketSectors;
   }
 
-  /// <summary>One written b-tree node: which tree, how deep, the range it ends at, and where.</summary>
-  internal readonly record struct Node(int Btree, int Level, Bpos MaxKey, long Sector);
+  /// <summary>
+  /// One written copy of a b-tree node: which tree, how deep, the range it ends at, and where.
+  /// The copies of one node share tree, level and range.
+  /// </summary>
+  internal readonly record struct Node(int Btree, int Level, Bpos MaxKey, long Sector, byte Device = 0);
 
   /// <summary>A bucket's generation, and the oldest one a pointer into it may still carry.</summary>
   internal readonly record struct Generation(byte Gen, byte Oldest);
@@ -48,9 +51,24 @@ internal static class BcacheFsAllocationBuilder {
     internal ulong[] Sectors { get; } = new ulong[DataTypeCount];
     internal ulong[] Fragmented { get; } = new ulong[DataTypeCount];
 
-    /// <summary>Sectors per replicas entry: b-tree nodes and file data.</summary>
-    internal ulong BtreeSectors { get; set; }
-    internal ulong UserSectors { get; set; }
+  }
+
+  /// <summary>One replicas entry: a data type and the set of members holding a copy, in ascending order.</summary>
+  internal sealed record ReplicaSet(byte DataType, byte[] Devices) {
+    internal string Name => $"{this.DataType}:{string.Join(",", this.Devices)}";
+    public bool Equals(ReplicaSet? other) => other is not null && this.Name == other.Name;
+    public override int GetHashCode() => this.Name.GetHashCode(StringComparison.Ordinal);
+  }
+
+  /// <summary>
+  /// What the clean section and the journal say about the space: per member the dev_usage
+  /// triples, and per replicas entry the sectors its copies occupy, added over the copies.
+  /// </summary>
+  internal sealed class VolumeUsage {
+    internal Dictionary<byte, Usage> Devices { get; } = [];
+    internal Dictionary<ReplicaSet, ulong> Replicas { get; } = [];
+
+    internal void Add(ReplicaSet set, ulong sectors) => this.Replicas[set] = this.Replicas.GetValueOrDefault(set) + sectors;
   }
 
   internal sealed record Result(
@@ -59,9 +77,12 @@ internal static class BcacheFsAllocationBuilder {
     List<Key> Lru,
     List<Key> Backpointers,
     List<Key> BucketGens,
-    Usage Usage,
-    byte[] DataType,
-    uint[] DirtySectors);
+    VolumeUsage Usage,
+    IReadOnlyDictionary<byte, byte[]> DataTypes,
+    IReadOnlyDictionary<byte, uint[]> DirtySectors) {
+    /// <summary>The first member's bucket data types, for a single-device volume.</summary>
+    internal byte[] DataType => this.DataTypes[0];
+  }
 
   /// <summary>
   /// Builds the derived trees for a device holding <paramref name="nodes" /> and
@@ -73,24 +94,41 @@ internal static class BcacheFsAllocationBuilder {
       IReadOnlyList<Node> nodes,
       IEnumerable<Key> extents,
       IReadOnlyDictionary<long, Generation>? generations = null,
+      IEnumerable<Key>? indirect = null)
+    => Build(new Dictionary<byte, Geometry> { [0] = geometry }, nodes, extents, generations, indirect);
+
+  /// <summary>
+  /// Builds the derived trees for the members <paramref name="devices" /> describes, holding
+  /// <paramref name="nodes" /> (every copy) and <paramref name="extents" /> (every pointer).
+  /// </summary>
+  /// <param name="generations">Buckets whose generation is not zero, by <see cref="BcacheFsBucketId" />.</param>
+  internal static Result Build(
+      IReadOnlyDictionary<byte, Geometry> devices,
+      IReadOnlyList<Node> nodes,
+      IEnumerable<Key> extents,
+      IReadOnlyDictionary<long, Generation>? generations = null,
       IEnumerable<Key>? indirect = null) {
-    ArgumentNullException.ThrowIfNull(geometry);
+    ArgumentNullException.ThrowIfNull(devices);
     ArgumentNullException.ThrowIfNull(nodes);
     ArgumentNullException.ThrowIfNull(extents);
     generations ??= new Dictionary<long, Generation>();
 
-    var buckets = geometry.Buckets;
-    var type = new byte[buckets];
-    var dirty = new uint[buckets];
+    var types = devices.ToDictionary(d => d.Key, d => new byte[d.Value.Buckets]);
+    var dirtyBy = devices.ToDictionary(d => d.Key, d => new uint[d.Value.Buckets]);
+    var usage = new VolumeUsage();
+    var backpointers = new List<Key>();
 
-    void Mark(long sector, long sectors, byte dataType) {
+    void Mark(byte device, long sector, long sectors, byte dataType) {
+      if (!types.TryGetValue(device, out var type))
+        throw new InvalidOperationException($"bcachefs pointer names member {device}, which this volume does not have.");
+      var dirty = dirtyBy[device];
       while (sectors > 0) {
         var bucket = sector / BucketSectors;
-        if (bucket >= buckets) return;
+        if (bucket >= type.LongLength) return;
         var inBucket = Math.Min(sectors, (bucket + 1) * BucketSectors - sector);
         if (type[bucket] != DataFree && type[bucket] != dataType)
           throw new InvalidOperationException(
-            $"bcachefs bucket {bucket} would hold both data type {type[bucket]} and {dataType}.");
+            $"bcachefs bucket {bucket} of member {device} would hold both data type {type[bucket]} and {dataType}.");
         type[bucket] = dataType;
         dirty[bucket] = checked(dirty[bucket] + (uint)inBucket);
         sector += inBucket;
@@ -98,101 +136,118 @@ internal static class BcacheFsAllocationBuilder {
       }
     }
 
-    // The superblock region is everything before the first slot plus every slot
-    // at its full advertised size, not just the bytes a superblock fills.
-    Mark(0, PrimarySbSector, DataSb);
-    foreach (var slot in geometry.SuperblockSectors) Mark(slot, SbSlotSectors, DataSb);
+    foreach (var (device, geometry) in devices) {
+      // The superblock region is everything before the first slot plus every slot
+      // at its full advertised size, not just the bytes a superblock fills.
+      Mark(device, 0, PrimarySbSector, DataSb);
+      foreach (var slot in geometry.SuperblockSectors) Mark(device, slot, SbSlotSectors, DataSb);
 
-    // A journal bucket counts whole, written or not.
-    foreach (var (start, count) in geometry.JournalBuckets)
-      for (var b = start; b < start + count; ++b) Mark(b * BucketSectors, BucketSectors, DataJournal);
-
-    var usage = new Usage();
-    var backpointers = new List<Key>();
+      // A journal bucket counts whole, written or not.
+      foreach (var (start, count) in geometry.JournalBuckets)
+        for (var b = start; b < start + count; ++b) Mark(device, b * BucketSectors, BucketSectors, DataJournal);
+    }
 
     // A node costs its whole node size whatever was written of it, and the pointer
     // that names it lives one level up — which is the level its backpointer gives.
-    foreach (var node in nodes) {
-      Mark(node.Sector, NodeSectors, DataBtree);
-      usage.BtreeSectors += (ulong)NodeSectors;
-      backpointers.Add(BackpointerKey(node.Sector, node.Btree, node.Level + 1, DataBtree, NodeSectors, node.MaxKey));
+    // Its copies make one replicas entry, charged the node size once per copy.
+    foreach (var copies in nodes.GroupBy(n => (n.Btree, n.Level, n.MaxKey))) {
+      foreach (var node in copies) {
+        Mark(node.Device, node.Sector, NodeSectors, DataBtree);
+        backpointers.Add(BackpointerKey(node.Sector, node.Btree, node.Level + 1, DataBtree, NodeSectors, node.MaxKey,
+          device: node.Device));
+      }
+      usage.Add(new ReplicaSet(DataBtree, [.. copies.Select(n => n.Device).Distinct().Order()]),
+        (ulong)NodeSectors * (ulong)copies.Count());
     }
 
     // An extent costs what it occupies on the device: its own size, or for a
     // compressed one that share of the compressed region. Its backpointer adds the
     // offset into the checksummed region below the shifted sector, so two keys
-    // left pointing into one region by a partial overwrite stay distinct.
-    foreach (var extent in extents) {
-      if (Footprint(extent) is not { } at) continue;
-      Mark(at.Sector, at.DiskSectors, DataUser);
-      usage.UserSectors += (ulong)at.DiskSectors;
-      backpointers.Add(BackpointerKey(at.Sector, BtreeExtents, 0, DataUser, at.DiskSectors, extent.Position, at.RegionOffset));
+    // left pointing into one region by a partial overwrite stay distinct. Every
+    // dirty pointer is a copy on its own member.
+    void Charge(Key extent, int btree, Bpos target) {
+      var copies = Footprints(extent);
+      if (copies.Count == 0) return;
+      foreach (var at in copies) {
+        Mark(at.Device, at.Sector, at.DiskSectors, DataUser);
+        backpointers.Add(BackpointerKey(at.Sector, btree, 0, DataUser, at.DiskSectors, target, at.RegionOffset, at.Device));
+      }
+      usage.Add(new ReplicaSet(DataUser, [.. copies.Select(c => c.Device).Distinct().Order()]),
+        (ulong)copies.Sum(c => (long)c.DiskSectors));
     }
+
+    foreach (var extent in extents) Charge(extent, BtreeExtents, extent.Position);
 
     // An indirect extent occupies the device like any extent, and its backpointer names the
     // reflink tree and the indirect key, not the files that reach it.
-    foreach (var key in indirect ?? []) {
-      if (IndirectAsExtent(key) is not { } extent || Footprint(extent) is not { } at) continue;
-      Mark(at.Sector, at.DiskSectors, DataUser);
-      usage.UserSectors += (ulong)at.DiskSectors;
-      backpointers.Add(BackpointerKey(at.Sector, BtreeReflink, 0, DataUser, at.DiskSectors, key.Position, at.RegionOffset));
-    }
+    foreach (var key in indirect ?? [])
+      if (IndirectAsExtent(key) is { } extent) Charge(extent, BtreeReflink, key.Position);
 
     var alloc = new List<Key>();
     var freespace = new List<Key>();
     var lru = new List<Key>();
-    var runStart = -1L;
-    var runBits = 0UL;
+    var gens = new List<Key>();
 
-    for (long b = 0; b <= buckets; ++b) {
-      var free = b < buckets && type[b] == DataFree;
-      if (b < buckets) {
-        var t = type[b];
-        var gen = generations.GetValueOrDefault(b);
-        ++usage.Buckets[t];
-        usage.Sectors[t] += dirty[b];
-        if (t != DataFree) usage.Fragmented[t] += (ulong)(BucketSectors - dirty[b]);
+    foreach (var device in devices.Keys.Order()) {
+      var type = types[device];
+      var dirty = dirtyBy[device];
+      var buckets = type.LongLength;
+      var deviceUsage = usage.Devices[device] = new Usage();
+      Generation GenerationOf(long bucket) => generations.GetValueOrDefault(BcacheFsBucketId.Of(device, bucket));
+      var runStart = -1L;
+      var runBits = 0UL;
 
-        if (t != DataFree || gen.Gen != 0 || gen.Oldest != 0) {
-          var fragmentation = IsMovable(t) && dirty[b] < BucketSectors
-            ? ((ulong)dirty[b] << 31) / (ulong)BucketSectors
-            : 0;
-          alloc.Add(AllocKey(b, t, dirty[b], gen, fragmentation));
-          if (fragmentation != 0)
-            lru.Add(new Key(KeySet, new Bpos((LruFragmentationId << LruTimeBits) | fragmentation, (ulong)b, 0), 0, []));
+      for (long b = 0; b <= buckets; ++b) {
+        var free = b < buckets && type[b] == DataFree;
+        if (b < buckets) {
+          var t = type[b];
+          var gen = GenerationOf(b);
+          ++deviceUsage.Buckets[t];
+          deviceUsage.Sectors[t] += dirty[b];
+          if (t != DataFree) deviceUsage.Fragmented[t] += (ulong)(BucketSectors - dirty[b]);
+
+          if (t != DataFree || gen.Gen != 0 || gen.Oldest != 0) {
+            var fragmentation = IsMovable(t) && dirty[b] < BucketSectors
+              ? ((ulong)dirty[b] << 31) / (ulong)BucketSectors
+              : 0;
+            alloc.Add(AllocKey(b, t, dirty[b], gen, fragmentation, device));
+            // An LRU entry names its bucket as one word: the member above bit 48.
+            if (fragmentation != 0)
+              lru.Add(new Key(KeySet, new Bpos((LruFragmentationId << LruTimeBits) | fragmentation,
+                (ulong)BcacheFsBucketId.Of(device, b), 0), 0, []));
+          }
+        }
+
+        // A free bucket's freespace position carries the high bits of how far its
+        // generation has run ahead of the oldest pointer, so a run of free buckets
+        // breaks wherever those bits change.
+        var bits = free ? FreespaceGenBits(GenerationOf(b)) : 0;
+        if (runStart >= 0 && (!free || bits != runBits)) {
+          freespace.Add(FreespaceKey(runStart, b, runBits, device));
+          runStart = -1;
+        }
+        if (free && runStart < 0) {
+          runStart = b;
+          runBits = bits;
         }
       }
 
-      // A free bucket's freespace position carries the high bits of how far its
-      // generation has run ahead of the oldest pointer, so a run of free buckets
-      // breaks wherever those bits change.
-      var bits = free ? FreespaceGenBits(generations.GetValueOrDefault(b)) : 0;
-      if (runStart >= 0 && (!free || bits != runBits)) {
-        freespace.Add(FreespaceKey(runStart, b, runBits));
-        runStart = -1;
+      for (long first = 0; first < buckets; first += BucketGensNr) {
+        var value = new byte[BucketGensNr];
+        var any = false;
+        for (var i = 0; i < BucketGensNr && first + i < buckets; ++i) {
+          value[i] = GenerationOf(first + i).Gen;
+          any |= value[i] != 0;
+        }
+        // A missing key reads as every generation zero, which is what a bucket
+        // that was never reused has; only a run holding a reused bucket needs one.
+        if (any) gens.Add(new Key(KeyBucketGens, new Bpos(device, (ulong)(first / BucketGensNr), 0), 0, value));
       }
-      if (free && runStart < 0) {
-        runStart = b;
-        runBits = bits;
-      }
-    }
-
-    var gens = new List<Key>();
-    for (long first = 0; first < buckets; first += BucketGensNr) {
-      var value = new byte[BucketGensNr];
-      var any = false;
-      for (var i = 0; i < BucketGensNr && first + i < buckets; ++i) {
-        value[i] = generations.GetValueOrDefault(first + i).Gen;
-        any |= value[i] != 0;
-      }
-      // A missing key reads as every generation zero, which is what a bucket
-      // that was never reused has; only a run holding a reused bucket needs one.
-      if (any) gens.Add(new Key(KeyBucketGens, new Bpos(0, (ulong)(first / BucketGensNr), 0), 0, value));
     }
 
     backpointers.Sort((a, c) => Compare(a.Position, c.Position));
     lru.Sort((a, c) => Compare(a.Position, c.Position));
-    return new Result(alloc, freespace, lru, backpointers, gens, usage, type, dirty);
+    return new Result(alloc, freespace, lru, backpointers, gens, usage, types, dirtyBy);
   }
 
   /// <summary>
@@ -205,7 +260,7 @@ internal static class BcacheFsAllocationBuilder {
   /// <param name="Compressed">Whether the region is compressed.</param>
   /// <param name="Encrypted">Whether the region is encrypted (a nonce, or a ChaCha20/Poly1305 checksum).</param>
   internal readonly record struct ExtentFootprint(
-    long Sector, int RegionOffset, int RegionSectors, int DiskSectors, bool Compressed, bool Encrypted);
+    long Sector, int RegionOffset, int RegionSectors, int DiskSectors, bool Compressed, bool Encrypted, byte Device = 0);
 
   /// <summary>
   /// The footprint of a <c>KEY_TYPE_extent</c> with one dirty pointer, or null for
@@ -223,7 +278,18 @@ internal static class BcacheFsAllocationBuilder {
     => key.Type == KeyReflinkV && key.Value.Length > 8 ? new Key(KeyExtent, key.Position, key.Size, key.Value[8..]) : null;
 
   internal static ExtentFootprint? Footprint(Key extent) {
-    if (extent.Type != KeyExtent) return null;
+    var all = Footprints(extent);
+    return all.Count == 0 ? null : all[0];
+  }
+
+  /// <summary>
+  /// Every dirty copy of a <c>KEY_TYPE_extent</c>: one footprint per pointer that is not a cached
+  /// copy, each on its own member, all sharing the checksum entry in front of them. Empty for any
+  /// other key.
+  /// </summary>
+  internal static IReadOnlyList<ExtentFootprint> Footprints(Key extent) {
+    var result = new List<ExtentFootprint>();
+    if (extent.Type != KeyExtent) return result;
     if (!BcacheFsExtentCodec.TryParseEntries(extent.Value, out var entries, out var error))
       throw new InvalidDataException($"bcachefs extent at {extent.Position}: {error}");
 
@@ -243,12 +309,13 @@ internal static class BcacheFsAllocationBuilder {
             : (int)extent.Size;
           var encrypted = crc is { } c && (c.Nonce != 0
             || c.ChecksumType is BcacheFsChecksumType.ChaCha20Poly1305_80 or BcacheFsChecksumType.ChaCha20Poly1305_128);
-          return new ExtentFootprint(PointerSector(word), (int)(crc?.Offset ?? 0),
-            (int)(crc?.CompressedSize ?? extent.Size), disk, compressed, encrypted);
+          result.Add(new ExtentFootprint(PointerSector(word), (int)(crc?.Offset ?? 0),
+            (int)(crc?.CompressedSize ?? extent.Size), disk, compressed, encrypted, (byte)((word >> 48) & 0xFF)));
+          break;
         }
       }
     }
-    return null;
+    return result;
   }
 
   private static bool IsMovable(byte dataType) => dataType is DataBtree or DataUser;
@@ -265,7 +332,7 @@ internal static class BcacheFsAllocationBuilder {
   /// before the bucket is used again. An empty bucket must not carry
   /// need_discard, since that makes its data type need_discard rather than free.
   /// </remarks>
-  internal static Key AllocKey(long bucket, byte dataType, uint dirtySectors, Generation gen, ulong fragmentation) {
+  internal static Key AllocKey(long bucket, byte dataType, uint dirtySectors, Generation gen, ulong fragmentation, byte device = 0) {
     var value = new byte[AllocV4Bytes];
     var flags = (uint)AllocV4U64s << 2;                                       // backpointers_start
     if (dataType != DataFree) flags |= 0b11;                                  // need_discard, need_inc_gen
@@ -279,7 +346,7 @@ internal static class BcacheFsAllocationBuilder {
       BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(32), 1);          // io_time[WRITE]
     }
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(48), fragmentation);
-    return new Key(KeyAllocV4, new Bpos(0, (ulong)bucket, 0), 0, value);
+    return new Key(KeyAllocV4, new Bpos(device, (ulong)bucket, 0), 0, value);
   }
 
   /// <summary>
@@ -292,7 +359,7 @@ internal static class BcacheFsAllocationBuilder {
   /// it covers, and the position of the key that holds it.
   /// </remarks>
   internal static Key BackpointerKey(long sector, int btree, int level, byte dataType, int sectors, Bpos target,
-      int regionOffset = 0) {
+      int regionOffset = 0, byte device = 0) {
     var value = new byte[32];
     value[0] = (byte)btree;
     value[1] = (byte)level;
@@ -301,10 +368,10 @@ internal static class BcacheFsAllocationBuilder {
     for (var i = 0; i < 5; ++i) value[3 + i] = (byte)(bucketOffset >> (8 * i));
     BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(8), (uint)sectors);
     WriteBpos(value.AsSpan(12), target);
-    return new Key(KeyBackpointer, new Bpos(0, ((ulong)sector << BackpointerShift) + (ulong)regionOffset, 0), 0, value);
+    return new Key(KeyBackpointer, new Bpos(device, ((ulong)sector << BackpointerShift) + (ulong)regionOffset, 0), 0, value);
   }
 
   /// <summary>A run of free buckets: the freespace tree keys a range by where it ends.</summary>
-  private static Key FreespaceKey(long first, long end, ulong genBits) =>
-    new(KeySet, new Bpos(0, (ulong)end | genBits, 0), (uint)(end - first), []);
+  private static Key FreespaceKey(long first, long end, ulong genBits, byte device) =>
+    new(KeySet, new Bpos(device, (ulong)end | genBits, 0), (uint)(end - first), []);
 }

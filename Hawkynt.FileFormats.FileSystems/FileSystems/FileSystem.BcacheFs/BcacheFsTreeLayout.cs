@@ -4,7 +4,8 @@ using static FileSystem.BcacheFs.BcacheFsFormat;
 namespace FileSystem.BcacheFs;
 
 internal static class BcacheFsTreeLayout {
-  private const int PointerKeyBytes = BkeyBytes + 48;
+  /// <summary>A <c>btree_ptr_v2</c>: its header and one pointer entry per copy of the node.</summary>
+  private static int PointerKeyBytes => BkeyBytes + 40 + 8 * BcacheFsBucketGeometry.MetadataReplicas;
 
   /// <summary>How many bytes of a node its keys may fill.</summary>
   /// <remarks>
@@ -56,19 +57,32 @@ internal static class BcacheFsTreeLayout {
 
   internal static int CountNodes(IReadOnlyList<Key> keys) => DescribeNodes(-1, keys).Count;
 
-  /// <summary>
-  /// Writes <paramref name="keys" /> as a tree into the node slots <paramref name="targetBuckets" />
-  /// names: slot <c>n</c> is the node at sector <c>n × NodeSectors</c>, which is bucket <c>n</c>
-  /// wherever a node is a bucket.
-  /// </summary>
   internal static BcacheFsWrittenTree Write(
       Stream image,
       ulong magic,
       int btree,
       IReadOnlyList<Key> keys,
       IEnumerator<long> targetBuckets,
+      Func<long, byte>? generationOf = null)
+    => Write(BcacheFsDevices.Single(image, new BcacheFsAllocationBuilder.Geometry(image.Length / SectorSize, [], [])),
+      magic, btree, keys, targetBuckets, generationOf);
+
+  /// <summary>
+  /// Writes <paramref name="keys" /> as a tree into the node slots <paramref name="targetBuckets" />
+  /// names, <see cref="BcacheFsDevices.MetadataReplicas" /> per node, one per copy: slot <c>n</c>
+  /// of a member is the node at sector <c>n × NodeSectors</c>, which is bucket <c>n</c> wherever a
+  /// node is a bucket, with the member index above it as in <see cref="BcacheFsBucketId" />.
+  /// <paramref name="generationOf" /> takes a bucket the same way.
+  /// </summary>
+  internal static BcacheFsWrittenTree Write(
+      BcacheFsDevices devices,
+      ulong magic,
+      int btree,
+      IReadOnlyList<Key> keys,
+      IEnumerator<long> targetBuckets,
       Func<long, byte>? generationOf = null) {
-    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(devices);
+    var image = devices;
     ArgumentNullException.ThrowIfNull(keys);
     ArgumentNullException.ThrowIfNull(targetBuckets);
 
@@ -111,7 +125,7 @@ internal static class BcacheFsTreeLayout {
   }
 
   private static WrittenNode WriteNode(
-      Stream image,
+      BcacheFsDevices image,
       ulong magic,
       int btree,
       int level,
@@ -121,12 +135,18 @@ internal static class BcacheFsTreeLayout {
       IEnumerator<long> targetBuckets,
       List<BcacheFsWrittenNode> written,
       Func<long, byte>? generationOf) {
-    if (!targetBuckets.MoveNext())
-      throw new InvalidOperationException($"bcachefs placement ran out of target buckets while writing tree {btree}.");
-    var slot = targetBuckets.Current;
-    if (slot < 0) throw new InvalidOperationException("bcachefs metadata target slot is negative.");
-    var sector = checked(slot * (long)NodeSectors);
-    var bucket = sector / BucketSectors;
+    var copies = new List<(byte Device, long Sector, long Bucket)>();
+    for (var copy = 0; copy < image.MetadataReplicas; ++copy) {
+      if (!targetBuckets.MoveNext())
+        throw new InvalidOperationException($"bcachefs placement ran out of target buckets while writing tree {btree}.");
+      var slot = targetBuckets.Current;
+      if (slot < 0) throw new InvalidOperationException("bcachefs metadata target slot is negative.");
+      var device = BcacheFsBucketId.Device(slot);
+      var at = checked(BcacheFsBucketId.Index(slot) * NodeSectors);
+      if (copies.Any(c => c.Device == device))
+        throw new InvalidOperationException($"bcachefs placement put two copies of a node of tree {btree} on member {device}.");
+      copies.Add((device, at, BcacheFsBucketId.Of(device, at / BucketSectors)));
+    }
 
     var builder = new BcacheFsNodeBuilder {
       BtreeId = btree,
@@ -140,11 +160,14 @@ internal static class BcacheFsTreeLayout {
 
     var buffer = new byte[NodeBytes];
     var sectors = builder.Write(buffer);
-    image.Position = checked(sector * (long)SectorSize);
-    image.Write(buffer, 0, sectors * SectorSize);
-
-    written.Add(new BcacheFsWrittenNode(btree, level, bucket, sector, sectors, min, max));
-    return new WrittenNode(min, max, builder.Pointer(sector, sectors, generationOf?.Invoke(bucket) ?? 0), bucket);
+    foreach (var (device, sector, bucket) in copies) {
+      var stream = image[device];
+      stream.Position = checked(sector * (long)SectorSize);
+      stream.Write(buffer, 0, sectors * SectorSize);
+      written.Add(new BcacheFsWrittenNode(btree, level, bucket, sector, sectors, min, max, device));
+    }
+    var pointer = builder.Pointer([.. copies.Select(c => (c.Device, c.Sector, generationOf?.Invoke(c.Bucket) ?? (byte)0))], sectors);
+    return new WrittenNode(min, max, pointer, copies[0].Bucket);
   }
 
   private static List<Key[]> PartitionKeys(IReadOnlyList<Key> sorted) {
@@ -187,4 +210,5 @@ internal sealed record BcacheFsWrittenNode(
   long Sector,
   int SectorsWritten,
   Bpos MinKey,
-  Bpos MaxKey);
+  Bpos MaxKey,
+  byte Device = 0);

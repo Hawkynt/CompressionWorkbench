@@ -141,8 +141,15 @@ internal sealed class BcacheFsNodeBuilder {
   /// The pointer that names this node: where it is, how much of it was written, and
   /// the identity a reader checks against the node itself.
   /// </summary>
-  internal Key Pointer(long sector, int sectorsWritten, byte generation = 0) {
-    var value = new byte[48];
+  internal Key Pointer(long sector, int sectorsWritten, byte generation = 0)
+    => this.Pointer([(0, sector, generation)], sectorsWritten);
+
+  /// <summary>
+  /// The pointer that names this node's <paramref name="copies" />, one pointer entry per member
+  /// holding one, in the order given.
+  /// </summary>
+  internal Key Pointer(IReadOnlyList<(byte Device, long Sector, byte Generation)> copies, int sectorsWritten) {
+    var value = new byte[40 + 8 * copies.Count];
     BinaryPrimitives.WriteUInt64LittleEndian(value, 0);                        // mem_ptr
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8), this.Seq);
     BinaryPrimitives.WriteUInt16LittleEndian(value.AsSpan(16), (ushort)sectorsWritten);
@@ -150,7 +157,9 @@ internal sealed class BcacheFsNodeBuilder {
     // A pointer repeats the range the node it names is responsible for: the low end
     // here, and the high end as the key's own position.
     WriteBpos(value.AsSpan(20), this.MinKey);
-    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(40), ExtentPointer(sector, generation: generation));
+    for (var i = 0; i < copies.Count; ++i)
+      BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(40 + 8 * i),
+        ExtentPointer(copies[i].Sector, copies[i].Device, copies[i].Generation));
     return new Key(KeyBtreePtrV2, this.MaxKey, 0, value);
   }
 }

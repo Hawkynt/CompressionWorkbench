@@ -37,16 +37,18 @@ internal static class BcacheFsMetadataCommit {
   internal readonly record struct BucketState(byte Generation, byte OldestGeneration, byte DataType);
 
   /// <summary>
-  /// Chooses node slots for the nodes of each tree, in the order the shapes list them: slot
-  /// <c>n</c> is the node at sector <c>n × NodeSectors</c>, the same number as its bucket
-  /// wherever a node fills a bucket.
+  /// Chooses node slots for the nodes of each tree, in the order the shapes list them, one per
+  /// copy (<see cref="BcacheFsDevices.MetadataReplicas" /> consecutive slots per node, each on
+  /// another member): slot <c>n</c> of a member is the node at sector <c>n × NodeSectors</c>, the
+  /// same number as its bucket wherever a node fills a bucket, and the member index sits above
+  /// it as in <see cref="BcacheFsBucketId" />.
   /// </summary>
   internal delegate IReadOnlyDictionary<int, long[]> Placement(
     IReadOnlyDictionary<int, IReadOnlyList<BcacheFsTreeNodeShape>> shapes);
 
   internal sealed record Published(
     IReadOnlyList<BcacheFsSuperblockComposer.Root> Roots,
-    BcacheFsAllocationBuilder.Usage Usage,
+    BcacheFsAllocationBuilder.VolumeUsage Usage,
     ulong Inodes,
     IReadOnlyDictionary<long, BucketState> FinalStates,
     IReadOnlySet<long> MetadataBuckets);
@@ -67,9 +69,20 @@ internal static class BcacheFsMetadataCommit {
       BcacheFsAllocationBuilder.Geometry geometry,
       IReadOnlyDictionary<int, List<Key>> logical,
       IReadOnlyDictionary<long, BucketState> previous,
+      Placement place)
+    => Publish(BcacheFsDevices.Single(image, geometry), magic, logical, previous, place);
+
+  /// <summary>
+  /// Lays out, derives and writes every tree across the members of <paramref name="devices" />.
+  /// </summary>
+  /// <param name="previous">What each bucket held before, by <see cref="BcacheFsBucketId" />.</param>
+  internal static Published Publish(
+      BcacheFsDevices devices,
+      ulong magic,
+      IReadOnlyDictionary<int, List<Key>> logical,
+      IReadOnlyDictionary<long, BucketState> previous,
       Placement place) {
-    ArgumentNullException.ThrowIfNull(image);
-    ArgumentNullException.ThrowIfNull(geometry);
+    ArgumentNullException.ThrowIfNull(devices);
     ArgumentNullException.ThrowIfNull(logical);
     ArgumentNullException.ThrowIfNull(previous);
     ArgumentNullException.ThrowIfNull(place);
@@ -78,6 +91,7 @@ internal static class BcacheFsMetadataCommit {
       if (DerivedTrees.Contains(id) || !TreeOrder.Contains(id))
         throw new ArgumentException($"bcachefs tree {id} is not a logical tree of this profile.", nameof(logical));
 
+    var copies = devices.MetadataReplicas;
     var trees = TreeOrder.ToDictionary(id => id, id => logical.TryGetValue(id, out var keys) ? keys.ToList() : []);
     var extents = trees[BtreeExtents];
     var indirect = trees[BtreeReflink];
@@ -106,34 +120,38 @@ internal static class BcacheFsMetadataCommit {
       foreach (var slots in placement.Values) offered.UnionWith(slots.Select(BucketOfSlot));
       var nodes = new List<BcacheFsAllocationBuilder.Node>();
       foreach (var (id, treeShapes) in shapes) {
-        var buckets = placement[id];
-        if (buckets.Length != treeShapes.Count)
-          throw new InvalidOperationException($"bcachefs tree {id} was offered {buckets.Length} buckets for {treeShapes.Count} nodes.");
-        for (var i = 0; i < treeShapes.Count; ++i)
-          nodes.Add(new(id, treeShapes[i].Level, treeShapes[i].MaxKey, buckets[i] * NodeSectors));
+        var slots = placement[id];
+        if (slots.Length != treeShapes.Count * copies)
+          throw new InvalidOperationException(
+            $"bcachefs tree {id} was offered {slots.Length} node slots for {treeShapes.Count} nodes of {copies} copies.");
+        for (var i = 0; i < slots.Length; ++i)
+          nodes.Add(new(id, treeShapes[i / copies].Level, treeShapes[i / copies].MaxKey,
+            BcacheFsBucketId.Index(slots[i]) * NodeSectors, BcacheFsBucketId.Device(slots[i])));
       }
 
       // What every bucket will hold decides its generation: a bucket that held
       // something and now holds nothing has been emptied, and emptying a bucket
       // advances its generation so no stale pointer can be mistaken for a live one.
-      var types = BcacheFsAllocationBuilder.Build(geometry, nodes, extents, indirect: indirect).DataType;
+      var types = BcacheFsAllocationBuilder.Build(devices.Geometry, nodes, extents, indirect: indirect).DataTypes;
       final = [];
       var generations = new Dictionary<long, BcacheFsAllocationBuilder.Generation>();
-      for (var b = 0L; b < types.LongLength; ++b) {
-        var before = previous.GetValueOrDefault(b);
-        var gen = before.Generation;
-        var oldest = before.OldestGeneration;
-        if (before.DataType != DataFree && types[b] == DataFree && !offered.Contains(b)) {
-          gen = unchecked((byte)(gen + 1));
-          oldest = gen;
+      foreach (var (device, deviceTypes) in types)
+        for (var index = 0L; index < deviceTypes.LongLength; ++index) {
+          var b = BcacheFsBucketId.Of(device, index);
+          var before = previous.GetValueOrDefault(b);
+          var gen = before.Generation;
+          var oldest = before.OldestGeneration;
+          if (before.DataType != DataFree && deviceTypes[index] == DataFree && !offered.Contains(b)) {
+            gen = unchecked((byte)(gen + 1));
+            oldest = gen;
+          }
+          if (gen != 0 || oldest != 0) generations[b] = new(gen, oldest);
+          if (gen != 0 || oldest != 0 || deviceTypes[index] != DataFree) final[b] = new(gen, oldest, deviceTypes[index]);
         }
-        if (gen != 0 || oldest != 0) generations[b] = new(gen, oldest);
-        if (gen != 0 || oldest != 0 || types[b] != DataFree) final[b] = new(gen, oldest, types[b]);
-      }
 
       foreach (var extent in extents) StampGeneration(extent, final);
       foreach (var key in indirect) StampGeneration(key, final);
-      derived = BcacheFsAllocationBuilder.Build(geometry, nodes, extents, generations, indirect);
+      derived = BcacheFsAllocationBuilder.Build(devices.Geometry, nodes, extents, generations, indirect);
       trees[BtreeAlloc] = derived.Alloc;
       trees[BtreeFreespace] = derived.Freespace;
       trees[BtreeLru] = derived.Lru;
@@ -148,7 +166,8 @@ internal static class BcacheFsMetadataCommit {
     }
 
     var metadataBuckets = placement.Values.SelectMany(b => b).Select(BucketOfSlot).ToHashSet();
-    foreach (var bucket in metadataBuckets) ZeroRange(image, bucket * (long)BucketBytes, BucketBytes);
+    foreach (var bucket in metadataBuckets)
+      ZeroRange(devices[BcacheFsBucketId.Device(bucket)], BcacheFsBucketId.Index(bucket) * BucketBytes, BucketBytes);
 
     byte GenerationOf(long bucket) => final.GetValueOrDefault(bucket).Generation;
 
@@ -156,7 +175,7 @@ internal static class BcacheFsMetadataCommit {
     foreach (var id in TreeOrder) {
       if (!shapes.ContainsKey(id)) continue;
       using var buckets = ((IEnumerable<long>)placement[id]).GetEnumerator();
-      var written = BcacheFsTreeLayout.Write(image, magic, id, trees[id], buckets, GenerationOf);
+      var written = BcacheFsTreeLayout.Write(devices, magic, id, trees[id], buckets, GenerationOf);
       roots.Add(new(id, written.Level, written.RootPointer));
     }
 
@@ -164,7 +183,8 @@ internal static class BcacheFsMetadataCommit {
     return new Published(roots, derived.Usage, inodes, final, metadataBuckets);
   }
 
-  private static long BucketOfSlot(long slot) => slot * NodeSectors / BucketSectors;
+  private static long BucketOfSlot(long slot)
+    => BcacheFsBucketId.Of(BcacheFsBucketId.Device(slot), BcacheFsBucketId.Index(slot) * NodeSectors / BucketSectors);
 
   /// <summary>Stamps the generation of the bucket an extent's data sits in into its pointer.</summary>
   private static void StampGeneration(Key extent, IReadOnlyDictionary<long, BucketState> states) {
@@ -173,14 +193,15 @@ internal static class BcacheFsMetadataCommit {
     if (extent.Type is not (KeyExtent or KeyReflinkV) || extent.Value.Length <= skip
         || !BcacheFsExtentCodec.TryParseEntries(extent.Value.AsSpan(skip), out var entries, out _))
       return;
+    // Every copy is stamped with the generation of the bucket it is in, on its own member.
     var at = skip;
     foreach (var entry in entries) {
       if (entry.KnownType == BcacheFsExtentEntryType.Pointer) {
         var word = BinaryPrimitives.ReadUInt64LittleEndian(extent.Value.AsSpan(at));
-        var gen = states.GetValueOrDefault(PointerSector(word) / BucketSectors).Generation;
+        var (device, sector) = BcacheFsBucketId.Pointer(word);
+        var gen = states.GetValueOrDefault(BcacheFsBucketId.OfSector(device, sector)).Generation;
         word = (word & ~(0xFFUL << 56)) | ((ulong)gen << 56);
         BinaryPrimitives.WriteUInt64LittleEndian(extent.Value.AsSpan(at), word);
-        return;
       }
       at += entry.RawBytes.Length;
     }
