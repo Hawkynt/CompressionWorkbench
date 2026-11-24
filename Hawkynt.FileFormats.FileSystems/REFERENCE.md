@@ -7639,17 +7639,20 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `ApfsReader` | `ApfsReader(Stream main, Stream tier2, string password, bool leaveOpen = false)` | Opens a Fusion container from its main device and its tier-2 device. With `tier2` null, a main device opened from a file finds its tier-2 device beside it (`FindTier2Beside`). |
 | `ApfsReader` | `ApfsReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `ApfsReader`. |
 | `ApfsReader` | `ApfsReader(Stream stream, string password, bool leaveOpen = false)` | Opens a container, unlocking a software-encrypted volume with `password`. |
 | `SnapshotFolder` | `const string SnapshotFolder` | Folder under which every snapshot's tree is listed, one sub-folder per snapshot name. |
 | `BlockSize` | `uint BlockSize { get; }` | Container block size from the superblock. |
 | `Entries` | `IReadOnlyList<ApfsEntry> Entries { get; }` | Gets the entries. |
+| `HasTier2` | `bool HasTier2 { get; }` | True when a Fusion container's tier-2 device was attached and is read. |
 | `IsEncrypted` | `bool IsEncrypted { get; }` | True when the volume is software-encrypted (and was unlocked to be read). |
 | `IsFusion` | `bool IsFusion { get; }` | True for a Fusion container (NX_INCOMPAT_FUSION): a fast main device and a tier-2 device. |
 | `Snapshots` | `IReadOnlyList<ValueTuple<string, ulong>> Snapshots { get; }` | The volume's snapshots, oldest first: name and the transaction they were taken at. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `ExtractTo` | `void ExtractTo(ApfsEntry entry, Stream destination)` | Copies an entry's bytes into `destination` a block at a time. An APFS file may be far larger than the byte[] `Extract` returns could hold. |
 | `Extract` | `byte[] Extract(ApfsEntry entry)` | Extracts a file's bytes: its data stream's extents in logical order (gaps and sparse extents read as zeros), or, for a transparently compressed file, the decoded decmpfs content. |
+| `FindTier2Beside` | `static string FindTier2Beside(string mainPath, ReadOnlySpan<byte> nxsb)` | The file beside `mainPath` that is the tier-2 device of the Fusion container whose superblock is `nxsb`, or null. Looks at no more than 256 files and reads one block of each. |
 
 #### `ApfsStructuralValidator`
 
@@ -17776,7 +17779,7 @@ Enumerates the active ReFS byte layout. Free space is fail-closed: a gap is free
 
 Microsoft ReFS (Resilient File System) volume descriptor. Read/list/extract follows metadata reachable from the active checkpoint. Offline layout writes are coordinated by the ReFS placement manager, which can relocate file data, live MSB+ metadata and checkpoint pages while preserving the format-fixed VBR/SUPB bootstrap anchors.
 
-Implements `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -17793,7 +17796,7 @@ Implements `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifi
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Offline-quiescent existing-file replacement for the proven regular-stream profile. A new name is rejected before mutation until ReFS file-identity/security/link fields are proven for every supported 3.x profile. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Refused: replacing files in place. The offline editor's output was judged by Windows Server 2022 and 2025 and rejected; see `EditsWithheld`. |
 | `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` | Performs the analyze layout operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
@@ -17803,8 +17806,8 @@ Implements `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifi
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` | Opens a filesystem session over the image. |
 | `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` | Probes the image and reports the filesystem driver profile. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes regular files or empty directories from an unmounted ReFS image. Namespace deletion is published through immutable B+ replacement pages and the alternate CHKP. |
-| `Rename` | `void Rename(Stream image, string sourcePath, string destinationPath)` | Renames an existing ReFS regular file within the same parent directory on an unmounted image, preserving its existing metadata and data allocation. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Refused: removing files in place; see `EditsWithheld`. |
+| `Rename` | `void Rename(Stream image, string sourcePath, string destinationPath)` | Refused: renaming files in place; see `EditsWithheld`. |
 
 #### `RefsOfflineBlockCloner`
 
