@@ -312,28 +312,64 @@ public sealed class Ocfs2KernelMountTests {
   }
 
   /// <summary>
-  /// Given a default mkfs.ocfs2 volume (indexed directories) where the kernel wrote 300 files into
-  /// one directory, when a file is added or removed there, then the edit is refused — its blocks
-  /// end in trailers and the kernel indexed it — and the volume is unchanged.
+  /// Given a default mkfs.ocfs2 volume (indexed directories) where the kernel wrote 1000 files into
+  /// one directory (its index in leaf clusters) and 100 into another (its index inline in the root),
+  /// when files are added, replaced and removed in both and each grows by hundreds of names — so
+  /// leaves split and the inline index moves into a leaf — then fsck.ocfs2 is clean before and after
+  /// a kernel read-write mount and the kernel reads exactly the edited tree; it then writes into the
+  /// same directories, and fsck stays clean.
   /// </summary>
   [Test]
-  public void ExtentDirectoryEdits_OnAnIndexedDirectory_AreRefused() {
+  public void IndexedDirectoryEdits_OnAKernelWrittenVolume_KernelReadsTheEditedTree() {
     RequireKernel();
     var img = this.MkfsVolume("indexed.ocfs2", "64M");
     var fill = this.Guestfish(img, [
       "mount-vfs \"\" ocfs2 /dev/sda /",
-      "mkdir /kmany",
-      "debug sh \"for i in $(seq 0 299); do echo f$i > /sysroot/kmany/file-with-a-longish-name-$i.txt; done\"",
+      "mkdir /kbig",
+      "mkdir /ksmall",
+      "debug sh \"for i in $(seq 0 999); do echo f$i > /sysroot/kbig/file-with-a-longish-name-$i.txt; done\"",
+      "debug sh \"for i in $(seq 0 99); do echo f$i > /sysroot/ksmall/file-with-a-longish-name-$i.txt; done\"",
       "umount /",
     ]);
     Assert.That(fill.ExitCode, Is.Zero, fill.Output);
-    var before = File.ReadAllBytes(img);
-    using (var s = File.Open(img, FileMode.Open, FileAccess.ReadWrite)) {
-      var d = new Ocfs2FormatDescriptor();
-      Assert.That(Assert.Throws<NotSupportedException>(() => d.Add(s, [ArchiveInputInfo.InMemory("kmany/x.txt", [1])]))!.Message, Does.Contain("index"));
-      Assert.Throws<NotSupportedException>(() => d.Remove(s, ["kmany/file-with-a-longish-name-1.txt"]));
+    var expected = ManyNames("kbig", 1000);
+    foreach (var (name, data) in ManyNames("ksmall", 100)) expected[name] = data;
+    Assert.That(Fsck(img).ExitCode, Is.Zero, "precondition: the kernel's volume is clean");
+
+    var d = new Ocfs2FormatDescriptor();
+    void Add(string name, byte[] data) {
+      using var s = File.Open(img, FileMode.Open, FileAccess.ReadWrite);
+      d.Add(s, [ArchiveInputInfo.InMemory(name, data)]);
+      expected[name] = data;
     }
-    Assert.That(File.ReadAllBytes(img), Is.EqualTo(before));
+    using (var s = File.Open(img, FileMode.Open, FileAccess.ReadWrite)) {
+      d.Remove(s, ["kbig/file-with-a-longish-name-0.txt", "kbig/file-with-a-longish-name-500.txt", "ksmall/file-with-a-longish-name-3.txt"]);
+    }
+    expected.Remove("kbig/file-with-a-longish-name-0.txt");
+    expected.Remove("kbig/file-with-a-longish-name-500.txt");
+    expected.Remove("ksmall/file-with-a-longish-name-3.txt");
+    Add("kbig/file-with-a-longish-name-7.txt", "replaced by cwb\n"u8.ToArray());
+    Add("kbig/sub/deeper/cwb.bin", Ocfs2LayoutTests.Pattern(20_000, 12));
+    var batch = new List<ArchiveInputInfo>();
+    for (var i = 0; i < 400; ++i) {
+      var name = $"kbig/grown-by-cwb-with-a-long-name-{i}.txt";
+      expected[name] = Encoding.ASCII.GetBytes($"g{i}\n");
+      batch.Add(ArchiveInputInfo.InMemory(name, expected[name]));
+    }
+    for (var i = 0; i < 300; ++i) {
+      var name = $"ksmall/grown-by-cwb-{i}.txt";
+      expected[name] = Encoding.ASCII.GetBytes($"h{i}\n");
+      batch.Add(ArchiveInputInfo.InMemory(name, expected[name]));
+    }
+    using (var s = File.Open(img, FileMode.Open, FileAccess.ReadWrite)) d.Add(s, batch);
+
+    var view = this.Mount(img, readWrite: [
+      "write /kbig/k.txt \"k\"",
+      "write /ksmall/k.txt \"k\"",
+      "rm /kbig/grown-by-cwb-with-a-long-name-5.txt",
+    ]);
+    view.AssertClean();
+    AssertFiles(view, expected);
   }
 
   // ── extent trees written by the kernel ────────────────────────────────

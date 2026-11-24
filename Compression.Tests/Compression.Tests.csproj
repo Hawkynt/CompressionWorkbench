@@ -321,6 +321,10 @@
     </EmbeddedResource>
     <!-- Volumes a Reiser4 kernel wrote under mkfs.reiser4 plugin profiles, with the kernel's read-back;
          see Reiser4/ReferenceVectors/README.md. -->
+    <!-- An OCFS2 volume the Linux kernel filled with indexed directories; see Ocfs2/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Ocfs2\ReferenceVectors\*.gz">
+      <LogicalName>Ocfs2Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="Reiser4\ReferenceVectors\*.gz;Reiser4\ReferenceVectors\*.manifest">
       <LogicalName>Reiser4Vectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
