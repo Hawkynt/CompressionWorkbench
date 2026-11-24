@@ -513,7 +513,7 @@ format,Rarc,Nintendo RARC,Archive,,.arc;.rarc,Y,Y,Y,
 format,RarRecoveryVolume,RAR recovery volume,Archive,,.rev,Y,Y,,
 format,RealMedia,RealMedia / RealAudio,Audio,,.rm;.rmvb;.ra,Y,Y,Y,
 format,RefPack,RefPack/QFS,Stream,,.qfs;.refpack,,Y,Y,
-format,Refs,ReFS,Archive,Y,.refs,Y,Y,,
+format,Refs,ReFS,Archive,Y,.refs,Y,Y,,Y
 format,Reg,Windows Registry export,Archive,,.reg,Y,Y,Y,
 format,Regf,Windows Registry hive (REGF),Archive,,.hiv;.hive;.hve,Y,Y,,
 format,Reiser4,Reiser4,Archive,Y,.reiser4,Y,Y,Y,Y

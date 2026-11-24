@@ -98,19 +98,20 @@ public sealed class FilesystemRwPromotionRoundTripTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Refs_IsReadOnlyAndRefusesEveryEditBeforeTouchingBytes() {
+  public void Refs_OverwritesInPlaceOnlyAndRefusesOtherEditsBeforeTouchingBytes() {
     Compression.Lib.FormatRegistration.EnsureInitialized();
     var ops = FormatRegistry.GetArchiveOps("Refs")!;
     var descriptor = FormatRegistry.All.Single(d => d.Id == "Refs");
-    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
-      "Windows Server 2022/2025 rejected the offline editor's output; see RefsWindowsOracleTests.");
+    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
+      "same-length overwrites, accepted by Windows Server 2022/2025; see RefsWindowsOracleTests.");
 
     var imageBytes = BuildMinimalRefsHeader();
     using var image = new MemoryStream(imageBytes, writable: true);
     var before = image.ToArray();
     var modifiable = (IArchiveModifiable)ops;
     Assert.Multiple(() => {
-      Assert.Throws<NotSupportedException>(() => modifiable.Add(image, [ArchiveInputInfo.InMemory("A.TXT", [1, 2, 3])]));
+      Assert.That(() => modifiable.Add(image, [ArchiveInputInfo.InMemory("A.TXT", [1, 2, 3])]),
+        Throws.TypeOf<InvalidDataException>().Or.TypeOf<NotSupportedException>(), "a header-only image has no namespace to overwrite into");
       Assert.Throws<NotSupportedException>(() => modifiable.Remove(image, ["A.TXT"]));
       Assert.Throws<NotSupportedException>(() => ((FileSystem.Refs.RefsFormatDescriptor)descriptor).Defragment(image));
       Assert.That(image.ToArray(), Is.EqualTo(before));

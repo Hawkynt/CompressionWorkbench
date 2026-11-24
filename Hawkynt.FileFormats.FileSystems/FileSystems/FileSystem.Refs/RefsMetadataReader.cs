@@ -224,6 +224,15 @@ internal sealed class RefsMetadataReader {
     return this.TryReadPage(lcns);
   }
 
+  /// <summary>Reads the metadata page a reference names, translating virtual LCNs; null when out of reach or not an MSB+ page.</summary>
+  public byte[]? TryReadReferencedPage(RefsPageReference reference, bool virtualAddresses) {
+    if (reference.Lcns.Count == 0) return null;
+    var physical = new List<ulong>(reference.Lcns.Count);
+    foreach (var lcn in reference.Lcns) physical.Add(virtualAddresses ? this.TranslateVirtualLcn(lcn) : lcn);
+    var page = this.TryReadPage(physical);
+    return page != null && HasSignature(page, "MSB+"u8) ? page : null;
+  }
+
   private byte[]? TryReadPage(IReadOnlyList<ulong> physicalLcns) {
     if (physicalLcns.Count == 0) return null;
     var page = new byte[this.PageSize];
