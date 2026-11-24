@@ -354,6 +354,57 @@ public sealed class BcacheFsKernelMountTests {
   }
 
   /// <summary>
+  /// Files the kernel cloned with <c>cp --reflink=always</c> — their data moved into the reflink
+  /// tree, one clone partly overwritten — are read as the kernel reads them; after we add a file,
+  /// replace one clone and remove another, fsck is clean and the kernel reads what we read, and
+  /// after the last names of the shared data go, fsck is still clean.
+  /// </summary>
+  [Test, Category("RoundTrip")]
+  public void GivenFilesTheKernelReflinked_WhenWeEditAroundAndRemoveThemInPlace_ThenFsckIsCleanAndTheKernelAgrees() {
+    BcacheFsKernel.Require();
+    var path = Path.Combine(this._tmpDir, "reflinked.img");
+    using (var stream = File.Create(path)) Sampler().Writer.WriteTo(stream);
+    var kernel = ParseListing(BcacheFsKernel.Session(path, """
+      set -e
+      cd /sysroot
+      mkdir -p shared
+      cp --reflink=always big.bin shared/big-clone.bin
+      cp --reflink=always big.bin shared/big-clone2.bin
+      dd if=/dev/urandom of=shared/big-clone2.bin bs=4096 seek=5 count=2 conv=notrunc status=none
+      seq 1 50000 > shared/seq.txt
+      cp --reflink=always shared/seq.txt shared/seq-clone.txt
+      sync
+      """ + "\n" + ListingScript));
+    BcacheFsKernel.AssertFsckClean(path);
+    AssertSameTree(kernel, ReadOurselves(path));
+
+    var added = Payload(70_000, 41);
+    var descriptor = new BcacheFsFormatDescriptor();
+    using (var image = new FileStream(path, FileMode.Open, FileAccess.ReadWrite)) {
+      descriptor.Add(image, [
+        ArchiveInputInfo.InMemory("shared/added.bin", added),
+        ArchiveInputInfo.InMemory("shared/seq-clone.txt", Encoding.ASCII.GetBytes("replaced clone\n")),
+      ]);
+      image.Position = 0;
+      descriptor.Remove(image, ["shared/big-clone.bin"]);
+    }
+    BcacheFsKernel.AssertFsckClean(path);
+    var afterEdit = ParseListing(BcacheFsKernel.Session(path, ListingScript));
+    AssertSameTree(afterEdit, ReadOurselves(path));
+    Assert.Multiple(() => {
+      Assert.That(afterEdit.Keys, Does.Not.Contain("shared/big-clone.bin"));
+      Assert.That(afterEdit["shared/added.bin"].Content, Is.EqualTo(Convert.ToHexStringLower(SHA256.HashData(added))));
+      Assert.That(afterEdit["shared/big-clone2.bin"].Content, Is.EqualTo(kernel["shared/big-clone2.bin"].Content));
+      Assert.That(afterEdit["big.bin"].Content, Is.EqualTo(kernel["big.bin"].Content));
+    });
+
+    using (var image = new FileStream(path, FileMode.Open, FileAccess.ReadWrite))
+      descriptor.Remove(image, ["big.bin", "shared/big-clone2.bin", "shared/seq.txt"]);
+    BcacheFsKernel.AssertFsckClean(path);
+    AssertSameTree(ParseListing(BcacheFsKernel.Session(path, ListingScript)), ReadOurselves(path));
+  }
+
+  /// <summary>
   /// Data the kernel stored compressed is carried through our in-place edits as it
   /// is: its accounting uses the compressed size, the kernel still reads it, and a
   /// defragmentation that would have to decode it to move it is refused with the

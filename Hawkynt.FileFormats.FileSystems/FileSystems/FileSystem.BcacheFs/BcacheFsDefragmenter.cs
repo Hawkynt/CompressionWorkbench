@@ -18,7 +18,9 @@ internal static class BcacheFsDefragmenter {
     ArgumentNullException.ThrowIfNull(options);
     if (!image.CanRead || !image.CanWrite || !image.CanSeek)
       throw new ArgumentException("bcachefs defragmentation needs a readable, writable, seekable stream.", nameof(image));
-    BcacheFsInPlaceModifier.RequireWritableProfile(image);
+    if (BcacheFsInPlaceModifier.RequireWritableProfile(image).TryGetValue(BtreeReflink, out var reflinked) && reflinked.Count != 0)
+      throw new NotSupportedException(
+        "bcachefs: the volume holds reflinked (shared) data; defragmentation moves extents one file at a time and would unshare or orphan it.");
     // The layout pass moves runs by rewriting pointers in place, which it can only
     // do in nodes laid out the way this package writes them and for extents that
     // fill a bucket of their own; a volume the kernel wrote into is brought to that

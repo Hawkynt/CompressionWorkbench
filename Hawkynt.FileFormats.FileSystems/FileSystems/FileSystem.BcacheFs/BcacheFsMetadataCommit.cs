@@ -23,7 +23,7 @@ internal static class BcacheFsMetadataCommit {
 
   /// <summary>The order trees are laid down in, and the trees this profile owns.</summary>
   internal static readonly int[] TreeOrder = [
-    BtreeExtents, BtreeInodes, BtreeDirents, BtreeXattrs,
+    BtreeExtents, BtreeInodes, BtreeDirents, BtreeXattrs, BtreeReflink,
     BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees,
     BtreeAlloc, BtreeBucketGens, BtreeFreespace, BtreeLru, BtreeBackpointers,
   ];
@@ -76,6 +76,7 @@ internal static class BcacheFsMetadataCommit {
 
     var trees = TreeOrder.ToDictionary(id => id, id => logical.TryGetValue(id, out var keys) ? keys.ToList() : []);
     var extents = trees[BtreeExtents];
+    var indirect = trees[BtreeReflink];
 
     Dictionary<int, IReadOnlyList<BcacheFsTreeNodeShape>> Describe() =>
       TreeOrder.Where(id => trees[id].Count != 0)
@@ -111,7 +112,7 @@ internal static class BcacheFsMetadataCommit {
       // What every bucket will hold decides its generation: a bucket that held
       // something and now holds nothing has been emptied, and emptying a bucket
       // advances its generation so no stale pointer can be mistaken for a live one.
-      var types = BcacheFsAllocationBuilder.Build(geometry, nodes, extents).DataType;
+      var types = BcacheFsAllocationBuilder.Build(geometry, nodes, extents, indirect: indirect).DataType;
       final = [];
       var generations = new Dictionary<long, BcacheFsAllocationBuilder.Generation>();
       for (var b = 0L; b < types.LongLength; ++b) {
@@ -127,7 +128,8 @@ internal static class BcacheFsMetadataCommit {
       }
 
       foreach (var extent in extents) StampGeneration(extent, final);
-      derived = BcacheFsAllocationBuilder.Build(geometry, nodes, extents, generations);
+      foreach (var key in indirect) StampGeneration(key, final);
+      derived = BcacheFsAllocationBuilder.Build(geometry, nodes, extents, generations, indirect);
       trees[BtreeAlloc] = derived.Alloc;
       trees[BtreeFreespace] = derived.Freespace;
       trees[BtreeLru] = derived.Lru;
@@ -160,10 +162,12 @@ internal static class BcacheFsMetadataCommit {
 
   /// <summary>Stamps the generation of the bucket an extent's data sits in into its pointer.</summary>
   private static void StampGeneration(Key extent, IReadOnlyDictionary<long, BucketState> states) {
-    if (extent.Type != KeyExtent
-        || !BcacheFsExtentCodec.TryParseEntries(extent.Value, out var entries, out _))
+    // A reflink_v's entries follow its refcount.
+    var skip = extent.Type == KeyReflinkV ? 8 : 0;
+    if (extent.Type is not (KeyExtent or KeyReflinkV) || extent.Value.Length <= skip
+        || !BcacheFsExtentCodec.TryParseEntries(extent.Value.AsSpan(skip), out var entries, out _))
       return;
-    var at = 0;
+    var at = skip;
     foreach (var entry in entries) {
       if (entry.KnownType == BcacheFsExtentEntryType.Pointer) {
         var word = BinaryPrimitives.ReadUInt64LittleEndian(extent.Value.AsSpan(at));

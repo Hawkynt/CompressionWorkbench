@@ -147,6 +147,7 @@ internal static class BcacheFsFormat {
   internal const int BtreeDirents = 2;
   internal const int BtreeXattrs = 3;
   internal const int BtreeAlloc = 4;
+  internal const int BtreeReflink = 7;
   internal const int BtreeSubvolumes = 8;
   internal const int BtreeSnapshots = 9;
   internal const int BtreeLru = 10;
@@ -163,6 +164,12 @@ internal static class BcacheFsFormat {
   internal const byte KeyExtent = 6;
   internal const byte KeyReservation = 7;
   internal const byte KeyInlineData = 17;
+  /// <summary><c>KEY_TYPE_reflink_p</c>: a stretch of a file whose bytes are an indirect extent's; the value starts with <c>idx</c> (u64), then the front and back pads (u32 each).</summary>
+  internal const byte KeyReflinkP = 15;
+  /// <summary><c>KEY_TYPE_reflink_v</c>: an indirect extent in the reflink tree, a refcount (u64) and then an extent's entries.</summary>
+  internal const byte KeyReflinkV = 16;
+  /// <summary><c>KEY_TYPE_indirect_inline_data</c>: a refcount (u64) and then the bytes themselves.</summary>
+  internal const byte KeyIndirectInlineData = 19;
   internal const byte KeyDirent = 10;
   internal const byte KeyXattr = 11;
   internal const byte KeyBtreePtrV2 = 18;

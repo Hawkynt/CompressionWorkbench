@@ -192,8 +192,17 @@ public sealed class BcacheFsReader : IDisposable {
     // Then the extents, gathered per inode and ordered by where they land in the file.
     var extents = new Dictionary<ulong, List<Extent>>();
     var unreadable = new Dictionary<ulong, string>();
+    // Indirect extents a reflink_p reaches into, in key order (each names the sector one past its end).
+    var indirect = Keys(BcacheFsBtreeId.Reflink)
+      .Where(static k => k.RawType is KeyReflinkV or KeyIndirectInlineData)
+      .OrderBy(static k => k.Position.Offset).ToList();
     foreach (var key in Keys(BcacheFsBtreeId.Extents)) {
       if (key.Position.Snapshot != snapshot) continue;
+      // A reflinked stretch: the bytes live in the reflink tree, from idx on.
+      if (key.RawType == KeyReflinkP) {
+        if (!TryAddReflink(core, key, indirect, AddExtent, out var why)) unreadable.TryAdd(key.Position.Inode, why);
+        continue;
+      }
       // A stretch of a small file can live in the key itself.
       if (key.RawType == KeyInlineData) {
         AddExtent(key, new Extent(0, (int)key.Size, ((long)key.Position.Offset - key.Size) * SectorSize) {
@@ -271,6 +280,60 @@ public sealed class BcacheFsReader : IDisposable {
   private const byte KeyInlineData = 17;
 
   /// <summary>
+  /// Resolves a <c>reflink_p</c> into the indirect extents it reaches. Its value starts with
+  /// <c>idx</c> (u64): the file stretch <c>[end - size, end)</c> reads the reflink tree's
+  /// <c>[idx, idx + size)</c> (the pads after it widen only what the key holds a reference to).
+  /// Each overlapping <c>reflink_v</c> or <c>indirect_inline_data</c> — a 64-bit refcount, then an
+  /// extent's entries or the inline bytes — contributes the part that overlaps, cut at its front
+  /// the way a partly overwritten extent is cut: further into its checksummed region, or further
+  /// into its plain sectors. A stretch no indirect extent covers cannot be read: the kernel reports
+  /// it as a missing indirect extent, and so does this reader.
+  /// </summary>
+  private static bool TryAddReflink(BcacheFsCoreVolume core, BcacheFsRawKey key, List<BcacheFsRawKey> indirect,
+      Action<BcacheFsRawKey, Extent> add, out string reason) {
+    if (key.Value.Length < 8) {
+      reason = "reflink_p key is too short";
+      return false;
+    }
+    var idx = BinaryPrimitives.ReadUInt64LittleEndian(key.Value);
+    var fileStart = (long)key.Position.Offset - key.Size;
+    var wantEnd = idx + (ulong)key.Size;
+    var covered = idx;
+    foreach (var target in indirect) {
+      var targetEnd = target.Position.Offset;
+      var targetStart = targetEnd - (ulong)target.Size;
+      if (targetEnd <= covered) continue;
+      if (targetStart > covered) break;   // a gap: nothing to read there
+      var hi = Math.Min(wantEnd, targetEnd);
+      var cut = (uint)(covered - targetStart);
+      var sectors = (int)(hi - covered);
+      var at = (fileStart + (long)(covered - idx)) * SectorSize;
+      if (target.Value.Length < 8) {
+        reason = "an indirect extent is too short";
+        return false;
+      }
+      var body = target.Value.AsSpan(8).ToArray();
+      if (target.RawType == KeyIndirectInlineData) {
+        var from = (int)Math.Min(body.Length, (long)cut * SectorSize);
+        add(key, new Extent(0, sectors, at) { Stored = new BcacheFsStoredExtent(0, null, body[from..]) });
+      } else {
+        if (!TryLocate(core, body, out var sector, out var stored, out reason)) return false;
+        add(key, stored is { Crc: { } crc }
+          ? new Extent(sector, sectors, at) { Stored = stored with { Crc = crc with { Offset = crc.Offset + cut } } }
+          : new Extent(sector + cut, sectors, at));
+      }
+      covered = hi;
+      if (covered >= wantEnd) break;
+    }
+    if (covered < wantEnd) {
+      reason = $"reflink_p names indirect extent sectors {covered}..{wantEnd} that the reflink tree does not hold";
+      return false;
+    }
+    reason = string.Empty;
+    return true;
+  }
+
+  /// <summary>
   /// Where an extent's data is and how it is stored. An uncompressed extent's live
   /// data starts at its pointer, advanced by the checksummed region's offset when
   /// the extent is the live part of a larger one; a compressed one starts at the
@@ -278,11 +341,15 @@ public sealed class BcacheFsReader : IDisposable {
   /// verify and decode it.
   /// </summary>
   private static bool TryLocate(BcacheFsCoreVolume core, BcacheFsRawKey key, out long sector,
+      out BcacheFsStoredExtent? stored, out string reason)
+    => TryLocate(core, key.Value, out sector, out stored, out reason);
+
+  private static bool TryLocate(BcacheFsCoreVolume core, byte[] value, out long sector,
       out BcacheFsStoredExtent? stored, out string reason) {
     sector = -1;
     stored = null;
     BcacheFsExtentCrc? current = null;
-    if (!BcacheFsExtentCodec.TryParseEntries(key.Value, core.Superblock, out var entries, out reason))
+    if (!BcacheFsExtentCodec.TryParseEntries(value, core.Superblock, out var entries, out reason))
       return false;
 
     uint offset = 0;

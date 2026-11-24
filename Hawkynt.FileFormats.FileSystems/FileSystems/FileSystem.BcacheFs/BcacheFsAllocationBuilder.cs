@@ -72,7 +72,8 @@ internal static class BcacheFsAllocationBuilder {
       Geometry geometry,
       IReadOnlyList<Node> nodes,
       IEnumerable<Key> extents,
-      IReadOnlyDictionary<long, Generation>? generations = null) {
+      IReadOnlyDictionary<long, Generation>? generations = null,
+      IEnumerable<Key>? indirect = null) {
     ArgumentNullException.ThrowIfNull(geometry);
     ArgumentNullException.ThrowIfNull(nodes);
     ArgumentNullException.ThrowIfNull(extents);
@@ -126,6 +127,15 @@ internal static class BcacheFsAllocationBuilder {
       Mark(at.Sector, at.DiskSectors, DataUser);
       usage.UserSectors += (ulong)at.DiskSectors;
       backpointers.Add(BackpointerKey(at.Sector, BtreeExtents, 0, DataUser, at.DiskSectors, extent.Position, at.RegionOffset));
+    }
+
+    // An indirect extent occupies the device like any extent, and its backpointer names the
+    // reflink tree and the indirect key, not the files that reach it.
+    foreach (var key in indirect ?? []) {
+      if (IndirectAsExtent(key) is not { } extent || Footprint(extent) is not { } at) continue;
+      Mark(at.Sector, at.DiskSectors, DataUser);
+      usage.UserSectors += (ulong)at.DiskSectors;
+      backpointers.Add(BackpointerKey(at.Sector, BtreeReflink, 0, DataUser, at.DiskSectors, key.Position, at.RegionOffset));
     }
 
     var alloc = new List<Key>();
@@ -205,6 +215,13 @@ internal static class BcacheFsAllocationBuilder {
   /// The disk cost is <c>ptr_disk_sectors</c>: the key's size, or for a compressed
   /// region its size scaled by compressed over uncompressed, rounded up.
   /// </remarks>
+  /// <summary>
+  /// A <c>reflink_v</c> as the extent it describes: the same position and size, its value without
+  /// the leading 64-bit refcount. Null for any other key (indirect inline data has no footprint).
+  /// </summary>
+  internal static Key? IndirectAsExtent(Key key)
+    => key.Type == KeyReflinkV && key.Value.Length > 8 ? new Key(KeyExtent, key.Position, key.Size, key.Value[8..]) : null;
+
   internal static ExtentFootprint? Footprint(Key extent) {
     if (extent.Type != KeyExtent) return null;
     if (!BcacheFsExtentCodec.TryParseEntries(extent.Value, out var entries, out var error))

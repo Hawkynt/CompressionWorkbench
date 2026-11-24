@@ -278,7 +278,20 @@ result when it is at least one block smaller.
 in whole words (the tail beyond the inode size is padding). The key covers
 `size` sectors ending at its position like any extent; anything past the data
 reads as zeroes. `indirect_inline_data` (19) is the same thing in the reflink
-tree, reached only through a `reflink_p`, which this reader does not follow.
+tree, reached through a `reflink_p`.
+
+**Reflinks** — `cp --reflink` moves the file's data into the **reflink tree** (btree 7):
+`KEY_TYPE_reflink_v` (16) keys at inode 0, positioned like extents by the sector one past their
+end, whose value is a 64-bit **refcount** followed by an ordinary extent's entries (crc, pointer).
+Every name of the data then holds `KEY_TYPE_reflink_p` (15) keys in the extents tree: the value is
+`idx` (u64), `front_pad` (u32), `back_pad` (u32); the file stretch `[end - size, end)` reads the
+reflink tree's `[idx, idx + size)`, and the key holds a reference to `[idx - front_pad, idx + size +
+back_pad)`. A partial overwrite of a clone splits its `reflink_p` around a new plain extent and pads
+the halves so they still reference the whole indirect extent. Measured on volumes the 6.8 kernel
+reflinked: a `reflink_v`'s refcount is the number of `reflink_p` keys whose padded range overlaps
+it, and its backpointer names btree 7 and the indirect key. The reader cuts an indirect extent at
+its front the way it cuts a partly overwritten extent; a stretch no indirect extent covers is
+refused, as the kernel reports a missing indirect extent.
 
 **Encryption** needs the volume key (ChaCha20, MAC by Poly1305) and this
 repository has no implementation of either, so a file with an encrypted extent
@@ -308,7 +321,9 @@ Every edit re-publishes every tree from the keys it read, taken from the recover
 view (every visible bset, packed or not, the journal replayed), so it runs on any
 volume whose every tree it either carries or rebuilds:
 
-- carried key by key: extents (pointer extents, inline data, reservations), inodes
+- carried key by key: extents (pointer extents, inline data, reservations, `reflink_p`), the
+  reflink tree (`reflink_v`, `indirect_inline_data`; refcounts must equal the references found, and
+  removing or replacing a file counts its references down, dropping an indirect extent at zero), inodes
   (`inode_v3`, and whatever else the tree holds that names no file), dirents,
   xattrs (with their inode: kept while it survives, dropped with it), subvolumes,
   snapshots, snapshot trees;
@@ -316,7 +331,7 @@ volume whose every tree it either carries or rebuilds:
   need_discard, LRU, backpointers;
 - refused with the reason: a volume not cleanly shut down, of several members,
   newer than **1.4**, with buckets other than 64 KiB or the journal elsewhere than
-  this writer puts it, with keys in any other tree (reflink, quotas, stripes,
+  this writer puts it, with keys in any other tree (quotas, stripes,
   logged ops …), or with an inode no directory reaches.
 
 A file whose bytes are not touched keeps its inode and extents exactly: a sparse
