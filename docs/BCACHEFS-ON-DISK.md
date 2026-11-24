@@ -371,7 +371,16 @@ encrypted and never encipher two different things under one nonce
 - the block mover never patches an encrypted node in place: its moves are
   applied when the metadata is republished;
 - a shrink rebuilds the files into a smaller volume under the same master key,
-  crypt field and UUIDs (the same passphrase opens it), continuing both counters.
+  crypt field and UUIDs (the same passphrase opens it), continuing both counters;
+  every file whose extents all point at regions is copied as stored (each region,
+  compressed or not, unchanged in a bucket of its own, keys keeping their versions
+  and checksum entries, holes kept), so the same nonce only ever covers the same
+  ciphertext. A volume with compressed extents is shrunk the same way when it is
+  not encrypted, so it stays compressed; files with inline data are written from
+  their decoded bytes. Checked: the 6.8 kernel writes zstd extents (plain and
+  encrypted) into our volume, we defragment and shrink it, and the shrunk volume is
+  clean under fsck, lists in the kernel exactly as we read it, and holds as many
+  compressed regions.
 
 A wrapped key needs its passphrase (`ArchiveMutationOptions.Password` for Add
 and Remove; defragmentation and shrinking take no password, so they work on

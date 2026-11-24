@@ -295,6 +295,19 @@ public sealed class BcacheFsEncryptedEditTests {
     AssertFsckClean(path, null);
     Assert.That(Listing(BcacheFsKernel.Session(path, ListingScript)), Is.EquivalentTo(Ours(path, null)));
     Assert.That(BcacheFsKernelMountTests.CompressedRegions(path), Is.EqualTo(compressed), "the moved extents stay compressed");
+
+    // A shrink copies the encrypted compressed regions as stored: same ciphertext under the same nonce.
+    var shrunk = Path.Combine(this._tmpDir, "kernel-zstd-shrunk.img");
+    using (var input = File.OpenRead(path))
+    using (var output = File.Create(shrunk))
+      new BcacheFsFormatDescriptor().Shrink(input, output);
+    Assert.That(new FileInfo(shrunk).Length, Is.LessThan(new FileInfo(path).Length), "the rebuild is smaller");
+    foreach (var (nonce, cipher) in NonceCensus(shrunk))
+      if (seen.TryGetValue(nonce, out var before))
+        Assert.That(cipher, Is.EqualTo(before), $"shrink: nonce {nonce} reused for different ciphertext");
+    AssertFsckClean(shrunk, null);
+    Assert.That(Listing(BcacheFsKernel.Session(shrunk, ListingScript)), Is.EquivalentTo(Ours(shrunk, null)));
+    Assert.That(BcacheFsKernelMountTests.CompressedRegions(shrunk), Is.EqualTo(compressed), "the shrunk volume stays compressed");
   }
 
   /// <summary>

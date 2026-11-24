@@ -294,6 +294,35 @@ public sealed class BcacheFsWriter {
     internal long FirstSector { get; set; }
     internal List<byte[]> ExtentValues { get; } = [];
     internal List<BcacheFsKeyVersion> ExtentVersions { get; } = [];
+    /// <summary>A file copied as stored (<see cref="AddEncodedFile"/>), and where each of its regions lands.</summary>
+    internal IReadOnlyList<EncodedExtent>? Encoded { get; init; }
+    internal Dictionary<long, long> RegionSectors { get; } = [];
+  }
+
+  /// <summary>
+  /// One extent of a file copied as it is stored on another volume: where it covers the file
+  /// (first sector, live sectors), its encoded region's bytes and old first sector, the key's
+  /// value (checksum entry and pointer, repointed when written) and version (part of an
+  /// encrypted region's nonce).
+  /// </summary>
+  internal sealed record EncodedExtent(long FileSector, uint LiveSectors, long RegionSector, byte[] Region, byte[] Value,
+    BcacheFsKeyVersion Version);
+
+  private readonly Dictionary<string, IReadOnlyList<EncodedExtent>> _encoded = new(StringComparer.Ordinal);
+
+  /// <summary>
+  /// Adds a file whose extents are copied as another volume stores them - compressed,
+  /// checksummed or encrypted regions unchanged, each in a bucket of its own, holes left holes -
+  /// so a rebuild keeps them as they were. Encrypted ones need the same master key
+  /// (<see cref="SetEncryptionKey"/>).
+  /// </summary>
+  internal void AddEncodedFile(string name, long length, ArchiveEntryMetadata? metadata, IReadOnlyList<EncodedExtent> extents) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(extents);
+    if (extents.Any(e => e.Region.Length > BucketBytes || e.Region.Length % SectorSize != 0))
+      throw new NotSupportedException("bcachefs: an encoded region larger than a bucket is not copied here.");
+    this._entries.Add((name, Kind.File, FilePayload.FromStream(length, () => Stream.Null), metadata));
+    this._encoded[NormalizePath(name)] = extents;
   }
 
   private sealed class PlannedDirectory {
@@ -334,6 +363,14 @@ public sealed class BcacheFsWriter {
     var buffer = new byte[MaxExtentSectors * SectorSize];
 
     foreach (var file in plan.Files) {
+      if (file.Encoded is { } encoded) {
+        // Copied regions go down as they were stored; their checksums and MACs still hold.
+        foreach (var e in encoded.DistinctBy(e => e.RegionSector)) {
+          output.Position = file.RegionSectors[e.RegionSector] * SectorSize;
+          output.Write(e.Region);
+        }
+        continue;
+      }
       if (file.Length == 0) continue;
 
       output.Position = file.FirstSector * SectorSize;
@@ -417,8 +454,14 @@ public sealed class BcacheFsWriter {
       var file = new PlannedFile {
         Inode = nextInode++, Length = payload.Size, Payload = payload, Metadata = metadata,
         FirstSector = bucket * BucketSectors,
+        Encoded = this._encoded.GetValueOrDefault(path),
       };
-      bucket += (file.Length + BucketBytes - 1) / BucketBytes;
+      if (file.Encoded is { } encoded) {
+        // One bucket per distinct region; keys sharing a region keep sharing it.
+        foreach (var region in encoded.Select(e => e.RegionSector).Distinct())
+          file.RegionSectors[region] = bucket++ * BucketSectors;
+      } else
+        bucket += (file.Length + BucketBytes - 1) / BucketBytes;
       files.Add(file);
       inodeOfPath[path] = file.Inode;
       planned.Add((file, name, parent, kind));
@@ -439,11 +482,25 @@ public sealed class BcacheFsWriter {
     }
 
     foreach (var (file, name, parent, kind) in planned) {
-      var sectors = (file.Length + SectorSize - 1) / SectorSize;
+      // A copied file counts the sectors its extents cover (holes stay holes).
+      var sectors = file.Encoded is { } copied
+        ? copied.Sum(e => (long)e.LiveSectors)
+        : (file.Length + SectorSize - 1) / SectorSize;
       inodes.Add(InodeKey(file.Inode, parent, DirentHash(HashSeed(parent), name),
         kind == Kind.Symlink ? ModeSymlink : ModeFile, size: (ulong)file.Length, sectors: (ulong)sectors, links: 0,
         metadata: file.Metadata));
       dirents.Add(DirentKey(parent, name, file.Inode, kind == Kind.Symlink ? DtLnk : DtReg));
+
+      if (file.Encoded is { } encodedExtents) {
+        foreach (var e in encodedExtents) {
+          var position = new Bpos(file.Inode, (ulong)(e.FileSector + e.LiveSectors), SnapshotIdMax);
+          var moved = BcacheFsInPlaceModifier.Repoint(new Key(KeyExtent, position, e.LiveSectors, e.Value),
+            e.RegionSector, file.RegionSectors[e.RegionSector]);
+          extents.Add(moved with { Version = e.Version });
+          keyVersion = Math.Max(keyVersion, e.Version.Lo);
+        }
+        continue;
+      }
 
       foreach (var (placed, spanSectors) in ExtentSpans(file.Length)) {
         // The checksum is not known until the bytes are read; the key is, and the

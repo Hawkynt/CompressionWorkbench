@@ -75,6 +75,12 @@ public sealed class BcacheFsReader : IDisposable {
     /// </summary>
     internal BcacheFsStoredExtent? Stored { get; init; }
 
+    /// <summary>The extent key's value as stored (checksum entry and pointer); null for inline data.</summary>
+    internal byte[]? RawValue { get; init; }
+
+    /// <summary>The extent key's version (part of an encrypted region's nonce).</summary>
+    internal BcacheFsKeyVersion Version { get; init; }
+
     /// <summary>
     /// Sectors the extent occupies on the device: the compressed region for a
     /// compressed extent, nothing for inline data, otherwise its live length.
@@ -236,7 +242,9 @@ public sealed class BcacheFsReader : IDisposable {
 
       // A key names the sector one past its end, so its start is that less its size.
       var start = (long)key.Position.Offset - key.Size;
-      AddExtent(key, new Extent(sector, (int)key.Size, start * SectorSize) { Stored = stored });
+      AddExtent(key, new Extent(sector, (int)key.Size, start * SectorSize) {
+        Stored = stored, RawValue = key.Value, Version = key.Version,
+      });
     }
 
     void AddExtent(BcacheFsRawKey key, Extent extent) {

@@ -649,7 +649,7 @@ internal static class BcacheFsInPlaceModifier {
   }
 
   /// <summary>The extent key with its pointer at <paramref name="from"/> moved to <paramref name="to"/>; everything else as it was.</summary>
-  private static Key Repoint(Key key, long from, long to) {
+  internal static Key Repoint(Key key, long from, long to) {
     if (!BcacheFsExtentCodec.TryParseEntries(key.Value, out var entries, out var error))
       throw new InvalidDataException("bcachefs: " + error);
     var value = (byte[])key.Value.Clone();

@@ -363,7 +363,9 @@ public sealed class BcacheFsKernelMountTests {
   public void GivenAVolumeTheKernelWroteCompressedDataInto_WhenWeEditAndDefragmentInPlace_ThenTheKernelAndFsckAgreeAndItStaysCompressed() {
     BcacheFsKernel.Require();
     var path = Path.Combine(this._tmpDir, "compressed.img");
-    using (var stream = File.Create(path)) Sampler().Writer.WriteTo(stream);
+    var writer = Sampler().Writer;
+    writer.SetImageSize(192L << 20);                  // room for a shrink to be one
+    using (var stream = File.Create(path)) writer.WriteTo(stream);
     BcacheFsKernel.Session(path, """
       set -e
       cd /sysroot
@@ -393,6 +395,16 @@ public sealed class BcacheFsKernelMountTests {
     BcacheFsKernel.AssertFsckClean(path);
     AssertSameTree(ParseListing(BcacheFsKernel.Session(path, ListingScript)), ReadOurselves(path));
     Assert.That(CompressedRegions(path), Is.EqualTo(compressedBefore), "the moved extents stay compressed");
+
+    // Shrinking copies the compressed regions as stored too.
+    var shrunk = Path.Combine(this._tmpDir, "compressed-shrunk.img");
+    using (var input = File.OpenRead(path))
+    using (var output = File.Create(shrunk))
+      descriptor.Shrink(input, output);
+    Assert.That(new FileInfo(shrunk).Length, Is.LessThan(new FileInfo(path).Length), "the rebuild is smaller");
+    BcacheFsKernel.AssertFsckClean(shrunk);
+    AssertSameTree(ParseListing(BcacheFsKernel.Session(shrunk, ListingScript)), ReadOurselves(shrunk));
+    Assert.That(CompressedRegions(shrunk), Is.EqualTo(compressedBefore), "the shrunk volume stays compressed");
   }
 
   /// <summary>How many distinct compressed regions the extents tree points at.</summary>

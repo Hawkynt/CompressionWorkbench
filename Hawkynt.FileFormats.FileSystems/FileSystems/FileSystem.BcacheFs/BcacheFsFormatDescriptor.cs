@@ -415,11 +415,12 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       Path.Combine(Path.GetTempPath(), "cwb_bch_shrink_" + Guid.NewGuid().ToString("N") + ".tmp"),
       FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024, FileOptions.DeleteOnClose);
     var useRebuilt = false;
-    if (superblock != null && BcacheFsCrypt.IsEncrypted(superblock)) {
+    if (superblock != null && (BcacheFsCrypt.IsEncrypted(superblock) || HasCompressedExtents(input))) {
       // An encrypted volume is rebuilt encrypted under its own master key, crypt field and
-      // UUIDs (so the passphrase still opens it); one whose key is wrapped needs its passphrase
-      // remembered for the stream, as a shrink takes no password.
-      RebuildEncrypted(input, superblock, rebuilt);
+      // UUIDs (so the passphrase still opens it; one whose key is wrapped needs its passphrase
+      // remembered for the stream, as a shrink takes no password), and compressed extents are
+      // copied as stored, so the rebuild keeps them compressed.
+      RebuildPreserving(input, superblock, rebuilt);
       useRebuilt = rebuilt.Length < input.Length;
     } else {
       try {
@@ -445,8 +446,26 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// of the smallest size, encrypted under the same master key and crypt field with the same
   /// UUIDs and label; the reader verifies every MAC on the way.
   /// </summary>
-  private static void RebuildEncrypted(Stream input, BcacheFsSuperblockRecord superblock, Stream output) {
-    var crypt = BcacheFsKeys.For(input, superblock)!;
+  /// <summary>Whether any file of the volume has a compressed extent (which a generic rebuild would store decompressed).</summary>
+  private static bool HasCompressedExtents(Stream input) {
+    try {
+      input.Position = 0;
+      using var reader = new BcacheFsReader(input, leaveOpen: true);
+      return reader.Valid && reader.Entries.Any(e => e.Extents.Any(x => x.Stored?.Crc?.Compressed == true));
+    } finally {
+      input.Position = 0;
+    }
+  }
+
+  /// <summary>
+  /// Rebuilds a volume into a fresh one of the smallest size, keeping what a decode-and-write
+  /// rebuild would lose: every file whose extents all point at regions is copied as stored
+  /// (compressed, checksummed and encrypted regions unchanged, holes kept), the rest written
+  /// from their decoded bytes; an encrypted volume keeps its master key, crypt field and UUIDs
+  /// and continues its key-version and journal counters, so no nonce meets new data twice.
+  /// </summary>
+  private static void RebuildPreserving(Stream input, BcacheFsSuperblockRecord superblock, Stream output) {
+    var crypt = BcacheFsKeys.For(input, superblock);
     input.Position = 0;
     using var reader = new BcacheFsReader(input, leaveOpen: true);
     if (!reader.Valid) throw new InvalidDataException(reader.Status);
@@ -455,18 +474,34 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     writer.SetLabel(reader.Label);
     writer.SetInternalUuid(new Guid(superblock.InternalUuidBytes));
     writer.SetUserUuid(new Guid(superblock.UserUuidBytes));
-    writer.SetEncryptionKey(crypt.MasterKey.ToArray(), superblock.FieldsOf(BcacheFsSuperblockFieldType.Crypt).First().RawBytes,
-      (superblock.Flags[1] & (1UL << 9)) != 0,
-      // New extents continue the source's key-version counter: the same key must not meet the same nonce twice.
-      BcacheFsInPlaceModifier.CurrentKeyVersion(input, []).KeyVersion,
-      // And its journal sequences, the journal entry's nonce.
-      BcacheFsSuperblockEditor.NextJournalSequence(input, crypt));
+    if (crypt != null)
+      writer.SetEncryptionKey(crypt.MasterKey.ToArray(), superblock.FieldsOf(BcacheFsSuperblockFieldType.Crypt).First().RawBytes,
+        (superblock.Flags[1] & (1UL << 9)) != 0,
+        // New extents continue the source's key-version counter: the same key must not meet the same nonce twice.
+        BcacheFsInPlaceModifier.CurrentKeyVersion(input, []).KeyVersion,
+        // And its journal sequences, the journal entry's nonce.
+        BcacheFsSuperblockEditor.NextJournalSequence(input, crypt));
     var sizes = new List<long>();
     foreach (var directory in reader.Directories.Where(d => d != "lost+found"))
       writer.AddDirectory(directory);
     foreach (var entry in reader.Entries) {
       if (entry.LinkTarget is { } target) {
         writer.AddSymlink(entry.Name, target);
+        continue;
+      }
+      if (entry.Extents.Count != 0 && entry.Extents.All(x => x.RawValue != null)) {
+        var copied = new List<BcacheFsWriter.EncodedExtent>();
+        foreach (var x in entry.Extents) {
+          var at = BcacheFsAllocationBuilder.Footprint(new BcacheFsFormat.Key(BcacheFsFormat.KeyExtent, default, (uint)x.Sectors, x.RawValue!))
+            ?? throw new InvalidDataException($"bcachefs: '{entry.Name}' has an extent without a pointer.");
+          var region = new byte[at.RegionSectors * BcacheFsFormat.SectorSize];
+          input.Position = at.Sector * BcacheFsFormat.SectorSize;
+          input.ReadExactly(region);
+          copied.Add(new BcacheFsWriter.EncodedExtent(x.FileOffset / BcacheFsFormat.SectorSize, (uint)x.Sectors, at.Sector,
+            region, x.RawValue!, x.Version));
+        }
+        sizes.Add(copied.DistinctBy(c => c.RegionSector).Count() * (long)BcacheFsFormat.BucketBytes);
+        writer.AddEncodedFile(entry.Name, entry.Size, entry.Metadata, copied);
         continue;
       }
       var data = reader.Read(entry);
