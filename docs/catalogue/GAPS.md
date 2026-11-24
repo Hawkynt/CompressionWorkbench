@@ -260,7 +260,7 @@ running real-world samples. The file named at the end of each row is where the l
 | HA | `Ha` | 1 | stored only; HSC and ASC throw (HaReader.cs) |
 | MS-DOS COMPRESS (KWAJ) | `Kwaj` | 1 | methods 2 (LZSS) and 3 (LZ+Huffman) throw (KwajStream.cs) |
 | RAR audio / VM filters | `Rar` | 1 | RAR3 filters matched to the six standard programs only; no general RarVM (Rar3Decoder.cs) |
-| ReFS | `Refs` | 1 | creating files and defragmenting refused; edits limited to overwrite, replace, rename and remove of files held in their directory row (RefsFormatDescriptor.cs) |
+| ReFS | `Refs` | 1 | creating volumes and directories and defragmenting refused; edits limited to overwrite, replace, rename, remove and add of files held in their directory row (RefsFormatDescriptor.cs) |
 | RPG Maker archives | `Rgss` | 1 | RGSSAD v1-3 only; MV/MZ asset encryption (.rpgmv*) has no descriptor |
 | Unity assets / bundles | `UnityBundle` | 1 | UnityFS bundles only; .unitypackage (tar.gz) and serialized-file internals are not handled |
 | Windows thumbnail cache | `ThumbsDb` | 1 | Thumbs.db only; thumbcache_*.db has no descriptor |
