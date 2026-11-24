@@ -1,0 +1,218 @@
+{
+ "big/big000.bin": {
+  "sha256": "31ccfa470b9884c894c0906e295fb9463f1745a117272da1369509f56ae5d1ba",
+  "size": 8388608
+ },
+ "big/big001.bin": {
+  "sha256": "34ca8d6ef68bfc2c7f084fdfe29047761ca455bd64f7e1b9da5ef528db78a8a1",
+  "size": 8388608
+ },
+ "dir1/nested/deep.txt": {
+  "sha256": "604639f368f6c062d3dc81f605a23b7b44489bd0a2b70f2688835bf85889f1b5",
+  "size": 28
+ },
+ "many/f000.txt": {
+  "sha256": "41b3fbbe4d8d6bbd44c4b610bb678c55dd53fdbe9a3ed257057ee1edf5136f5b",
+  "size": 7
+ },
+ "many/f001.txt": {
+  "sha256": "5f5d584c5857d85af911ade1b2ae7cb593c17654282091f3ace31efd9e951360",
+  "size": 7
+ },
+ "many/f002.txt": {
+  "sha256": "0b7e1391e807365614c548fd10a4a543cf0654268529f3fe768ed7042624c006",
+  "size": 7
+ },
+ "many/f003.txt": {
+  "sha256": "b90ae9387f8c3b679f6bbd62649e3b0649fd2f5ab82cc174af8977671367f761",
+  "size": 7
+ },
+ "many/f004.txt": {
+  "sha256": "76f61e3503f81ffc8ccff1db16486d49a5f602267027e5ae85ae17d0c5e041b1",
+  "size": 7
+ },
+ "many/f005.txt": {
+  "sha256": "27c7d24edb77a005c6109792cc4efc120bc2388a5464d54745b99f006d241db9",
+  "size": 7
+ },
+ "many/f006.txt": {
+  "sha256": "180fa4e69eabbd12afde1390092594798e083d97f779d089cd753363c6905cd0",
+  "size": 7
+ },
+ "many/f007.txt": {
+  "sha256": "cdc4f52fe4cd55696b22732e3d35afd38e2905551ac4f7b4ceb44357740b62ea",
+  "size": 7
+ },
+ "many/f008.txt": {
+  "sha256": "3e7e2b6c54af7ff67e199f44eb09494ab201c828ea140470d0327a9155beee78",
+  "size": 7
+ },
+ "many/f009.txt": {
+  "sha256": "9ab1c487d62413afc31c76ab9865cb9d50585772654047fba84311614a423c95",
+  "size": 7
+ },
+ "many/f010.txt": {
+  "sha256": "c2756086b5d70a1bcd6da71277f1238568b3c35aaacdf9e10e426d1876022e0d",
+  "size": 8
+ },
+ "many/f011.txt": {
+  "sha256": "d71ce34c7d3a21bcc34ca421a1746d4edb5fb5c9ab350989dea7427f44f08be2",
+  "size": 8
+ },
+ "many/f012.txt": {
+  "sha256": "24e274bd433cafe12b1649479db5a742f2805fb616d953dc83b528ab4d9af7ca",
+  "size": 8
+ },
+ "many/f013.txt": {
+  "sha256": "daac96fe607d6c1e25b1963bb40aee990184ea338ba509778a61383d9d85cedc",
+  "size": 8
+ },
+ "many/f014.txt": {
+  "sha256": "2268d99d3a0f71eaed46a3b3bd2cc6338ec529187a9b1c486389a7fe4de4cd66",
+  "size": 8
+ },
+ "many/f015.txt": {
+  "sha256": "7e929ce0b4344d6061ffac95189b9abeee4189e292cbd3ac42a1b0e5afefceb4",
+  "size": 8
+ },
+ "many/f016.txt": {
+  "sha256": "341606b8587f7d2db4346c434daabe0335e98c53a0ff25e87629e03f3af2f694",
+  "size": 8
+ },
+ "many/f017.txt": {
+  "sha256": "2d4b67d07f5e4744906350ab1cb00c3494993493b5f46f5525e6c2156ff24c1d",
+  "size": 8
+ },
+ "many/f018.txt": {
+  "sha256": "8e6210b234cfd1c105ec3c2f1d5d3ad055f39e2ef21e1cbff1858a804e1b718b",
+  "size": 8
+ },
+ "many/f019.txt": {
+  "sha256": "c23c64e866d511e420df8be80dfb96873b8fdd48c01358398d1d156723080ed0",
+  "size": 8
+ },
+ "many/f020.txt": {
+  "sha256": "1dcc6d81aee1b5404b226fef4128baaddcc85e11d133d2d07da8d80325fac590",
+  "size": 8
+ },
+ "many/f021.txt": {
+  "sha256": "fed050590e00099bbb2205a4fd738ff2e640ac843393dbae6a9084e35b081255",
+  "size": 8
+ },
+ "many/f022.txt": {
+  "sha256": "43ddc00b68011db10f935b43e2ec8ec790504e3aa3c1a30f9c993c4019786ed0",
+  "size": 8
+ },
+ "many/f023.txt": {
+  "sha256": "089b58e353e009c38eb69e8d74a8bad4fa834026e68378dacbe904404c20c615",
+  "size": 8
+ },
+ "many/f024.txt": {
+  "sha256": "261439a9268d4244e2ef3c73f18448da0b54733f304777a12f172aa7222aa513",
+  "size": 8
+ },
+ "many/f025.txt": {
+  "sha256": "f52f4b2ac91aae4fcd1b64f49dc2227930b21a927157f854b1bbf8e45061916e",
+  "size": 8
+ },
+ "many/f026.txt": {
+  "sha256": "b3850a429f49d5bddfb1dedd1ab6fe667faf3790247a6a3b2b86298947d65833",
+  "size": 8
+ },
+ "many/f027.txt": {
+  "sha256": "4f28e94a66a39cc342133f4949ecf51d07a1666e7b9b93a0efba02f8b1a864b7",
+  "size": 8
+ },
+ "many/f028.txt": {
+  "sha256": "6767b224456213bce1271b2ab80ce439cd1a1f0cad956cced679131da320e7ad",
+  "size": 8
+ },
+ "many/f029.txt": {
+  "sha256": "97e657de832e05c4919741d3a660c685268cd9bebf3b18812fe9de7fe5b8af21",
+  "size": 8
+ },
+ "many/f030.txt": {
+  "sha256": "4f8f77b0ea1b891ac5ff615b3aff7d84f52825a24813763ad8c65ab87ca85a9d",
+  "size": 8
+ },
+ "many/f031.txt": {
+  "sha256": "43d4e495d1a4d5d83b9b9c00dcd4830124e9b5aa3cf90fb20b7ee830b8734287",
+  "size": 8
+ },
+ "many/f032.txt": {
+  "sha256": "49a44677956305ab5866009cf3613c9ac4213743629c3bfc3485a5389938bbfa",
+  "size": 8
+ },
+ "many/f033.txt": {
+  "sha256": "111320d3ddfc2d1493ca5f21b32c570d4da8505ab4865daac5cfb8505539a4a7",
+  "size": 8
+ },
+ "many/f034.txt": {
+  "sha256": "320a977fa7c0e1bec9b667f1a3f823de8dbbda38238a7af0f0bbddb4e6da25e7",
+  "size": 8
+ },
+ "many/f035.txt": {
+  "sha256": "9f2d3105d5198a772957876b25a16adc1f9dc87b3aaa43f27891bdd33fe64c96",
+  "size": 8
+ },
+ "many/f036.txt": {
+  "sha256": "d780ce84b54230a61c017e1db416a1de000a22af21c63088b941364353e4fe03",
+  "size": 8
+ },
+ "many/f037.txt": {
+  "sha256": "f72306e5abea3faa8fc9cea7dd736d70b74c5cf53caa2206b5469e5670679095",
+  "size": 8
+ },
+ "many/f038.txt": {
+  "sha256": "b65a593d5747c47f0ac8f3e6aa4a24c9425f57a628afcc8f4e64376faf0e751c",
+  "size": 8
+ },
+ "many/f039.txt": {
+  "sha256": "8f7e2ba9aa8bb0e3b00cb077fbf07e36c59ecb43953a3cfc081b72a86b274a37",
+  "size": 8
+ },
+ "many/f040.txt": {
+  "sha256": "722a043bec8601a2ab38745adb5563ca8db525e9bd56d71717cbff37351c8ed7",
+  "size": 8
+ },
+ "many/f041.txt": {
+  "sha256": "392ea683b9499b24feafc7c757890f15b341c9e714b83219494064162a3cf57b",
+  "size": 8
+ },
+ "many/f042.txt": {
+  "sha256": "ac31495c9d46e2e3a8f6798bbaf0b810906bb1f05496d2f27bf99ee35eef1c82",
+  "size": 8
+ },
+ "many/f043.txt": {
+  "sha256": "bc100569ce0f46b7956f8677794df3b7cd8a5b3b19a0ade20877cf5a83ff949a",
+  "size": 8
+ },
+ "many/f044.txt": {
+  "sha256": "e6be5e995093917a541f1bd191af2e626c79261ea381f9a6d372f44ef7ba578c",
+  "size": 8
+ },
+ "many/f045.txt": {
+  "sha256": "1d0ae5e29e381e72894924c10a00023f0d248afce54413030eec438cff987253",
+  "size": 8
+ },
+ "many/f046.txt": {
+  "sha256": "1495341df103b4646853a06bc11b25b8b1439d2ea1a9bbd8d715cf7cef367353",
+  "size": 8
+ },
+ "many/f047.txt": {
+  "sha256": "3ea81a90631ed12b32e600a4c5a837166755792eeb47204710a16c401196badb",
+  "size": 8
+ },
+ "many/f048.txt": {
+  "sha256": "2dc4a82b786aabeebebfb1bcf8a1beac3e80f4a4ae679b93488e59595c7d4c90",
+  "size": 8
+ },
+ "many/f049.txt": {
+  "sha256": "2b37d68a1483bb3eeb37be0185f8be36499abe12c45f5cab77b474c5b86655b0",
+  "size": 8
+ },
+ "small.txt": {
+  "sha256": "9698a3380c7a7749fdd91b5a9bfd42c7bf191117c6dca0c5b33be51d1b52bd26",
+  "size": 13
+ }
+}
