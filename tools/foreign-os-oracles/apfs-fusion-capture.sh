@@ -12,6 +12,7 @@ set -uo pipefail
 OUT=${1:?output directory}
 MAIN_MB=${MAIN_MB:-320}
 TIER2_MB=${TIER2_MB:-1024}
+DATA_MB=${DATA_MB:-$((MAIN_MB * 18 / 10))}
 mkdir -p "$OUT"
 cd "$OUT"
 log() { echo "== $*" | tee -a capture.log; }
@@ -48,9 +49,9 @@ sudo diskutil apfs addVolume "$CONTAINER" APFS Fusion >> capture.log 2>&1
 VOL=/Volumes/Fusion
 [ -d "$VOL" ] || { log "volume did not mount"; exit 1; }
 
-python3 - "$VOL" "$MAIN_MB" <<'PY'
+python3 - "$VOL" "$DATA_MB" <<'PY'
 import os, sys, hashlib, json
-vol, main_mb = sys.argv[1], int(sys.argv[2])
+vol, data_mb = sys.argv[1], int(sys.argv[2])
 def body(name, blocks, fill):
     out = bytearray()
     for b in range(blocks):
@@ -69,13 +70,13 @@ put("small.txt", b"Hello Fusion\n")
 put("dir1/nested/deep.txt", b"a file two directories down\n")
 for i in range(50):
     put(f"many/f{i:03d}.txt", f"file {i}\n".encode())
-# Big files, together well past the main tier, so APFS must use tier 2.
-total = int(main_mb * 1.8) * 256          # blocks of 4 KiB
-per = 32768                                # 128 MiB each
+# Big files (DATA_MB in all, 8 MiB each); by default well past the main tier.
+total = data_mb * 256                      # blocks of 4 KiB
+per = 2048                                 # 8 MiB each
 n = 0
 while total > 0:
     count = min(per, total)
-    put(f"big/big{n:02d}.bin", body(f"big{n:02d}", count, 0x41 + n % 26))
+    put(f"big/big{n:03d}.bin", body(f"big{n:03d}", count, 0x41 + n % 26))
     total -= count; n += 1
 json.dump(files, open("manifest.json", "w"), indent=1, sort_keys=True)
 print(len(files), "files")

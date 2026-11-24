@@ -62,6 +62,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Capture a Fusion container
         run: bash tools/foreign-os-oracles/apfs-fusion-capture.sh "$RUNNER_TEMP/fusion-out"
+      - name: Capture a small Fusion container (fixture size)
+        env:
+          MAIN_MB: '128'
+          TIER2_MB: '256'
+          DATA_MB: '16'
+        run: bash tools/foreign-os-oracles/apfs-fusion-capture.sh "$RUNNER_TEMP/fusion-out/small"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
