@@ -98,14 +98,21 @@ public class Qcow2QemuFeatureTests {
   }
 
   [Test]
-  public void Given_ADirtyImage_When_OpenedForWriting_Then_TheStreamIsReadOnly() {
-    // Lazy refcounts may be stale while the dirty bit is set; nothing is allocated against them.
+  public void Given_ADirtyImage_When_Written_Then_ItsRefcountsAreRebuiltAndTheDirtyBitCleared() {
+    // Lazy refcounts may be stale while the dirty bit is set: the first write rebuilds them.
     var image = Resource("zstd.qcow2");
     image[79] |= 0x01;
     using var stream = new MemoryStream();
     stream.Write(image);
-    using var guest = Qcow2Stream.Open(stream);
-    Assert.That(guest.CanWrite, Is.False);
+    using (var guest = Qcow2Stream.Open(stream)) {
+      Assert.That(guest.CanWrite, Is.True);
+      guest.Position = 1000;
+      guest.Write("dirty no more"u8);
+    }
+    Assert.That(stream.ToArray()[79] & 1, Is.Zero);
+    stream.Position = 0;
+    using var reader = new Qcow2Reader(stream);
+    Assert.That(reader.ExtractDisk().AsSpan(1000, 13).SequenceEqual("dirty no more"u8), Is.True);
   }
 
   /// <summary>

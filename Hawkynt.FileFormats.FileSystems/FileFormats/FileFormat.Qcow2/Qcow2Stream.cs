@@ -43,7 +43,11 @@ public sealed class Qcow2Stream : Stream {
     _parent = parent;
     _encryption = encryption;
     _dataFile = dataFile;
+    _refcountsTrusted = (header.IncompatibleFeatures & Qcow2Structures.IncompatibleDirty) == 0;
   }
+
+  /// <summary>False while the dirty bit says lazy refcounts may be stale; repaired before the first write.</summary>
+  private bool _refcountsTrusted;
 
   /// <summary>Where the guest clusters are: the external data file, or the image itself.</summary>
   private Stream Guest => _dataFile ?? _backing;
@@ -215,10 +219,12 @@ public sealed class Qcow2Stream : Stream {
   public override void Write(ReadOnlySpan<byte> buffer) {
     if (!CanWrite)
       throw new NotSupportedException(
-        "QCOW2 write access requires a flat image with 16-bit eager refcounts, no snapshots, no backing file, " +
-        "no incompatible or autoclear v3 features but an external data file, and the password of an encrypted one.");
+        "QCOW2 write access requires a writable image that is not marked corrupt, has no unknown " +
+        "incompatible or autoclear features, and, when encrypted, was opened with its password.");
     if (_position < 0 || _position > Length - buffer.Length)
       throw new EndOfStreamException("Write would extend beyond the fixed QCOW2 virtual disk size.");
+    if (!_refcountsTrusted)
+      RepairLazyRefcounts();
 
     var remaining = buffer.Length;
     var consumed = 0;
@@ -571,6 +577,102 @@ public sealed class Qcow2Stream : Stream {
     var offset = Qcow2Structures.ReadClusterOffset(entry);
     if (offset != 0 && (offset & (_clusterSize - 1L)) != 0)
       throw new InvalidDataException("QCOW2: guest cluster is not cluster aligned.");
+  }
+
+  /// <summary>
+  /// Brings the refcounts of an image left dirty by lazy refcounting back to what its tables
+  /// say, as <c>qemu-img check -r all</c> does, then clears the dirty bit: every host cluster is
+  /// counted once per L1 table (active and each snapshot's) that reaches it, plus the header,
+  /// L1 tables, snapshot table, refcount table and blocks and LUKS header; the copied flags of the
+  /// active tables are set where a count is one and cleared elsewhere.
+  /// </summary>
+  private void RepairLazyRefcounts() {
+    var counts = new Dictionary<long, ulong>();
+    void Count(long offset, long length) {
+      if (length <= 0) return;
+      for (var cluster = offset / _clusterSize; cluster <= (offset + length - 1) / _clusterSize; ++cluster)
+        counts[cluster] = counts.GetValueOrDefault(cluster) + 1;
+    }
+
+    Count(0, _clusterSize);
+    var l1Tables = new List<(long Offset, int Size)> { (_header.L1TableOffset, _header.L1Size) };
+    if (_header.SnapshotCount != 0) {
+      var (snapshots, tableBytes) = Qcow2Structures.ReadSnapshotTable(_backing, _header);
+      Count(_header.SnapshotsOffset, tableBytes);
+      l1Tables.AddRange(snapshots.Select(s => (s.L1TableOffset, s.L1Size)));
+    }
+    var l2 = new byte[_clusterSize];
+    foreach (var (l1Offset, l1Size) in l1Tables) {
+      Count(l1Offset, l1Size * 8L);
+      for (var i = 0; i < l1Size; ++i) {
+        var l2Offset = Qcow2Structures.ReadClusterOffset(Qcow2Structures.ReadUInt64BigEndianAt(_backing, l1Offset + i * 8L));
+        if (l2Offset == 0) continue;
+        Count(l2Offset, _clusterSize);
+        Qcow2Structures.ReadExactlyAt(_backing, l2Offset, l2);
+        for (var at = 0; at + _header.L2EntrySize <= l2.Length; at += _header.L2EntrySize) {
+          var entry = System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(l2.AsSpan(at));
+          if ((entry & Qcow2Structures.CompressedFlag) != 0) {
+            var (offset, length) = Qcow2Structures.DecodeCompressedRange(entry, _header.ClusterBits, _backing.Length);
+            Count(offset, length);
+          } else if (_dataFile == null && Qcow2Structures.ReadClusterOffset(entry) is var host and not 0) {
+            Count(host, _clusterSize);
+          }
+        }
+      }
+    }
+    Count(_header.RefcountTableOffset, (long)_header.RefcountTableClusters * _clusterSize);
+    var tableEntries = (long)_header.RefcountTableClusters * _clusterSize / 8;
+    var blocks = new List<(long Index, long Offset)>();
+    for (var i = 0L; i < tableEntries; ++i) {
+      var block = Qcow2Structures.ReadRefcountBlockOffset(Qcow2Structures.ReadUInt64BigEndianAt(_backing, _header.RefcountTableOffset + i * 8));
+      if (block == 0) continue;
+      Count(block, _clusterSize);
+      blocks.Add((i, block));
+    }
+    if (_header.CryptMethod == Qcow2Structures.CryptLuks)
+      Count(_header.FdeOffset, _header.FdeLength);
+
+    // Every entry of every existing block gets its true count (zero where nothing points);
+    // a counted cluster no block covers gets a new block (which counts itself).
+    var perBlock = _header.RefcountEntriesPerBlock;
+    var covered = new HashSet<long>();
+    foreach (var (index, block) in blocks) {
+      for (var e = 0L; e < perBlock; ++e) {
+        var cluster = index * perBlock + e;
+        var want = counts.GetValueOrDefault(cluster);
+        if (ReadRefcountEntry(block, e) != want)
+          WriteRefcountEntry(block, e, want);
+        covered.Add(cluster);
+      }
+    }
+    foreach (var (cluster, count) in counts)
+      if (!covered.Contains(cluster))
+        SetRefcount(cluster * _clusterSize, count);
+
+    // The active tables' copied flags follow the counts.
+    for (var i = 0; i < _header.L1Size; ++i) {
+      var l1EntryOffset = _header.L1TableOffset + i * 8L;
+      var l1Entry = Qcow2Structures.ReadUInt64BigEndianAt(_backing, l1EntryOffset);
+      var l2Offset = Qcow2Structures.ReadClusterOffset(l1Entry);
+      if (l2Offset == 0) continue;
+      var fixedL1 = counts.GetValueOrDefault(l2Offset / _clusterSize) == 1
+        ? l1Entry | Qcow2Structures.CopiedFlag : l1Entry & ~Qcow2Structures.CopiedFlag;
+      if (fixedL1 != l1Entry) Qcow2Structures.WriteUInt64BigEndianAt(_backing, l1EntryOffset, fixedL1);
+      if (_dataFile != null) continue;
+      for (var at = 0; at + _header.L2EntrySize <= _clusterSize; at += _header.L2EntrySize) {
+        var entry = Qcow2Structures.ReadUInt64BigEndianAt(_backing, l2Offset + at);
+        var host = Qcow2Structures.ReadClusterOffset(entry);
+        if ((entry & Qcow2Structures.CompressedFlag) != 0 || host == 0) continue;
+        var fixedL2 = counts.GetValueOrDefault(host / _clusterSize) == 1
+          ? entry | Qcow2Structures.CopiedFlag : entry & ~Qcow2Structures.CopiedFlag;
+        if (fixedL2 != entry) Qcow2Structures.WriteUInt64BigEndianAt(_backing, l2Offset + at, fixedL2);
+      }
+    }
+
+    var incompatible = Qcow2Structures.ReadUInt64BigEndianAt(_backing, 72);
+    Qcow2Structures.WriteUInt64BigEndianAt(_backing, 72, incompatible & ~Qcow2Structures.IncompatibleDirty);
+    _backing.Flush();
+    _refcountsTrusted = true;
   }
 
   /// <summary>

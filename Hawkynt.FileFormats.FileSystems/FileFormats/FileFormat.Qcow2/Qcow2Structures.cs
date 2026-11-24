@@ -255,20 +255,50 @@ internal static class Qcow2Structures {
     => !header.HasBackingFile && header.BackingFileOffset == 0 && header.CryptMethod == 0 && header.IncompatibleFeatures == 0;
 
   /// <summary>
-  /// The images the in-place writer handles: no internal snapshots, not marked dirty or corrupt,
-  /// any refcount width, zstd or deflate compression, extended L2 entries, an external data file
-  /// (raw or not) and a backing file (which is only ever read); AES- or LUKS-encrypted ones when
-  /// <paramref name="keyed"/> (opened with their password).
+  /// The images the in-place writer handles: any refcount width, zstd or deflate compression,
+  /// extended L2 entries, an external data file (raw or not), a backing file (only ever read),
+  /// internal snapshots (only the active tables are written, shared clusters copied on write) and
+  /// the dirty bit of lazy refcounts (the refcounts are rebuilt before anything is written); AES-
+  /// or LUKS-encrypted ones when <paramref name="keyed"/> (opened with their password). An image
+  /// marked corrupt is never written.
   /// </summary>
   internal static bool IsWritableProfile(in Qcow2Header header, bool keyed = false)
     => (header.CryptMethod == CryptNone || (keyed && header.CryptMethod is (CryptAes or CryptLuks)))
-       && (header.IncompatibleFeatures & ~(IncompatibleExternalData | IncompatibleCompressionType | IncompatibleExtendedL2)) == 0
+       && (header.IncompatibleFeatures & ~(IncompatibleDirty | IncompatibleExternalData | IncompatibleCompressionType | IncompatibleExtendedL2)) == 0
        && (header.AutoclearFeatures & ~AutoclearDataFileRaw) == 0
        && !(header.DataFileRaw && header.HasBackingFile)
        && header.RefcountTableOffset > 0
        && header.RefcountTableClusters > 0
-       && header.SnapshotCount == 0
-       && header.SnapshotsOffset == 0;
+       && (header.SnapshotCount == 0) == (header.SnapshotsOffset == 0);
+
+  /// <summary>One internal snapshot's L1 table (qcow2.txt, "Snapshots").</summary>
+  internal readonly record struct Qcow2Snapshot(long L1TableOffset, int L1Size, string Id, string Name);
+
+  /// <summary>
+  /// The snapshot table: per entry its L1 offset and size, then sizes of the id, name and extra
+  /// data, the extra data, id and name, the entry padded to 8 bytes. Also returns its byte length.
+  /// </summary>
+  internal static (List<Qcow2Snapshot> Snapshots, long Bytes) ReadSnapshotTable(Stream stream, in Qcow2Header header) {
+    var result = new List<Qcow2Snapshot>();
+    var at = header.SnapshotsOffset;
+    Span<byte> fixedPart = stackalloc byte[40];
+    for (var i = 0u; i < header.SnapshotCount; ++i) {
+      ReadExactlyAt(stream, at, fixedPart);
+      var l1Offset = BinaryPrimitives.ReadUInt64BigEndian(fixedPart);
+      var l1Size = BinaryPrimitives.ReadUInt32BigEndian(fixedPart[8..]);
+      var idSize = BinaryPrimitives.ReadUInt16BigEndian(fixedPart[12..]);
+      var nameSize = BinaryPrimitives.ReadUInt16BigEndian(fixedPart[14..]);
+      var extraSize = BinaryPrimitives.ReadUInt32BigEndian(fixedPart[36..]);
+      if (l1Offset > long.MaxValue || l1Size > int.MaxValue / 8 || extraSize > 1 << 20)
+        throw new InvalidDataException("QCOW2: a snapshot table entry is out of range.");
+      var strings = new byte[idSize + nameSize];
+      ReadExactlyAt(stream, checked(at + 40 + extraSize), strings);
+      result.Add(new Qcow2Snapshot((long)l1Offset, (int)l1Size,
+        System.Text.Encoding.UTF8.GetString(strings, 0, idSize), System.Text.Encoding.UTF8.GetString(strings, idSize, nameSize)));
+      at = checked(at + AlignUp(40 + extraSize + idSize + nameSize, 8));
+    }
+    return (result, at - header.SnapshotsOffset);
+  }
 
   internal static long ReadClusterOffset(ulong entry) => checked((long)(entry & ClusterOffsetMask));
   internal static long ReadRefcountBlockOffset(ulong entry)
