@@ -87,6 +87,8 @@ internal static partial class ZfsPoolEditor {
     IReadOnlyList<Stream> children;
     foreach (var device in devices) device.Position = 0;
     using (var pool = new ZfsPool(devices, leaveOpen: true)) {
+      if (pool.IsBigEndian)
+        throw new NotSupportedException("ZFS: pools a big-endian host wrote are read, not edited.");
       var state = new PoolState(pool, devices);
       var keyring = new ZfsKeyring(pool.Mos, pool.Name ?? "pool", anyKey, keys);
       children = state.Devices;
