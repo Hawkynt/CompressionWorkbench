@@ -10,7 +10,7 @@ param(
   [Parameter(Mandatory)] [string] $OutDir,
   [Parameter(Mandatory)] [string] $Probe,
   [string] $WorkDir = (Join-Path $env:RUNNER_TEMP 'refs-edit-work'),
-  [string[]] $Variants = @('default', 'cluster64k')
+  [string[]] $Variants = @('default', 'cluster64k', 'integrity')
 )
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $OutDir, $WorkDir | Out-Null
