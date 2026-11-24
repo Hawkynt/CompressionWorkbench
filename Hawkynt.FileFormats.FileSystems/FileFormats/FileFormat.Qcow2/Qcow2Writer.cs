@@ -9,7 +9,10 @@ namespace FileFormat.Qcow2;
 /// unallocated; dense mode physically allocates every guest cluster without
 /// changing guest bytes. With a password the guest data is LUKS-encrypted (crypt_method 2): a
 /// LUKS1 header (aes-256 xts-plain64, sha256, key slot 0) in its own clusters behind the
-/// refcount blocks, each data cluster encrypted with the IV of its host sector.
+/// refcount blocks, each data cluster encrypted with the IV of its host sector; with a legacy AES
+/// password (crypt_method 1) each sector is AES-128-CBC encrypted with the IV of its guest sector.
+/// With an external data file the image is a version 3 image of cluster tables only and the guest
+/// disk goes, raw, to the data file.
 /// </summary>
 public sealed class Qcow2Writer {
   private const int ClusterBits = 16;
@@ -20,6 +23,9 @@ public sealed class Qcow2Writer {
   private const uint FullDiskEncryptionExtension = 0x0537BE77;
   private byte[]? _diskData;
   private string? _password;
+  private string? _dataFileName;
+  private bool _dataFileRaw;
+  private bool _legacyAes;
   private int _keySlotIterations = DefaultKeySlotIterations;
 
   /// <summary>PBKDF2 iterations of the passphrase in the LUKS key slot unless <see cref="SetPassword"/> says otherwise.</summary>
@@ -38,10 +44,55 @@ public sealed class Qcow2Writer {
     ArgumentOutOfRangeException.ThrowIfLessThan(keySlotIterations, 1000);
     _password = password;
     _keySlotIterations = keySlotIterations;
+    _legacyAes = false;
+  }
+
+  /// <summary>
+  /// Encrypts the guest data with QCOW2's legacy AES scheme (crypt_method 1) under
+  /// <paramref name="password"/>: AES-128-CBC per 512-byte sector with the guest sector number as
+  /// IV, the key being the password's first 16 UTF-8 bytes (zero padded). The scheme has no key
+  /// check and no key derivation and QEMU only keeps it for reading old images; it is offered for
+  /// interoperability with tools that need it, <see cref="SetPassword"/> (LUKS) otherwise.
+  /// </summary>
+  public void SetLegacyAesPassword(string password) {
+    ArgumentException.ThrowIfNullOrEmpty(password);
+    _password = password;
+    _legacyAes = true;
+  }
+
+  /// <summary>
+  /// Keeps the guest data in an external data file (qcow2.txt, incompatible feature bit 2) that
+  /// the image's header names <paramref name="name"/> and QEMU looks for next to the image. The
+  /// image becomes a version 3 image holding only the cluster tables; with <paramref name="raw"/>
+  /// the data file is also declared a consistent raw image of the guest (autoclear bit 1). Write
+  /// both with <see cref="WriteTo(Stream, Stream, bool)"/>.
+  /// </summary>
+  public void SetExternalDataFile(string name, bool raw = true) {
+    ArgumentException.ThrowIfNullOrEmpty(name);
+    if (System.Text.Encoding.UTF8.GetByteCount(name) > 1023)
+      throw new ArgumentException("QCOW2: the data file name is longer than 1023 bytes.", nameof(name));
+    _dataFileName = name;
+    _dataFileRaw = raw;
   }
 
   /// <summary>Writes a canonical sparse QCOW2 image.</summary>
   public void WriteTo(Stream output) => WriteTo(output, sparse: true);
+
+  /// <summary>
+  /// Writes an image whose guest data goes to <paramref name="dataFile"/>: the whole guest disk as
+  /// a raw image, each cluster at its own guest offset (see <see cref="SetExternalDataFile"/>).
+  /// </summary>
+  /// <param name="output">Destination of the image itself (header and cluster tables).</param>
+  /// <param name="dataFile">Destination of the external data file.</param>
+  /// <param name="sparse">When true, all-zero guest clusters stay unallocated in the tables.</param>
+  public void WriteTo(Stream output, Stream dataFile, bool sparse = true) {
+    ArgumentNullException.ThrowIfNull(dataFile);
+    if (_dataFileName == null)
+      throw new InvalidOperationException("No external data file was set; call SetExternalDataFile first.");
+    if (!dataFile.CanWrite)
+      throw new ArgumentException("QCOW2 data file output must be writable.", nameof(dataFile));
+    WriteImage(output, dataFile, sparse);
+  }
 
   /// <summary>
   /// Writes a canonical QCOW2 image.
@@ -50,6 +101,12 @@ public sealed class Qcow2Writer {
   /// <param name="sparse">When true, all-zero guest clusters have zero L2 entries.
   /// When false, every guest cluster receives physical storage.</param>
   public void WriteTo(Stream output, bool sparse) {
+    if (_dataFileName != null)
+      throw new InvalidOperationException("The image keeps its guest data in an external data file; write it with WriteTo(output, dataFile).");
+    WriteImage(output, null, sparse);
+  }
+
+  private void WriteImage(Stream output, Stream? dataFile, bool sparse) {
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanWrite)
       throw new ArgumentException("QCOW2 output must be writable.", nameof(output));
@@ -80,7 +137,11 @@ public sealed class Qcow2Writer {
     const int refcountTableClusters = 1;
     byte[]? luks = null;
     Qcow2Encryption? encryption = null;
-    if (_password != null) {
+    if (_password != null && dataFile != null)
+      throw new NotSupportedException("QCOW2 writer: an encrypted image with an external data file is not written.");
+    if (_password != null && _legacyAes) {
+      encryption = Qcow2Encryption.ForLegacyAes(_password);
+    } else if (_password != null) {
       var masterKey = System.Security.Cryptography.RandomNumberGenerator.GetBytes(64);
       luks = Compression.Core.Crypto.Luks1Header.Create(masterKey, System.Text.Encoding.UTF8.GetBytes(_password),
         "xts-plain64", "sha256", _keySlotIterations, Math.Max(1000, _keySlotIterations / 8), Guid.NewGuid());
@@ -93,9 +154,11 @@ public sealed class Qcow2Writer {
 
     var structuralWithoutRefcountBlocks =
       headerClusters + l1Clusters + l1Size + refcountTableClusters + luksClusters;
+    // Clusters in an external data file are not refcounted.
+    var refcountedGuestClusters = dataFile == null ? allocatedGuestClusters : 0;
     var refcountBlockClusters = 1;
     while (true) {
-      var total = checked(structuralWithoutRefcountBlocks + refcountBlockClusters + allocatedGuestClusters);
+      var total = checked(structuralWithoutRefcountBlocks + refcountBlockClusters + refcountedGuestClusters);
       var needed = Math.Max(1, (total + RefcountEntriesPerBlock - 1) / RefcountEntriesPerBlock);
       if (needed == refcountBlockClusters)
         break;
@@ -110,18 +173,58 @@ public sealed class Qcow2Writer {
     var refcountBlocksStart = checked(refcountTableOffset + ClusterSize);
     var luksStart = checked(refcountBlocksStart + (long)refcountBlockClusters * ClusterSize);
     var dataStart = checked(luksStart + (long)luksClusters * ClusterSize);
-    var totalPhysicalClusters = checked(structuralWithoutRefcountBlocks + refcountBlockClusters + allocatedGuestClusters);
+    var totalPhysicalClusters = checked(structuralWithoutRefcountBlocks + refcountBlockClusters + refcountedGuestClusters);
 
-    WriteHeader(output, virtualSize, l1Size, l1TableOffset, refcountTableOffset, luks == null ? 0 : luksStart, luks?.Length ?? 0);
+    if (dataFile == null)
+      WriteHeader(output, virtualSize, l1Size, l1TableOffset, refcountTableOffset, luks == null ? 0 : luksStart, luks?.Length ?? 0,
+        luks != null ? Qcow2Structures.CryptLuks : encryption != null ? Qcow2Structures.CryptAes : Qcow2Structures.CryptNone);
+    else
+      WriteExternalDataHeader(output, virtualSize, l1Size, l1TableOffset, refcountTableOffset, _dataFileName!, _dataFileRaw);
     WriteL1(output, l1Size, l2TablesStart);
-    WriteL2Tables(output, guestClusterCount, l1Size, physicalDataIndex, dataStart);
+    WriteL2Tables(output, guestClusterCount, l1Size, physicalDataIndex, dataStart, external: dataFile != null);
     WriteRefcountTable(output, refcountBlockClusters, refcountBlocksStart);
     WriteRefcountBlocks(output, refcountBlockClusters, totalPhysicalClusters);
     if (luks != null) {
       output.Write(luks);
       WriteZeroPadding(output, luksClusters * ClusterSize - luks.Length);
     }
-    WriteGuestData(output, data, guestClusterCount, physicalDataIndex, dataStart, encryption);
+    if (dataFile == null) {
+      WriteGuestData(output, data, guestClusterCount, physicalDataIndex, dataStart, encryption);
+      return;
+    }
+    if (dataFile.CanSeek) {
+      dataFile.Position = 0;
+      dataFile.SetLength(0);
+    }
+    dataFile.Write(data);
+  }
+
+  /// <summary>
+  /// A version 3 header (104 bytes, 16-bit refcounts) with the external-data-file feature, the
+  /// raw-data-file autoclear bit when asked, and the data-file-name header extension.
+  /// </summary>
+  private static void WriteExternalDataHeader(Stream output, long virtualSize, int l1Size, long l1TableOffset,
+      long refcountTableOffset, string dataFileName, bool raw) {
+    const int headerLength = 104;
+    var header = new byte[ClusterSize];
+    Qcow2Structures.Magic.CopyTo(header.AsSpan());
+    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(4), 3);
+    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(20), (uint)ClusterBits);
+    BinaryPrimitives.WriteUInt64BigEndian(header.AsSpan(24), (ulong)virtualSize);
+    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(36), (uint)l1Size);
+    BinaryPrimitives.WriteUInt64BigEndian(header.AsSpan(40), (ulong)l1TableOffset);
+    BinaryPrimitives.WriteUInt64BigEndian(header.AsSpan(48), (ulong)refcountTableOffset);
+    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(56), 1);
+    BinaryPrimitives.WriteUInt64BigEndian(header.AsSpan(72), Qcow2Structures.IncompatibleExternalData);
+    BinaryPrimitives.WriteUInt64BigEndian(header.AsSpan(88), raw ? Qcow2Structures.AutoclearDataFileRaw : 0);
+    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(96), 4);
+    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(100), headerLength);
+    var name = System.Text.Encoding.UTF8.GetBytes(dataFileName);
+    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(headerLength), Qcow2Structures.ExtensionDataFileName);
+    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(headerLength + 4), (uint)name.Length);
+    name.CopyTo(header.AsSpan(headerLength + 8));
+    // The name is zero padded to 8 bytes; the zeros after it end the extension list.
+    output.Write(header);
   }
 
   private static void WriteHeader(
@@ -131,7 +234,8 @@ public sealed class Qcow2Writer {
       long l1TableOffset,
       long refcountTableOffset,
       long luksOffset,
-      long luksLength) {
+      long luksLength,
+      uint cryptMethod) {
     var header = new byte[ClusterSize];
     Qcow2Structures.Magic.CopyTo(header.AsSpan());
     BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(4), 2);
@@ -139,7 +243,7 @@ public sealed class Qcow2Writer {
     BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(16), 0);
     BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(20), (uint)ClusterBits);
     BinaryPrimitives.WriteUInt64BigEndian(header.AsSpan(24), (ulong)virtualSize);
-    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(32), luksLength > 0 ? Qcow2Structures.CryptLuks : Qcow2Structures.CryptNone);
+    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(32), cryptMethod);
     BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(36), (uint)l1Size);
     BinaryPrimitives.WriteUInt64BigEndian(header.AsSpan(40), (ulong)l1TableOffset);
     BinaryPrimitives.WriteUInt64BigEndian(header.AsSpan(48), (ulong)refcountTableOffset);
@@ -172,7 +276,8 @@ public sealed class Qcow2Writer {
       int guestClusterCount,
       int l1Size,
       int[] physicalDataIndex,
-      long dataStart) {
+      long dataStart,
+      bool external) {
     var guestCluster = 0;
     for (var table = 0; table < l1Size; ++table) {
       var l2 = new byte[ClusterSize];
@@ -181,7 +286,10 @@ public sealed class Qcow2Writer {
         var physicalIndex = physicalDataIndex[guestCluster];
         if (physicalIndex < 0)
           continue;
-        var hostOffset = checked(dataStart + (long)physicalIndex * ClusterSize);
+        // With an external data file every cluster lies at its own guest offset there.
+        var hostOffset = external
+          ? (long)guestCluster * ClusterSize
+          : checked(dataStart + (long)physicalIndex * ClusterSize);
         BinaryPrimitives.WriteUInt64BigEndian(
           l2.AsSpan(entry * sizeof(ulong)),
           (ulong)hostOffset | Qcow2Structures.CopiedFlag);

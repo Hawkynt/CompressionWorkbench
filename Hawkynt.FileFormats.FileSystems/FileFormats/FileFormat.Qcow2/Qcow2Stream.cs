@@ -28,18 +28,25 @@ public sealed class Qcow2Stream : Stream {
   private readonly bool _writableProfile;
   private readonly Stream? _parent;
   private readonly Qcow2Encryption? _encryption;
+  private readonly Stream? _dataFile;
   private long _position;
 
-  private Qcow2Stream(Stream backing, Qcow2Header header, bool leaveOpen, Stream? parent, Qcow2Encryption? encryption) {
+  private Qcow2Stream(Stream backing, Qcow2Header header, bool leaveOpen, Stream? parent, Qcow2Encryption? encryption,
+      Stream? dataFile) {
     _backing = backing;
     _header = header;
     _clusterSize = header.ClusterSize;
     _l2Entries = header.L2Entries;
-    _writableProfile = backing.CanWrite && Qcow2Structures.IsWritableProfile(header);
+    _writableProfile = backing.CanWrite && Qcow2Structures.IsWritableProfile(header, keyed: encryption != null)
+      && (dataFile?.CanWrite ?? true);
     _leaveOpen = leaveOpen;
     _parent = parent;
     _encryption = encryption;
+    _dataFile = dataFile;
   }
+
+  /// <summary>Where the guest clusters are: the external data file, or the image itself.</summary>
+  private Stream Guest => _dataFile ?? _backing;
 
   /// <summary>Attempts to open a supported QCOW2 image as a virtual guest-disk stream.</summary>
   public static Qcow2Stream? TryOpen(Stream backing, bool leaveOpen = true) => TryOpen(backing, password: null, leaveOpen);
@@ -76,13 +83,36 @@ public sealed class Qcow2Stream : Stream {
     var header = Qcow2Structures.ReadHeader(backing);
     Qcow2Structures.ValidateReadableProfile(header);
     var encryption = header.CryptMethod != Qcow2Structures.CryptNone ? Qcow2Encryption.Open(backing, header, password) : null;
+    Stream? parent = null;
     try {
-      var parent = header.HasBackingFile ? OpenBackingFile(backing, header, password, depth) : null;
-      return new Qcow2Stream(backing, header, leaveOpen, parent, encryption);
+      parent = header.HasBackingFile ? OpenBackingFile(backing, header, password, depth) : null;
+      var dataFile = header.ExternalData ? OpenDataFile(backing, header) : null;
+      return new Qcow2Stream(backing, header, leaveOpen, parent, encryption, dataFile);
     } catch {
+      parent?.Dispose();
       encryption?.Dispose();
       throw;
     }
+  }
+
+  /// <summary>
+  /// Opens the external data file the image's guest clusters live in (qcow2.txt, incompatible
+  /// feature bit 2): named by the data-file header extension, found relative to the image's
+  /// directory as QEMU finds it, and opened for writing when the image is.
+  /// </summary>
+  private static FileStream OpenDataFile(Stream image, in Qcow2Header header) {
+    var name = header.DataFileName;
+    if (string.IsNullOrEmpty(name))
+      throw new NotSupportedException("QCOW2: the image keeps its guest data in an external data file but does not name it.");
+    if (name.Contains(':') && !Path.IsPathRooted(name))
+      throw new NotSupportedException($"QCOW2: data file '{name}' is a protocol URL, not a file.");
+    if (image is not FileStream file)
+      throw new NotSupportedException($"QCOW2: the image keeps its guest data in '{name}'; open it from a file path so that file can be found.");
+    var directory = Path.GetDirectoryName(Path.GetFullPath(file.Name)) ?? ".";
+    var path = Path.IsPathRooted(name) ? name : Path.Combine(directory, name);
+    if (!File.Exists(path))
+      throw new InvalidDataException($"QCOW2: data file '{name}' was not found next to the image.");
+    return new FileStream(path, FileMode.Open, file.CanWrite ? FileAccess.ReadWrite : FileAccess.Read, FileShare.ReadWrite);
   }
 
   /// <summary>Opens the image's backing file, QCOW2 (recursively) or raw.</summary>
@@ -185,8 +215,8 @@ public sealed class Qcow2Stream : Stream {
   public override void Write(ReadOnlySpan<byte> buffer) {
     if (!CanWrite)
       throw new NotSupportedException(
-        "QCOW2 write access requires a flat image with 16-bit eager refcounts, no snapshots, " +
-        "no backing file, no encryption, and no incompatible or autoclear v3 features.");
+        "QCOW2 write access requires a flat image with 16-bit eager refcounts, no snapshots, no backing file, " +
+        "no incompatible or autoclear v3 features but an external data file, and the password of an encrypted one.");
     if (_position < 0 || _position > Length - buffer.Length)
       throw new EndOfStreamException("Write would extend beyond the fixed QCOW2 virtual disk size.");
 
@@ -221,11 +251,15 @@ public sealed class Qcow2Stream : Stream {
       throw new NotSupportedException("QCOW2 virtual disk resizing is not implemented by this stream.");
   }
 
-  public override void Flush() => _backing.Flush();
+  public override void Flush() {
+    _dataFile?.Flush();
+    _backing.Flush();
+  }
 
   protected override void Dispose(bool disposing) {
     if (disposing) {
       _parent?.Dispose();
+      _dataFile?.Dispose();
       _encryption?.Dispose();
       if (!_leaveOpen)
         _backing.Dispose();
@@ -241,6 +275,8 @@ public sealed class Qcow2Stream : Stream {
     if ((entry & Qcow2Structures.CompressedFlag) != 0) {
       if (_encryption != null)
         throw new InvalidDataException("QCOW2: an encrypted image cannot hold compressed clusters.");
+      if (_dataFile != null)
+        throw new InvalidDataException("QCOW2: an image with an external data file cannot hold compressed clusters.");
       var cluster = new byte[_clusterSize];
       Qcow2Structures.InflateCompressedCluster(_backing, entry, _header.ClusterBits, _header.CompressionType, cluster);
       cluster.AsSpan(inClusterOffset, destination.Length).CopyTo(destination);
@@ -259,7 +295,7 @@ public sealed class Qcow2Stream : Stream {
       var zero = (uint)(bitmap >> 32);
       if ((allocated & zero) != 0)
         throw new InvalidDataException("QCOW2: a subcluster is marked both allocated and zero.");
-      if (allocated != 0 && hostOffset == 0)
+      if (allocated != 0 && hostOffset == 0 && !this.MapsToDataFileStart(entry))
         throw new InvalidDataException("QCOW2: allocated subclusters without a host cluster.");
       var done = 0;
       while (done < destination.Length) {
@@ -278,7 +314,7 @@ public sealed class Qcow2Stream : Stream {
 
     if (_header.Version >= 3 && (entry & Qcow2Structures.ZeroFlag) != 0)
       return;
-    if (hostOffset == 0) {
+    if (hostOffset == 0 && !this.MapsToDataFileStart(entry)) {
       if ((entry & Qcow2Structures.CopiedFlag) != 0)
         throw new InvalidDataException("QCOW2: self-contained standard cluster has copied flag but zero host offset.");
       this.ReadFromParent(guestOffset, destination);
@@ -288,18 +324,47 @@ public sealed class Qcow2Stream : Stream {
     this.ReadHost(hostOffset, guestOffset - inClusterOffset, inClusterOffset, destination);
   }
 
+  /// <summary>
+  /// Whether an entry with host offset zero is the cluster at offset zero of an external data
+  /// file rather than an unallocated one: there zero is a real offset, and a cluster in a data
+  /// file always has refcount one, so the copied flag tells the two apart (as QEMU reads it).
+  /// </summary>
+  private bool MapsToDataFileStart(ulong entry)
+    => _dataFile != null && (entry & Qcow2Structures.CopiedFlag) != 0;
+
   /// <summary>Reads guest bytes stored in the host cluster at <paramref name="hostCluster"/>, decrypting whole sectors when the image is encrypted.</summary>
   private void ReadHost(long hostCluster, long guestCluster, int inCluster, Span<byte> destination) {
+    if (_dataFile != null && hostCluster != guestCluster)
+      throw new InvalidDataException(
+        $"QCOW2: guest cluster at {guestCluster} maps to {hostCluster} in the external data file; the offsets must match.");
     if (_encryption == null) {
-      Qcow2Structures.ReadExactlyAt(_backing, checked(hostCluster + inCluster), destination);
+      this.ReadGuestStore(checked(hostCluster + inCluster), destination);
       return;
     }
     var start = inCluster & ~511;
     var end = (inCluster + destination.Length + 511) & ~511;
     var sectors = new byte[end - start];
-    Qcow2Structures.ReadExactlyAt(_backing, checked(hostCluster + start), sectors);
+    this.ReadGuestStore(checked(hostCluster + start), sectors);
     _encryption.Decrypt(hostCluster + start, guestCluster + start, sectors);
     sectors.AsSpan(inCluster - start, destination.Length).CopyTo(destination);
+  }
+
+  /// <summary>
+  /// Reads guest-cluster bytes from where they are stored. An external data file may end inside
+  /// its last cluster (a raw one is exactly as long as the guest disk); what lies past its end
+  /// reads as zeros, as QEMU reads it.
+  /// </summary>
+  private void ReadGuestStore(long offset, Span<byte> destination) {
+    if (_dataFile == null) {
+      Qcow2Structures.ReadExactlyAt(_backing, offset, destination);
+      return;
+    }
+    destination.Clear();
+    var available = (int)Math.Clamp(_dataFile.Length - offset, 0, destination.Length);
+    if (available == 0)
+      return;
+    _dataFile.Position = offset;
+    _dataFile.ReadExactly(destination[..available]);
   }
 
   /// <summary>Fills <paramref name="destination"/> from the backing file; zeros where it is shorter or absent.</summary>
@@ -311,7 +376,48 @@ public sealed class Qcow2Stream : Stream {
     _parent.ReadExactly(destination[..available]);
   }
 
+  /// <summary>
+  /// Writes into an image whose guest clusters live in an external data file: each cluster sits
+  /// at its own guest offset there and is not refcounted (qcow2.txt, incompatible bit 2), so a
+  /// write lands in place and an unallocated or zero cluster is materialised whole (zeros around
+  /// the written bytes, which keeps a raw data file a consistent image) and mapped to itself.
+  /// </summary>
+  private void WriteExternalGuestRange(long guestClusterIndex, int inClusterOffset, ReadOnlySpan<byte> source) {
+    var data = _dataFile!;
+    var l2TableOffset = EnsureExclusiveL2Table(guestClusterIndex);
+    var l2EntryOffset = checked(l2TableOffset + (guestClusterIndex % _l2Entries) * 8L);
+    var oldEntry = Qcow2Structures.ReadUInt64BigEndianAt(_backing, l2EntryOffset);
+    if ((oldEntry & Qcow2Structures.CompressedFlag) != 0)
+      throw new InvalidDataException("QCOW2: an image with an external data file cannot hold compressed clusters.");
+    ValidateStandardL2Entry(oldEntry);
+
+    var guestCluster = checked(guestClusterIndex * _clusterSize);
+    var hostOffset = Qcow2Structures.ReadClusterOffset(oldEntry);
+    if (hostOffset != 0 && hostOffset != guestCluster)
+      throw new InvalidDataException(
+        $"QCOW2: guest cluster at {guestCluster} maps to {hostOffset} in the external data file; the offsets must match.");
+    var zero = _header.Version >= 3 && (oldEntry & Qcow2Structures.ZeroFlag) != 0;
+    if ((hostOffset != 0 || this.MapsToDataFileStart(oldEntry)) && !zero) {
+      data.Position = checked(guestCluster + inClusterOffset);
+      data.Write(source);
+      if ((oldEntry & Qcow2Structures.CopiedFlag) == 0)
+        Qcow2Structures.WriteUInt64BigEndianAt(_backing, l2EntryOffset, oldEntry | Qcow2Structures.CopiedFlag);
+      return;
+    }
+
+    var length = (int)Math.Min(_clusterSize, _header.VirtualSize - guestCluster);
+    var cluster = new byte[length];
+    source.CopyTo(cluster.AsSpan(inClusterOffset));
+    data.Position = guestCluster;
+    data.Write(cluster);
+    Qcow2Structures.WriteUInt64BigEndianAt(_backing, l2EntryOffset, (ulong)guestCluster | Qcow2Structures.CopiedFlag);
+  }
+
   private void WriteGuestRange(long guestClusterIndex, int inClusterOffset, ReadOnlySpan<byte> source) {
+    if (_dataFile != null) {
+      this.WriteExternalGuestRange(guestClusterIndex, inClusterOffset, source);
+      return;
+    }
     var l2TableOffset = EnsureExclusiveL2Table(guestClusterIndex);
     var l2Index = checked((int)(guestClusterIndex % _l2Entries));
     var l2EntryOffset = checked(l2TableOffset + l2Index * 8L);
@@ -324,6 +430,18 @@ public sealed class Qcow2Stream : Stream {
         var refcount = GetRefcount(oldHostOffset);
         if (refcount == 0)
           throw new InvalidDataException("QCOW2: allocated guest cluster has a zero refcount.");
+        if (refcount == 1 && _encryption != null) {
+          // Encrypted sectors are rewritten whole: the cluster as the guest sees it, patched,
+          // enciphered for the host offset it stays at.
+          var cluster = new byte[_clusterSize];
+          ReadGuestRange(guestClusterIndex, 0, cluster);
+          source.CopyTo(cluster.AsSpan(inClusterOffset));
+          _encryption.Encrypt(oldHostOffset, guestClusterIndex * _clusterSize, cluster);
+          _backing.Position = oldHostOffset;
+          _backing.Write(cluster);
+          Qcow2Structures.WriteUInt64BigEndianAt(_backing, l2EntryOffset, (ulong)oldHostOffset | Qcow2Structures.CopiedFlag);
+          return;
+        }
         if (refcount == 1) {
           if (_header.Version >= 3 && (oldEntry & Qcow2Structures.ZeroFlag) != 0) {
             ZeroCluster(oldHostOffset);
@@ -352,6 +470,7 @@ public sealed class Qcow2Stream : Stream {
     source.CopyTo(replacement.AsSpan(inClusterOffset));
 
     var newHostOffset = AllocateRefcountedCluster(clear: false);
+    _encryption?.Encrypt(newHostOffset, guestClusterIndex * _clusterSize, replacement);
     _backing.Position = newHostOffset;
     _backing.Write(replacement);
     Qcow2Structures.WriteUInt64BigEndianAt(

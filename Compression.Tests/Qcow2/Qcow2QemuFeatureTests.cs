@@ -90,7 +90,6 @@ public class Qcow2QemuFeatureTests {
     Assert.That(Sha256(reader.ExtractDisk()), Is.EqualTo(Manifest()["zstd.qcow2"]));
   }
 
-  [TestCase(0x04, Description = "external data file")]
   [TestCase(0x20, Description = "an unknown incompatible feature")]
   public void Given_AnUnsupportedIncompatibleFeature_When_Opened_Then_ItIsRefused(int bit) {
     var image = Resource("zstd.qcow2");
