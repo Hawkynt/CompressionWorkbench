@@ -17699,6 +17699,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` |  |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Knobs the writer honours. `VolumeLabel` is written into the master superblock label field (and the backup record); `ImageSize` drives `BlockCount` (4 KB blocks, clamped to the writer minimum); `FileBody` picks how regular files are stored (`Reiser4FileBody`). The 4 KB block size is fixed — the embedded mkfs.reiser4 templates are byte-exact 4096-byte captures — so it is intentionally not exposed. |
+| `ReclaimSupport` | `LayoutReclaim ReclaimSupport { get; }` | Extent files can hold holes (units with start 0) and several names can share one stat key, both of which `fsck.reiser4` and the kernel accept on volumes this writer rebuilds. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `AddHardLink` | `void AddHardLink(Stream archive, string path, string existing)` | Adds `path` as a further name of the existing file `existing`. |
 | `AddSpecialFile` | `void AddSpecialFile(Stream archive, string path, ushort mode, ulong device = 0)` | Adds a device node (`device` = major << 20 \| minor), FIFO or socket. |
@@ -17713,7 +17714,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Reports the volume's layout: the reserved blocks, the tree nodes and the allocator bitmaps as metadata, then each file's extent runs. A volume whose journal still holds transactions to replay reports nothing: its blocks are not yet where the tree says. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Rebuilds the volume while carrying existing metadata, at the requested image size or the smallest that holds it. |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Rebuilds the volume while carrying existing metadata, at the requested image size or the smallest that holds it. `MakeSparse` turns all-zero extent blocks into holes; `DeduplicateWithLinks` makes identical regular files hard links of one object. Either way every file is read back and compared before the result is accepted. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes members and directory subtrees through a metadata-preserving rebuild. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds tightly while retaining native metadata, or copies through when the volume cannot be rebuilt smaller. |
 | `UpdateMetadata` | `void UpdateMetadata(Stream archive, string name, FileMetadata metadata)` | Updates a native object's mode, owner and timestamps through a staged rebuild. |

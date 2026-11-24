@@ -164,6 +164,17 @@ the blocks each unit left are cleared and of the blocks it landed on set. Tree n
 compressed clusters do not move. A volume whose journal holds transactions, or a file whose extent
 covers blocks past its end, falls back to a staged rebuild at the same size.
 
+### Reclaiming space
+
+A rebuild (optimize, shrink, relayout) can be asked for two transforms. **Sparse** turns every
+extent block that is zero up to the file's size into a hole unit; neighbouring blocks of one kind
+merge, blocks past the end are dropped, and `bytes` counts only the blocks still allocated. Tails
+and compressed clusters are carried as they are. **Hard links** make every non-empty regular file
+whose bytes equal an earlier one's (ordinal order of first paths) another name of that object: the
+entries keep their keys and point at the first file's stat key, the duplicates go, and `nlink`
+follows the namespace. Either way every regular file of the staged volume is read back and compared
+by path with the source's SHA-256 before the result is accepted.
+
 ## Evidence
 
 | Volume | Checked by | Result |
@@ -176,6 +187,7 @@ covers blocks past its end, falls back to a staged rebuild at the same size.
 | a tall tree scattered and defragmented in place | `fsck.reiser4`; the kernel's manifest | consistent after both; no node moved; every file identical |
 | 3,004 files in 28 nested directories, empty and deep-empty directories, sizes 0/1/4095/4096/4097/2.2 MB, names of 23, 24, 100 and 255 characters | `fsck.reiser4 --check`; `debugfs -s`; `debugfs -i` + block copy for 316 files; `measurefs -S` | consistent; height 3, 38 twigs, 113 leaves, 3,040 objects; 0 byte mismatches |
 | 12,000 files with extents | `fsck`; `debugfs -s` | consistent; height 4 |
+| writer volumes with leading, inner, trailing and whole-file zero runs plus five identical files, rebuilt sparse, linked and both; the kernel's `reg40-node41` volume rebuilt with both | `fsck.reiser4 --check`; the kernel's manifest | consistent; every file's MD5 and size equal, the five copies one inode with `nlink` 5 |
 | our volume after `fsck.reiser4 --build-fs` inserted lost+found | our reader; then add into lost+found and `fsck` | read completely; consistent, object ID and owner kept |
 
 Known disagreements between the two oracles, recorded rather than resolved: kernel-written Rupasov

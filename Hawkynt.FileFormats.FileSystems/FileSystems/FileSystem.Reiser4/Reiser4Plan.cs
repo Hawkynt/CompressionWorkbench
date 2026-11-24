@@ -80,7 +80,11 @@ internal sealed class Reiser4Plan {
   // ── Construction ───────────────────────────────────────────────────────
 
   /// <summary>A plan holding everything <paramref name="volume" /> holds, bodies referencing its blocks.</summary>
-  internal static Reiser4Plan FromVolume(Reiser4Volume volume) {
+  /// <param name="volume">The volume to carry.</param>
+  /// <param name="sparse">When set, every extent block that holds nothing but zeros within the
+  /// file's size becomes a hole unit (start 0) instead of an allocated block, as the kernel leaves
+  /// blocks a file never wrote; the file's <c>bytes</c> then counts only allocated blocks.</param>
+  internal static Reiser4Plan FromVolume(Reiser4Volume volume, bool sparse = false) {
     if (!volume.TreeValid || volume.Root is null)
       throw new NotSupportedException($"Reiser4: refusing to rebuild: {volume.Problem ?? "the tree was not read"}.");
     var status = volume.ReadBlock(21);
@@ -101,8 +105,13 @@ internal sealed class Reiser4Plan {
       var planned = new Reiser4PlanObject { StatKey = obj.StatKey, Stat = obj.Stat.Raw.ToArray() };
       planned.Entries.AddRange(obj.Entries);
       if (obj.Body.Count > 0 && obj.Body[0].Plugin == Reiser4ItemPlugin.Extent) {
-        foreach (var (start, width) in volume.ExtentUnits(obj))
-          planned.Extents.Add(new Reiser4PlanUnit(width, start == 0 ? null : BlockPayload(volume, start, width)));
+        if (sparse && obj.Stat.Kind == Reiser4Stat.Regular) {
+          planned.Extents.AddRange(SparseUnits(volume, obj));
+          var allocated = planned.Extents.Where(static u => u.Payload is not null).Aggregate(0UL, static (sum, u) => sum + u.Width);
+          planned.SetBytes(allocated * Reiser4Volume.BlockSize);
+        } else
+          foreach (var (start, width) in volume.ExtentUnits(obj))
+            planned.Extents.Add(new Reiser4PlanUnit(width, start == 0 ? null : BlockPayload(volume, start, width)));
       } else {
         foreach (var item in obj.Body) planned.Items.Add((item.Key, item.Plugin, volume.ReadBody(item)));
       }
@@ -129,6 +138,40 @@ internal sealed class Reiser4Plan {
     root.Entries.Add(new Reiser4DirEntry(o, i, f, ".."u8.ToArray(), Reiser4Volume.RootStatKey));
     plan._objects.Add(root.StatKey, root);
     return plan;
+  }
+
+  /// <summary>
+  /// The extent units of <paramref name="file" /> with every block that is zero up to the file's
+  /// size turned into a hole. Neighbouring blocks of one kind merge into one unit; blocks past the
+  /// file's end are dropped, since nothing reads them.
+  /// </summary>
+  private static List<Reiser4PlanUnit> SparseUnits(Reiser4Volume volume, Reiser4Object file) {
+    var units = new List<Reiser4PlanUnit>();
+    var size = file.Stat.Size;
+    ulong logical = 0;
+    ulong runStart = 0, runWidth = 0;
+    void FlushRun() {
+      if (runWidth == 0) return;
+      units.Add(new Reiser4PlanUnit(runWidth, BlockPayload(volume, runStart, runWidth)));
+      runWidth = 0;
+    }
+    void AddHole() {
+      FlushRun();
+      if (units.Count > 0 && units[^1].Payload is null) units[^1] = new Reiser4PlanUnit(units[^1].Width + 1, null);
+      else units.Add(new Reiser4PlanUnit(1, null));
+    }
+    foreach (var (start, width) in volume.ExtentUnits(file)) {
+      for (ulong i = 0; i < width && logical < size; ++i, logical += Reiser4Volume.BlockSize) {
+        if (start == 0) { AddHole(); continue; }
+        var block = start + i;
+        var inFile = (int)Math.Min((ulong)Reiser4Volume.BlockSize, size - logical);
+        if (volume.ReadBlock(block).AsSpan(0, inFile).IndexOfAnyExcept((byte)0) < 0) { AddHole(); continue; }
+        if (runWidth > 0 && runStart + runWidth == block) ++runWidth;
+        else { FlushRun(); runStart = block; runWidth = 1; }
+      }
+    }
+    FlushRun();
+    return units;
   }
 
   private static FilePayload BlockPayload(Reiser4Volume volume, ulong start, ulong width)
@@ -372,6 +415,40 @@ internal sealed class Reiser4Plan {
       throw new NotSupportedException($"Reiser4: the name '{Reiser4Volume.DecodeName(name)}' would share its key with an existing entry.");
     parent.Entries.Add(new Reiser4DirEntry(ordering, objectId, offset, name, target.StatKey));
     this._paths = null;
+  }
+
+  /// <summary>
+  /// Makes every non-empty regular file whose content equals an earlier one's another name of that
+  /// earlier file: each entry naming a duplicate is re-pointed at the first file's stat key (the
+  /// entry's own key depends only on its name and directory, so it stays), and the duplicates, now
+  /// nameless, are dropped. "Earlier" is the ordinal order of the files' first paths.
+  /// </summary>
+  /// <param name="contentOf">The size and a digest of each regular file's bytes, by stat key.</param>
+  /// <returns>How many objects were folded into another.</returns>
+  internal int LinkDuplicates(IReadOnlyDictionary<Reiser4Key, (ulong Size, byte[] Digest)> contentOf) {
+    ArgumentNullException.ThrowIfNull(contentOf);
+    var firstPath = new Dictionary<Reiser4Key, string>();
+    foreach (var (path, (_, entry)) in this.Paths.OrderBy(static p => p.Key, StringComparer.Ordinal))
+      firstPath.TryAdd(entry.Target, path);
+    var canonical = new Dictionary<(ulong, string), Reiser4Key>();
+    var replace = new Dictionary<Reiser4Key, Reiser4Key>();
+    foreach (var (key, _) in firstPath.OrderBy(static p => p.Value, StringComparer.Ordinal)) {
+      if (!this._objects.TryGetValue(key, out var obj) || obj.Kind != Reiser4Stat.Regular) continue;
+      if (!contentOf.TryGetValue(key, out var content) || content.Size == 0) continue;
+      var id = (content.Size, Convert.ToHexString(content.Digest));
+      if (canonical.TryGetValue(id, out var first)) replace[key] = first;
+      else canonical[id] = key;
+    }
+    if (replace.Count == 0) return 0;
+    foreach (var directory in this._objects.Values.Where(static o => o.IsDirectory))
+      for (var i = 0; i < directory.Entries.Count; ++i) {
+        var entry = directory.Entries[i];
+        if (!entry.IsDot && !entry.IsDotDot && replace.TryGetValue(entry.Target, out var target))
+          directory.Entries[i] = entry with { Target = target };
+      }
+    this._paths = null;
+    this.CollectUnreachable();
+    return replace.Count;
   }
 
   /// <summary>Removes a name; a directory goes with everything beneath it, an object with its last name.</summary>

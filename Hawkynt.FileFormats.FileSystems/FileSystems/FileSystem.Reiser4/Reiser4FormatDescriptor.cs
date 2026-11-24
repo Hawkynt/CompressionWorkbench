@@ -331,16 +331,77 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   /// <summary>Writes the edited plan of <paramref name="source" /> to <paramref name="target" /> and verifies it there.</summary>
-  private static void StageTo(Stream source, Stream target, Action<Reiser4Plan> edit, Func<Reiser4Plan, ulong>? minimumBlocks) {
+  private static void StageTo(Stream source, Stream target, Action<Reiser4Plan> edit, Func<Reiser4Plan, ulong>? minimumBlocks,
+      bool sparse = false, bool linkDuplicates = false) {
     source.Position = 0;
     using var volume = new Reiser4Volume(source);
-    var plan = Reiser4Plan.FromVolume(volume);
+    var plan = Reiser4Plan.FromVolume(volume, sparse);
+    var digests = sparse || linkDuplicates ? Digests(volume) : null;
+    if (linkDuplicates) plan.LinkDuplicates(digests!);
     edit(plan);
     if (minimumBlocks is not null) plan.MinimumBlocks = minimumBlocks(plan);
     target.Position = 0;
     target.SetLength(0);
     plan.Write(target);
     Verify(plan, target, volume);
+    if (digests is not null) VerifyContents(volume, digests, target);
+  }
+
+  /// <summary>The size and SHA-256 of every regular file's bytes (holes read as zeros), by stat key.</summary>
+  private static Dictionary<Reiser4Key, (ulong Size, byte[] Digest)> Digests(Reiser4Volume volume) {
+    var result = new Dictionary<Reiser4Key, (ulong, byte[])>();
+    foreach (var (key, obj) in volume.Objects) {
+      if (obj.Stat.Kind != Reiser4Stat.Regular) continue;
+      using var sink = new DigestSink();
+      volume.ExtractTo(obj, sink);
+      result[key] = (obj.Stat.Size, sink.Finish());
+    }
+    return result;
+  }
+
+  /// <summary>
+  /// A rebuild that changed how bytes are stored (holes, shared objects) must still give every
+  /// path the bytes it had: each regular file of the staged volume is read back and compared by
+  /// path with the source's digest.
+  /// </summary>
+  private static void VerifyContents(Reiser4Volume source, Dictionary<Reiser4Key, (ulong Size, byte[] Digest)> digests, Stream staged) {
+    var expected = new Dictionary<string, (ulong Size, byte[] Digest)>(StringComparer.Ordinal);
+    foreach (var (path, _, obj, _) in source.Paths)
+      if (digests.TryGetValue(obj.StatKey, out var digest)) expected[path] = digest;
+    staged.Position = 0;
+    using var rebuilt = new Reiser4Volume(staged);
+    var seen = 0;
+    foreach (var (path, _, obj, _) in rebuilt.Paths) {
+      if (obj.Stat.Kind != Reiser4Stat.Regular) continue;
+      using var sink = new DigestSink();
+      rebuilt.ExtractTo(obj, sink);
+      if (!expected.TryGetValue(path, out var want) || want.Size != obj.Stat.Size || !want.Digest.AsSpan().SequenceEqual(sink.Finish()))
+        throw new InvalidDataException($"Reiser4: '{path}' does not read back its bytes after the rebuild.");
+      ++seen;
+    }
+    if (seen != expected.Count) throw new InvalidDataException("Reiser4: the rebuild lost a regular file.");
+  }
+
+  /// <summary>A write-only stream that hashes what it is given.</summary>
+  private sealed class DigestSink : Stream {
+    private readonly System.Security.Cryptography.IncrementalHash _hash =
+      System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+    public byte[] Finish() => this._hash.GetHashAndReset();
+    public override bool CanRead => false;
+    public override bool CanSeek => false;
+    public override bool CanWrite => true;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override void Flush() { }
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => this._hash.AppendData(buffer, offset, count);
+    public override void Write(ReadOnlySpan<byte> buffer) => this._hash.AppendData(buffer);
+    protected override void Dispose(bool disposing) {
+      if (disposing) this._hash.Dispose();
+      base.Dispose(disposing);
+    }
   }
 
   /// <summary>
@@ -475,11 +536,23 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     else input.CopyTo(output);
   }
 
-  /// <summary>Rebuilds the volume while carrying existing metadata, at the requested image size or the smallest that holds it.</summary>
+  /// <summary>
+  /// Extent files can hold holes (units with start 0) and several names can share one stat key,
+  /// both of which <c>fsck.reiser4</c> and the kernel accept on volumes this writer rebuilds.
+  /// </summary>
+  public LayoutReclaim ReclaimSupport => LayoutReclaim.Sparse | LayoutReclaim.HardLinks;
+
+  /// <summary>
+  /// Rebuilds the volume while carrying existing metadata, at the requested image size or the
+  /// smallest that holds it. <see cref="LayoutRebuildOptions.MakeSparse" /> turns all-zero extent
+  /// blocks into holes; <see cref="LayoutRebuildOptions.DeduplicateWithLinks" /> makes identical
+  /// regular files hard links of one object. Either way every file is read back and compared
+  /// before the result is accepted.
+  /// </summary>
   public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
     ArgumentNullException.ThrowIfNull(options);
-    if (options.UnitSize is not (0 or Reiser4Writer.BlockSize) || options.MakeSparse || options.DeduplicateWithLinks)
-      throw new NotSupportedException("Reiser4: this writer uses 4096-byte blocks without sparse or shared-file transforms.");
+    if (options.UnitSize is not (0 or Reiser4Writer.BlockSize))
+      throw new NotSupportedException("Reiser4: this writer uses 4096-byte blocks.");
     var imageSize = options.ImageSize;
     if (options.Parameters is not null)
       foreach (var pair in options.Parameters) {
@@ -488,7 +561,8 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
         imageSize = FilesystemSchemaPresets.ParseSize(pair.Value);
       }
     var blocks = imageSize > 0 ? (ulong)(imageSize / Reiser4Writer.BlockSize) : Reiser4Writer.MinBlockCount;
-    StageTo(source, target, static _ => { }, _ => Math.Max(Reiser4Writer.MinBlockCount, blocks));
+    StageTo(source, target, static _ => { }, _ => Math.Max(Reiser4Writer.MinBlockCount, blocks),
+      sparse: options.MakeSparse, linkDuplicates: options.DeduplicateWithLinks);
   }
 
   private static string SafeMemberPath(string root, string name) {
