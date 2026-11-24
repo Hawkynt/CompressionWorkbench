@@ -12071,7 +12071,7 @@ Formats FLEX disks the way NEWDISK does and edits them the way the File Manageme
 
 ### Namespace `FileSystem.Fossil`
 
-[`FossilEntry`](#fossilentry) · [`FossilFormatDescriptor`](#fossilformatdescriptor) · [`FossilReader`](#fossilreader) · [`FossilSourceEntry`](#fossilsourceentry) · [`FossilWriteNode`](#fossilwritenode) · [`FossilWriter`](#fossilwriter)
+[`FossilEntry`](#fossilentry) · [`FossilFormatDescriptor`](#fossilformatdescriptor) · [`FossilReader`](#fossilreader) · [`FossilSourceEntry`](#fossilsourceentry) · [`FossilWriteNode`](#fossilwritenode) · [`FossilWriter`](#fossilwriter) · [`VentiArenaStore`](#ventiarenastore) · [`VentiClump`](#venticlump) · [`VentiFormatDescriptor`](#ventiformatdescriptor) · [`VentiType`](#ventitype)
 
 #### `FossilEntry`
 
@@ -12120,11 +12120,12 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 #### `FossilReader`
 
-Reads a Fossil volume (Plan 9's file server, as `flfmt` lays it out and the `fossil` server writes it): header at 128 KiB, superblock, label and data partitions; files are trees of local blocks addressed by their block number. Blocks already archived to Venti are refused — this reader has no Venti. See `docs/FOSSIL-ON-DISK.md`.
+Reads a Fossil volume (Plan 9's file server, as `flfmt` lays it out and the `fossil` server writes it): header at 128 KiB, superblock, label and data partitions; files are trees of local blocks addressed by their block number. Blocks already archived to Venti are read from a `VentiArenaStore` when one is given and refused otherwise. The same tree format is what `vac` stores in Venti, so a vac root score opens through `OpenVac`. See `docs/FOSSIL-ON-DISK.md`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FossilReader` | `FossilReader(Stream stream)` | Opens a Fossil volume; throws `InvalidDataException` for anything it cannot read faithfully. |
+| `FossilReader` | `FossilReader(Stream stream, VentiArenaStore venti)` | Opens a Fossil volume whose archived blocks are fetched from `venti`; without one they are refused. |
 | `DirMagic` | `const uint DirMagic` |  |
 | `EntrySize` | `const int EntrySize` |  |
 | `HeaderMagic` | `const uint HeaderMagic` |  |
@@ -12143,7 +12144,8 @@ Reads a Fossil volume (Plan 9's file server, as `flfmt` lays it out and the `fos
 | `Entries` | `IReadOnlyList<FossilEntry> Entries { get; }` | Every file and directory, parents first. |
 | `Epochs` | `ValueTuple<uint, uint> Epochs { get; }` | Superblock epochs. |
 | `Name` | `string Name { get; }` | Superblock name (the volume label). |
-| `Extract` | `byte[] Extract(FossilEntry entry)` | Reads a file's bytes; refuses blocks that are not local or lie outside the data partition. |
+| `Extract` | `byte[] Extract(FossilEntry entry)` | Reads a file's bytes; refuses blocks that are neither local nor in the given Venti, or lie outside the data partition. |
+| `OpenVac` | `static FossilReader OpenVac(VentiArenaStore venti, ReadOnlySpan<byte> rootScore)` | Opens the tree a vac root names (plan9port's `vac`, or a Fossil archive): the root block's score leads to three entries — the root directory's entry stream, its meta stream and the meta block naming the root (vac's `vacfsopenscore` and `_vacfileroot`). |
 
 #### `FossilSourceEntry`
 
@@ -12153,7 +12155,7 @@ Implements `IEquatable<FossilSourceEntry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FossilSourceEntry` | `FossilSourceEntry(uint Gen, ushort PSize, ushort DSize, byte Flags, byte Depth, long Size, uint Address, bool IsLocal, bool IsZero, uint Tag, uint Snap)` | A source ("stream") entry as stored in a directory block (40 bytes). |
+| `FossilSourceEntry` | `FossilSourceEntry(uint Gen, ushort PSize, ushort DSize, byte Flags, byte Depth, long Size, uint Address, bool IsLocal, bool IsZero, uint Tag, uint Snap, byte[] Score = null)` | A source ("stream") entry as stored in a directory block (40 bytes). |
 | `Address` | `uint Address { get; init; }` |  |
 | `DSize` | `ushort DSize { get; init; }` |  |
 | `Depth` | `byte Depth { get; init; }` |  |
@@ -12164,6 +12166,7 @@ Implements `IEquatable<FossilSourceEntry>`.
 | `IsLocal` | `bool IsLocal { get; init; }` |  |
 | `IsZero` | `bool IsZero { get; init; }` |  |
 | `PSize` | `ushort PSize { get; init; }` |  |
+| `Score` | `byte[] Score { get; init; }` |  |
 | `Size` | `long Size { get; init; }` |  |
 | `Snap` | `uint Snap { get; init; }` |  |
 | `Tag` | `uint Tag { get; init; }` |  |
@@ -12193,6 +12196,88 @@ Writes a Fossil volume as plan9port's `flfmt` formats it and its `fossil` server
 | --- | --- | --- |
 | `DefaultBlockSize` | `const int DefaultBlockSize` | The block size `flfmt` uses by default. |
 | `Write` | `static void Write(Stream output, IReadOnlyList<FossilWriteNode> active, int blockSize = 8192, uint time = 0, string label = "main")` | Writes a volume whose active tree holds `active`. |
+
+#### `VentiArenaStore`
+
+Reads blocks out of a Venti arena partition (as `fmtarenas` lays it out and the `venti` server fills it): the partition header at 256 KiB, the arena map, and in each arena a log of clumps (header + data, whack-compressed or plain) found by their SHA-1 score. The index sections are not needed: every arena's clump log is scanned once.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VentiArenaStore` | `VentiArenaStore(Stream stream)` | Opens an arena partition and indexes its clump logs. |
+| `ArenaHeadMagic` | `const uint ArenaHeadMagic` |  |
+| `ArenaMagic` | `const uint ArenaMagic` |  |
+| `ArenaPartMagic` | `const uint ArenaPartMagic` |  |
+| `ClumpSize` | `const int ClumpSize` |  |
+| `HeadSize` | `const int HeadSize` |  |
+| `MaxLump` | `const int MaxLump` |  |
+| `OldClumpMagic` | `const uint OldClumpMagic` |  |
+| `PartBlank` | `const int PartBlank` |  |
+| `ScoreSize` | `const int ScoreSize` |  |
+| `ZeroScore` | `static readonly byte[] ZeroScore` | SHA-1 of the empty block: Venti answers it without storing anything. |
+| `Arenas` | `IReadOnlyList<string> Arenas { get; }` | Arena names in partition order. |
+| `BlockSize` | `int BlockSize { get; }` | Partition block size. |
+| `Clumps` | `IReadOnlyList<VentiClump> Clumps { get; }` | Every clump, in log order. |
+| `Contains` | `bool Contains(ReadOnlySpan<byte> score)` | Whether a block with this score is stored (or is the empty block). |
+| `Find` | `VentiClump Find(ReadOnlySpan<byte> score)` | The clump that holds `score`, if any. |
+| `IsArenaPartition` | `static bool IsArenaPartition(ReadOnlySpan<byte> header)` | Whether `header` (the bytes from 256 KiB on) starts a Venti arena partition. |
+| `Read` | `byte[] Read(ReadOnlySpan<byte> score)` | The block a score names, as stored (Venti drops trailing zeros), checked against the score. |
+| `Read` | `byte[] Read(ReadOnlySpan<byte> score, int type, int size)` | The block a score names, zero-extended to `size` the way libventi does: data and directory blocks with zero bytes, pointer blocks with the empty block's score. |
+| `Unwhack` | `static int Unwhack(Span<byte> dst, ReadOnlySpan<byte> src)` | Venti's "whack" LZ77 decoder (unwhack.c): returns the bytes written to `dst`. |
+
+#### `VentiClump`
+
+One block stored in a Venti arena: where its clump lies and what it says about itself.
+
+Implements `IEquatable<VentiClump>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VentiClump` | `VentiClump(byte[] Score, int Type, long Offset, int StoredSize, int Size, bool Compressed, string Arena, uint Time)` | One block stored in a Venti arena: where its clump lies and what it says about itself. |
+| `Arena` | `string Arena { get; init; }` | Name of the arena holding it. |
+| `Compressed` | `bool Compressed { get; init; }` | The data is whack-compressed. |
+| `Offset` | `long Offset { get; init; }` | Byte offset of the clump's data in the partition. |
+| `Score` | `byte[] Score { get; init; }` | SHA-1 of the uncompressed block. |
+| `Size` | `int Size { get; init; }` | Bytes of the uncompressed block. |
+| `StoredSize` | `int StoredSize { get; init; }` | Bytes stored on disk. |
+| `Time` | `uint Time { get; init; }` | Clump write time (UNIX seconds). |
+| `Type` | `int Type { get; init; }` | Client block type (`VentiType`). |
+
+#### `VentiFormatDescriptor`
+
+Venti — Plan 9's archival block store (Quinlan and Dorward, 2002) — as an arena partition that plan9port's `fmtarenas` formats and its `venti` server fills. Header magic `0xa9e4a5e7` at 256 KiB.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VentiFormatDescriptor` | `VentiFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Trees` | `static List<ValueTuple<string, FossilReader>> Trees(VentiArenaStore store)` | Every vac tree in the partition, as (folder, reader); roots that are not vac trees are skipped. |
+
+#### `VentiType`
+
+Venti block types as clients name them (libventi): data and directory blocks with their pointer depth, and roots.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Data` | `const int Data` |  |
+| `Dir` | `const int Dir` |  |
+| `Root` | `const int Root` |  |
 
 ### Namespace `FileSystem.Gemdos`
 
