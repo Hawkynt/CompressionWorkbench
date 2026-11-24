@@ -98,17 +98,49 @@ public sealed class BcacheFs139EditTests {
   }
 
   /// <summary>
-  /// fsck checks a compressed run's checksum, not that it decodes. Every run we compress into a
-  /// gzip or zstd volume is decoded here by a reference decoder — Python's zlib for the raw
-  /// DEFLATE stream, the zstd tool for the frame behind its length — and must give back the
-  /// file's bytes.
+  /// fsck checks a compressed run's checksum, not that it decodes. Every run we compress into an
+  /// lz4, gzip or zstd volume is decoded here by a reference decoder — the lz4 library's block
+  /// decoder (Python <c>lz4.block</c>), Python's zlib for the raw DEFLATE stream, the zstd tool for
+  /// the frame behind its length — and must give back the file's bytes.
   /// </summary>
+  /// <remarks>
+  /// An LZ4 run is a raw block followed by zero padding to whole blocks, and the block's length is
+  /// recorded nowhere (the kernel decodes until its output is full). The library's safe decoder
+  /// wants the exact length, so the lengths from the padding-trimmed end up are tried; one must
+  /// decode to exactly the run's bytes. The library comes from a Python environment that has it:
+  /// <c>~/.cache/cwb/lz4-venv</c> (<c>python3 -m venv ~/.cache/cwb/lz4-venv &amp;&amp;
+  /// ~/.cache/cwb/lz4-venv/bin/pip install lz4</c>) or the system's.
+  /// </remarks>
+  [TestCase("bcachefs-tools-1.39-lz4-crc32c.img.gz", TestName = "GivenOurLz4Runs_WhenAReferenceDecoderReadsThem_ThenTheyDecodeToTheFile")]
   [TestCase("bcachefs-tools-1.39-gzip-crc64.img.gz", TestName = "GivenOurGzipRuns_WhenAReferenceDecoderReadsThem_ThenTheyDecodeToTheFile")]
   [TestCase("bcachefs-tools-1.39-zstd-xxhash.img.gz", TestName = "GivenOurZstdRuns_WhenAReferenceDecoderReadsThem_ThenTheyDecodeToTheFile")]
   [Category("ExternalFsInterop")]
   public void CompressedRunsDecodeWithAReferenceDecoder(string name) {
     if (!FsInteropToolbox.WslHasTool("python3") || !FsInteropToolbox.WslHasTool("zstd"))
       Assert.Ignore("python3 and zstd are needed in the Linux environment as reference decoders.");
+    string? lz4Python = null;
+    if (name.Contains("lz4", StringComparison.Ordinal)) {
+      var probe = FsInteropToolbox.RunWsl(
+        "for p in ~/.cache/cwb/lz4-venv/bin/python python3; do $p -c 'import lz4.block' 2>/dev/null && { echo $p; break; }; done");
+      lz4Python = probe.StdOut.Trim();
+      if (lz4Python.Length == 0)
+        Assert.Ignore("No Python with the lz4 library: python3 -m venv ~/.cache/cwb/lz4-venv && ~/.cache/cwb/lz4-venv/bin/pip install lz4");
+    }
+    var lz4Script = Path.Combine(this._tmpDir, "lz4-decode.py");
+    File.WriteAllText(lz4Script, string.Join("\n",
+      "import sys, base64, lz4.block",
+      "data = open(sys.argv[1], 'rb').read()",
+      "size = int(sys.argv[2])",
+      "end = len(data.rstrip(b'\\0'))",
+      "for n in range(end, min(len(data), end + 16) + 1):",
+      "    try:",
+      "        out = lz4.block.decompress(data[:n], uncompressed_size=size)",
+      "    except Exception:",
+      "        continue",
+      "    if len(out) == size:",
+      "        print(base64.b64encode(out).decode()); sys.exit(0)",
+      "sys.exit('no prefix of the region decodes as an LZ4 block of the run size')",
+      ""));
     var text = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 20_000).Select(i => $"row {i}: compressible text\n")));
     using var image = Image(name);
     new BcacheFsFormatDescriptor().AddToVolume([image], [ArchiveInputInfo.InMemory("ours/text.txt", text)]);
@@ -125,7 +157,10 @@ public sealed class BcacheFs139EditTests {
       var regionPath = Path.Combine(this._tmpDir, $"run{decoded}.bin");
       var wsl = FsInteropToolbox.WinToWsl(regionPath);
       string command;
-      if (crc.CompressionType == BcacheFsCompressionType.Zstd) {
+      if (crc.CompressionType == BcacheFsCompressionType.Lz4) {
+        File.WriteAllBytes(regionPath, region);
+        command = $"{lz4Python} {FsInteropToolbox.WinToWsl(lz4Script)} {wsl} {crc.UncompressedSize * 512}";
+      } else if (crc.CompressionType == BcacheFsCompressionType.Zstd) {
         var length = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(region);
         File.WriteAllBytes(regionPath, region.AsSpan(4, (int)length).ToArray());
         command = $"zstd -d -q -c {wsl} | base64 -w0";

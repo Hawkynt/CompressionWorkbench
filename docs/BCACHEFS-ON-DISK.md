@@ -515,10 +515,13 @@ reference volume, each fsck-clean afterwards; refuses a volume with pending
 reconcile work unchanged. The checked-in 1.39 reference volumes (plain, lz4/crc32c,
 gzip/crc64, zstd/xxhash) are edited and read back everywhere. fsck checks the
 structure, accounting and checksums of the compressed runs, not that they decode:
-every gzip and zstd run written into the reference volumes is decoded by a
-reference decoder (Python's zlib, the zstd tool) back to the file's bytes; LZ4 runs
-rest on this package's reader and the codec's own conformance tests, as no
-reference LZ4 block decoder is installed here.
+every lz4, gzip and zstd run written into the reference volumes is decoded by a
+reference decoder (the lz4 library's block decoder through Python `lz4.block`,
+Python's zlib, the zstd tool) back to the file's bytes. An LZ4 block's length is
+recorded nowhere (padding follows it), so the lengths from the padding-trimmed end
+up are tried and one must decode to exactly the run. The lz4 library comes from
+`~/.cache/cwb/lz4-venv` (`python3 -m venv ~/.cache/cwb/lz4-venv &&
+~/.cache/cwb/lz4-venv/bin/pip install lz4`) or the system's Python.
 
 ## Upgrading past 1.14
 
