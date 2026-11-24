@@ -39,7 +39,8 @@ public sealed class RefsFormatDescriptor :
   // this editor - each mounted read-only and read-write, every file hashed as expected, no ReFS
   // event: same-length overwrite (RefsInPlaceOverwrite), rename within a directory
   // (RefsInPlaceRename), remove (RefsInPlaceRemove) and length-changing replace
-  // (RefsInPlaceResize) of files held in their directory row, in the layouts those checks cover.
+  // (RefsInPlaceResize) and adding a file (RefsInPlaceAdd) held in its directory row, in the
+  // layouts those checks cover.
   // Defragment and everything outside those layouts is refused before a byte is touched.
   // See tools/foreign-os-oracles and RefsWindowsOracleTests.
   /// <summary>
@@ -90,7 +91,7 @@ public sealed class RefsFormatDescriptor :
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Microsoft ReFS 3.x volume image, read: namespace and allocation parsing checked file for file against volumes Windows Server 2022 (ReFS 3.7) and 2025 (ReFS 3.14) formatted. In place: overwrite, length-changing replace, rename and remove of files, as Windows accepts them; creating files and defragmenting are refused.";
+  public string Description => "Microsoft ReFS 3.x volume image, read: namespace and allocation parsing checked file for file against volumes Windows Server 2022 (ReFS 3.7) and 2025 (ReFS 3.14) formatted. In place: overwrite, length-changing replace, rename, remove and adding files, as Windows accepts them; creating directories and defragmenting are refused.";
 
   /// <summary>
   /// Probes the image and reports the filesystem driver profile.
@@ -275,9 +276,10 @@ public sealed class RefsFormatDescriptor :
   }
 
   /// <summary>
-  /// Replaces existing files in place: a same-length overwrite of any number of files
-  /// (<see cref="RefsInPlaceOverwrite"/>) or one length-changing replacement
-  /// (<see cref="RefsInPlaceResize"/>). Creating files is refused.
+  /// Replaces or adds files in place: a same-length overwrite of any number of files
+  /// (<see cref="RefsInPlaceOverwrite"/>), or one length-changing replacement
+  /// (<see cref="RefsInPlaceResize"/>), or one new file (<see cref="RefsInPlaceAdd"/>).
+  /// Creating directories is refused.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
@@ -290,7 +292,20 @@ public sealed class RefsFormatDescriptor :
       .Where(static f => !f.IsDirectory)
       .GroupBy(static f => f.Path, StringComparer.OrdinalIgnoreCase)
       .ToDictionary(static g => g.Key, static g => g.First().Size, StringComparer.OrdinalIgnoreCase);
+    var directories = new RefsNamespaceReader(metadata).ReadAll().Where(static f => f.IsDirectory)
+      .Select(static f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    foreach (var dir in inputs.Where(static i => i.IsDirectory))
+      if (!directories.Contains(dir.ArchiveName.Replace('\\', '/').Trim('/')))
+        throw new NotSupportedException($"ReFS: creating the directory '{dir.ArchiveName}' is not made in place.");
     var contents = files.Select(static i => i.ReadContent()).ToList();
+    var creating = files.Where(i => !sizes.ContainsKey(i.ArchiveName.Replace('\\', '/').Trim('/'))).ToList();
+    if (creating.Count > 0) {
+      // A new file inserts rows into its directory, so it is made alone.
+      if (files.Count != 1)
+        throw new NotSupportedException("ReFS: a new file is added one file per call.");
+      RefsInPlaceAdd.Add(archive, files[0].ArchiveName, contents[0]);
+      return;
+    }
     var resizing = files.Select((input, i) =>
       sizes.TryGetValue(input.ArchiveName.Replace('\\', '/').Trim('/'), out var size) && size != contents[i].LongLength).ToList();
     if (resizing.Any(static r => r)) {

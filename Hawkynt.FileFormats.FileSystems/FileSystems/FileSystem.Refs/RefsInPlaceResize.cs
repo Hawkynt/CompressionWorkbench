@@ -163,30 +163,7 @@ internal static class RefsInPlaceResize {
     W64(value, block + 16, (ulong)newLength);
     W64(value, block + 24, newAlloc);
     W32(value, countField, (uint)entries.Count);
-    var oldCount = (int)U32(value, leaf + 20);
-    var indexEnd = (int)U32(value, leaf + 0x20);
-    var delta = entries.Count - oldCount;
-    // ReFS 3.14 leaves (flags 0x0E00) number their index entries (offset | ordinal << 16) where
-    // 3.7 leaves (0x0600) tag them 0xFFFF; only the 3.7 form is rewritten when the count changes.
-    var leafFlags = U32(value, leaf + 12);
-    if (delta != 0 && leafFlags != 0x0600)
-      throw new NotSupportedException($"ReFS: the extent table of '{normalized}' would change its entry count in a leaf form this editor does not renumber.");
-    if (delta != 0) {
-      W32(value, leaf + 4, U32(value, leaf + 4) + (uint)(delta * 24));
-      W32(value, leaf + 8, (uint)((int)U32(value, leaf + 8) - delta * 28));
-      W32(value, leaf + 16, (uint)(indexEnd - entries.Count * 4));
-      W32(value, leaf + 20, (uint)entries.Count);
-      value.AsSpan(leaf + 0x28, indexEnd - 0x28).Clear();
-    }
-    for (var i = 0; i < entries.Count; ++i) {
-      var e = leaf + 0x28 + i * 24;
-      W64(value, e, entries[i].Vlcn);
-      W32(value, e + 8, entries[i].Flags);
-      W32(value, e + 12, entries[i].Vcn);
-      W32(value, e + 16, 0);
-      W32(value, e + 20, entries[i].Run);
-      if (delta != 0) W32(value, leaf + indexEnd - (entries.Count - i) * 4, (uint)(0x28 + i * 24) | 0xFFFF0000u);
-    }
+    WriteLeaf(value, leaf, entries, normalized);
     if (!RefsPageEditor.CanReplaceValue(graph, row, value.Length))
       throw new NotSupportedException("ReFS: the directory page cannot take the rewritten row.");
     return new Plan(row, value, data, allocate, free, allocator, page);
@@ -204,7 +181,40 @@ internal static class RefsInPlaceResize {
     return RefsAllocatorWriter.WindowsMedium(metadata, graph, clusters) ?? throw new NotSupportedException($"ReFS: the Medium Allocator does not show the clusters of '{name}' the way Windows-formatted volumes do; it is not resized.");
   }
 
-  private static int FindOnce(byte[] value, ulong[] pattern, int from) {
+  /// <summary>
+  /// Writes <paramref name="entries"/> (24-byte plain entries) into the embedded extent leaf at
+  /// <paramref name="leaf"/>. When the count changes, the header (data end, free, index start,
+  /// count) and the index are rewritten: a ReFS 3.7 leaf (flags 0x0600) tags each index entry
+  /// (offset | 0xFFFF0000), a ReFS 3.14 leaf (0x0E00) numbers them (offset | ordinal &lt;&lt; 16),
+  /// as both appear on Windows-written volumes. A leaf without room is refused.
+  /// </summary>
+  internal static void WriteLeaf(byte[] value, int leaf, IReadOnlyList<(ulong Vlcn, uint Flags, uint Vcn, uint Run)> entries, string name) {
+    var oldCount = (int)U32(value, leaf + 20);
+    var indexEnd = (int)U32(value, leaf + 0x20);
+    var delta = entries.Count - oldCount;
+    var numbered = U32(value, leaf + 12) == 0x0E00;
+    if (delta > 0 && U32(value, leaf + 8) < (uint)(delta * 28))
+      throw new NotSupportedException($"ReFS: the extent table of '{name}' has no room for another entry.");
+    if (delta != 0) {
+      W32(value, leaf + 4, U32(value, leaf + 4) + (uint)(delta * 24));
+      W32(value, leaf + 8, (uint)((int)U32(value, leaf + 8) - delta * 28));
+      W32(value, leaf + 16, (uint)(indexEnd - entries.Count * 4));
+      W32(value, leaf + 20, (uint)entries.Count);
+      value.AsSpan(leaf + 0x28, indexEnd - 0x28).Clear();
+    }
+    for (var i = 0; i < entries.Count; ++i) {
+      var e = leaf + 0x28 + i * 24;
+      W64(value, e, entries[i].Vlcn);
+      W32(value, e + 8, entries[i].Flags);
+      W32(value, e + 12, entries[i].Vcn);
+      W32(value, e + 16, 0);
+      W32(value, e + 20, entries[i].Run);
+      if (delta != 0)
+        W32(value, leaf + indexEnd - (entries.Count - i) * 4, (uint)(0x28 + i * 24) | (numbered ? (uint)i << 16 : 0xFFFF0000u));
+    }
+  }
+
+  internal static int FindOnce(byte[] value, ulong[] pattern, int from) {
     var found = -1;
     for (var p = from; p + pattern.Length * 8 <= value.Length; p += 4) {
       var match = true;
@@ -216,7 +226,7 @@ internal static class RefsInPlaceResize {
     return found;
   }
 
-  private static int FindLeaf(byte[] value, uint count) {
+  internal static int FindLeaf(byte[] value, uint count) {
     var found = -1;
     for (var p = 0x80; p + 0x28 <= value.Length; p += 4) {
       if (U32(value, p) != 0x28 || U32(value, p + 12) is not (0x0600 or 0x0E00) || U32(value, p + 20) != count) continue;

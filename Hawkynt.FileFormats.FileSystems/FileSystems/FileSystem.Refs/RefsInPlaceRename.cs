@@ -8,10 +8,8 @@ namespace FileSystem.Refs;
 /// row keyed by the old name is removed and the same value is inserted under the new name at its
 /// collation position, then every page-reference checksum from that page up to the checkpoint is
 /// refreshed (<see cref="RefsMetadataGraph.RefreshChecksumPaths"/>). Directory keys are
-/// [u16 0x30, u16 kind, UTF-16 name]; rows collate by key type, then by the name with a-z folded
-/// to A-Z, compared by UTF-16 code unit — checked against the order the page already holds before
-/// anything is written. Folding beyond ASCII would need the volume's upcase table, so a directory
-/// holding a non-ASCII name, or a non-ASCII new name, is refused.
+/// [u16 0x30, u16 kind, UTF-16 name]; rows collate as <see cref="RefsDirectoryCollation"/> says —
+/// checked against the order the page already holds before anything is written.
 /// </summary>
 /// <remarks>
 /// Only files whose whole record lives in the directory row (kind 1) are renamed: a file or
@@ -46,22 +44,12 @@ internal static class RefsInPlaceRename {
     if (rows.Any(r => r.PhysicalPageLcn != page) || metadata.TranslateVirtualLcn(directoryRoot.Lcns[0]) != page)
       throw new NotSupportedException("ReFS: the directory spans more than one page; only single-page directories are renamed in.");
 
-    int Compare(byte[] a, byte[] b) {
-      var ta = BinaryPrimitives.ReadUInt16LittleEndian(a);
-      var tb = BinaryPrimitives.ReadUInt16LittleEndian(b);
-      if (ta != tb) return ta.CompareTo(tb);
-      if (ta != 0x30) return a.AsSpan(2).SequenceCompareTo(b.AsSpan(2));
-      return CompareFolded(a.AsSpan(4), b.AsSpan(4));
-    }
-    if (newName.Any(static c => c > 0x7F) || rows.Any(static r => BinaryPrimitives.ReadUInt16LittleEndian(r.Key) == 0x30 && !IsAscii(r.Key.AsSpan(4))))
-      throw new NotSupportedException("ReFS: names beyond ASCII need the volume's upcase table to collate; the directory is not edited.");
-    for (var i = 1; i < rows.Count; ++i)
-      if (Compare(rows[i - 1].Key, rows[i].Key) >= 0)
-        throw new NotSupportedException("ReFS: the directory's stored row order is not the collation this editor reproduces; it is not edited.");
+    var collation = RefsDirectoryCollation.For(metadata, rows, newName);
+    Func<byte[], byte[], int> Compare = collation.Compare;
 
     bool IsName(RefsBTreeRow row, string name)
       => row.Key.Length >= 4 && BinaryPrimitives.ReadUInt16LittleEndian(row.Key) == 0x30
-         && CompareFolded(row.Key.AsSpan(4), Encoding.Unicode.GetBytes(name)) == 0
+         && collation.CompareNames(row.Key.AsSpan(4), Encoding.Unicode.GetBytes(name)) == 0
          && row.Key.Length - 4 == name.Length * 2;
     var targets = rows.Where(r => IsName(r, oldName)).ToList();
     if (targets.Count == 0) throw new FileNotFoundException($"ReFS: '{source}' was not found.", source);
@@ -78,31 +66,20 @@ internal static class RefsInPlaceRename {
     var remaining = rows.Where(r => !ReferenceEquals(r, target)).ToList();
     var position = remaining.Count(r => Compare(r.Key, newKey) < 0);
 
+    // The file-number row (type 0x20) names the file too; it gets the new name.
+    var storedName = Encoding.Unicode.GetString(target.Key, 4, target.Key.Length - 4);
+    var idRow = RefsDirectoryRows.FindIdRow(rows, RefsDirectoryRows.FileNumber(target.Value), storedName)
+      ?? throw new NotSupportedException($"ReFS: the file-number row of '{source}' was not found; it is not renamed.");
+    var idValue = RefsDirectoryRows.IdValue(newName);
+
     var graph = new RefsMetadataGraph(image, metadata);
-    if (!RefsPageEditor.CanInsertRow(graph, page, Math.Min(position, rows.Count), newKey.Length, target.Value.Length))
+    if (!RefsPageEditor.CanInsertRow(graph, page, Math.Min(position, rows.Count), newKey.Length + idValue.Length, target.Value.Length))
       throw new NotSupportedException("ReFS: the directory page has no room for the longer name.");
 
     RefsPageEditor.DeleteRow(graph, target);
     RefsPageEditor.InsertRow(graph, page, position, newKey, target.Value, target.Flags);
+    RefsPageEditor.ReplaceValue(graph, idRow, idValue);
     graph.RefreshChecksumPaths([page]);
-  }
-
-  private static bool IsAscii(ReadOnlySpan<byte> utf16) {
-    for (var i = 0; i + 1 < utf16.Length; i += 2)
-      if (BinaryPrimitives.ReadUInt16LittleEndian(utf16[i..]) > 0x7F) return false;
-    return true;
-  }
-
-  private static int CompareFolded(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right) {
-    var count = Math.Min(left.Length, right.Length) / 2;
-    for (var i = 0; i < count; ++i) {
-      int a = BinaryPrimitives.ReadUInt16LittleEndian(left[(i * 2)..]);
-      int b = BinaryPrimitives.ReadUInt16LittleEndian(right[(i * 2)..]);
-      if (a is >= 'a' and <= 'z') a -= 32;
-      if (b is >= 'a' and <= 'z') b -= 32;
-      if (a != b) return a.CompareTo(b);
-    }
-    return left.Length.CompareTo(right.Length);
   }
 
   internal static RefsPageReference ResolveDirectoryRoot(RefsMetadataReader metadata, string path) {
