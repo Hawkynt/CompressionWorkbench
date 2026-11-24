@@ -245,7 +245,7 @@ running real-world samples. The file named at the end of each row is where the l
 | Compiled HTML Help (CHM) | `Chm` | 3 | content sections above 1 unsupported (ChmReader.cs) |
 | FreeArc | `FreeArc` | 3 | only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs) |
 | QCOW / QCOW2 | `Qcow2` | 3 | an image marked corrupt is read but not edited (Qcow2Structures.cs) |
-| SquashFS | `SquashFs` | 3 | v1-v3 and the sqlzma LZMA build are read only, never written; vendor LZMA builds with other layouts (e.g. the "hsqt" magic) are refused (SquashFsLegacyReader.cs) |
+| SquashFS | `SquashFs` | 3 | v1-v3 and the sqlzma LZMA build are read only, never written; the 3.0 LZMA build ("hsqt") is read too; vendor LZMA builds that keep the plain magic are refused (SquashFsLegacyReader.cs) |
 | UDF | `Udf` | 3 | type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs) |
 | Windows PE | `Mz`, `PeResources` | 3 | archive view of resources/overlay, not a full PE section extractor |
 | SQX | `Sqx` | 1 | audio (5), text/PPMd (6) and ultra (7) methods, encryption and split volumes are refused (SqxReader.cs) |

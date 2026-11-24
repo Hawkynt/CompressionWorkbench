@@ -16,7 +16,7 @@ public class SquashFsLegacyReferenceTests {
     "v1.0-le.sqfs", "v1.0-be.sqfs", "v1.0-le-check-uncompressed.sqfs",
     "v2.0-le.sqfs", "v2.1-le.sqfs", "v2.1-be.sqfs",
     "v3.0-le.sqfs", "v3.1-le.sqfs", "v3.1-be.sqfs", "v3.1-le-check-nofrag.sqfs", "v3.1-le-uncompressed.sqfs",
-    "v3.1-lzma-le.sqfs", "v3.1-lzma-be.sqfs",
+    "v3.1-lzma-le.sqfs", "v3.1-lzma-be.sqfs", "v3.0-hsqt-le.sqfs", "v3.0-hsqt-be.sqfs",
   ];
 
   private sealed record Row(string Kind, long Size, int Mode, uint Uid, uint Gid, long MTime, string Tail);
@@ -50,6 +50,9 @@ public class SquashFsLegacyReferenceTests {
   [TestCaseSource(nameof(Images))]
   public void GivenLegacyImage_WhenRead_ThenEveryEntryMatchesUnsquashfs(string image) {
     var oracle = Oracle(image);
+    // The 3.0 LZMA build's unsquashfs does not byte-swap the uid/gid table of a big-endian image
+    // (it reports 1234 as 0xD2040000); owners are taken from the same payload's little-endian image.
+    var owners = image == "v3.0-hsqt-be.sqfs" ? Oracle("v3.0-hsqt-le.sqfs") : oracle;
     Assert.That(oracle, Has.Count.EqualTo(314));
     using var reader = new SquashFsReader(new MemoryStream(Load(image)));
 
@@ -60,10 +63,10 @@ public class SquashFsLegacyReferenceTests {
         Assert.That(e.IsDirectory, Is.EqualTo(row.Kind == "d"), e.FullPath);
         Assert.That(e.IsSymlink, Is.EqualTo(row.Kind == "l"), e.FullPath);
         Assert.That(e.Permissions, Is.EqualTo(row.Mode), e.FullPath);
-        Assert.That((e.Uid, e.Gid), Is.EqualTo((row.Uid, row.Gid)), e.FullPath);
+        Assert.That((e.Uid, e.Gid), Is.EqualTo((owners[e.FullPath].Uid, owners[e.FullPath].Gid)), e.FullPath);
         // 1.x and 2.x symlink inodes carry no time, and the sqlzma unsquashfs (3.3) never sets a
         // symlink's time; either way the oracle holds the time of the extraction.
-        if (row.Kind != "l" || image.StartsWith("v3", StringComparison.Ordinal) && !image.Contains("lzma", StringComparison.Ordinal))
+        if (row.Kind != "l" || image.StartsWith("v3", StringComparison.Ordinal) && !image.Contains("lzma", StringComparison.Ordinal) && !image.Contains("hsqt", StringComparison.Ordinal))
           Assert.That(new DateTimeOffset(e.ModifiedTime).ToUnixTimeSeconds(), Is.EqualTo(row.MTime), e.FullPath);
         if (row.Kind == "l")
           Assert.That(e.SymlinkTarget, Is.EqualTo(row.Tail), e.FullPath);
@@ -157,6 +160,23 @@ public class SquashFsLegacyReferenceTests {
           && BitConverter.ToUInt64(image, i + 5) is > 0 and <= 1u << 17)
         found.Add(i);
     return found;
+  }
+
+  [TestCase("v3.0-hsqt-le.sqfs", "hsqt")]
+  [TestCase("v3.0-hsqt-be.sqfs", "tqsh")]
+  public void GivenAnImageOfThe30LzmaBuild_WhenRead_ThenItsBlocksDecode(string image, string magic) {
+    var bytes = Load(image);
+    Assert.That(System.Text.Encoding.ASCII.GetString(bytes, 0, 4), Is.EqualTo(magic));
+    using var reader = new SquashFsReader(new MemoryStream(bytes));
+    var lorem = reader.Entries.Single(e => e.FullPath == "docs/lorem.txt");
+    Assert.That(reader.Extract(lorem), Has.Length.EqualTo(lorem.Size));
+  }
+
+  [Test]
+  public void GivenThe30LzmaBuildWithItsMagicChangedToZlib_WhenOpened_ThenItsBlocksAreRefused() {
+    var bytes = Load("v3.0-hsqt-le.sqfs");
+    "hsqs"u8.CopyTo(bytes);
+    Assert.Throws<NotSupportedException>(() => _ = new SquashFsReader(new MemoryStream(bytes)));
   }
 
   [Test]
