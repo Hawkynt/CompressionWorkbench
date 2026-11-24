@@ -258,6 +258,81 @@ public sealed class RefsWindowsOracleTests {
     }
   }
 
+  private static readonly string[] Edits = ["none", "overwrite", "grow", "shrink", "rename", "rename-unicode", "remove", "add", "mkdir"];
+
+  [Test, Category("ExternalFsInterop")]
+  public void GivenAVolumeWindowsFormatted_WhenAnyEditIsMade_ThenEveryPageReferenceChecksumStillMatches(
+      [ValueSource(nameof(Volumes))] string volume, [ValueSource(nameof(Edits))] string edit) {
+    var oracle = Load(volume);
+    var source = ImagePath(oracle);
+    var copy = Path.Combine(Path.GetTempPath(), "cwb_refs_ck_" + Guid.NewGuid().ToString("N")[..8] + ".refs");
+    File.Copy(source, copy);
+    try {
+      var descriptor = new RefsFormatDescriptor();
+      using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
+        try {
+          switch (edit) {
+            case "overwrite": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", new byte[65536])]); break;
+            case "grow": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", new byte[300000])]); break;
+            case "shrink": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", new byte[20000])]); break;
+            case "rename": descriptor.Rename(stream, "rename-me.txt", "renamed.txt"); break;
+            case "rename-unicode": descriptor.Rename(stream, "rename-me.txt", "Grüße-日本.txt"); break;
+            case "remove": descriptor.Remove(stream, ["remove-me.bin"]); break;
+            case "add": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("added.bin", new byte[30000])]); break;
+            case "mkdir": descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("new-folder", "new-folder", true)]); break;
+          }
+        } catch (NotSupportedException refused) {
+          Assert.Ignore($"{edit} refused on {volume}: {refused.Message}");
+        }
+      }
+      using var check = File.OpenRead(copy);
+      var stale = new RefsMetadataGraph(check, RefsMetadataReader.Open(check)).FindStaleReferences();
+      Assert.That(stale, Is.Empty, $"{edit} on {volume} left stale page-reference checksums");
+    } finally {
+      File.Delete(copy);
+    }
+  }
+
+  [Test, Category("ExternalFsInterop")]
+  public void GivenAVolumeWindowsFormatted_WhenADirectoryIsCreated_ThenItIsListedAndTheRestIsIntact([ValueSource(nameof(Volumes))] string volume) {
+    var oracle = Load(volume);
+    var source = ImagePath(oracle);
+    var copy = Path.Combine(Path.GetTempPath(), "cwb_refs_mkdir_" + Guid.NewGuid().ToString("N")[..8] + ".refs");
+    File.Copy(source, copy);
+    var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_mkdir_x_" + Guid.NewGuid().ToString("N")[..8]);
+    try {
+      var descriptor = new RefsFormatDescriptor();
+      using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
+        var before = SHA256.HashData(stream);
+        stream.Position = 0;
+        try {
+          descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("new-folder", "new-folder", true)]);
+        } catch (NotSupportedException refused) when (oracle.RefsVersion != "3.7" || oracle.Variant == "integrity") {
+          TestContext.Out.WriteLine($"{volume}: mkdir refused: {refused.Message}");
+          stream.Position = 0;
+          Assert.That(SHA256.HashData(stream), Is.EqualTo(before));
+          return;
+        }
+      }
+      using (var stream = File.OpenRead(copy)) {
+        var listed = descriptor.List(stream, null);
+        Assert.That(listed.Any(static e => e.IsDirectory && e.Name == "new-folder"), Is.True, "the new directory is listed");
+        stream.Position = 0;
+        descriptor.Extract(stream, outDir, null, null);
+      }
+      Assert.Multiple(() => {
+        Assert.That(Directory.Exists(Path.Combine(outDir, "new-folder")), Is.True);
+        foreach (var file in oracle.Files) {
+          var bytes = File.ReadAllBytes(Path.Combine(outDir, file.Path.Replace('/', Path.DirectorySeparatorChar)));
+          Assert.That(Convert.ToHexStringLower(SHA256.HashData(bytes)), Is.EqualTo(file.Sha256), file.Path);
+        }
+      });
+    } finally {
+      File.Delete(copy);
+      try { Directory.Delete(outDir, recursive: true); } catch { /* best effort */ }
+    }
+  }
+
   [Test, Category("ExternalFsInterop")]
   public void GivenAVolumeWindowsFormatted_WhenANewFileIsAdded_ThenItIsReadBackAndTheRestIsIntact([ValueSource(nameof(Volumes))] string volume) {
     var oracle = Load(volume);
@@ -305,7 +380,6 @@ public sealed class RefsWindowsOracleTests {
       var descriptor = new RefsFormatDescriptor();
       using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
         Assert.Multiple(() => {
-          Assert.Throws<NotSupportedException>(() => descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("new-folder", "new-folder", true)]), "creating a directory");
           Assert.Throws<NotSupportedException>(() => descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("new-a.bin", new byte[10]), Compression.Registry.ArchiveInputInfo.InMemory("new-b.bin", new byte[10])]), "two new files at once");
           Assert.Throws<NotSupportedException>(() => descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", new byte[70000]), Compression.Registry.ArchiveInputInfo.InMemory("small.txt", new byte[5])]), "two length changes at once");
           Assert.Throws<NotSupportedException>(() => descriptor.Defragment(stream));
