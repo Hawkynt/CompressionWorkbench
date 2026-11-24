@@ -51,8 +51,6 @@ public sealed class FilesystemWriteRoundTripTests {
   /// the generic probe does not supply.
   /// </summary>
   private static readonly Dictionary<string, string> KnownGaps = new(StringComparer.Ordinal) {
-    ["Refs"] = "edits existing volumes only — no creator, so there is no probe image to edit. "
-             + "A ReFS corpus would have to come from Windows.",
     ["CdXa"] = "the one member is track.mpg, an MPEG program stream cut into packs of at most one sector; an arbitrary "
              + "byte blob is not one, so the generic probe cannot be written. CdXaTests round-trips tracks and "
              + "CdXaExternalConformanceTests reproduces a real Video CD track and vcdimager's sectors byte for byte.",

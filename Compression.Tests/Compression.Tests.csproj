@@ -564,6 +564,10 @@
       <LogicalName>SqxRecovery.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- keramics' HFS+ volume written on macOS (decmpfs files); see HfsPlus/ReferenceVectors/README.md. -->
+    <!-- What Windows hashed on the ReFS volumes it formatted; see Refs/WindowsOracle/README.md. -->
+    <EmbeddedResource Include="Refs\WindowsOracle\*.json">
+      <LogicalName>RefsWindowsOracle.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="HfsPlus\ReferenceVectors\*.gz">
       <LogicalName>HfsPlusVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
