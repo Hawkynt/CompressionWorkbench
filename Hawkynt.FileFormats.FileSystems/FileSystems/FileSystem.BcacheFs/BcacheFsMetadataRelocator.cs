@@ -23,7 +23,8 @@ internal static class BcacheFsMetadataRelocator {
     if (!image.CanRead || !image.CanWrite || !image.CanSeek)
       throw new ArgumentException("bcachefs metadata relocation needs a readable, writable, seekable stream.", nameof(image));
 
-    BcacheFsInPlaceModifier.RequireWritableProfile(image);
+    if (BcacheFsInPlaceModifier.RequireWritableProfile(image).TryGetValue(BtreeReflink, out var reflinked) && reflinked.Count != 0)
+      throw new NotSupportedException("bcachefs: the volume holds reflinked (shared) data, which metadata relocation does not keep clear of.");
     var volume = BcacheFsVolume.Open(image);
     if (!volume.Valid) throw new InvalidDataException(volume.Status);
     if (volume.BucketSectorCount != BucketSectors)

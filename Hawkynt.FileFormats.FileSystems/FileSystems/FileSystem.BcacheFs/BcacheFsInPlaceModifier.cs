@@ -83,6 +83,8 @@ internal static class BcacheFsInPlaceModifier {
     internal required Dictionary<int, List<Key>> PreservedTrees { get; init; }
     internal required Dictionary<ulong, List<Key>> Xattrs { get; init; }
     internal required List<Key> OtherInodeKeys { get; init; }
+    /// <summary>The reflink tree's indirect extents, refcounts as this edit leaves them.</summary>
+    internal required List<Key> Reflink { get; init; }
     internal required HashSet<long> OccupiedBuckets { get; init; }
     internal required Dictionary<long, BcacheFsMetadataCommit.BucketState> BucketStates { get; init; }
     internal required List<(long Offset, long Length)> FreedRanges { get; init; }
@@ -122,6 +124,7 @@ internal static class BcacheFsInPlaceModifier {
           throw new InvalidOperationException($"bcachefs: '{path}' is a symbolic link, not a file to replace.");
         foreach (var key in existing.ExistingExtents)
           AddFreedRange(model.FreedRanges, key);
+        DropReflinks(model, existing.ExistingExtents);
         existing.Length = length;
         existing.Metadata = metadata;
         existing.Pending = new PendingPayload { Length = length, Open = open };
@@ -165,6 +168,7 @@ internal static class BcacheFsInPlaceModifier {
       var file = model.Files[path];
       foreach (var key in file.ExistingExtents)
         AddFreedRange(model.FreedRanges, key);
+      DropReflinks(model, file.ExistingExtents);
       model.Files.Remove(path);
     }
 
@@ -212,7 +216,7 @@ internal static class BcacheFsInPlaceModifier {
 
   /// <summary>Trees carried key by key.</summary>
   private static readonly int[] CarriedTrees = [
-    BtreeExtents, BtreeInodes, BtreeDirents, BtreeXattrs, BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees,
+    BtreeExtents, BtreeInodes, BtreeDirents, BtreeXattrs, BtreeReflink, BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees,
   ];
 
   /// <summary>Key types that mark a slot as empty rather than holding anything.</summary>
@@ -305,11 +309,13 @@ internal static class BcacheFsInPlaceModifier {
       throw new InvalidDataException("bcachefs: root inode is missing.");
 
     var extentKeys = ReadTree(BtreeExtents);
-    var foreignExtent = extentKeys.FirstOrDefault(k => k.Type is not (KeyExtent or KeyInlineData or KeyReservation));
+    var foreignExtent = extentKeys.FirstOrDefault(k => k.Type is not (KeyExtent or KeyInlineData or KeyReservation or KeyReflinkP));
     if (foreignExtent.Value != null)
       throw new NotSupportedException(
-        $"bcachefs in-place mutation carries pointer extents, inline data and reservations; key type {foreignExtent.Type} "
-        + "(reflink or another indirect extent) is left read-only.");
+        $"bcachefs in-place mutation carries pointer extents, inline data, reservations and reflinks; key type {foreignExtent.Type} "
+        + "is left read-only.");
+    var reflink = ReadTree(BtreeReflink);
+    RequireConsistentReflinks(extentKeys, reflink);
 
     var dirents = ReadTree(BtreeDirents)
       .Where(k => k.Type == KeyDirent && k.Value.Length >= 9)
@@ -439,6 +445,9 @@ internal static class BcacheFsInPlaceModifier {
     // is therefore checked on what the commit writes, not on what it reads.
     foreach (var extent in extentKeys)
       ValidateExtent(extent, volume.BucketSectorCount);
+    foreach (var key in reflink)
+      if (BcacheFsAllocationBuilder.IndirectAsExtent(key) is { } extent)
+        ValidateExtent(extent, volume.BucketSectorCount);
 
     var preserved = new Dictionary<int, List<Key>> {
       [BtreeSubvolumes] = ReadTree(BtreeSubvolumes),
@@ -454,6 +463,7 @@ internal static class BcacheFsInPlaceModifier {
       PreservedTrees = preserved,
       Xattrs = xattrs,
       OtherInodeKeys = otherInodeKeys,
+      Reflink = reflink,
       OccupiedBuckets = occupied,
       BucketStates = bucketStates,
       FreedRanges = [],
@@ -525,6 +535,8 @@ internal static class BcacheFsInPlaceModifier {
     ArgumentNullException.ThrowIfNull(image);
     EnsureWritable(image);
     var model = ReadModel(image);
+    if (model.Reflink.Count != 0)
+      throw new NotSupportedException("bcachefs: the volume holds reflinked (shared) data, which is not moved into the writer's layout.");
     var moving = NonCanonicalExtents(model.Files.Values.SelectMany(f => f.FinalExtents));
     // Refused before a byte is written, so a refusal leaves the volume as it was.
     foreach (var file in model.Files.Values)
@@ -616,6 +628,7 @@ internal static class BcacheFsInPlaceModifier {
 
     var trees = BuildLogicalTrees(model);
     var userBuckets = trees[BtreeExtents]
+      .Concat(trees[BtreeReflink].Select(BcacheFsAllocationBuilder.IndirectAsExtent).OfType<Key>())
       .Select(BcacheFsAllocationBuilder.Footprint)
       .Where(f => f.HasValue)
       .Select(f => f!.Value.Sector / BucketSectors)
@@ -633,6 +646,7 @@ internal static class BcacheFsInPlaceModifier {
     // the new metadata generation may have landed in a bucket they emptied, and a
     // surviving key may share a region with a removed one, so both are spared.
     var spared = trees[BtreeExtents]
+      .Concat(trees[BtreeReflink].Select(BcacheFsAllocationBuilder.IndirectAsExtent).OfType<Key>())
       .Select(BcacheFsAllocationBuilder.Footprint)
       .Where(f => f.HasValue)
       .Select(f => (Offset: f!.Value.Sector * SectorSize, Length: (long)f.Value.RegionSectors * SectorSize))
@@ -673,18 +687,28 @@ internal static class BcacheFsInPlaceModifier {
     foreach (var dir in model.Directories.Values
       .Where(d => d.Path.Length != 0 && d.ExistingDirent == null)
       .OrderBy(d => d.Path.Count(c => c == '/'))) {
-      var parentInode = model.Directories[dir.ParentPath].Inode;
-      dir.DirentOffset = ReserveDirentOffset(used, parentInode, dir.Name);
+      var parent = model.Directories[dir.ParentPath];
+      dir.DirentOffset = ReserveDirentOffset(used, parent.Inode, HashSeedOf(parent), dir.Name);
     }
     foreach (var file in model.Files.Values.Where(f => f.ExistingDirent == null)) {
-      var parentInode = model.Directories[file.ParentPath].Inode;
-      file.DirentOffset = ReserveDirentOffset(used, parentInode, file.Name);
+      var parent = model.Directories[file.ParentPath];
+      file.DirentOffset = ReserveDirentOffset(used, parent.Inode, HashSeedOf(parent), file.Name);
     }
   }
 
-  private static ulong ReserveDirentOffset(Dictionary<ulong, HashSet<ulong>> used, ulong parent, string name) {
+  /// <summary>
+  /// The seed a directory's entries are hashed with: <c>bi_hash_seed</c>, the second word of its
+  /// <c>inode_v3</c>. The kernel draws it at random for a directory it makes; one this editor
+  /// makes gets the seed its writer gives it.
+  /// </summary>
+  private static ulong HashSeedOf(DirectoryState directory)
+    => directory.ExistingInode is { Value.Length: >= 16 } inode
+      ? BinaryPrimitives.ReadUInt64LittleEndian(inode.Value.AsSpan(8))
+      : BcacheFsWriter.HashSeed(directory.Inode);
+
+  private static ulong ReserveDirentOffset(Dictionary<ulong, HashSet<ulong>> used, ulong parent, ulong seed, string name) {
     if (!used.TryGetValue(parent, out var set)) used[parent] = set = [];
-    var offset = DirentHash(BcacheFsWriter.HashSeed(parent), name);
+    var offset = DirentHash(seed, name);
     while (!set.Add(offset)) ++offset;
     return offset;
   }
@@ -800,6 +824,7 @@ internal static class BcacheFsInPlaceModifier {
         ?? BcacheFsWriter.DirentKey(parentInode, file.DirentOffset, file.Name, file.Inode, DtReg));
     }
 
+    trees[BtreeReflink] = [.. model.Reflink];
     trees[BtreeSubvolumes] = [.. model.PreservedTrees[BtreeSubvolumes]];
     trees[BtreeSnapshots] = [.. model.PreservedTrees[BtreeSnapshots]];
     trees[BtreeSnapshotTrees] = [.. model.PreservedTrees[BtreeSnapshotTrees]];
@@ -970,6 +995,69 @@ internal static class BcacheFsInPlaceModifier {
   /// <summary>
   /// An extent's checksummed region must lie inside one bucket of device 0.
   /// </summary>
+  // ── Reflinks ────────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// The stretch of the reflink tree a <c>reflink_p</c> holds a reference to: <c>[idx - front_pad,
+  /// idx + size + back_pad)</c> (value: idx u64, front_pad u32, back_pad u32). Every indirect extent
+  /// overlapping it counts the reference once.
+  /// </summary>
+  private static (ulong Start, ulong End) ReferencedRange(Key reflinkP) {
+    if (reflinkP.Value.Length < 8)
+      throw new InvalidDataException($"bcachefs: reflink_p at inode {reflinkP.Position.Inode} is too short.");
+    var idx = BinaryPrimitives.ReadUInt64LittleEndian(reflinkP.Value);
+    var front = reflinkP.Value.Length >= 12 ? BinaryPrimitives.ReadUInt32LittleEndian(reflinkP.Value.AsSpan(8)) : 0u;
+    var back = reflinkP.Value.Length >= 16 ? BinaryPrimitives.ReadUInt32LittleEndian(reflinkP.Value.AsSpan(12)) : 0u;
+    return (idx - front, idx + reflinkP.Size + back);
+  }
+
+  private static bool Overlaps(Key indirect, (ulong Start, ulong End) range)
+    => indirect.Position.Offset > range.Start && indirect.Position.Offset - indirect.Size < range.End;
+
+  /// <summary>
+  /// Refuses a reflink tree an edit here would publish wrong: a key that is not an indirect extent,
+  /// or a refcount that is not the number of <c>reflink_p</c> keys referencing the extent — the
+  /// only thing an edit changes is that count, and it starts from the truth or not at all.
+  /// </summary>
+  private static void RequireConsistentReflinks(List<Key> extents, List<Key> reflink) {
+    var foreign = reflink.FirstOrDefault(k => k.Type is not (KeyReflinkV or KeyIndirectInlineData));
+    if (foreign.Value != null)
+      throw new NotSupportedException($"bcachefs: the reflink tree holds key type {foreign.Type}, which an edit here does not carry.");
+    var ranges = extents.Where(static k => k.Type == KeyReflinkP).Select(ReferencedRange).ToList();
+    foreach (var key in reflink) {
+      if (key.Value.Length < 8)
+        throw new InvalidDataException($"bcachefs: indirect extent at {key.Position.Offset} is too short.");
+      var refcount = BinaryPrimitives.ReadUInt64LittleEndian(key.Value);
+      var counted = (ulong)ranges.Count(r => Overlaps(key, r));
+      if (refcount != counted)
+        throw new NotSupportedException(
+          $"bcachefs: the indirect extent ending at {key.Position.Offset} counts {refcount} references but {counted} reach it; it is not edited.");
+    }
+  }
+
+  /// <summary>
+  /// Takes away the references a removed or replaced file's <c>reflink_p</c> keys held: each
+  /// indirect extent they reach counts one fewer, and one no file references any more is dropped,
+  /// its data freed with it.
+  /// </summary>
+  private static void DropReflinks(Model model, IEnumerable<Key> extents) {
+    foreach (var range in extents.Where(static k => k.Type == KeyReflinkP).Select(ReferencedRange).ToList()) {
+      for (var i = model.Reflink.Count - 1; i >= 0; --i) {
+        var key = model.Reflink[i];
+        if (!Overlaps(key, range)) continue;
+        var value = key.Value.ToArray();
+        var refcount = BinaryPrimitives.ReadUInt64LittleEndian(value);
+        if (refcount <= 1) {
+          if (BcacheFsAllocationBuilder.IndirectAsExtent(key) is { } extent) AddFreedRange(model.FreedRanges, extent);
+          model.Reflink.RemoveAt(i);
+          continue;
+        }
+        BinaryPrimitives.WriteUInt64LittleEndian(value, refcount - 1);
+        model.Reflink[i] = key with { Value = value };
+      }
+    }
+  }
+
   private static void ValidateExtent(Key extent, int bucketSectors) {
     if (extent.Type != KeyExtent) return;
     if (BcacheFsAllocationBuilder.Footprint(extent) is not { } at)
