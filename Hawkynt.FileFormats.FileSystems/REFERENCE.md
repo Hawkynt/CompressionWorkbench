@@ -21356,7 +21356,7 @@ Implements `IEquatable<ZfsDataset>`.
 
 #### `ZfsEntry`
 
-One name in the pool's namespace: a file, directory or symbolic link of a ZPL dataset. Child datasets appear under their dataset name, snapshots under `<dataset>/.zfs/snapshot/<name>`.
+One name in the pool's namespace: a file, directory or symbolic link of a ZPL dataset. Child datasets appear under their dataset name, snapshots under `<dataset>/.zfs/snapshot/<name>`. A volume (zvol) is one file at its dataset's path holding the device's bytes, and its snapshots files named `<volume>@<name>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |

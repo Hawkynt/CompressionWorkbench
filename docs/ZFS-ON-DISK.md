@@ -166,6 +166,12 @@ max block id, and holes, read as zeros.
 `objset_phys_t` holds the meta-dnode at 0 and the object-set type at 0x2C0
 (1 = MOS, 2 = ZPL filesystem, 3 = zvol).
 
+A zvol's object set holds two objects: object 1 (`DMU_OT_ZVOL`, type 23) whose data blocks
+(of `volblocksize`) are the device's bytes, and object 2 (`DMU_OT_ZVOL_PROP`, a micro ZAP) whose
+`size` entry is the device length. Reading object 1 up to `size`, holes and blocks past the max
+block id as zeros, gives exactly what `/dev/zvol/<dataset>` reads (checked on `cwbzvol`,
+snapshots included).
+
 ## ZAP
 
 The first `u64` of block 0 says which kind.
