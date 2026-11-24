@@ -161,6 +161,27 @@ public sealed class IsoFolderEditOracleTests {
     }
   }
 
+  [Test]
+  public void GivenAHybridImageXorrisoMadeWithAnAppendedPartition_WhenEdited_ThenItIsRefusedAndUntouched() {
+    if (!FsInteropToolbox.WslAvailable || !FsInteropToolbox.WslHasTool("xorriso")) Assert.Ignore("xorriso is needed in WSL.");
+    var src = Directory.CreateDirectory(Path.Combine(this._dir, "src")).FullName;
+    File.WriteAllBytes(Path.Combine(src, "a.txt"), "a\n"u8.ToArray());
+    var partition = Path.Combine(this._dir, "esp.img");
+    File.WriteAllBytes(partition, Pattern(100_000, 6));
+    var image = Path.Combine(this._dir, "hybrid.iso");
+    var made = FsInteropToolbox.RunWsl($"xorriso -as mkisofs -R -J -o {Q(image)} -append_partition 2 0xef {Q(partition)} {Q(src)} 2>&1");
+    Assert.That(made.ExitCode, Is.Zero, made.StdOut + made.StdErr);
+    var before = File.ReadAllBytes(image);
+    var volumeBytes = BitConverter.ToInt32(before, 16 * 2048 + 80) * 2048L;
+    Assert.That(before.AsSpan((int)volumeBytes).ContainsAnyExcept((byte)0), Is.True, "precondition: the partition lies past the volume space");
+
+    using (var fs = new FileStream(image, FileMode.Open, FileAccess.ReadWrite)) {
+      Assert.Throws<NotSupportedException>(() => Iso.Add(fs, [ArchiveInputInfo.InMemory("docs/new.txt", "new\n"u8.ToArray())]));
+      Assert.Throws<NotSupportedException>(() => Iso.Remove(fs, ["a.txt"]));
+    }
+    Assert.That(File.ReadAllBytes(image), Is.EqualTo(before));
+  }
+
   private static string Q(string path) => FsInteropToolbox.WinToWsl(path);
 
   private static string U(string path) => FsInteropToolbox.WinToWsl(path).Trim('\'');

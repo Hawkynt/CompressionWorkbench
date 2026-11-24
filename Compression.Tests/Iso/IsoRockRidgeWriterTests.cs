@@ -244,6 +244,8 @@ public sealed class IsoRockRidgeWriterTests {
       Assert.That(File.ReadAllBytes(Path.Combine(outDir, "sub", VeryLongName)), Is.EqualTo(content));
       Assert.That(File.ReadAllBytes(Path.Combine(outDir, "Mixed Case.TXT")), Is.EqualTo(content));
       Assert.That(Directory.Exists(Path.Combine(outDir, "empty")), Is.True);
+      // osirrox restores the modification time from our TF entry.
+      Assert.That(File.GetLastWriteTimeUtc(Path.Combine(outDir, "sub", VeryLongName)), Is.EqualTo(When), "TF modification time");
     });
   }
 
