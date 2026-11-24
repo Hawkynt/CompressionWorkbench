@@ -5656,15 +5656,18 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
 #### `Qcow2Writer`
 
-Writes canonical self-contained QCOW2 v2 images with 64 KiB clusters and 16-bit eager refcounts. Sparse mode leaves all-zero guest clusters unallocated; dense mode physically allocates every guest cluster without changing guest bytes. With a password the guest data is LUKS-encrypted (crypt_method 2): a LUKS1 header (aes-256 xts-plain64, sha256, key slot 0) in its own clusters behind the refcount blocks, each data cluster encrypted with the IV of its host sector.
+Writes canonical self-contained QCOW2 v2 images with 64 KiB clusters and 16-bit eager refcounts. Sparse mode leaves all-zero guest clusters unallocated; dense mode physically allocates every guest cluster without changing guest bytes. With a password the guest data is LUKS-encrypted (crypt_method 2): a LUKS1 header (aes-256 xts-plain64, sha256, key slot 0) in its own clusters behind the refcount blocks, each data cluster encrypted with the IV of its host sector; with a legacy AES password (crypt_method 1) each sector is AES-128-CBC encrypted with the IV of its guest sector. With an external data file the image is a version 3 image of cluster tables only and the guest disk goes, raw, to the data file.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Qcow2Writer` | `Qcow2Writer()` |  |
 | `DefaultKeySlotIterations` | `const int DefaultKeySlotIterations` | PBKDF2 iterations of the passphrase in the LUKS key slot unless `SetPassword` says otherwise. |
 | `SetDiskImage` | `void SetDiskImage(byte[] data)` | Sets the raw guest disk image to wrap. |
+| `SetExternalDataFile` | `void SetExternalDataFile(string name, bool raw = true)` | Keeps the guest data in an external data file (qcow2.txt, incompatible feature bit 2) that the image's header names `name` and QEMU looks for next to the image. The image becomes a version 3 image holding only the cluster tables; with `raw` the data file is also declared a consistent raw image of the guest (autoclear bit 1). Write both with `WriteTo`. |
+| `SetLegacyAesPassword` | `void SetLegacyAesPassword(string password)` | Encrypts the guest data with QCOW2's legacy AES scheme (crypt_method 1) under `password`: AES-128-CBC per 512-byte sector with the guest sector number as IV, the key being the password's first 16 UTF-8 bytes (zero padded). The scheme has no key check and no key derivation and QEMU only keeps it for reading old images; it is offered for interoperability with tools that need it, `SetPassword` (LUKS) otherwise. |
 | `SetPassword` | `void SetPassword(string password, int keySlotIterations = 500000)` | Encrypts the guest data with LUKS under `password` (null: no encryption). |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes a canonical sparse QCOW2 image. |
+| `WriteTo` | `void WriteTo(Stream output, Stream dataFile, bool sparse = true)` | Writes an image whose guest data goes to `dataFile`: the whole guest disk as a raw image, each cluster at its own guest offset (see `SetExternalDataFile`). |
 | `WriteTo` | `void WriteTo(Stream output, bool sparse)` | Writes a canonical QCOW2 image. |
 
 ### Namespace `FileFormat.Scp`
