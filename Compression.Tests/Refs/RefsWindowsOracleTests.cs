@@ -21,9 +21,6 @@ public sealed class RefsWindowsOracleTests {
     "windows-2025-default", "windows-2025-cluster64k", "windows-2025-integrity",
   ];
 
-  /// <summary>Files Windows Server 2022 stores, on an integrity-stream volume, in a layout the reader does not decode.</summary>
-  private static readonly string[] UndecodedOnIntegrity37 = ["clone-destination.bin", "clone-source.bin", "data-1m.bin"];
-
   private sealed record OracleFile(string Path, long Size, string Sha256);
   private sealed record Oracle(string Variant, string RefsVersion, string ImageFile, long ImageBytes, string ImageSha256, List<OracleFile> Files);
 
@@ -52,9 +49,6 @@ public sealed class RefsWindowsOracleTests {
     return path;
   }
 
-  private static bool Undecoded(Oracle oracle, string path)
-    => oracle.RefsVersion == "3.7" && oracle.Variant == "integrity" && UndecodedOnIntegrity37.Contains(path);
-
   [Test, Category("HappyPath")]
   public void GivenTheRecordedOracles_WhenLoaded_ThenEachNamesTheFileSetWindowsHashed([ValueSource(nameof(Volumes))] string volume) {
     var oracle = Load(volume);
@@ -76,21 +70,12 @@ public sealed class RefsWindowsOracleTests {
       using var stream = File.OpenRead(image);
       var listed = descriptor.List(stream, null).Where(static e => !e.IsDirectory).ToDictionary(static e => e.Name, static e => e.OriginalSize);
       stream.Position = 0;
-      var undecoded = oracle.Files.Where(f => Undecoded(oracle, f.Path)).Select(static f => f.Path).ToList();
-      if (undecoded.Count == 0) descriptor.Extract(stream, outDir, null, null);
-      else {
-        var refused = Assert.Throws<NotSupportedException>(() => descriptor.Extract(stream, outDir, null, null))!;
-        foreach (var path in undecoded) Assert.That(refused.Message, Does.Contain(path));
-      }
+      descriptor.Extract(stream, outDir, null, null);
       Assert.Multiple(() => {
         foreach (var file in oracle.Files) {
           Assert.That(listed.TryGetValue(file.Path, out var size), Is.True, $"{file.Path} listed");
           Assert.That(size, Is.EqualTo(file.Size), $"{file.Path} size");
           var extracted = Path.Combine(outDir, file.Path.Replace('/', Path.DirectorySeparatorChar));
-          if (Undecoded(oracle, file.Path)) {
-            Assert.That(File.Exists(extracted), Is.False, $"{file.Path} is refused, not written");
-            continue;
-          }
           Assert.That(File.Exists(extracted), Is.True, $"{file.Path} extracted");
           Assert.That(Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(extracted))), Is.EqualTo(file.Sha256), file.Path);
         }

@@ -23,7 +23,7 @@ from `CWB_REFS_WINDOWS_DIR`.
 
 | | 3.7, 4 KiB | 3.7, 64 KiB | 3.7, integrity | 3.14, 4 KiB | 3.14, 64 KiB | 3.14, integrity |
 | --- | --- | --- | --- | --- | --- | --- |
-| Our reader, file for file | all 209 | all 209 | 206; three large files refused (layout not decoded) | all 209 | all 209 | all 209 |
+| Our reader, file for file | all 209 | all 209 | all 209 | all 209 | all 209 | all 209 |
 | Replace (same size) | applied; Windows: file corrupt | applied; Windows: file corrupt | applied; Windows: file corrupt | refused, image changed | applied; Windows mount failed, files missing | refused, image changed |
 | Replace (larger) | applied; Windows: file corrupt | applied; Windows: file corrupt | applied; Windows: file corrupt | refused, image changed | refused, image changed | refused, image changed |
 | Remove, rename, clone | refused (Schema Table) | refused | refused | refused | refused | refused |

@@ -219,9 +219,8 @@ public sealed class RefsFormatDescriptor :
             Directory.CreateDirectory(Path.Combine(outputDir, record.Path.Replace('/', Path.DirectorySeparatorChar)));
             continue;
           }
-          // Windows Server 2022 (ReFS 3.7) stores large files of an integrity-stream volume in a
-          // layout the namespace reader does not decode: they surface as "resident" without
-          // resident bytes of their size.
+          // A stream layout the namespace reader does not decode surfaces as "resident" without
+          // resident bytes of its size; it is refused, never written empty.
           if (record.IsResident && (record.ResidentContent?.LongLength ?? (record.Size == 0 ? 0 : -1)) != record.Size) {
             unread.Add(record.Path);
             continue;

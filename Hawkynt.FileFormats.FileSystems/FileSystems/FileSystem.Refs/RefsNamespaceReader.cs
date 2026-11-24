@@ -208,6 +208,49 @@ internal sealed class RefsNamespaceReader {
       if (checkedExtents.Count > 0) return checkedExtents;
     }
 
+    return TryDecodeIndirectExtents(value, requiredClusters, metadata);
+  }
+
+  /// <summary>
+  /// An extent table too large to embed (measured on a Windows Server 2022, ReFS 3.7,
+  /// integrity-stream volume: a 1 MiB file whose 256 per-cluster CRC32 checksums do not fit the
+  /// directory value). The embedded node is then an inner node (level byte 1 at node+12) whose
+  /// rows (row size u32, key offset u16, key length u16, flags u16, value offset u16, value
+  /// length u16) carry child page references: four virtual LCNs, then the reference's checksum
+  /// descriptor. Each child is an MSB+ page holding the same fixed-size extent entries a leaf
+  /// embeds; together they must cover the allocation exactly.
+  /// </summary>
+  private static IReadOnlyList<RefsDataExtent> TryDecodeIndirectExtents(
+      byte[] value,
+      ulong requiredClusters,
+      RefsMetadataReader metadata) {
+    for (var p = 0x80; p + 24 <= value.Length; p += 4) {
+      var start = ReadU32(value, p);
+      var end = ReadU32(value, p + 4);
+      var count = ReadU32(value, p + 20);
+      if (start is < 0x20 or > 0x40 || end <= start || (ReadU32(value, p + 12) & 0xFF) != 1 || count is 0 or > 64) continue;
+      var children = new List<RefsDataExtent>();
+      var row = p + checked((int)start);
+      var ok = true;
+      for (var i = 0u; i < count && ok; ++i) {
+        var rowSize = checked((int)ReadU32(value, row));
+        var valueOffset = ReadU16(value, row + 10);
+        var valueLength = ReadU16(value, row + 12);
+        if (rowSize < 16 || row + rowSize > value.Length || valueLength < 32 || valueOffset + valueLength > rowSize) { ok = false; break; }
+        var reference = RefsPageReference.Parse(value.AsSpan(row + valueOffset, 32));
+        byte[]? page;
+        try { page = metadata.TryReadReferencedPage(reference, virtualAddresses: true); }
+        catch (InvalidDataException) { page = null; }
+        if (page == null) { ok = false; break; }
+        var leaf = TryFindExtentTable(page, 0x50, page.Length - 0x50, requiredClusters, metadata, exactCover: false);
+        if (leaf.Count == 0) { ok = false; break; }
+        children.AddRange(leaf);
+        row += rowSize;
+      }
+      if (!ok) continue;
+      var exact = ExactCover(children, requiredClusters);
+      if (exact.Count > 0) return exact;
+    }
     return [];
   }
 
@@ -216,7 +259,8 @@ internal sealed class RefsNamespaceReader {
       int recordOffset,
       int recordSize,
       ulong requiredClusters,
-      RefsMetadataReader metadata) {
+      RefsMetadataReader metadata,
+      bool exactCover = true) {
     var recordEnd = recordOffset + recordSize;
     for (var p = recordOffset + 4; p + 24 <= recordEnd; p += 4) {
       var start = ReadU32(value, p);
@@ -238,12 +282,26 @@ internal sealed class RefsNamespaceReader {
         if (run == 0) { extents.Clear(); break; }
         if (!TryMakeExtent(metadata, vcn, vlcn, run, flags, cursor, out var extent)) { extents.Clear(); break; }
         extents.Add(extent);
-        cursor += flags == 0x1C00D0 ? 32 : 24;
+        cursor += EntrySize(flags);
+      }
+      if (!exactCover) {
+        if (extents.Count == count) return extents;
+        continue;
       }
       var exact = ExactCover(extents, requiredClusters);
       if (exact.Count > 0) return exact;
     }
     return [];
+  }
+
+  /// <summary>
+  /// Bytes one extent entry occupies. The entry flags' high 16 bits give its length: 24 for a
+  /// plain entry, 24 plus four bytes of CRC32 per cluster on an integrity stream (0x1C, 0x58,
+  /// 0x418 measured on Windows-written volumes); entries are 8-byte aligned.
+  /// </summary>
+  private static int EntrySize(uint flags) {
+    var length = (int)(flags >> 16);
+    return length < 24 ? 24 : (length + 7) & ~7;
   }
 
   private static bool TryMakeExtent(
