@@ -625,6 +625,10 @@
     <EmbeddedResource Include="Codecs\G722\ReferenceVectors\*.pcm;Codecs\G722\ReferenceVectors\*.g722">
       <LogicalName>G722Vectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Tux3 volumes the linux-tux3 user tools wrote; see Tux3/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Tux3\ReferenceVectors\*.gz;Tux3\ReferenceVectors\*.manifest;Tux3\ReferenceVectors\*.txt">
+      <LogicalName>Tux3Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Fossil volume written by plan9port's fossil server; see Fossil/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Fossil\ReferenceVectors\*.gz;Fossil\ReferenceVectors\*.manifest">
       <LogicalName>FossilVectors.%(Filename)%(Extension)</LogicalName>

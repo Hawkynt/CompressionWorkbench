@@ -27,4 +27,7 @@ public sealed class Tux3Entry {
   /// place rather than copying. -1 when <see cref="Data" /> carries them.
   /// </summary>
   public long Offset { get; init; } = -1;
+
+  /// <summary>The file, directory or symlink of a 2015-06-01 volume this entry names; null for synthetic entries.</summary>
+  public Tux3Node? Node { get; init; }
 }
