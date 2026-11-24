@@ -257,6 +257,7 @@ Blowfish symmetric block cipher. 64-bit block size, 1–56 byte key, 16-round Fe
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Blowfish` | `Blowfish(ReadOnlySpan<byte> key)` | Initializes a new `Blowfish` instance with the given key. |
+| `HasWeakKey` | `bool HasWeakKey { get; }` | Whether the key schedule left a value twice in one S-box — what libgcrypt rejects as a weak Blowfish key, so software built on it cannot use such a key. |
 | `DecryptCbc` | `byte[] DecryptCbc(ReadOnlySpan<byte> data, ReadOnlySpan<byte> iv)` | Decrypts data using Blowfish-CBC with PKCS7 unpadding. |
 | `Decrypt` | `void Decrypt(Span<byte> block)` | Decrypts an 8-byte block in-place (big-endian). |
 | `EncryptCbc` | `byte[] EncryptCbc(ReadOnlySpan<byte> data, ReadOnlySpan<byte> iv)` | Encrypts data using Blowfish-CBC with PKCS7 padding. |
