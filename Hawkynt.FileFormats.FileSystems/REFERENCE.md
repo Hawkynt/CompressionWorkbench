@@ -3675,20 +3675,78 @@ Optical track kind stored in a DiscJuggler CDI descriptor.
 
 ### Namespace `FileFormat.CloneCd`
 
-[`CloneCdWriter`](#clonecdwriter) · [`CloneCdWriter.ImageSet`](#clonecdwriterimageset)
+[`CloneCdLayout`](#clonecdlayout) · [`CloneCdTrack`](#clonecdtrack) · [`CloneCdTrackKind`](#clonecdtrackkind) · [`CloneCdTrackSource`](#clonecdtracksource) · [`CloneCdWriter`](#clonecdwriter) · [`CloneCdWriter.ImageSet`](#clonecdwriterimageset)
 
-#### `CloneCdWriter`
+#### `CloneCdLayout`
 
-Writes a CloneCD image set of a single-session disc with one Mode 1 data track: the `.ccd` control file, the raw `.img` (2352-byte sectors with sync, BCD address, EDC and ECC from ECMA-130) and the `.sub` subchannel (96 bytes per sector: P, Q, then R–W, each 12 bytes). Layout in `docs/CLONECD-ON-DISK.md`.
+The track map of a CloneCD image set, read from the TOC entries of the `.ccd` (and its `[TRACK n]` sections when present). The `.img` holds each session from its first track's point to its lead-out, the sessions one after the other: lead-outs, lead-ins and the first pre-gap of every session are not stored.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `ImgSectors` | `long ImgSectors { get; }` | Gets the number of sectors the `.img` must hold. |
+| `Tracks` | `IReadOnlyList<CloneCdTrack> Tracks { get; }` | Gets the tracks in disc order. |
+| `ExtractedLength` | `long ExtractedLength(CloneCdTrack track, Stream img)` | The length `ReadTrack` returns, found from the sector headers alone (the trailing sectors of another mode are left out the same way); 0 when the track holds no sector of its mode. |
+| `PcmFromWave` | `static byte[] PcmFromWave(ReadOnlySpan<byte> wav)` | Returns the PCM of a WAV file in CD-DA format (44.1 kHz, 16-bit, stereo, uncompressed); anything else is refused. |
+| `ReadTrack` | `byte[] ReadTrack(CloneCdTrack track, Stream img)` | Reads a track's user data from the `.img`: PCM as a WAV file for audio, 2,048 bytes per sector for Mode 1, and 2,336 bytes (subheader and data) per sector for Mode 2. Trailing sectors that are not of the track's mode (a following track's pre-gap the control file does not mark) are left out; any other sector of the wrong mode is refused rather than returned as data. |
+| `TryParse` | `static CloneCdLayout TryParse(string ccd, Stream img = null)` | Reads the track map from the control file text; `img` (optional) tells data tracks of a control file without `[TRACK n]` sections apart by their sector mode. Returns `null` when the TOC is incomplete or inconsistent, or the data tracks are scrambled. |
+| `Wave` | `static byte[] Wave(ReadOnlySpan<byte> pcm)` | Wraps CD-DA (44.1 kHz, 16-bit, stereo, little-endian) in a RIFF WAVE header. |
+
+#### `CloneCdTrack`
+
+A track of a CloneCD image and where its sectors sit in the `.img`.
+
+Implements `IEquatable<CloneCdTrack>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CloneCdTrack` | `CloneCdTrack(int Number, int Session, CloneCdTrackKind Kind, int? Index0, int Index1, int End, long ImgSector, int DataEnd)` | A track of a CloneCD image and where its sectors sit in the `.img`. |
+| `DataEnd` | `int DataEnd { get; init; }` | First sector after the user data: the next track's index 0 when the control file names it, else `End`. |
+| `End` | `int End { get; init; }` | First sector after the track's stored region: the next track's point or the session's lead-out. |
+| `EntryName` | `string EntryName { get; }` | The archive name of the track: `track-NN.iso`/`.wav`/`.mode2`, under `session-NN/` after the first session. |
+| `ImgSector` | `long ImgSector { get; init; }` | Index of the `Index1` sector in the `.img`. |
+| `Index0` | `int? Index0 { get; init; }` | First pre-gap sector stored in the `.img`, or `null` when none is known. |
+| `Index1` | `int Index1 { get; init; }` | First sector with user data (the TOC point). |
+| `Kind` | `CloneCdTrackKind Kind { get; init; }` | Audio, Mode 1 or Mode 2. |
+| `Number` | `int Number { get; init; }` | Track number (1–99). |
+| `Session` | `int Session { get; init; }` | Session the track belongs to. |
+
+#### `CloneCdTrackKind`
+
+What a track holds; the value is the CCD `MODE=` number.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Audio` | `0` | CD-DA: 2,352 bytes of 16-bit stereo PCM per sector. |
+| `Mode1` | `1` | Mode 1 data: 2,048 user bytes per sector, EDC and ECC. |
+| `Mode2` | `2` | Mode 2 (CD-ROM XA): an 8-byte subheader and 2,328 bytes per sector, Form 1 or Form 2 per sector. |
+
+#### `CloneCdTrackSource`
+
+One track to write. `Data` is PCM for `Audio` (padded with silence to whole sectors), whole 2,048-byte sectors for `Mode1`, and whole 2,336-byte sectors (subheader and data, the `MODE2/2336` convention) for `Mode2`; the subheader's Form 2 bit picks Form 2, otherwise the sector is Form 1.
+
+Implements `IEquatable<CloneCdTrackSource>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CloneCdTrackSource` | `CloneCdTrackSource(CloneCdTrackKind Kind, byte[] Data)` | One track to write. `Data` is PCM for `Audio` (padded with silence to whole sectors), whole 2,048-byte sectors for `Mode1`, and whole 2,336-byte sectors (subheader and data, the `MODE2/2336` convention) for `Mode2`; the subheader's Form 2 bit picks Form 2, otherwise the sector is Form 1. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Kind` | `CloneCdTrackKind Kind { get; init; }` |  |
+
+#### `CloneCdWriter`
+
+Writes CloneCD image sets: the `.ccd` control file, the raw `.img` (2,352-byte sectors with sync, BCD address, EDC and ECC from ECMA-130) and the `.sub` subchannel (96 bytes per sector: P, Q, then R–W). Discs may hold several sessions, each with audio, Mode 1 and Mode 2 tracks. Layout in `docs/CLONECD-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Mode2SectorSize` | `const int Mode2SectorSize` |  |
 | `RawSectorSize` | `const int RawSectorSize` |  |
 | `SubchannelSize` | `const int SubchannelSize` |  |
 | `UserDataSize` | `const int UserDataSize` |  |
+| `Build` | `static ImageSet Build(IReadOnlyList<IReadOnlyList<CloneCdTrackSource>> sessions)` | Builds the image set of a disc with the given sessions, each a list of tracks in disc order. |
 | `Crc16` | `static ushort Crc16(ReadOnlySpan<byte> data)` | CRC-16/CCITT (polynomial 0x1021, initial value 0), as the Q channel uses it before inversion. |
-| `FromIso` | `static ImageSet FromIso(ReadOnlySpan<byte> iso)` | Builds the image set of a data disc whose Mode 1 user data is `iso`. |
-| `Subchannel` | `static byte[] Subchannel(int sectors)` | The P and Q channels of track 1, a data track starting at LBA 0 and running for `sectors` sectors; R–W stay zero. |
+| `FromIso` | `static ImageSet FromIso(ReadOnlySpan<byte> iso)` | Builds the image set of a single-session data disc whose Mode 1 user data is `iso`. |
+| `Subchannel` | `static byte[] Subchannel(int sectors)` | The P and Q channels of a single-session disc with one data track of `sectors` sectors; R–W stay zero. |
+| `WriteSector` | `static void WriteSector(Span<byte> raw, CloneCdTrackKind kind, int lba, ReadOnlySpan<byte> payload)` | Fills one raw sector at `lba`: audio as PCM (silence when `payload` is empty), data with sync, address, mode, the payload (zero user data in a pre- or post-gap) and EDC/ECC. |
 
 #### `CloneCdWriter.ImageSet`
 
