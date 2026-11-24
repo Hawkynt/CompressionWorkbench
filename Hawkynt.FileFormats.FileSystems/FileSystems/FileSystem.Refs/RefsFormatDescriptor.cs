@@ -35,21 +35,23 @@ public sealed class RefsFormatDescriptor :
   /// Gets the category.
   /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  // Read-only. The offline editor (replace, remove, rename, defragment) was put in
-  // front of Windows Server 2022 (ReFS 3.7) and 2025 (ReFS 3.14) on volumes they
-  // formatted: Windows rejected every image it wrote, so every edit is refused
+  // CanModify covers one edit only: a same-length overwrite of a plain extent-backed file,
+  // written over its own clusters as Windows does (RefsInPlaceOverwrite). Windows Server 2022
+  // (ReFS 3.7) and 2025 (ReFS 3.14), 4 KiB and 64 KiB clusters, mount the result read-only and
+  // read-write, hash every file as expected and log no ReFS error. Everything else the old
+  // offline editor did (resize, remove, rename, defragment) Windows rejected, so it is refused
   // before a byte is touched. See tools/foreign-os-oracles and RefsWindowsOracleTests.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
   /// <summary>Why every in-place edit of a ReFS volume is refused.</summary>
   internal const string EditsWithheld =
-    "ReFS: in-place edits are withheld. Windows Server 2022 and 2025 found the volumes the offline editor wrote " +
-    "corrupt or refused to mount them, so no edit is made; the image is unchanged.";
+    "ReFS: only same-length overwrites of existing files are made in place. Windows Server 2022 and 2025 found the " +
+    "volumes the offline editor wrote for other edits corrupt or refused to mount them, so no edit is made; the image is unchanged.";
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -87,7 +89,7 @@ public sealed class RefsFormatDescriptor :
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Microsoft ReFS 3.x volume image, read: namespace and allocation parsing checked file for file against volumes Windows Server 2022 (ReFS 3.7) and 2025 (ReFS 3.14) formatted. In-place edits are refused.";
+  public string Description => "Microsoft ReFS 3.x volume image, read: namespace and allocation parsing checked file for file against volumes Windows Server 2022 (ReFS 3.7) and 2025 (ReFS 3.14) formatted. In place, an existing file can be overwritten with contents of the same length; other edits are refused.";
 
   /// <summary>
   /// Probes the image and reports the filesystem driver profile.
@@ -278,7 +280,18 @@ public sealed class RefsFormatDescriptor :
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
-    throw new NotSupportedException(EditsWithheld);
+    // Only same-length overwrites of plain extent-backed files, written over the clusters the
+    // file owns (RefsInPlaceOverwrite). Every input is planned and read before any byte is
+    // written, so a refusal leaves the image unchanged.
+    var metadata = RefsMetadataReader.Open(archive);
+    var planned = new List<(IReadOnlyList<ulong> Clusters, byte[] Data)>();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var data = input.ReadContent();
+      planned.Add((RefsInPlaceOverwrite.Plan(archive, metadata, input.ArchiveName, data.LongLength), data));
+    }
+    foreach (var (clusters, data) in planned)
+      RefsInPlaceOverwrite.Apply(archive, metadata.ClusterSize, clusters, data);
   }
 
   /// <summary>Refused: removing files in place; see <see cref="EditsWithheld"/>.</summary>
