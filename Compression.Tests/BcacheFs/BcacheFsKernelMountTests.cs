@@ -513,6 +513,19 @@ public sealed class BcacheFsKernelMountTests {
     var again = ParseListing(BcacheFsKernel.Session(paths, "set -e; cd /sysroot; seq 1 1000 > ours/after.txt; rm -f big.bin; sync\n" + ListingScript));
     BcacheFsKernel.AssertFsckClean(paths);
     AssertSameTree(again, ReadOurselves(paths));
+
+    // The kernel's runs and ours, spread over the members, gathered at the front and then the back.
+    foreach (var mode in new[] { DefragMode.ConsolidateAtStart, DefragMode.ConsolidateAtEnd }) {
+      members = paths.Select(p => (Stream)new FileStream(p, FileMode.Open, FileAccess.ReadWrite)).ToArray();
+      try {
+        descriptor.DefragmentVolume(members, new DefragOptions { Mode = mode });
+      } finally {
+        foreach (var member in members) member.Dispose();
+      }
+      BcacheFsKernel.AssertFsckClean(paths);
+      AssertSameTree(ParseListing(BcacheFsKernel.Session(paths, ListingScript)), ReadOurselves(paths));
+      AssertSameTree(again, ReadOurselves(paths));
+    }
   }
 
   /// <summary>
