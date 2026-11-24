@@ -61,9 +61,21 @@ steps. Captured 2026-11-23 on Ubuntu under WSL2 (appliance kernel 6.8.0-149-gene
 `apfs-fusion-main.img.gz` is the 32 MiB main device of a Fusion container that
 `mkapfs -F` (apfsprogs `b9c4cb40`) formatted over it and a 64 MiB tier-2 device; apfsck
 checks the pair, and `apfs-fusion.manifest` is what apfs-fuse `-f` lists (an empty root).
-Only the main device is kept: everything a fresh container reaches lies on it. No tool
-outside macOS writes files into a Fusion container, so there is no sample with data on the
-tier-2 device; the reader refuses such blocks. `generate-fusion.sh` documents the steps.
+Only the main device is kept: everything a fresh container reaches lies on it.
+`generate-fusion.sh` documents the steps.
+
+## Fusion container macOS made, with data on tier 2
+
+`apfs-fusion-macos-main.img.gz` (128 MiB main device) and `apfs-fusion-macos-tier2.img.gz`
+(256 MiB tier-2 device) are a Fusion container macOS 15.8.2 (24H232) made on a GitHub-hosted
+runner with `diskutil apfs createContainer -main <main> -secondary <tier2>` over two raw disk
+images (`tools/foreign-os-oracles/apfs-fusion-capture.sh`, Foreign-OS oracles run
+45379048475, `MAIN_MB=128 TIER2_MB=256 DATA_MB=16`). The script wrote 54 files (two 8 MiB
+files, each 4 KiB block naming itself), and `apfs-fusion-macos-files.manifest` is the SHA-256
+of each file as the script wrote it. `fsck_apfs -n` called the container OK. macOS put the
+data of every file on the tier-2 device (the main device keeps partial copies in its
+write-back cache, and the Fusion middle tree is empty), so the reader has to read tier 2.
+Uncompressed SHA-256: main `3e6979a179ffbfb5a6e1f651367c15b73b96f99390ec94edfe0b002af4fbaf33`, tier 2 `cbb6dc2e0792e6d59a22892a2c1ac43adb5460ef0bf95ac5f29157a0d9587916`. The file contents are the script's own.
 
 ## Licence
 

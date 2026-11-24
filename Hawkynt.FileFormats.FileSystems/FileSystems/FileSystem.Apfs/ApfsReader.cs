@@ -48,36 +48,119 @@ public sealed class ApfsReader : IDisposable {
   /// </summary>
   /// <exception cref="Compression.Registry.ArchivePasswordException">The volume is encrypted and no password, or a wrong one, was given.</exception>
   /// <exception cref="NotSupportedException">The volume uses an encryption scheme this reader does not implement.</exception>
-  public ApfsReader(Stream stream, string? password, bool leaveOpen = false) {
-    ArgumentNullException.ThrowIfNull(stream);
+  public ApfsReader(Stream stream, string? password, bool leaveOpen = false) : this(stream, null, password, leaveOpen) { }
+
+  /// <summary>
+  /// Opens a Fusion container from its main device and its tier-2 device. With
+  /// <paramref name="tier2"/> null, a main device opened from a file finds its tier-2 device
+  /// beside it (<see cref="FindTier2Beside"/>).
+  /// </summary>
+  public ApfsReader(Stream main, Stream? tier2, string? password, bool leaveOpen = false) {
+    ArgumentNullException.ThrowIfNull(main);
     this._password = password;
-    this._data = new ImageAccessor(stream, leaveOpen: true);
+    this._data = new ImageAccessor(main, leaveOpen: true);
+    this._mainStream = main;
+    if (tier2 is not null) this._tier2 = new ImageAccessor(tier2, leaveOpen: true);
     this.Parse();
   }
+
+  private readonly Stream _mainStream;
+  private ImageAccessor? _tier2;
+  private FileStream? _ownedTier2;
+  private bool _tier2Cached;
 
   /// <summary>True for a Fusion container (NX_INCOMPAT_FUSION): a fast main device and a tier-2 device.</summary>
   public bool IsFusion { get; private set; }
 
+  /// <summary>True when a Fusion container's tier-2 device was attached and is read.</summary>
+  public bool HasTier2 => this._tier2 is not null;
+
   /// <summary>
-  /// Fusion addresses blocks on the tier-2 device with FUSION_TIER2_DEVICE_BYTE_ADDR
-  /// (0x4000000000000000) shifted down by the block size's log2. This reader reads only the
-  /// main device: a Fusion container is read as long as every object and extent it reaches
-  /// lies there, and anything on the tier-2 device is refused rather than read from the
-  /// wrong place.
+  /// Where a block lives. Fusion addresses blocks on the tier-2 device with
+  /// FUSION_TIER2_DEVICE_BYTE_ADDR (0x4000000000000000) shifted down by the block size's log2;
+  /// such a block is read from the tier-2 device at the address without that bit. Refused
+  /// rather than read from the wrong place: a tier-2 block when no tier-2 device is attached,
+  /// and any tier-2 block while the Fusion middle tree maps tier-2 blocks into the main
+  /// device's write-back cache (the cached copy, not the tier-2 one, may be current).
   /// </summary>
-  private void RefuseTier2(ulong block) {
-    if (!this.IsFusion) return;
+  private (ImageAccessor Device, long Block) Locate(ulong block) {
+    if (!this.IsFusion) return (this._data, (long)block);
     var tier2 = 0x4000000000000000UL >> System.Numerics.BitOperations.TrailingZeroCount(this._blockSize);
-    if ((block & tier2) != 0)
-      throw new NotSupportedException($"APFS: block {block & ~tier2} lies on the Fusion tier-2 device, which this reader does not read.");
+    if ((block & tier2) == 0) return (this._data, (long)block);
+    if (this._tier2 is null)
+      throw new NotSupportedException($"APFS: block {block & ~tier2} lies on the Fusion tier-2 device, which was not given.");
+    if (this._tier2Cached)
+      throw new NotSupportedException("APFS: the Fusion middle tree maps tier-2 blocks into the write-back cache; cached tier-2 blocks are not read.");
+    return (this._tier2, (long)(block & ~tier2));
+  }
+
+  private void RefuseTier2(ulong block) => _ = this.Locate(block);
+
+  /// <summary>
+  /// Attaches the tier-2 device of a Fusion container: the one given, or a file beside the
+  /// main device's file that is its partner. Both devices carry a container superblock with
+  /// the same nx_uuid (+72); their nx_fusion_uuid (+1280) differ only in the lowest bit of the
+  /// last byte, clear on the main device and set on the tier-2 one (measured on a container
+  /// macOS 15 made with diskutil apfs createContainer -main). The Fusion middle tree
+  /// (nx_fusion_mt_oid, +1352, a physical B-tree on the main device) lists the tier-2 blocks
+  /// held in the write-back cache; while it lists any, tier-2 blocks are refused.
+  /// </summary>
+  private void AttachTier2(ReadOnlySpan<byte> nxsb) {
+    if (!this.IsFusion) { this._tier2 = null; return; }
+    if (this._tier2 is null && this._mainStream is FileStream file && FindTier2Beside(file.Name, nxsb) is { } path) {
+      this._ownedTier2 = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+      this._tier2 = new ImageAccessor(this._ownedTier2, leaveOpen: true);
+    }
+    if (this._tier2 is null) return;
+    var partner = this._tier2.Length >= this._blockSize ? this._tier2.Read(0, (int)this._blockSize) : null;
+    if (partner is null || !IsTier2Partner(nxsb, partner))
+      throw new InvalidDataException("APFS: the tier-2 device given is not the partner of this Fusion container's main device.");
+    var middleTree = BinaryPrimitives.ReadUInt64LittleEndian(nxsb[1352..]);
+    if (middleTree != 0 && this.IsObjectOfType((long)middleTree, OBJECT_TYPE_BTREE)) {
+      var node = this._data.Read((long)middleTree * this._blockSize, (int)this._blockSize);
+      this._tier2Cached = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(34)) != 0 || BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(36)) != 0;
+    }
+  }
+
+  private static bool IsTier2Partner(ReadOnlySpan<byte> main, ReadOnlySpan<byte> candidate) {
+    if (candidate.Length < 1296 || BinaryPrimitives.ReadUInt32LittleEndian(candidate[32..]) != NxMagicLE) return false;
+    if (!candidate.Slice(72, 16).SequenceEqual(main.Slice(72, 16))) return false;
+    var a = main.Slice(1280, 16);
+    var b = candidate.Slice(1280, 16);
+    return a[..15].SequenceEqual(b[..15]) && (a[15] & 1) == 0 && b[15] == (a[15] | 1);
+  }
+
+  /// <summary>
+  /// The file beside <paramref name="mainPath"/> that is the tier-2 device of the Fusion
+  /// container whose superblock is <paramref name="nxsb"/>, or null. Looks at no more than 256
+  /// files and reads one block of each.
+  /// </summary>
+  public static string? FindTier2Beside(string mainPath, ReadOnlySpan<byte> nxsb) {
+    var dir = Path.GetDirectoryName(Path.GetFullPath(mainPath));
+    if (dir is null || !Directory.Exists(dir)) return null;
+    var full = Path.GetFullPath(mainPath);
+    var buffer = new byte[1296];
+    foreach (var candidate in Directory.EnumerateFiles(dir).Take(256)) {
+      if (string.Equals(Path.GetFullPath(candidate), full, StringComparison.OrdinalIgnoreCase)) continue;
+      try {
+        using var fs = new FileStream(candidate, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        if (fs.Length < 4096 || fs.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false) < buffer.Length) continue;
+        if (IsTier2Partner(nxsb, buffer)) return candidate;
+      } catch (IOException) {
+        // unreadable neighbour
+      } catch (UnauthorizedAccessException) {
+        // unreadable neighbour
+      }
+    }
+    return null;
   }
 
   private Span<byte> BlockSpan(long blockNum) {
-    this.RefuseTier2((ulong)blockNum);
-    var off = blockNum * this._blockSize;
-    if (off < 0 || off + this._blockSize > this._data.Length)
+    var (device, at) = this.Locate((ulong)blockNum);
+    var off = at * this._blockSize;
+    if (off < 0 || off + this._blockSize > device.Length)
       throw new InvalidDataException($"APFS: block {blockNum} out of range.");
-    var block = this._data.Read(off, (int)this._blockSize);
+    var block = device.Read(off, (int)this._blockSize);
     if (this._volumeCipher is { } cipher && this._encryptedBlocks.Contains(blockNum))
       cipher.Decrypt(block, (ulong)blockNum * (this._blockSize / 512));
     return block.AsSpan();
@@ -118,12 +201,12 @@ public sealed class ApfsReader : IDisposable {
   }
 
   private byte[] ReadBlocks(ulong first, ulong count) {
-    this.RefuseTier2(first);
-    var off = checked((long)first * this._blockSize);
+    var (device, at) = this.Locate(first);
+    var off = checked(at * this._blockSize);
     var len = checked((int)(count * this._blockSize));
-    if (off < 0 || off + len > this._data.Length)
+    if (off < 0 || off + len > device.Length)
       throw new InvalidDataException("APFS: key bag lies outside the container.");
-    return this._data.Read(off, len);
+    return device.Read(off, len);
   }
 
   private void Parse() {
@@ -150,6 +233,7 @@ public sealed class ApfsReader : IDisposable {
     var nxsb = this.LatestCheckpointSuperblock();
     // nx_incompatible_features (+64): NX_INCOMPAT_FUSION (0x100).
     this.IsFusion = ((nxsb is { } sb ? BinaryPrimitives.ReadUInt64LittleEndian(sb.AsSpan(64)) : this._data.ReadUInt64(64)) & 0x100) != 0;
+    this.AttachTier2(nxsb ?? this._data.Read(0, (int)this._blockSize));
     var ctrOmapPhys = this.ResolveCtrOmapPhys();
     if (nxsb is { } latest) {
       var omapOid = BinaryPrimitives.ReadUInt64LittleEndian(latest.AsSpan(160));
@@ -765,9 +849,9 @@ public sealed class ApfsReader : IDisposable {
         Zero(written + take);
         continue;
       }
-      this.RefuseTier2(extent.PhysBlock);
-      var offset = checked((long)extent.PhysBlock * this._blockSize);
-      if (offset < 0 || offset + take > this._data.Length)
+      var (device, at) = this.Locate(extent.PhysBlock);
+      var offset = checked(at * this._blockSize);
+      if (offset < 0 || offset + take > device.Length)
         throw new InvalidDataException($"APFS: extent at block {extent.PhysBlock} lies outside the image.");
       if (this._volumeCipher is { } cipher) {
         // Whole blocks, decrypted with the extent's crypto_id as the tweak base: block i of
@@ -778,7 +862,7 @@ public sealed class ApfsReader : IDisposable {
         for (long done = 0, block = 0; done < take; block += blocksPerChunk) {
           var chunk = (int)Math.Min(buffer.Length, (take - done + this._blockSize - 1) / this._blockSize * this._blockSize);
           var span = buffer.AsSpan(0, chunk);
-          if (this._data.Read(offset + block * this._blockSize, span) < chunk)
+          if (device.Read(offset + block * this._blockSize, span) < chunk)
             throw new InvalidDataException($"APFS: extent at block {extent.PhysBlock} lies outside the image.");
           cipher.Decrypt(span, (extent.CryptoId + (ulong)block) * sectorsPerBlock);
           var n = (int)Math.Min(chunk, take - done);
@@ -786,7 +870,7 @@ public sealed class ApfsReader : IDisposable {
           done += n;
         }
       } else {
-        this._data.CopyTo(offset, destination, take);
+        device.CopyTo(offset, destination, take);
       }
       written += take;
     }
@@ -796,5 +880,8 @@ public sealed class ApfsReader : IDisposable {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-  public void Dispose() => this._volumeCipher?.Dispose();
+  public void Dispose() {
+    this._volumeCipher?.Dispose();
+    this._ownedTier2?.Dispose();
+  }
 }
