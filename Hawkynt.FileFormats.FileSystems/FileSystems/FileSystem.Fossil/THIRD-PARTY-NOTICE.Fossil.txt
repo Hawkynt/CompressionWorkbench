@@ -3,6 +3,11 @@ FossilReader.cs is converted from the Fossil file server in plan9port:
   https://github.com/9fans/plan9port  src/cmd/fossil (pack.c, vac.c, vac.h, source.c, file.c, dat.h)
   revision 1f1396913fb5372408f442ed26933f5ae4b399cd
 
+VentiArenaStore.cs is converted from the Venti server and libventi in the same repository:
+
+  https://github.com/9fans/plan9port  src/cmd/venti/srv (conv.c, arenas.c, arena.c, unwhack.c)
+  and src/libventi (dtype.c, zero.c)
+
 Copyright © 2021 Plan 9 Foundation
 Portions Copyright © 2001-2008 Russ Cox
 Portions Copyright © 2008-2009 Google Inc.
