@@ -2,6 +2,8 @@
 #:project ../../Compression.Registry/Compression.Registry.csproj
 #:property TreatWarningsAsErrors=false
 #:property GenerateDocumentationFile=false
+#:property PublishAot=false
+#:property JsonSerializerIsReflectionEnabledByDefault=true
 
 // Drives the ReFS reader and offline editor against volumes Windows formatted, for the
 // oracle-capture workflow (Windows itself then mounts what this writes and hashes it).
