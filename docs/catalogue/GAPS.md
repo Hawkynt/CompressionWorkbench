@@ -25,9 +25,9 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
 | `MISSING` | 161 | a source lists it; no descriptor or building block covers it |
-| `READ-ONLY-BUT-SOURCES-WRITE` | 31 | we only read it; a source or the format's own tool writes it |
+| `READ-ONLY-BUT-SOURCES-WRITE` | 30 | we only read it; a source or the format's own tool writes it |
 | `PARTIAL` | 57 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 337 | covered with no known gap against what the sources list |
+| `OK` | 338 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 443 | in our registry, listed by none of the eight sources |
 
 ### Per source
@@ -43,7 +43,7 @@ read-only rows.
 | binwalk v3 | 79 | 56 | 70.9 | 51 |
 | Universal Extractor 2 | 124 | 104 | 83.9 | 73 |
 | PRONOM | 87 | 83 | 95.4 | 74 |
-| Wikipedia | 268 | 197 | 73.5 | 155 |
+| Wikipedia | 268 | 197 | 73.5 | 156 |
 | Wikipedia (de): list of compression programs | 124 | 78 | 62.9 | 48 |
 
 These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-20. The source inventories retain their original 2026-10-19 snapshot; the German list is revision 268525499 (2026-07-05). The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.

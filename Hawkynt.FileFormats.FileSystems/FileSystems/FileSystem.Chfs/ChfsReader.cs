@@ -16,6 +16,12 @@ public sealed record ChfsEntry(string Path, ulong Vno, uint Mode, uint Uid, uint
   public bool IsDirectory => (this.Mode & 0xF000) == 0x4000;
   public bool IsFile => (this.Mode & 0xF000) == 0x8000;
   public bool IsSymlink => (this.Mode & 0xF000) == 0xA000;
+  /// <summary>Access time (UNIX seconds).</summary>
+  public uint ATime { get; init; }
+  /// <summary>Status-change time (UNIX seconds).</summary>
+  public uint CTime { get; init; }
+  /// <summary>The size the vnode records (for a directory, whatever its writer put there).</summary>
+  public uint Size { get; init; }
 }
 
 /// <summary>
@@ -44,10 +50,13 @@ public sealed class ChfsReader {
   /// <summary>True when the eraseblock headers are the 16-byte NAND form (with a serial).</summary>
   public bool IsNand { get; }
 
+  /// <summary>Each eraseblock's erase count, in image order (0 for an erased block).</summary>
+  public IReadOnlyList<uint> EraseCounts { get; }
+
   /// <summary>Every vnode below the root, parents before children.</summary>
   public IReadOnlyList<ChfsEntry> Entries { get; }
 
-  private readonly record struct Vnode(ulong Version, uint Uid, uint Gid, uint Mode, uint Size, uint MTime);
+  private readonly record struct Vnode(ulong Version, uint Uid, uint Gid, uint Mode, uint Size, uint ATime, uint MTime, uint CTime);
   private readonly record struct DataNode(ulong Version, ulong Offset, byte[] Data, int Order);
   private readonly record struct Dirent(ulong Vno, ulong Pvno, ulong Version, string Name);
 
@@ -68,9 +77,17 @@ public sealed class ChfsReader {
     var data = new Dictionary<ulong, List<DataNode>>();
     var dirents = new List<Dirent>();
     var order = 0;
+    var eraseCounts = new List<uint>();
     for (var eb = 0; eb < img.Length; eb += this.EraseBlockSize) {
-      if (img.AsSpan(eb, this.EraseBlockSize).IndexOfAnyExcept((byte)0xFF) < 0) continue;   // erased block
-      this.CheckEraseBlockHeaders(img.AsSpan(eb, this.EraseBlockSize), eb);
+      if (img.AsSpan(eb, this.EraseBlockSize).IndexOfAnyExcept((byte)0xFF) < 0) {   // erased block
+        eraseCounts.Add(0);
+        continue;
+      }
+      var block = img.AsSpan(eb, this.EraseBlockSize);
+      var free = block[this.PageSize..].IndexOfAnyExcept((byte)0xFF) < 0;
+      this.CheckEraseBlockHeaders(block, eb, free);
+      eraseCounts.Add(BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(eb + 8)));
+      if (free) continue;   // the kernel keeps the erase count of a free block; it has no eraseblock header yet
       var pos = eb + 2 * this.PageSize;
       var end = eb + this.EraseBlockSize;
       while (pos + 12 <= end) {
@@ -89,7 +106,7 @@ public sealed class ChfsReader {
             if (length < VnodeSize) throw new InvalidDataException($"CHFS vnode at {pos} is short.");
             CheckCrc(node[..(VnodeSize - 4)], node[(VnodeSize - 4)..], pos);
             var vno = U64(node, 12);
-            var v = new Vnode(U64(node, 20), U32(node, 28), U32(node, 32), U32(node, 36), U32(node, 40), U32(node, 48));
+            var v = new Vnode(U64(node, 20), U32(node, 28), U32(node, 32), U32(node, 36), U32(node, 40), U32(node, 44), U32(node, 48), U32(node, 52));
             if (!vnodes.TryGetValue(vno, out var old) || old.Version <= v.Version) vnodes[vno] = v;
             break;
           }
@@ -123,6 +140,7 @@ public sealed class ChfsReader {
         pos += (length + 3) & ~3;
       }
     }
+    this.EraseCounts = eraseCounts;
     this.Entries = Build(vnodes, data, dirents);
   }
 
@@ -150,7 +168,9 @@ public sealed class ChfsReader {
         var path = prefix.Length == 0 ? d.Name : prefix + "/" + d.Name;
         var isDir = (v.Mode & 0xF000) == 0x4000;
         if (isDir && !seen.Add(d.Vno)) throw new InvalidDataException($"CHFS directory vnode {d.Vno} appears twice.");
-        result.Add(new ChfsEntry(path, d.Vno, v.Mode, v.Uid, v.Gid, v.MTime, isDir ? [] : Content(v, data.GetValueOrDefault(d.Vno))));
+        result.Add(new ChfsEntry(path, d.Vno, v.Mode, v.Uid, v.Gid, v.MTime, isDir ? [] : Content(v, data.GetValueOrDefault(d.Vno))) {
+          ATime = v.ATime, CTime = v.CTime, Size = v.Size,
+        });
         if (isDir) Walk(d.Vno, path, depth + 1);
       }
     }
@@ -170,11 +190,12 @@ public sealed class ChfsReader {
     return bytes;
   }
 
-  private void CheckEraseBlockHeaders(ReadOnlySpan<byte> eb, int at) {
+  private void CheckEraseBlockHeaders(ReadOnlySpan<byte> eb, int at, bool free) {
     if (BinaryPrimitives.ReadUInt32LittleEndian(eb) != EraseBlockMagic)
       throw new InvalidDataException($"CHFS eraseblock at {at} has no erase-counter header.");
     if (Crc32.Compute(eb.Slice(8, 4)) != BinaryPrimitives.ReadUInt32LittleEndian(eb[4..]))
       throw new InvalidDataException($"CHFS eraseblock at {at}: erase-counter CRC mismatch.");
+    if (free) return;
     var hdr = eb[this.PageSize..];
     var len = this.IsNand ? 16 : 8;
     if (Crc32.Compute(hdr.Slice(4, len - 4)) != BinaryPrimitives.ReadUInt32LittleEndian(hdr))
