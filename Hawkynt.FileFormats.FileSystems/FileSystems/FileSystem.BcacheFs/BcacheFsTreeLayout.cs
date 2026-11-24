@@ -13,7 +13,7 @@ internal static class BcacheFsTreeLayout {
   /// as over-full — a newer bcachefs asserts on such a node the moment it inserts
   /// into it.
   /// </remarks>
-  internal static int NodeCapacity => BucketBytes - 8;
+  internal static int NodeCapacity => NodeBytes - 8;
 
   internal static IReadOnlyList<BcacheFsTreeNodeShape> DescribeNodes(int btree, IReadOnlyList<Key> keys) {
     var sorted = keys.OrderBy(k => k,
@@ -56,6 +56,11 @@ internal static class BcacheFsTreeLayout {
 
   internal static int CountNodes(IReadOnlyList<Key> keys) => DescribeNodes(-1, keys).Count;
 
+  /// <summary>
+  /// Writes <paramref name="keys" /> as a tree into the node slots <paramref name="targetBuckets" />
+  /// names: slot <c>n</c> is the node at sector <c>n × NodeSectors</c>, which is bucket <c>n</c>
+  /// wherever a node is a bucket.
+  /// </summary>
   internal static BcacheFsWrittenTree Write(
       Stream image,
       ulong magic,
@@ -120,8 +125,10 @@ internal static class BcacheFsTreeLayout {
       BcacheFsCrypt? crypt) {
     if (!targetBuckets.MoveNext())
       throw new InvalidOperationException($"bcachefs placement ran out of target buckets while writing tree {btree}.");
-    var bucket = targetBuckets.Current;
-    if (bucket < 0) throw new InvalidOperationException("bcachefs metadata target bucket is negative.");
+    var slot = targetBuckets.Current;
+    if (slot < 0) throw new InvalidOperationException("bcachefs metadata target slot is negative.");
+    var sector = checked(slot * (long)NodeSectors);
+    var bucket = sector / BucketSectors;
 
     var builder = new BcacheFsNodeBuilder {
       BtreeId = btree,
@@ -134,9 +141,8 @@ internal static class BcacheFsTreeLayout {
     };
     foreach (var key in keys) builder.Add(key);
 
-    var buffer = new byte[BucketBytes];
+    var buffer = new byte[NodeBytes];
     var sectors = builder.Write(buffer);
-    var sector = checked(bucket * (long)BucketSectors);
     image.Position = checked(sector * (long)SectorSize);
     image.Write(buffer, 0, sectors * SectorSize);
 

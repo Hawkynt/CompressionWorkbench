@@ -12,12 +12,15 @@ namespace FileSystem.BcacheFs;
 /// edit sets them for its own flow of control; everything else sees the writer's.
 /// </summary>
 internal static class BcacheFsBucketGeometry {
-  private sealed record Units(int Bucket, int Block, Int128 TimeBase, uint TimePrecision);
+  private sealed record Units(int Bucket, int Block, int Node, Int128 TimeBase, uint TimePrecision);
 
   private static readonly AsyncLocal<Units?> Current = new();
 
   /// <summary>Sectors per bucket in effect.</summary>
   internal static int Sectors => Current.Value?.Bucket ?? BcacheFsFormat.WriterBucketSectors;
+
+  /// <summary>Sectors per b-tree node in effect: the bucket size unless the volume says otherwise.</summary>
+  internal static int NodeSectors => Current.Value?.Node ?? Sectors;
 
   /// <summary>Sectors per block in effect: every node, extent and journal entry is a whole number of them.</summary>
   internal static int BlockSectors => Current.Value?.Block ?? 1;
@@ -32,13 +35,17 @@ internal static class BcacheFsBucketGeometry {
   /// Works in buckets of <paramref name="sectors" />, blocks of <paramref name="blockSectors" /> and
   /// times of <paramref name="timePrecision" /> ns from <paramref name="timeBase" /> until the result is disposed.
   /// </summary>
-  internal static IDisposable Use(int sectors, int blockSectors = 1, Int128? timeBase = null, uint? timePrecision = null) {
+  internal static IDisposable Use(int sectors, int blockSectors = 1, Int128? timeBase = null, uint? timePrecision = null,
+      int? nodeSectors = null) {
     if (sectors < 8 || (sectors & (sectors - 1)) != 0)
       throw new NotSupportedException($"bcachefs: a bucket of {sectors} sectors is not a power of two of at least one 4 KiB block.");
     if (blockSectors < 1 || (blockSectors & (blockSectors - 1)) != 0 || blockSectors > sectors)
       throw new NotSupportedException($"bcachefs: a block of {blockSectors} sectors is not a power of two within a {sectors}-sector bucket.");
+    var node = nodeSectors ?? sectors;
+    if (node < blockSectors || (node & (node - 1)) != 0 || node > sectors)
+      throw new NotSupportedException($"bcachefs: a b-tree node of {node} sectors is not a power of two between a block and a {sectors}-sector bucket.");
     var previous = Current.Value;
-    Current.Value = new Units(sectors, blockSectors, timeBase ?? 0,
+    Current.Value = new Units(sectors, blockSectors, node, timeBase ?? 0,
       Math.Max(1u, timePrecision ?? BcacheFsFormat.TimePrecisionNanoseconds));
     return new Restore(previous);
   }

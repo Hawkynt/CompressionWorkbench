@@ -248,8 +248,8 @@ internal static class BcacheFsInPlaceModifier {
   /// <summary>
   /// Works in the bucket size of the volume <paramref name="image" /> holds for as long as the
   /// result is not disposed: an edit of a volume <c>bcachefs format</c> made writes its nodes,
-  /// allocation keys and data in that volume's buckets. A b-tree node size other than the bucket
-  /// size is refused, as each node this editor writes fills a bucket of its own.
+  /// allocation keys and data in that volume's buckets, and its nodes in that volume's node size,
+  /// several to a metadata bucket where a node is smaller than a bucket.
   /// </summary>
   private static IDisposable UseVolumeBuckets(Stream image) {
     image.Position = 0;
@@ -258,14 +258,11 @@ internal static class BcacheFsInPlaceModifier {
     if (core.Members.Count != 1) return BcacheFsBucketGeometry.Use(WriterBucketSectors);   // refused by the profile check
     var bucket = core.Members[0].BucketSizeSectors;
     var node = core.Superblock.BtreeNodeSectors;
-    if (node != bucket)
-      throw new NotSupportedException(
-        $"bcachefs: the volume's b-tree nodes are {node} sectors but its buckets {bucket}; an edit here writes one node per bucket.");
     var raw = core.Superblock.RawBytes;
     var timeBase = (Int128)BinaryPrimitives.ReadUInt64LittleEndian(raw.AsSpan(128))
       | ((Int128)BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(136)) << 64);
     var precision = BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(140));
-    return BcacheFsBucketGeometry.Use(bucket, core.Superblock.BlockSizeSectors, timeBase, precision);
+    return BcacheFsBucketGeometry.Use(bucket, core.Superblock.BlockSizeSectors, timeBase, precision, node);
   }
 
   /// <summary>
@@ -280,6 +277,7 @@ internal static class BcacheFsInPlaceModifier {
     var geometry = BcacheFsSuperblockEditor.ReadGeometry(image);
     image.Position = 0;
     if (core.Members.Count != 1 || core.Members[0].BucketSizeSectors != WriterBucketSectors
+        || core.Superblock.BtreeNodeSectors != WriterBucketSectors
         || geometry.JournalBuckets.Count != 1
         || geometry.JournalBuckets[0] != (BcacheFsWriter.JournalFirstBucket, BcacheFsWriter.JournalBuckets))
       throw new NotSupportedException(
@@ -887,7 +885,7 @@ internal static class BcacheFsInPlaceModifier {
     return trees;
   }
 
-  /// <summary>The buckets one commit's metadata generation is written into.</summary>
+  /// <summary>The node slots one commit's metadata generation is written into.</summary>
   /// <remarks>
   /// Taken in order from the first bucket after the journal, skipping whatever
   /// holds file data. A placement pass is free to put extents anywhere, so the
@@ -898,7 +896,11 @@ internal static class BcacheFsInPlaceModifier {
       BcacheFsAllocationBuilder.Geometry geometry,
       IReadOnlySet<long> userBuckets,
       IReadOnlyDictionary<long, BcacheFsMetadataCommit.BucketState> states) {
-    var count = shapes.Values.Sum(s => s.Count);
+    // Where a node is smaller than a bucket the nodes share buckets, every one of
+    // them metadata only.
+    var perBucket = BucketSectors / NodeSectors;
+    var nodeCount = shapes.Values.Sum(s => s.Count);
+    var count = (nodeCount + perBucket - 1) / perBucket;
     if (count > MetadataBuckets)
       throw new NotSupportedException(
         $"bcachefs metadata needs {count} buckets; an in-place commit budgets {MetadataBuckets}.");
@@ -921,14 +923,16 @@ internal static class BcacheFsInPlaceModifier {
       candidates.Add(bucket);
       if (!IsMetadataReservation(bucket) && candidates.Count >= count + MetadataBuckets) break;
     }
-    var free = new Queue<long>(candidates
+    var chosen = candidates
       .OrderBy(b => IsMetadataReservation(b) ? 0 : 1)
       .ThenBy(b => states.GetValueOrDefault(b).Generation != 0 ? 1 : 0)
       .ThenBy(b => b)
-      .Take(count));
-    if (free.Count < count)
+      .Take(count)
+      .ToArray();
+    if (chosen.Length < count)
       throw new NotSupportedException(
-        $"bcachefs metadata needs {count} free buckets; only {free.Count} are available.");
+        $"bcachefs metadata needs {count} free buckets; only {chosen.Length} are available.");
+    var free = new Queue<long>(chosen.SelectMany(b => Enumerable.Range(0, perBucket).Select(k => b * perBucket + k)));
 
     var result = new Dictionary<int, long[]>();
     foreach (var id in BcacheFsMetadataCommit.TreeOrder)

@@ -34,13 +34,20 @@ internal static class BcacheFsFormat {
   internal const int MaxCrc32ExtentSectors = 128;
 
   /// <summary>
-  /// Sectors per bucket, and therefore per b-tree node, of the volume being written: the writer's
-  /// 64 KiB, or within <see cref="BcacheFsBucketGeometry.Use" /> the bucket size of the volume an
-  /// edit works on.
+  /// Sectors per bucket of the volume being written: the writer's 64 KiB, or within
+  /// <see cref="BcacheFsBucketGeometry.Use" /> the bucket size of the volume an edit works on.
   /// </summary>
   internal static int BucketSectors => BcacheFsBucketGeometry.Sectors;
 
   internal static int BucketBytes => BucketSectors * SectorSize;
+
+  /// <summary>
+  /// Sectors per b-tree node: a bucket in this writer's layout; a volume may choose a smaller
+  /// node (<c>--btree_node_size</c>), and then a metadata bucket holds several.
+  /// </summary>
+  internal static int NodeSectors => BcacheFsBucketGeometry.NodeSectors;
+
+  internal static int NodeBytes => NodeSectors * SectorSize;
 
   /// <summary>Where the primary superblock starts.</summary>
   internal const long PrimarySbSector = 8;

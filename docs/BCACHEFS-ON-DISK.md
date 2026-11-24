@@ -402,9 +402,8 @@ volume whose every tree it either carries or rebuilds:
 - rebuilt from what occupies the device: alloc, bucket_gens, freespace,
   need_discard, LRU, backpointers;
 - refused with the reason: a volume not cleanly shut down, of several members,
-  newer than **1.4**, with a b-tree node size other than its bucket size, with keys
-  in any other tree (quotas, stripes, logged ops …), or with an inode no directory
-  reaches.
+  newer than **1.4**, with keys in any other tree (quotas, stripes, logged ops …),
+  or with an inode no directory reaches.
 
 The volume's own layout is kept. Adds and removes work in whatever bucket size,
 block size and journal placement the superblock names — `bcachefs format`'s
@@ -417,6 +416,9 @@ block size and journal placement the superblock names — `bcachefs format`'s
 - a bucket holds its data as back-to-back extents of at most 128 sectors, the most
   a `bch_extent_crc32` entry's 7-bit size fields describe;
 - no node goes into a superblock slot or a journal bucket, wherever they lie;
+- a node smaller than a bucket (`--btree_node_size`) is written at that size, the
+  nodes of one commit packed several to a metadata bucket; each costs its node
+  size in the bucket's dirty sectors and in its backpointer;
 - inode times are stored as the superblock's precision from its time base —
   nanoseconds from the instant `bcachefs format` ran, against this writer's 100 ns
   from the epoch (a time not on that grid rounds down).
