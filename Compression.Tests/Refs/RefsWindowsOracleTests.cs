@@ -126,6 +126,118 @@ public sealed class RefsWindowsOracleTests {
   }
 
   [Test, Category("ExternalFsInterop")]
+  public void GivenAVolumeWindowsFormatted_WhenAFileIsRenamed_ThenOnlyItsNameChanges([ValueSource(nameof(Volumes))] string volume) {
+    var oracle = Load(volume);
+    var source = ImagePath(oracle);
+    var copy = Path.Combine(Path.GetTempPath(), "cwb_refs_ren_" + Guid.NewGuid().ToString("N")[..8] + ".refs");
+    File.Copy(source, copy);
+    var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_ren_x_" + Guid.NewGuid().ToString("N")[..8]);
+    try {
+      var descriptor = new RefsFormatDescriptor();
+      using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
+        var before = SHA256.HashData(stream);
+        stream.Position = 0;
+        Assert.Throws<IOException>(() => descriptor.Rename(stream, "rename-me.txt", "SMALL.TXT"), "an existing name, case-insensitively");
+        stream.Position = 0;
+        Assert.That(SHA256.HashData(stream), Is.EqualTo(before), "a refused rename leaves the image unchanged");
+        descriptor.Rename(stream, "rename-me.txt", "renamed.txt");
+      }
+      using (var stream = File.OpenRead(copy)) descriptor.Extract(stream, outDir, null, null);
+      Assert.Multiple(() => {
+        Assert.That(File.Exists(Path.Combine(outDir, "rename-me.txt")), Is.False);
+        foreach (var file in oracle.Files) {
+          var name = file.Path == "rename-me.txt" ? "renamed.txt" : file.Path;
+          var bytes = File.ReadAllBytes(Path.Combine(outDir, name.Replace('/', Path.DirectorySeparatorChar)));
+          Assert.That(Convert.ToHexStringLower(SHA256.HashData(bytes)), Is.EqualTo(file.Sha256), name);
+        }
+      });
+    } finally {
+      File.Delete(copy);
+      try { Directory.Delete(outDir, recursive: true); } catch { /* best effort */ }
+    }
+  }
+
+  [Test, Category("ExternalFsInterop")]
+  public void GivenAVolumeWindowsFormatted_WhenAFileIsRemoved_ThenItIsGoneItsClustersAreFreeAndTheRestIsIntact([ValueSource(nameof(Volumes))] string volume) {
+    var oracle = Load(volume);
+    var source = ImagePath(oracle);
+    var copy = Path.Combine(Path.GetTempPath(), "cwb_refs_rm_" + Guid.NewGuid().ToString("N")[..8] + ".refs");
+    File.Copy(source, copy);
+    var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_rm_x_" + Guid.NewGuid().ToString("N")[..8]);
+    try {
+      var descriptor = new RefsFormatDescriptor();
+      // Integrity streams, and the 64 KiB-cluster allocator rows (compact, not bitmaps), are
+      // refused; the refusal leaves the image unchanged.
+      if (oracle.Variant is "integrity" or "cluster64k") {
+        using var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite);
+        Assert.Throws<NotSupportedException>(() => descriptor.Remove(stream, ["remove-me.bin"]));
+        stream.Position = 0;
+        Assert.That(Convert.ToHexStringLower(SHA256.HashData(stream)), Is.EqualTo(oracle.ImageSha256));
+        return;
+      }
+      using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) descriptor.Remove(stream, ["remove-me.bin"]);
+      using (var stream = File.OpenRead(copy)) descriptor.Extract(stream, outDir, null, null);
+      Assert.Multiple(() => {
+        Assert.That(File.Exists(Path.Combine(outDir, "remove-me.bin")), Is.False);
+        foreach (var file in oracle.Files.Where(static f => f.Path != "remove-me.bin")) {
+          var bytes = File.ReadAllBytes(Path.Combine(outDir, file.Path.Replace('/', Path.DirectorySeparatorChar)));
+          Assert.That(Convert.ToHexStringLower(SHA256.HashData(bytes)), Is.EqualTo(file.Sha256), file.Path);
+        }
+      });
+    } finally {
+      File.Delete(copy);
+      try { Directory.Delete(outDir, recursive: true); } catch { /* best effort */ }
+    }
+  }
+
+  [Test, Category("ExternalFsInterop")]
+  public void GivenAVolumeWindowsFormatted_WhenAFileIsReplacedByALongerThenAShorterOne_ThenEachIsReadBackAndTheRestIsIntact(
+      [ValueSource(nameof(Volumes))] string volume) {
+    var oracle = Load(volume);
+    var source = ImagePath(oracle);
+    var copy = Path.Combine(Path.GetTempPath(), "cwb_refs_rs_" + Guid.NewGuid().ToString("N")[..8] + ".refs");
+    File.Copy(source, copy);
+    try {
+      var descriptor = new RefsFormatDescriptor();
+      foreach (var length in new[] { 300000, 20000 }) {
+        var replacement = new byte[length];
+        new Random(length).NextBytes(replacement);
+        using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
+          // Proven layouts must apply; elsewhere a clean refusal (image unchanged) is the allowed outcome.
+          if (volume != "windows-2022-default") {
+            var before = SHA256.HashData(stream);
+            stream.Position = 0;
+            try {
+              descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", replacement)]);
+            } catch (NotSupportedException) {
+              stream.Position = 0;
+              Assert.That(SHA256.HashData(stream), Is.EqualTo(before), "a refused resize leaves the image unchanged");
+              return;
+            }
+          } else {
+            descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", replacement)]);
+          }
+        }
+        var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_rs_x_" + Guid.NewGuid().ToString("N")[..8]);
+        try {
+          using (var stream = File.OpenRead(copy)) descriptor.Extract(stream, outDir, null, null);
+          Assert.Multiple(() => {
+            foreach (var file in oracle.Files) {
+              var bytes = File.ReadAllBytes(Path.Combine(outDir, file.Path.Replace('/', Path.DirectorySeparatorChar)));
+              if (file.Path == "replace-me.bin") Assert.That(bytes, Is.EqualTo(replacement), $"replace-me.bin at {length} bytes");
+              else Assert.That(Convert.ToHexStringLower(SHA256.HashData(bytes)), Is.EqualTo(file.Sha256), file.Path);
+            }
+          });
+        } finally {
+          try { Directory.Delete(outDir, recursive: true); } catch { /* best effort */ }
+        }
+      }
+    } finally {
+      File.Delete(copy);
+    }
+  }
+
+  [Test, Category("ExternalFsInterop")]
   public void GivenAVolumeWindowsFormatted_WhenAnEditIsAsked_ThenItIsRefusedAndTheImageIsUnchanged([ValueSource(nameof(Volumes))] string volume) {
     var oracle = Load(volume);
     var source = ImagePath(oracle);
@@ -135,9 +247,8 @@ public sealed class RefsWindowsOracleTests {
       var descriptor = new RefsFormatDescriptor();
       using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
         Assert.Multiple(() => {
-          Assert.Throws<NotSupportedException>(() => descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", new byte[65537])]));
-          Assert.Throws<NotSupportedException>(() => descriptor.Remove(stream, ["remove-me.bin"]));
-          Assert.Throws<NotSupportedException>(() => descriptor.Rename(stream, "rename-me.txt", "renamed.txt"));
+          Assert.Throws<NotSupportedException>(() => descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("not-there.bin", new byte[10])]), "creating files");
+          Assert.Throws<NotSupportedException>(() => descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", new byte[70000]), Compression.Registry.ArchiveInputInfo.InMemory("small.txt", new byte[5])]), "two length changes at once");
           Assert.Throws<NotSupportedException>(() => descriptor.Defragment(stream));
         });
       }

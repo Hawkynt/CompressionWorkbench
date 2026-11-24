@@ -28,6 +28,15 @@ internal sealed class RefsAllocatorWriter {
   private readonly RefsAllocatorTier _tier;
   private readonly int _rootIndex;
   private readonly bool _physicalAddressing;
+
+  /// <summary>
+  /// The row layout measured on volumes Windows Server 2022/2025 formatted: a partial row's
+  /// free count (+0x10) is the range length minus the bitmap's population, while +0x16 holds a
+  /// value that is not the used count and that Windows leaves unchanged when it frees clusters;
+  /// it is kept as found. Changes that would turn a row compact (all free or all allocated) or
+  /// touch a compact row are refused, since how Windows rewrites those has not been measured.
+  /// </summary>
+  private readonly bool _windowsLayout;
   private readonly List<RowState> _rows = [];
 
   private sealed record RowState(ulong Start, ulong Length, RefsBTreeRow Row);
@@ -35,7 +44,8 @@ internal sealed class RefsAllocatorWriter {
   public RefsAllocatorWriter(
       RefsMetadataReader metadata,
       RefsMetadataGraph graph,
-      RefsAllocatorTier tier = RefsAllocatorTier.Medium) {
+      RefsAllocatorTier tier = RefsAllocatorTier.Medium,
+      bool? physicalAddressing = null) {
     this._metadata = metadata;
     this._graph = graph;
     this._tier = tier;
@@ -45,7 +55,10 @@ internal sealed class RefsAllocatorWriter {
       RefsAllocatorTier.Small => 12,
       _ => throw new ArgumentOutOfRangeException(nameof(tier)),
     };
-    this._physicalAddressing = tier == RefsAllocatorTier.Small;
+    // Volumes Windows Server 2022/2025 format key the Medium Allocator by physical LCN (its rows
+    // cover exactly the volume's clusters); a caller that has established that passes it.
+    this._physicalAddressing = physicalAddressing ?? tier == RefsAllocatorTier.Small;
+    this._windowsLayout = physicalAddressing == true && tier == RefsAllocatorTier.Medium;
     this.ReloadRows();
   }
 
@@ -54,6 +67,12 @@ internal sealed class RefsAllocatorWriter {
   public bool CoversPhysical(ulong physicalLcn) {
     if (!this.TryToAllocatorLcn(physicalLcn, out var allocatorLcn)) return false;
     return this.Find(allocatorLcn) != null;
+  }
+
+  /// <summary>The physical range of the row that covers <paramref name="physicalLcn"/>, for a physically addressed allocator; null otherwise.</summary>
+  public (ulong Start, ulong Length)? RangeOfPhysical(ulong physicalLcn) {
+    if (!this._physicalAddressing) return null;
+    return this.Find(physicalLcn) is { } state ? (state.Start, state.Length) : null;
   }
 
   public bool AreAllocated(IEnumerable<ulong> physicalLcns, bool expectedAllocated) {
@@ -196,7 +215,7 @@ internal sealed class RefsAllocatorWriter {
       var start = BinaryPrimitives.ReadUInt64LittleEndian(row.Value.AsSpan(0, 8));
       var length = BinaryPrimitives.ReadUInt64LittleEndian(row.Value.AsSpan(8, 8));
       if (length == 0 || length > BitmapBytes * 8UL) continue;
-      if (!IsValidRow(row.Value, length)) continue;
+      if (!(this._windowsLayout ? IsValidWindowsRow(row.Value, length) : IsValidRow(row.Value, length))) continue;
       this._rows.Add(new RowState(start, length, row));
     }
     this._rows.Sort((a, b) => a.Start.CompareTo(b.Start));
@@ -287,6 +306,15 @@ internal sealed class RefsAllocatorWriter {
     for (ulong i = 0; i < rangeLength; ++i)
       if ((bitmap[(int)(i >> 3)] & (1 << (int)(i & 7))) != 0) ++used;
     var free = checked((int)rangeLength - used);
+
+    if (this._windowsLayout) {
+      if (flags != PartialFlag || used == 0 || free == 0)
+        throw new InvalidOperationException("ReFS allocator row would change between compact and bitmap form; that rewrite is not made.");
+      var row = original.ToArray();
+      BinaryPrimitives.WriteUInt16LittleEndian(row.AsSpan(0x10, 2), checked((ushort)free));
+      bitmap.CopyTo(row, BitmapOffset);
+      return row;
+    }
     if (used > ushort.MaxValue || free > ushort.MaxValue)
       throw new InvalidOperationException("ReFS allocator counts exceed their on-disk fields.");
 
@@ -308,6 +336,22 @@ internal sealed class RefsAllocatorWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(0x16, 2), checked((ushort)used));
     bitmap.CopyTo(result, BitmapOffset);
     return result;
+  }
+
+  private static bool IsValidWindowsRow(byte[] value, ulong rangeLength) {
+    if (value.Length < 24) return false;
+    var free = BinaryPrimitives.ReadUInt16LittleEndian(value.AsSpan(0x10, 2));
+    var flags = BinaryPrimitives.ReadUInt16LittleEndian(value.AsSpan(0x12, 2));
+    if (flags == PartialFlag) {
+      if (value.Length < BitmapOffset + BitmapBytes) return false;
+      var popcount = 0UL;
+      for (ulong i = 0; i < rangeLength; ++i)
+        if ((value[BitmapOffset + (int)(i >> 3)] & (1 << (int)(i & 7))) != 0) ++popcount;
+      return free == rangeLength - popcount;
+    }
+    // Compact rows: all allocated (free 0) or all free (free = length); kept readable so
+    // AreAllocated can answer, never rewritten in this layout.
+    return flags == CompactAllocatedFlag ? free == 0 : flags is FullyFreeFlag or FullyFreeAlternativeFlag && free == rangeLength;
   }
 
   private static bool IsValidRow(byte[] value, ulong rangeLength) {
