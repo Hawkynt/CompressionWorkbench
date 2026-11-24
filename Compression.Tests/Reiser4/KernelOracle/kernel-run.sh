@@ -8,7 +8,15 @@
 # (linux-image-5.4.0-3+reizer4.0.2-cloud-amd64). It is fetched once into $CWB_REISER4_KERNEL
 # (default ~/.cache/cwb/reiser4-kernel) together with Ubuntu's busybox-static for the initramfs.
 # Nothing here is a build input: the tests that use it skip when it cannot run.
-. "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
+#
+# Exit status of a run, so the caller can tell a broken harness or host from a broken image:
+#   0  the guest booted, ran the script and printed ===GUEST-END===
+#   2  the guest never reached ===GUEST-BEGIN=== (qemu or the kernel did not come up: the host)
+#   3  the harness is incomplete (a helper this script needs is missing: the repository)
+#   4  the guest came up and mounted the image but did not finish: it hung, crashed or ran out of
+#      time inside the guest (the image, or a time limit too tight: ===QEMU rc=124=== says which)
+# ===QEMU rc=N timeout=T=== reports qemu's own status and the time limit (CWB_REISER4_KERNEL_TIMEOUT,
+# default 1200 s) whatever happened.
 set -e
 K=${CWB_REISER4_KERNEL:-$HOME/.cache/cwb/reiser4-kernel}
 KV=5.4.0-3+reizer4.0.2-cloud-amd64
@@ -31,9 +39,14 @@ if [ "$1" = "--prepare" ]; then
   exit $?
 fi
 
+HELPER="$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
+if [ ! -f "$HELPER" ]; then echo "HARNESS-INCOMPLETE: $HELPER is missing"; exit 3; fi
+. "$HELPER"
+
 M=$K/x/lib/modules/$KV/kernel
 R=$(mktemp -d)
-trap 'cwb_rmtree "$R" "$R.cpio.gz" "$R.log"' EXIT
+# Cleanup must never decide the outcome: a failing removal is reported, not returned.
+trap 'cwb_rmtree "$R" "$R.cpio.gz" "$R.log" || echo "cleanup of $R failed" >&2' EXIT
 mkdir -p "$R/bin" "$R/mods" "$R/dev" "$R/proc" "$R/sys" "$R/mnt" "$R/payload"
 cp "$K/bb/usr/bin/busybox" "$R/bin/"
 for a in $("$K/bb/usr/bin/busybox" --list); do [ "$a" = busybox ] || ln -s busybox "$R/bin/$a"; done
@@ -61,9 +74,23 @@ EOF
 chmod +x "$R/init"
 (cd "$R" && find . | cpio -o -H newc 2>/dev/null | gzip -1) > "$R.cpio.gz"
 ACC=-enable-kvm; [ -w /dev/kvm ] || ACC="-accel tcg"
-timeout ${CWB_REISER4_KERNEL_TIMEOUT:-900} qemu-system-x86_64 $ACC -m 1024 -nographic -no-reboot \
+T=${CWB_REISER4_KERNEL_TIMEOUT:-1200}
+set +e
+timeout "$T" qemu-system-x86_64 $ACC -m 1024 -nographic -no-reboot \
   -kernel "$K/x/boot/vmlinuz-$KV" -initrd "$R.cpio.gz" \
   -append "console=ttyS0 quiet panic=-1" \
-  -drive file="$1",format=raw,if=virtio,cache=unsafe 2>&1 | tr -d '\r' > "$R.log" || true
-sed -n '/===GUEST-BEGIN===/,$p' "$R.log" | grep -v '^\s*$'
-grep -q '===GUEST-END' "$R.log"
+  -drive file="$1",format=raw,if=virtio,cache=unsafe 2>&1 | tr -d '\r' > "$R.log"
+QRC=${PIPESTATUS[0]}
+set -e
+sed -n '/===GUEST-BEGIN===/,$p' "$R.log" | grep -v '^\s*$' || true
+echo "===QEMU rc=$QRC timeout=$T accel=$ACC==="
+if ! grep -q '===GUEST-BEGIN===' "$R.log"; then
+  echo "GUEST-NOT-BOOTED"
+  tail -n 40 "$R.log" | sed 's/^/console: /'
+  exit 2
+fi
+if ! grep -q '===GUEST-END' "$R.log"; then
+  echo "GUEST-DID-NOT-FINISH"
+  exit 4
+fi
+exit 0

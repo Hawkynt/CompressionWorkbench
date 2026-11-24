@@ -30,6 +30,45 @@ public sealed class Reiser4KernelOracleTests {
     try { Directory.Delete(this._tmpDir, recursive: true); } catch { /* best effort */ }
   }
 
+  // ── The harness itself: how a run ends must say whose failure it is ─────────────
+
+  private static string HarnessScript => FsInteropToolbox.WinToWsl(
+    Path.Combine(AppContext.BaseDirectory, "Reiser4", "KernelOracle", "kernel-run.sh"));
+
+  /// <summary>
+  /// A guest that boots and then never finishes is the image's failure (or a time limit too
+  /// tight), never a skip: the run ends with status 4 and qemu's timeout status in the report.
+  /// </summary>
+  [Test, Category("ErrorHandling")]
+  public void GivenAGuestThatNeverFinishes_WhenItRunsOutOfTime_ThenTheRunReportsAHangNotAnInfrastructureFailure() {
+    Reiser4KernelOracle.Require();
+    var image = Path.Combine(this._tmpDir, "blank.img");
+    File.WriteAllBytes(image, new byte[1 << 20]);
+    var hang = Path.Combine(this._tmpDir, "hang.sh");
+    File.WriteAllText(hang, "echo started\nwhile :; do sleep 1; done\n");
+    var run = FsInteropToolbox.RunWsl(
+      $"CWB_REISER4_KERNEL_TIMEOUT=30 bash {HarnessScript} {FsInteropToolbox.WinToWsl(image)} {FsInteropToolbox.WinToWsl(hang)}",
+      TimeSpan.FromMinutes(5));
+    Assert.Multiple(() => {
+      Assert.That(run.TimedOut, Is.False, "qemu's own limit ends the run");
+      Assert.That(run.ExitCode, Is.EqualTo(4), run.StdOut + run.StdErr);
+      Assert.That(run.StdOut, Does.Contain("===QEMU rc=124").And.Contain("GUEST-DID-NOT-FINISH").And.Contain("started"));
+    });
+  }
+
+  /// <summary>A copy of the harness without the helper it sources reports itself incomplete (status 3), not a guest failure.</summary>
+  [Test, Category("ErrorHandling")]
+  public void GivenTheHarnessWithoutItsHelper_WhenRun_ThenItReportsItselfIncomplete() {
+    if (!FsInteropToolbox.WslAvailable && OperatingSystem.IsWindows()) Assert.Ignore("WSL is not available on this machine.");
+    var lonely = Path.Combine(this._tmpDir, "a", "b");
+    Directory.CreateDirectory(lonely);
+    var copy = Path.Combine(lonely, "kernel-run.sh");
+    File.Copy(Path.Combine(AppContext.BaseDirectory, "Reiser4", "KernelOracle", "kernel-run.sh"), copy);
+    var run = FsInteropToolbox.RunWsl($"bash {FsInteropToolbox.WinToWsl(copy)} /dev/null /dev/null", TimeSpan.FromMinutes(2));
+    Assert.That(run.ExitCode, Is.EqualTo(3), run.StdOut + run.StdErr);
+    Assert.That(run.StdOut, Does.Contain("HARNESS-INCOMPLETE"));
+  }
+
   private static byte[] Random(int length, int seed) {
     var bytes = new byte[length];
     new Random(seed).NextBytes(bytes);
