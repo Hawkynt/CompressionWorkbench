@@ -9,6 +9,7 @@
 // oracle-capture workflow (Windows itself then mounts what this writes and hashes it).
 //
 //   refs-probe gen <dir>                       deterministic file set to copy onto the volume
+//   refs-probe pattern <seed> <length> <out>   the bytes an edit writes, for Windows to write too
 //   refs-probe read <image.refs> <out.json>    what our reader lists and extracts (path, size, sha256)
 //   refs-probe mutate <image.refs> <op> <out.refs> <result.json>
 //        op: rename | replace-same | replace-grow | remove | clone | defrag
@@ -23,6 +24,7 @@ using FileSystem.Refs;
 
 return args switch {
   ["gen", var dir] => Gen(dir),
+  ["pattern", var seed, var length, var output] => WritePattern(int.Parse(seed), int.Parse(length), output),
   ["read", var image, var output] => Read(image, output),
   ["mutate", var image, var op, var output, var result] => Mutate(image, op, output, result),
   _ => Usage(),
@@ -41,6 +43,11 @@ static byte[] Pattern(int length, int seed) {
     bytes[i] = (byte)x;
   }
   return bytes;
+}
+
+static int WritePattern(int seed, int length, string output) {
+  File.WriteAllBytes(output, Pattern(length, seed));
+  return 0;
 }
 
 static int Gen(string dir) {
