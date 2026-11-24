@@ -15,12 +15,18 @@ namespace FileSystem.Tux3;
 /// allocation-bitmap inode, decodes its data tree, and parses the reverse-linked log chain.</para>
 /// <para>Tree/log parsing is deliberately fail-closed. Active structural journal records require
 /// upstream-style replay before an allocation tree can be trusted, so those images keep the
-/// allocation map unavailable rather than exposing guessed free space. Directory traversal and
-/// native mutation are still outside this reader.</para>
+/// allocation map unavailable rather than exposing guessed free space.</para>
+/// <para>Volumes of the 2015-06-01 revision (what the linux-tux3 user tools write today) are read
+/// completely: the log's index-node records are replayed, and every directory, file, symlink and
+/// hard link below the root is listed and extracted (<see cref="Tux3FileTree"/>,
+/// <c>docs/TUX3-ON-DISK.md</c>). Native mutation is outside this reader.</para>
 /// </remarks>
 public sealed class Tux3Reader : IDisposable {
   /// <summary>Current linux-tux3 disk-format magic (2014-05-06 revision).</summary>
   public static readonly byte[] Magic = [0x74, 0x75, 0x78, 0x33, 0x20, 0x14, 0x05, 0x06];
+
+  /// <summary>The 2015-06-01 disk-format magic the linux-tux3 user tools write (branch hirofumi-user).</summary>
+  public static readonly byte[] Magic2015 = [0x74, 0x75, 0x78, 0x33, 0x20, 0x15, 0x06, 0x01];
 
   /// <summary>Older 2012-12-20 userspace-tree disk-format magic.</summary>
   public static readonly byte[] Legacy2012Magic = [0x74, 0x75, 0x78, 0x33, 0x20, 0x12, 0x12, 0x20];
@@ -34,6 +40,10 @@ public sealed class Tux3Reader : IDisposable {
   private readonly ImageAccessor _image;
   private readonly long _length;
   private readonly List<Tux3Entry> _entries = [];
+  private Tux3FileTree? _tree;
+
+  /// <summary>The file tree of a 2015-06-01 volume; null for the older revisions.</summary>
+  internal Tux3FileTree? Tree => this._tree;
 
   /// <summary>Gets the entries exposed by this metadata reader.</summary>
   public IReadOnlyList<Tux3Entry> Entries => this._entries;
@@ -93,7 +103,10 @@ public sealed class Tux3Reader : IDisposable {
     var span = super.AsSpan();
     var magic = span[..8];
 
-    if (magic.SequenceEqual(Magic))
+    var is2015 = magic.SequenceEqual(Magic2015);
+    if (is2015)
+      this.Revision = "2015-06-01";
+    else if (magic.SequenceEqual(Magic))
       this.Revision = "2014-05-06";
     else if (magic.SequenceEqual(Legacy2012Magic))
       this.Revision = "2012-12-20";
@@ -114,6 +127,18 @@ public sealed class Tux3Reader : IDisposable {
     this.LogChain = BinaryPrimitives.ReadUInt64BigEndian(span.Slice(0x58, 8));
     this.LogCount = BinaryPrimitives.ReadUInt32BigEndian(span.Slice(0x60, 4));
     this.ValidSuperblock = true;
+
+    if (is2015) {
+      if (this.BlockBits is < 9 or > 16 || this.VolBlocks == 0 || (this.VolBlocks << this.BlockBits) > (ulong)this._length)
+        throw new InvalidDataException("Tux3: the volume is larger than the image or its block size is invalid.");
+      this._tree = new Tux3FileTree(this._image, this.BlockBits, this.VolBlocks, this.IRoot, this.LogChain, this.LogCount);
+      this.NativeMetadataStatus = "file-tree";
+      foreach (var node in this._tree.Nodes)
+        this._entries.Add(new Tux3Entry {
+          Name = node.Path, Size = node.IsDirectory ? 0 : node.Size, IsDirectory = node.IsDirectory, Node = node,
+        });
+      return;
+    }
 
     var native = Tux3NativeMetadataParser.Parse(
       this._image,
@@ -174,6 +199,7 @@ public sealed class Tux3Reader : IDisposable {
   /// <summary>Returns an entry as a byte array when it fits the CLR array limit.</summary>
   public byte[] Extract(Tux3Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
+    if (entry.Node is { } node) return node.IsDirectory ? [] : this._tree!.Read(node);
     if (entry.Offset < 0) return entry.Data;
     if (entry.Size > Array.MaxLength)
       throw new IOException($"Tux3: '{entry.Name}' is {entry.Size:N0} bytes, past the array limit; use ExtractTo.");
@@ -185,6 +211,11 @@ public sealed class Tux3Reader : IDisposable {
   public long ExtractTo(Tux3Entry entry, Stream destination) {
     ArgumentNullException.ThrowIfNull(entry);
     ArgumentNullException.ThrowIfNull(destination);
+    if (entry.Node != null) {
+      var bytes = this.Extract(entry);
+      destination.Write(bytes);
+      return bytes.LongLength;
+    }
 
     if (entry.Offset < 0) {
       destination.Write(entry.Data);

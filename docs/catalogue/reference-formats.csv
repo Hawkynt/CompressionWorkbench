@@ -485,7 +485,7 @@ RFS (RTEMS),,filesystem,,,,,,,Y,,1,,,,,,MISSING,,refused: images only come from 
 SkyFS,skyos,filesystem,,,,,,,Y,,1,,,,,,MISSING,,"refused: SkyOS was discontinued in 2008; no specification, tool or image"
 Amiga SFS,sfs,filesystem,,,,,,,Y,,1,,Sfs,Y,Y,Y,OK,,
 Newton Soup,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,"refused: soups are Newton object-store entries inside the device's flash store and backups; no public layout specification, tool or image of the store"
-Tux3,,filesystem,,,,,,,Y,,1,,Tux3,Y,,,READ-ONLY-BUT-SOURCES-WRITE,tux3 mkfs,read only; the tux3 userspace tools were not built or tried as a writer oracle in this round
+Tux3,,filesystem,,,,,,,Y,,1,https://github.com/OGAWAHirofumi/linux-tux3,Tux3,Y,,,READ-ONLY-BUT-SOURCES-WRITE,tux3 mkfs,"2015-06-01 volumes read whole (log replay, directories, files, hard links, symlinks), checked against what the linux-tux3 user tools wrote and tux3fuse reads back; not written: the tools' own writers are too unstable to serve as a writer oracle (tux3fuse aborts on 4 KiB writes)"
 "VxFS (Veritas, incl. cluster CFS)",cfs,filesystem,,,,,,,Y,,1,,VxFs,Y,Y,Y,OK,,
 XFS,xfs;sgi,filesystem,,,,,,,Y,,1,,Xfs,Y,Y,,OK,,
 zFS (z/OS),,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
