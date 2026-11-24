@@ -302,9 +302,17 @@ public sealed class RefsFormatDescriptor :
       RefsInPlaceResize.Apply(archive, metadata, graph, plan, contents[0]);
       return;
     }
-    var planned = files.Select((input, i) => RefsInPlaceOverwrite.Plan(archive, metadata, input.ArchiveName, contents[i].LongLength)).ToList();
+    var planned = files.Select((input, i) => RefsInPlaceOverwrite.Plan(archive, metadata, input.ArchiveName, contents[i].LongLength, allowIntegrity: true)).ToList();
+    var checksums = files.Select((input, i) => RefsInPlaceOverwrite.PlanChecksums(archive, metadata, input.ArchiveName, planned[i], contents[i])).ToList();
+    var overwriteGraph = new RefsMetadataGraph(archive, metadata);
+    foreach (var plan in checksums)
+      if (plan is { } c && !RefsPageEditor.CanReplaceValue(overwriteGraph, c.Row, c.Value.Length))
+        throw new NotSupportedException("ReFS: the directory page cannot take the rewritten checksums.");
     for (var i = 0; i < planned.Count; ++i)
       RefsInPlaceOverwrite.Apply(archive, metadata.ClusterSize, planned[i], contents[i]);
+    foreach (var plan in checksums)
+      if (plan is { } c)
+        overwriteGraph.RefreshChecksumPaths([RefsPageEditor.ReplaceValue(overwriteGraph, c.Row, c.Value)]);
   }
 
   /// <summary>Removes files held in their directory row, in place (<see cref="RefsInPlaceRemove"/>).</summary>

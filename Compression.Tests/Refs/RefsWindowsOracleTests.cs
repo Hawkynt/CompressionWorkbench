@@ -96,16 +96,9 @@ public sealed class RefsWindowsOracleTests {
       new Random(30).NextBytes(replacement);
       var descriptor = new RefsFormatDescriptor();
       using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
-        if (oracle.Variant == "integrity") {
-          Assert.Throws<NotSupportedException>(() => descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", replacement)]));
-        } else {
-          descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", replacement)]);
-        }
-      }
-      if (oracle.Variant == "integrity") {
-        using var unchanged = File.OpenRead(copy);
-        Assert.That(Convert.ToHexStringLower(SHA256.HashData(unchanged)), Is.EqualTo(oracle.ImageSha256));
-        return;
+        // On an integrity stream the overwrite also rewrites the per-cluster checksums in the
+        // file's directory row.
+        descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", replacement)]);
       }
       var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_over_x_" + Guid.NewGuid().ToString("N")[..8]);
       try {
@@ -166,16 +159,21 @@ public sealed class RefsWindowsOracleTests {
     var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_rm_x_" + Guid.NewGuid().ToString("N")[..8]);
     try {
       var descriptor = new RefsFormatDescriptor();
-      // Integrity streams, and the 64 KiB-cluster allocator rows (compact, not bitmaps), are
-      // refused; the refusal leaves the image unchanged.
-      if (oracle.Variant is "integrity" or "cluster64k") {
-        using var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite);
-        Assert.Throws<NotSupportedException>(() => descriptor.Remove(stream, ["remove-me.bin"]));
-        stream.Position = 0;
-        Assert.That(Convert.ToHexStringLower(SHA256.HashData(stream)), Is.EqualTo(oracle.ImageSha256));
-        return;
+      // The 4 KiB volumes must apply; elsewhere a clean refusal (image unchanged) is allowed.
+      using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
+        if (oracle.Variant == "default") {
+          descriptor.Remove(stream, ["remove-me.bin"]);
+        } else {
+          try {
+            descriptor.Remove(stream, ["remove-me.bin"]);
+          } catch (NotSupportedException refused) {
+            TestContext.Out.WriteLine($"{volume}: remove refused: {refused.Message}");
+            stream.Position = 0;
+            Assert.That(Convert.ToHexStringLower(SHA256.HashData(stream)), Is.EqualTo(oracle.ImageSha256));
+            return;
+          }
+        }
       }
-      using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) descriptor.Remove(stream, ["remove-me.bin"]);
       using (var stream = File.OpenRead(copy)) descriptor.Extract(stream, outDir, null, null);
       Assert.Multiple(() => {
         Assert.That(File.Exists(Path.Combine(outDir, "remove-me.bin")), Is.False);
@@ -209,10 +207,11 @@ public sealed class RefsWindowsOracleTests {
             stream.Position = 0;
             try {
               descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", replacement)]);
-            } catch (NotSupportedException) {
+            } catch (NotSupportedException refused) {
+              TestContext.Out.WriteLine($"{volume}: resize to {length} refused: {refused.Message}");
               stream.Position = 0;
               Assert.That(SHA256.HashData(stream), Is.EqualTo(before), "a refused resize leaves the image unchanged");
-              return;
+              continue;
             }
           } else {
             descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", replacement)]);
