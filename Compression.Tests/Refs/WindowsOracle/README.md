@@ -39,15 +39,16 @@ nothing else. Windows Server 2022 and 2025, at 4 KiB and 64 KiB clusters, mount 
 read-only and read-write, hash the file as written, pass `refsutil salvage -QS` and log no ReFS
 error. On the integrity-stream volumes the overwrite is refused and the image is left unchanged.
 
-Later runs (45433556177, 45441757023, 45447908924) judged the edits made in place the same way:
+Later runs (45433556177, 45441757023, 45447908924, 45479960118, 45485070018) judged the edits made in place the same way:
 
 | Edit | 3.7 4 KiB | 3.7 64 KiB | 3.7 integrity | 3.14 4 KiB | 3.14 64 KiB | 3.14 integrity |
 | --- | --- | --- | --- | --- | --- | --- |
-| Overwrite, same length | accepted | accepted | refused | accepted | accepted | refused |
+| Overwrite, same length | accepted | accepted | accepted (checksums rewritten) | accepted | accepted | accepted (checksums rewritten) |
 | Rename (also to a longer name) | accepted | accepted | accepted | accepted | accepted | accepted |
-| Remove | accepted | refused (compact allocator row) | refused | accepted | refused | refused |
-| Replace, longer | accepted | refused | refused | refused (own object) | refused | refused |
-| Replace, shorter | accepted | accepted | refused | refused (own object) | refused | refused |
+| Remove | accepted | accepted | accepted | accepted | refused (Windows did not mount it) | accepted |
+| Replace, longer (new run) | accepted | accepted | refused | refused (leaf full) | refused | refused |
+| Replace, slightly longer (run extended) | accepted | accepted | refused | refused | refused | refused |
+| Replace, shorter | accepted | accepted | refused | accepted | accepted | refused |
 
 "Accepted" means Windows mounted the edited volume read-only and read-write, listed every file
 with the expected hash, passed `refsutil salvage -QS` and logged no ReFS warning or error.

@@ -69,6 +69,29 @@ internal sealed class RefsAllocatorWriter {
     return this.Find(allocatorLcn) != null;
   }
 
+  /// <summary>
+  /// The Medium Allocator of a volume Windows formatted: keyed by physical LCN, its rows lying
+  /// within the volume's clusters, and showing every one of <paramref name="allocatedClusters"/>
+  /// allocated. Null when the volume's allocator is not of that shape.
+  /// </summary>
+  public static RefsAllocatorWriter? WindowsMedium(RefsMetadataReader metadata, RefsMetadataGraph graph, IReadOnlyCollection<ulong> allocatedClusters) {
+    // Windows Server 2025 refused to mount a ReFS 3.14 volume with 64 KiB clusters after this
+    // writer freed a cluster there (3.7 at 64 KiB, and both versions at 4 KiB, accept it), so
+    // that combination is not written.
+    if (metadata.Header.MinorVersion >= 14 && metadata.ClusterSize >= 65536) return null;
+    try {
+      var writer = new RefsAllocatorWriter(metadata, graph, RefsAllocatorTier.Medium, physicalAddressing: true);
+      if (writer._rows.Count == 0 || writer.CoverageEnd > metadata.Header.TotalClusters) return null;
+      if (!allocatedClusters.All(writer.CoversPhysical) || !writer.AreAllocated(allocatedClusters, expectedAllocated: true)) return null;
+      return writer;
+    } catch (Exception e) when (e is InvalidOperationException or InvalidDataException) {
+      return null;
+    }
+  }
+
+  /// <summary>One past the highest allocator LCN any row covers.</summary>
+  public ulong CoverageEnd => this._rows.Count == 0 ? 0 : this._rows.Max(static r => r.Start + r.Length);
+
   /// <summary>The physical range of the row that covers <paramref name="physicalLcn"/>, for a physically addressed allocator; null otherwise.</summary>
   public (ulong Start, ulong Length)? RangeOfPhysical(ulong physicalLcn) {
     if (!this._physicalAddressing) return null;
@@ -261,7 +284,7 @@ internal sealed class RefsAllocatorWriter {
     if (index >= rangeLength) throw new InvalidDataException("ReFS allocator index lies outside its row range.");
     var flags = BinaryPrimitives.ReadUInt16LittleEndian(value.AsSpan(0x12, 2));
     return flags switch {
-      PartialFlag when value.Length >= BitmapOffset + BitmapBytes
+      PartialFlag when value.Length >= BitmapOffset + (int)((rangeLength + 7) / 8)
         => (value[BitmapOffset + checked((int)(index >> 3))] & (1 << checked((int)(index & 7)))) != 0,
       CompactAllocatedFlag => true,
       FullyFreeFlag or FullyFreeAlternativeFlag => false,
@@ -281,8 +304,8 @@ internal sealed class RefsAllocatorWriter {
     var bitmap = new byte[BitmapBytes];
     var flags = BinaryPrimitives.ReadUInt16LittleEndian(original.AsSpan(0x12, 2));
     switch (flags) {
-      case PartialFlag when original.Length >= BitmapOffset + BitmapBytes:
-        original.AsSpan(BitmapOffset, BitmapBytes).CopyTo(bitmap);
+      case PartialFlag when original.Length >= BitmapOffset + (int)((rangeLength + 7) / 8):
+        original.AsSpan(BitmapOffset, Math.Min(BitmapBytes, original.Length - BitmapOffset)).CopyTo(bitmap);
         break;
       case CompactAllocatedFlag:
         bitmap.AsSpan().Fill(0xFF);
@@ -312,7 +335,7 @@ internal sealed class RefsAllocatorWriter {
         throw new InvalidOperationException("ReFS allocator row would change between compact and bitmap form; that rewrite is not made.");
       var row = original.ToArray();
       BinaryPrimitives.WriteUInt16LittleEndian(row.AsSpan(0x10, 2), checked((ushort)free));
-      bitmap.CopyTo(row, BitmapOffset);
+      bitmap.AsSpan(0, row.Length - BitmapOffset).CopyTo(row.AsSpan(BitmapOffset));
       return row;
     }
     if (used > ushort.MaxValue || free > ushort.MaxValue)
@@ -343,7 +366,7 @@ internal sealed class RefsAllocatorWriter {
     var free = BinaryPrimitives.ReadUInt16LittleEndian(value.AsSpan(0x10, 2));
     var flags = BinaryPrimitives.ReadUInt16LittleEndian(value.AsSpan(0x12, 2));
     if (flags == PartialFlag) {
-      if (value.Length < BitmapOffset + BitmapBytes) return false;
+      if (value.Length < BitmapOffset + (int)((rangeLength + 7) / 8)) return false;
       var popcount = 0UL;
       for (ulong i = 0; i < rangeLength; ++i)
         if ((value[BitmapOffset + (int)(i >> 3)] & (1 << (int)(i & 7))) != 0) ++popcount;
