@@ -13,9 +13,11 @@ against pools that OpenZFS 2.2.2 itself created (`Compression.Tests/Zfs/Referenc
 whose files are compared byte for byte with the SHA-256 sums taken from the mounted
 pool.
 
-All integers are little-endian on the pools this reader accepts. A pool whose
-uberblock magic reads byte-swapped was written on a big-endian host; it is refused,
-not guessed at.
+A host writes every structure in its own byte order and marks each block pointer with it (bit
+63 of the properties word, 1 = little-endian); the uberblock and the label-area checksums carry
+no mark but read byte-swapped. The sections below describe little-endian pools. A pool whose
+uberblock magic reads byte-swapped was written on a big-endian host and is read as described
+in *Big-endian pools* at the end; it is not edited.
 
 ## Devices and labels
 
@@ -811,3 +813,34 @@ same `dsize`.
 
 Mirror, replacing and spare vdevs hold full copies on every child. Indirect (removed) vdevs are
 refused; dRAID is described above.
+
+## Big-endian pools
+
+OpenZFS reads a block written in the other byte order by swapping it, after decompression,
+according to the object type its block pointer names, and so does the reader. Indirect blocks
+(level > 0) are arrays of block pointers and swap as 64-bit words. Level-0 blocks swap by the
+kind the type table in OpenZFS `dmu.c` (`dmu_ot[]`) gives each legacy type, or by the low five bits
+of a new-style type (bit 7 set): bytes (file data, packed nvlists, system attributes), 16-, 32- or
+64-bit words, ZAP, dnodes, object sets, old znodes, ACLs.
+
+| Kind | What is swapped |
+| --- | --- |
+| ZAP | a micro-ZAP: the three header words and each entry's value (64-bit) and collision differentiator (32-bit), names untouched; a fat-ZAP leaf: block type, prefix, magic, the 16-bit header counters, the 16-bit hash table, and in each 24-byte chunk the entry fields (16-bit links and counts, 32-bit cd, 64-bit hash) or the free/array chunk's 16-bit link (array bytes are untouched: ZAP integers are big-endian on every host); any other ZAP block (header, pointer table) as 64-bit words |
+| dnodes | each in-use dnode (free slots read as zeros): data block size and bonus length (16-bit), max block id and used (64-bit), its block pointers as 64-bit words, the bonus area by the bonus type's kind, the spill pointer; large dnodes skip their extra slots |
+| object set | the meta-dnode, the intent-log header (64-bit words), type and flags, and the user/group/project accounting dnodes when the block is large enough to hold them |
+| old znode | its 64-bit fields (times, generation, mode, size, parent, links, xattr, rdev, flags, uid, gid, zap, padding) and the ACL header; ACL entries are left as stored (not read) |
+
+System-attribute containers (bonus buffers and spill blocks) are not swapped with their block:
+their header's magic reads swapped, and then the header's layout word and lengths are read
+big-endian and each attribute is swapped by the kind its registration records (bits 16-23 of
+the registry value: 64-, 32-, 16-bit words, bytes, or an ACL, left as stored).
+
+Fletcher-2 and Fletcher-4 run over big-endian words for such a block; SHA-256 is stored the same
+way on either host. An uberblock is five 64-bit words and the root block pointer; its
+`zio_eck_t` tail has the magic, the verifier (the device offset) and the digest words in
+big-endian order. A gang header is three block pointers whose tail magic says the same.
+Embedded payloads need nothing extra: the payload bytes come out of the swapped pointer's words.
+
+Checked on two pools OpenZFS 2.2.2 wrote on Ubuntu 24.04 s390x under QEMU (feature pool with
+lz4, a child dataset and a snapshot; version 28 pool with ZPL version 4 znodes): every file,
+directory and symlink reads as the guest listed it. Encrypted big-endian datasets are refused.

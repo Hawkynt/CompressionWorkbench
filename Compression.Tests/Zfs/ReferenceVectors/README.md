@@ -29,12 +29,16 @@ the manifests together; the tests only ever compare the two.
 | `cwbenc` | 1 × 64 MiB | dataset `secret` with `encryption=aes-256-gcm` (passphrase `cwb-passphrase`) beside a plain file; without the key the reader must refuse the dataset, not guess |
 | `cwbcrypt` | 1 × 64 MiB, ashift 9 | native encryption: `gcm256` (aes-256-gcm, passphrase `gcm-256-passphrase`, lz4) with child `gcm256/child` sharing its key (gzip), `ccm128` (aes-128-ccm, raw key `0123456789abcdef0123456789abcdef`, zstd), `gcm192` (aes-192-gcm, hex key `00112233445566778899aabbccddeeff` twice, off, `recordsize=16K`); each with text, random, sparse, empty, embedded-sized files, a fat-ZAP directory, links; snapshot `gcm256@s1`; manifest taken with the keys loaded |
 | `cwbzvol` | 1 × 64 MiB, ashift 9 | volumes (zvols): `vol` (8 MiB, `volblocksize=8K`, lz4: text, random bytes, a zeroed run) and its snapshot `vol@s1` taken before part of it was overwritten (`snapdev=visible`), `sparse` (32 MiB, `-s`, 16K, compression off: two islands), `fs/vol2` (2 MiB, 4K, gzip) below the file system `fs`; written through `/dev/zvol`, then `zpool trim` punched the freed blocks out of the file vdev; manifest = SHA-256 and length of each `/dev/zvol` device |
+| `bebe` | 1 × 64 MiB file vdev, ashift 9, pool version 5000, **written by a big-endian host** | lz4, child dataset `bebe/sub`, snapshot `bebe@first` taken before `hello.txt` changed; text, random, empty, sparse and embedded-sized files, a 700-entry fat-ZAP directory, short and long symlinks, a hard link, owner 1234:4321 |
+| `beold` | 1 × 64 MiB file vdev, ashift 9, pool version 28, ZPL version 4, **written by a big-endian host** | the same tree on an old pool: `znode_phys_t` bonus buffers, lzjb |
 
 ## Files
 
 | File | Bytes | SHA-256 |
 | --- | ---: | --- |
 | `cwbcrypt.img.gz` | 2405311 | `f3deb9f908cb853511a9898cf2d24879a1ab015c172d822dcba5fc450be33b40` |
+| `bebe.img.gz` | 349926 | `e6b3b7fa1669d269b18735223fd6279e91a10c4af514a3cb2e35d5991fd8b876` |
+| `beold.img.gz` | 491251 | `35ed85e672adbabb8129595bc4996330a316abdb4def996cec2bcdbd91f955f6` |
 | `cwbzvol.img.gz` | 3453468 | `bdd30a009c1014222dced174d963f6522408dd2b102e92a99c44f0bba835cdcf` |
 | `cwbenc.img.gz` | 246606 | `9b8a896b91fce3345697945e60d86dbb39dd404ede8ca19ab41980a97bf5eef4` |
 | `cwbgang.img.gz` | 461623 | `06b303498f65d611ee07a7a966d44592a58a7c15a932585388a1529f5aba751e` |
@@ -51,3 +55,13 @@ the manifests together; the tests only ever compare the two.
 | `cwbstripe-0.img.gz` | 147073 | `6d1bc5e944171a66aac4c6d4990eee489bfbc6e59e00c1bf09aedbe523b39471` |
 | `cwbstripe-1.img.gz` | 266443 | `17d5f5057d30ace136a02ee858b62247b19822f441dbd9cbb93b5f0548b23cf9` |
 | `cwbv28.img.gz` | 402574 | `69c2d145da124f19c686aa3daf06158cc55cbbea46b8723fb911c72123e43c3b` |
+
+## Big-endian pools
+
+`bebe` and `beold` were written by OpenZFS `zfs-2.2.2-0ubuntu9.5` on Ubuntu 24.04 **s390x** (kernel
+`6.8.0-147-generic`, big-endian), booted under `qemu-system-s390x` (TCG, 2 GiB) straight into
+`generate-be-inner.sh` (2026-11-24). `generate-be-prep.sh` installs `zfsutils-linux` into the
+Ubuntu s390x cloud image (through qemu-user) and `generate-be.sh` boots it. The pools were made on
+file vdevs, filled, snapshotted, listed with the same manifest format as above and exported inside
+the guest, then copied onto the disks the host keeps. Every block in them was written in
+big-endian byte order.
