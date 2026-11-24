@@ -17,8 +17,10 @@ public sealed record ZfsDataset(string Name, string Path, string Kind, string? R
 /// </summary>
 /// <remarks>
 /// Read-only by design. Natively encrypted datasets are read with their key material (every
-/// AES-GCM/CCM suite; passphrase, hex and raw keys), every MAC checked; without it, as volumes
-/// (zvols) and big-endian pools, they are reported and refused rather than guessed at. Checksums are verified for Fletcher-2,
+/// AES-GCM/CCM suite; passphrase, hex and raw keys), every MAC checked; without it, as big-endian
+/// pools, they are reported and refused rather than guessed at. Volumes (zvols) are listed as one
+/// file each, at the dataset's path, holding the device's bytes; their snapshots sit beside them as
+/// <c>&lt;path&gt;@&lt;snapshot&gt;</c>. Checksums are verified for Fletcher-2,
 /// Fletcher-4, SHA-256 and SHA-512; the salted ones (Skein, Edon-R, BLAKE3) are read
 /// unverified and named in <see cref="UnverifiedChecksums"/>.
 /// </remarks>
@@ -156,8 +158,9 @@ public sealed class ZfsReader : IDisposable {
         this.WalkZpl(os, name, path);
         break;
       case ZfsConstants.OstZvol:
-        this._datasets.Add(new(name, path, "volume", "volumes (zvols) are block devices, not listed as files"));
-        return;
+        this._datasets.Add(new(name, path, isSnapshot ? "snapshot" : "volume", null));
+        this.AddVolume(os, name, path);
+        break;
       default:
         this._datasets.Add(new(name, path, kind, $"object set type {os.Type} is not a filesystem"));
         return;
@@ -165,6 +168,11 @@ public sealed class ZfsReader : IDisposable {
 
     if (isSnapshot || snapshots == 0) return;
     foreach (var snap in mos.Zap(snapshots, $"snapshots of {name}").OrderBy(s => s.Name, StringComparer.Ordinal)) {
+      if (os.Type == ZfsConstants.OstZvol) {
+        // A volume has no directory to hold .zfs; its snapshots sit beside it as /dev/zvol names them.
+        this.Guarded(name + "@" + snap.Name, () => this.LoadDataset(snap.Value, name + "@" + snap.Name, path + "@" + snap.Name, isSnapshot: true));
+        continue;
+      }
       var snapPath = Combine(Combine(Combine(path, ".zfs"), "snapshot"), snap.Name);
       this.Guarded(name + "@" + snap.Name, () => {
         this.AddDirectory(snapPath, name + "@" + snap.Name);
@@ -184,6 +192,33 @@ public sealed class ZfsReader : IDisposable {
       this.AddDirectory(rootPath, dataset, ReadAttributes(context, rootDnode).ModifiedUtc);
     }
     this.WalkDirectory(context, rootObject, rootPath, [rootObject], 0);
+  }
+
+  /// <summary>
+  /// A volume (zvol) is one object holding the device's bytes — object 1, <c>DMU_OT_ZVOL</c> — and
+  /// a ZAP of properties — object 2, whose <c>size</c> is the device length. It is listed as one
+  /// file at the dataset's path, holding exactly what <c>/dev/zvol/&lt;dataset&gt;</c> reads:
+  /// holes and blocks past the last written one come out as zeros.
+  /// </summary>
+  private void AddVolume(ZfsObjectSet os, string dataset, string path) {
+    var properties = os.Zap(ZfsConstants.ZvolPropertiesObject, $"volume properties of {dataset}");
+    var size = properties.FirstOrDefault(p => p.Name == "size")
+      ?? throw new InvalidDataException($"ZFS: volume {dataset} records no size.");
+    var data = os.RequireDnode(ZfsConstants.ZvolDataObject, $"volume data of {dataset}");
+    if (data.Type != ZfsConstants.OtZvol)
+      throw new InvalidDataException($"ZFS: object {ZfsConstants.ZvolDataObject} of volume {dataset} is not volume data.");
+    if (size.Value > long.MaxValue) throw new InvalidDataException($"ZFS: volume {dataset} is larger than this reader lists.");
+    var entry = new ZfsEntry {
+      Name = path, Size = (long)size.Value, Mode = (uint)(ZfsConstants.ModeRegular | 0x1B0), Dataset = dataset,
+      ObjectId = ZfsConstants.ZvolDataObject, ObjectSet = os, Dnode = data,
+    };
+    // The walk named the dataset's path a directory before it knew what the dataset holds.
+    if (this._byPath.TryGetValue(path, out var placeholder) && this._entries[placeholder].IsDirectory &&
+        !this._entries.Any(e => e.Name.StartsWith(path + "/", StringComparison.Ordinal))) {
+      this._entries[placeholder] = entry;
+      return;
+    }
+    this.Add(entry);
   }
 
   private sealed record ZplContext(ZfsObjectSet ObjectSet, ZfsSystemAttributes? Attributes, string Dataset);

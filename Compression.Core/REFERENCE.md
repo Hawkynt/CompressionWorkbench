@@ -182,7 +182,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesBlockCipher`](#aesblockcipher) · [`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`BlockEncryptor128`](#blockencryptor128) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`Eax`](#eax) · [`Eax.SpanAction`](#eaxspanaction) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`ManagedAes`](#managedaes) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Scrypt`](#scrypt) · [`Serpent`](#serpent) · [`TripleDes`](#tripledes) · [`Twofish`](#twofish)
+[`AesBlockCipher`](#aesblockcipher) · [`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`BlockEncryptor128`](#blockencryptor128) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`ChaCha20`](#chacha20) · [`Eax`](#eax) · [`Eax.SpanAction`](#eaxspanaction) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`ManagedAes`](#managedaes) · [`Poly1305`](#poly1305) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Scrypt`](#scrypt) · [`Serpent`](#serpent) · [`TripleDes`](#tripledes) · [`Twofish`](#twofish)
 
 #### `AesBlockCipher`
 
@@ -257,6 +257,7 @@ Blowfish symmetric block cipher. 64-bit block size, 1–56 byte key, 16-round Fe
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Blowfish` | `Blowfish(ReadOnlySpan<byte> key)` | Initializes a new `Blowfish` instance with the given key. |
+| `HasWeakKey` | `bool HasWeakKey { get; }` | Whether the key schedule left a value twice in one S-box — what libgcrypt rejects as a weak Blowfish key, so software built on it cannot use such a key. |
 | `DecryptCbc` | `byte[] DecryptCbc(ReadOnlySpan<byte> data, ReadOnlySpan<byte> iv)` | Decrypts data using Blowfish-CBC with PKCS7 unpadding. |
 | `Decrypt` | `void Decrypt(Span<byte> block)` | Decrypts an 8-byte block in-place (big-endian). |
 | `EncryptCbc` | `byte[] EncryptCbc(ReadOnlySpan<byte> data, ReadOnlySpan<byte> iv)` | Encrypts data using Blowfish-CBC with PKCS7 padding. |
@@ -285,6 +286,19 @@ The CAST-128 (CAST5) block cipher (Carlisle Adams), 64-bit blocks and keys of 40
 | `MinKeySize` | `const int MinKeySize` | The smallest key size in bytes (40 bits). |
 | `Decrypt` | `void Decrypt(Span<byte> block)` | Decrypts one 8-byte block in place. |
 | `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 8-byte block in place. |
+
+#### `ChaCha20`
+
+The ChaCha20 stream cipher of RFC 8439 §2.1–2.4: a 256-bit key, a 32-bit block counter and a 96-bit nonce make a 16-word state; twenty rounds (ten column/diagonal double rounds) plus the input state give a 64-byte keystream block, XOR-ed onto the data. Encryption and decryption are the same operation.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockSize` | `const int BlockSize` | Keystream block length in bytes. |
+| `KeySize` | `const int KeySize` | Key length in bytes. |
+| `NonceSize` | `const int NonceSize` | Nonce length in bytes (RFC 8439's 96-bit nonce). |
+| `Block` | `static void Block(ReadOnlySpan<byte> key, uint counter, ReadOnlySpan<byte> nonce, Span<byte> output)` | Computes one 64-byte keystream block (the RFC's `chacha20_block`). |
+| `Transform` | `static void Transform(ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv, Span<byte> data)` | XORs the keystream onto `data`, taking the 16-byte initial block of `iv` as "counter (little-endian word) ‖ 96-bit nonce". |
+| `Transform` | `static void Transform(ReadOnlySpan<byte> key, uint counter, ReadOnlySpan<byte> nonce, Span<byte> data)` | XORs the keystream that starts at block `counter` onto `data` in place (the RFC's `chacha20_encrypt`). |
 
 #### `Eax`
 
@@ -409,6 +423,19 @@ Inherits `Aes`. Implements `IDisposable`.
 | `TryEncryptCbcCore` | `protected override bool TryEncryptCbcCore(ReadOnlySpan<byte> plaintext, ReadOnlySpan<byte> iv, Span<byte> destination, PaddingMode paddingMode, out int bytesWritten)` |  |
 | `TryEncryptCfbCore` | `protected override bool TryEncryptCfbCore(ReadOnlySpan<byte> plaintext, ReadOnlySpan<byte> iv, Span<byte> destination, PaddingMode paddingMode, int feedbackSizeInBits, out int bytesWritten)` |  |
 | `TryEncryptEcbCore` | `protected override bool TryEncryptEcbCore(ReadOnlySpan<byte> plaintext, Span<byte> destination, PaddingMode paddingMode, out int bytesWritten)` |  |
+
+#### `Poly1305`
+
+The Poly1305 one-time authenticator of RFC 8439 §2.5: the message, cut into 16-byte blocks each with a 1 bit appended, is evaluated as a polynomial in the clamped half `r` of the 32-byte key modulo 2¹³⁰−5, and the other half `s` is added modulo 2¹²⁸ to give a 16-byte tag.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Poly1305` | `Poly1305(ReadOnlySpan<byte> key)` | Keys an authenticator; `key` is `r ‖ s`, 32 bytes. |
+| `KeySize` | `const int KeySize` | Key length in bytes. |
+| `TagSize` | `const int TagSize` | Tag length in bytes. |
+| `ComputeTag` | `static byte[] ComputeTag(ReadOnlySpan<byte> key, ReadOnlySpan<byte> message)` | The tag of `message` under `key`. |
+| `Final` | `void Final(Span<byte> tag)` | Finishes the message and writes the 16-byte tag. |
+| `Update` | `void Update(ReadOnlySpan<byte> data)` | Feeds more of the message. |
 
 #### `Rar15Cipher`
 

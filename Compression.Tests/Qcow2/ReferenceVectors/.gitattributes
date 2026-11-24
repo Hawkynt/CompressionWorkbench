@@ -1,0 +1,5 @@
+# Fixture bytes are the test: never let a checkout rewrite line endings.
+*.img -text
+*.raw -text
+*.qcow2 -text
+*.gz -text

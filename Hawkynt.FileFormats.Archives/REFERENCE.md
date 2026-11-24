@@ -14079,7 +14079,7 @@ Reader for a DAR archive (archive formats 8.1 through 11.3, each verified on arc
 | `AlgorithmName` | `static string AlgorithmName(char a)` | A display name for a catalogue compression letter. |
 | `CopyData` | `void CopyData(DarEntry entry, Stream destination)` | Streams the data of `entry` into `destination` through the escape, compression and sparse layers, in constant memory whatever its size, and checks its size and checksum at the end. |
 | `ReadData` | `byte[] ReadData(DarEntry entry)` | Reads, decompresses, expands and checks the data of `entry`. |
-| `Read` | `static DarArchive Read(Stream archive)` | Reads the archive-level stream (slice headers and trailers already removed). |
+| `Read` | `static DarArchive Read(Stream archive, string password = null, int clearBlockSize = 10240)` | Reads the archive-level stream (slice headers and trailers already removed). |
 
 #### `DarEntry`
 
@@ -14129,15 +14129,17 @@ What a catalogue entry describes (the low five bits of its signature byte).
 
 #### `DarFormatDescriptor`
 
-DAR (Disk ARchive), the archive format of `dar`/libdar. Every slice file starts with a slice header (`DarSliceHeader`) and ends with a one-byte trailer; the bytes between, glued across all slices, hold a version header, the file data, the catalogue and, at the end, two terminators that lead back to the version trailer and the catalogue (`DarArchive`). Reading: archive formats 8.1 to 11.3, single or multi-slice (the sibling `basename.N.dar` files are picked up from the slice's directory), with or without tape marks, uncompressed or gzip, bzip2, xz, zstd, lz4 or lzo compressed in streaming or block mode, sparse files expanded, hard links resolved, every data and catalogue checksum checked, members of any size streamed to disk. Directories and regular files are extracted; symlinks, devices, pipes and sockets are listed but not materialised. Encrypted archives, unknown compression and newer formats are refused: listing then falls back to the raw slice (`FULL.dar`) and a `metadata.ini` naming the reason, and never throws.Writing: format 11.3, stored or compressed with gzip, bzip2, xz, zstd or lz4, in one slice or cut at `SliceSizeOption` / `FirstSliceSizeOption` (dar's `-s` / `-S`), with or without `TapeMarksOption`; file data is streamed, symlinks and uid/gid/permissions/times are kept. dar 2.7.13 and 2.8.6 accept it (`dar -t`, also sequentially) and restore the input byte for byte (see `Compression.Tests/Dar/DarExternalConformanceTests.cs`).Layout derived from dar's documentation and from archives written by dar 2.4.24 to 2.8.6: `docs/DAR-ON-DISK.md`.
+DAR (Disk ARchive), the archive format of `dar`/libdar. Every slice file starts with a slice header (`DarSliceHeader`) and ends with a one-byte trailer; the bytes between, glued across all slices, hold a version header, the file data, the catalogue and, at the end, two terminators that lead back to the version trailer and the catalogue (`DarArchive`). Reading: archive formats 8.1 to 11.3, single or multi-slice (the sibling `basename.N.dar` files are picked up from the slice's directory), with or without tape marks, uncompressed or gzip, bzip2, xz, zstd, lz4 or lzo compressed in streaming or block mode, sparse files expanded, hard links resolved, every data and catalogue checksum checked, members of any size streamed to disk. Directories and regular files are extracted; symlinks, devices, pipes and sockets are listed but not materialised. Password-encrypted archives (scrambling, Blowfish, AES-256, Twofish-256, Serpent-256, Camellia-256 under argon2 or PBKDF2) are read with their password; GnuPG-encrypted archives, unknown compression and newer formats are refused: listing then falls back to the raw slice (`FULL.dar`) and a `metadata.ini` naming the reason, and never throws.Writing: format 11.3, stored or compressed with gzip, bzip2, xz, zstd or lz4, in one slice or cut at `SliceSizeOption` / `FirstSliceSizeOption` (dar's `-s` / `-S`), with or without `TapeMarksOption`, encrypted with a password like dar's `-K`; file data is streamed, symlinks and uid/gid/permissions/times are kept. dar 2.7.13 and 2.8.6 accept it (`dar -t`, also sequentially) and restore the input byte for byte (see `Compression.Tests/Dar/DarExternalConformanceTests.cs` and `DarEncryptionOracleTests.cs`).Editing: files are added, replaced and removed in place, kept entries carried over byte for byte under the archive's own settings (`DarEditor`); dar tests and restores the result (`DarEditOracleTests.cs`).Layout derived from dar's documentation and from archives written by dar 2.4.24 to 2.8.6: `docs/DAR-ON-DISK.md`.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DarFormatDescriptor` | `DarFormatDescriptor()` |  |
 | `CompressionBlockSizeOption` | `const string CompressionBlockSizeOption` | Option key: dar's block-mode compression block size (`-z algo:level:size`). |
 | `FirstSliceSizeOption` | `const string FirstSliceSizeOption` | Option key: size of the first slice when it differs (dar's `-S`). |
+| `KdfHashOption` | `const string KdfHashOption` | Option key: the key-derivation hash for the block ciphers (dar's `--kdf-param :hash`): argon2 (the default), sha512, sha1 or md5. |
+| `KdfIterationsOption` | `const string KdfIterationsOption` | Option key: the key-derivation iteration count (dar's `--kdf-param count`); 10 000 for argon2 and 200 000 for the others by default, as dar. |
 | `SliceSizeOption` | `const string SliceSizeOption` | Option key: size of every slice file in bytes (dar's `-s`); `k`, `M`, `G` and `T` suffixes count in 1024s. Empty or 0 writes one slice. |
 | `TapeMarksOption` | `const string TapeMarksOption` | Option key: write tape marks, the escape layer dar's sequential reading needs (dar's default; `false` is `dar -at`). |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
@@ -14153,9 +14155,13 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`,
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files in place (`DarEditor`); an encrypted archive needs the password overload. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, ArchiveMutationOptions options)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes entries in place, a directory with everything below it (`DarEditor`). |
+| `Remove` | `void Remove(Stream archive, string[] entryNames, ArchiveMutationOptions options)` |  |
 
 #### `DarSavedStatus`
 
@@ -14211,9 +14217,12 @@ Implements `IEquatable<DarVersionHeader>`.
 | `ChecksumWidth` | `const int ChecksumWidth` | Width of the version header's checksum. |
 | `Algorithm` | `char Algorithm { get; init; }` | Compression letter (`n`, `z`, `y`, `x`, `d`, `q`, `l`...). |
 | `BlockSize` | `ulong BlockSize { get; init; }` | Compression block size; 0 for streaming compression. |
+| `Cipher` | `char Cipher { get; init; }` | The cipher letter (`s` scrambling, `b` Blowfish, `a` AES-256, `t` Twofish-256, `p` Serpent-256, `c` Camellia-256); NUL when not encrypted or, before format 9, not recorded. |
 | `Flags` | `uint Flags { get; init; }` | The flag field with continuation bits removed. |
+| `HasCryptedKey` | `bool HasCryptedKey { get; }` | Whether the key is stored encrypted for GnuPG recipients (flag 0x04). |
 | `HasTapeMarks` | `bool HasTapeMarks { get; }` | Whether escape marks (tape marks) are interleaved with the data. |
 | `InitialOffset` | `ulong InitialOffset { get; init; }` | Where file data starts in the archive; 0 when not recorded. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Whether the archive is encrypted (flag 0x20). |
 | `Major` | `int Major { get; init; }` | Archive format major number. |
 | `Minor` | `int Minor { get; init; }` | Archive format minor number. |
 | `UserComment` | `string UserComment { get; init; }` | The user comment (dar writes `N/A` unless told otherwise). |
@@ -28056,7 +28065,7 @@ PEA (PeaZip's own format, version 1 revision 6): a 10-byte archive header, one s
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Modify` | `static void Modify(Stream archive, IEnumerable<Input> add, IEnumerable<string> remove, string password = null)` | Edits a single-file PEA archive in place: drops the `remove` paths (a folder with everything beneath it), then adds `add`, replacing files of the same path. Everything else stays as it was: the archive's compression, object, stream and volume checks, encryption kind and strength (under a fresh salt), system bytes, and every kept object's stored name, time and attributes. New objects go under the archive's common folder, their times in its encoding. |
+| `Modify` | `static void Modify(Stream archive, IEnumerable<Input> add, IEnumerable<string> remove, string password = null)` | Edits a PEA archive in place: drops the `remove` paths (a folder with everything beneath it), then adds `add`, replacing files of the same path. Everything else stays as it was: the archive's compression, object, stream and volume checks, encryption kind and strength (under a fresh salt), system bytes, and every kept object's stored name, time and attributes. New objects go under the archive's common folder, their times in its encoding. A volume set (a file stream named `name.000001.pea`, …) is rewritten as a set again: cut at the size of its first volume when it has more than one, the volumes it then needs written beside the first and the ones it no longer needs deleted. |
 | `ReadVolumes` | `static List<PeaEntry> ReadVolumes(IEnumerable<byte[]> volumes, string password = null)` | Reads and verifies a PEA archive from its volumes in order. Each volume ends with its own volume check over that volume's bytes; the archive is the volumes' contents, checks removed, joined. |
 | `Read` | `static List<PeaEntry> Read(Stream stream, string password = null)` | Reads and verifies a PEA archive. A file stream named like a volume (`name.000001.pea`) is read together with the volumes beside it, starting from volume 1. |
 | `VolumePath` | `static string VolumePath(string baseName, int number)` | The file name of volume `number` (1-based) of the set named `baseName`: `base.000001.pea`, `base.000002.pea`, … (at least six digits). |

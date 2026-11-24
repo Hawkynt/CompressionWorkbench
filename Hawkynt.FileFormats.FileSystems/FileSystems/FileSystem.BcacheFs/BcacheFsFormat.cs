@@ -27,10 +27,20 @@ internal static class BcacheFsFormat {
 
   internal const int SectorSize = 512;
 
-  /// <summary>Sectors per bucket, and therefore per b-tree node.</summary>
-  internal const int BucketSectors = 128;
+  /// <summary>Sectors per bucket this package's writer lays a device out with (64 KiB), and so per b-tree node.</summary>
+  internal const int WriterBucketSectors = 128;
 
-  internal const int BucketBytes = BucketSectors * SectorSize;
+  /// <summary>The most sectors one extent with a <c>bch_extent_crc32</c> entry can describe (7-bit size, stored minus one).</summary>
+  internal const int MaxCrc32ExtentSectors = 128;
+
+  /// <summary>
+  /// Sectors per bucket, and therefore per b-tree node, of the volume being written: the writer's
+  /// 64 KiB, or within <see cref="BcacheFsBucketGeometry.Use" /> the bucket size of the volume an
+  /// edit works on.
+  /// </summary>
+  internal static int BucketSectors => BcacheFsBucketGeometry.Sectors;
+
+  internal static int BucketBytes => BucketSectors * SectorSize;
 
   /// <summary>Where the primary superblock starts.</summary>
   internal const long PrimarySbSector = 8;
@@ -147,6 +157,7 @@ internal static class BcacheFsFormat {
   internal const int BtreeDirents = 2;
   internal const int BtreeXattrs = 3;
   internal const int BtreeAlloc = 4;
+  internal const int BtreeReflink = 7;
   internal const int BtreeSubvolumes = 8;
   internal const int BtreeSnapshots = 9;
   internal const int BtreeLru = 10;
@@ -163,6 +174,12 @@ internal static class BcacheFsFormat {
   internal const byte KeyExtent = 6;
   internal const byte KeyReservation = 7;
   internal const byte KeyInlineData = 17;
+  /// <summary><c>KEY_TYPE_reflink_p</c>: a stretch of a file whose bytes are an indirect extent's; the value starts with <c>idx</c> (u64), then the front and back pads (u32 each).</summary>
+  internal const byte KeyReflinkP = 15;
+  /// <summary><c>KEY_TYPE_reflink_v</c>: an indirect extent in the reflink tree, a refcount (u64) and then an extent's entries.</summary>
+  internal const byte KeyReflinkV = 16;
+  /// <summary><c>KEY_TYPE_indirect_inline_data</c>: a refcount (u64) and then the bytes themselves.</summary>
+  internal const byte KeyIndirectInlineData = 19;
   internal const byte KeyDirent = 10;
   internal const byte KeyXattr = 11;
   internal const byte KeyBtreePtrV2 = 18;
@@ -221,7 +238,7 @@ internal static class BcacheFsFormat {
   /// Where a volume's own structures end and its files may begin: the two front
   /// superblock slots, the journal, and one bucket for each b-tree.
   /// </summary>
-  internal const long MetadataEndBytes = (33L + 16 + 64) * BucketBytes;
+  internal static long MetadataEndBytes => (33L + 16 + 64) * BucketBytes;
 
   /// <summary>The root directory's inode number.</summary>
   internal const ulong RootInode = 4096;
@@ -415,6 +432,12 @@ internal static class BcacheFsFormat {
   /// <param name="Value">The value's bytes, which are padded out to a whole number of words.</param>
   internal readonly record struct Key(byte Type, Bpos Position, uint Size, byte[] Value) {
 
+    /// <summary>
+    /// The key's version: zero, except for an encrypted extent, whose nonce it is part of and
+    /// which therefore gets a fresh one from the volume's key-version counter.
+    /// </summary>
+    internal BcacheFsKeyVersion Version { get; init; }
+
     /// <summary>How many 64-bit words the key and its value occupy together.</summary>
     internal int U64s => BkeyU64s + (this.Value.Length + 7) / 8;
 
@@ -428,7 +451,9 @@ internal static class BcacheFsFormat {
     destination[0] = (byte)key.U64s;
     destination[1] = KeyFormatCurrent;
     destination[2] = key.Type;
-    // bversion stays zero: nothing here is written twice.
+    // bversion: zero but for an encrypted extent.
+    BinaryPrimitives.WriteUInt64LittleEndian(destination[4..], key.Version.Lo);
+    BinaryPrimitives.WriteUInt32LittleEndian(destination[12..], key.Version.Hi);
     BinaryPrimitives.WriteUInt32LittleEndian(destination[16..], key.Size);
     WriteBpos(destination[20..], key.Position);
     key.Value.CopyTo(destination[BkeyBytes..]);
@@ -466,9 +491,12 @@ internal static class BcacheFsFormat {
   /// <remarks>
   /// The sizes are stored one less than they are, so a one-sector extent records
   /// zero; the entry type is two, which is the second bit rather than the second
-  /// value.
+  /// value. Each size field is seven bits wide, so one such extent covers at most
+  /// <see cref="MaxCrc32ExtentSectors" />.
   /// </remarks>
   internal static ulong ExtentCrc32(int sectors, uint checksum) {
+    if (sectors is < 1 or > MaxCrc32ExtentSectors)
+      throw new ArgumentOutOfRangeException(nameof(sectors), sectors, "a crc32 extent entry holds 1 to 128 sectors.");
     var word = 2UL;                                   // entry type: crc32
     word |= (ulong)(sectors - 1) << 2;                // compressed size
     word |= (ulong)(sectors - 1) << 9;                // uncompressed size

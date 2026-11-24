@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Text;
 using Compression.Core.Deflate;
 using Compression.Core.Dictionary.Lz4;
 using Compression.Core.Streams;
@@ -30,9 +31,26 @@ internal static class DarWriter {
     public ulong Gid { get; init; }
     public DateTime? Changed { get; init; }
 
+    /// <summary>An entry carried over from an existing archive, written back exactly as it was stored.</summary>
+    public Kept? Kept { get; init; }
+
     /// <summary>A regular file whose content is <paramref name="data"/>.</summary>
     public static Item FromBytes(string path, byte[] data, ushort permissions, DateTime modified, DateTime accessed)
       => new(path, ItemKind.File, permissions, modified, accessed) { Open = () => new MemoryStream(data, writable: false), Length = data.LongLength };
+  }
+
+  /// <summary>
+  /// An entry carried over unchanged by an edit: its inode bytes as the catalogue stored them, and
+  /// for a file its stored (compressed, unescaped) data, size, data flags, compression letter and
+  /// checksum, copied rather than recompressed.
+  /// </summary>
+  public sealed record Kept(byte[] RawInode) {
+    public Func<Stream>? OpenStored { get; init; }
+    public ulong Size { get; init; }
+    public ulong StorageSize { get; init; }
+    public byte DataFlags { get; init; }
+    public char Algorithm { get; init; } = 'n';
+    public byte[]? Checksum { get; init; }
   }
 
   /// <summary>How to write.</summary>
@@ -47,7 +65,32 @@ internal static class DarWriter {
     /// <summary>Files up to this size are compressed in memory first, so they can be stored as-is
     /// when compression would not shrink them; larger ones are compressed on the fly.</summary>
     public int InMemoryLimit { get; init; } = 4 << 20;
+
+    /// <summary>Password encryption (dar's <c>-K</c>), or <see langword="null"/> for none.</summary>
+    public Encryption? Encryption { get; init; }
+
+    /// <summary>The in-place path the catalogue records (dar's <c>-R</c> root, or <c>.</c>).</summary>
+    public string InPlace { get; init; } = ".";
+
+    /// <summary>The root directory's inode bytes to record, or <see langword="null"/> for a fresh one.</summary>
+    public byte[]? RootInode { get; init; }
+
+    /// <summary>
+    /// Keep <see cref="BlockSize"/> as given, as an edit must: carried-over data was compressed under
+    /// it. An added xz or zstd file too large for one stream is then stored instead of switching
+    /// the whole archive to block mode.
+    /// </summary>
+    public bool FixedBlockSize { get; init; }
   }
+
+  /// <summary>
+  /// Password encryption (section 12): the cipher letter (<see cref="DarCrypto.CipherFor"/>), the
+  /// password, and for the block ciphers the key derivation (dar's <c>--kdf-param</c>: argon2 with
+  /// 10 000 iterations by default, as dar 2.7 built with libargon2 writes) and the clear bytes per
+  /// block (dar's <c>-#</c>).
+  /// </summary>
+  public sealed record Encryption(char Cipher, string Password, char KdfHash = 'a', ulong Iterations = 10000,
+      int ClearBlockSize = DarCrypto.DefaultClearBlockSize);
 
   /// <summary>Compression letters this writer produces, by method name.</summary>
   public static char AlgorithmFor(string? method) => (method ?? "stored").Trim().ToLowerInvariant() switch {
@@ -74,7 +117,7 @@ internal static class DarWriter {
       throw new ArgumentOutOfRangeException(nameof(settings), $"DAR compression block size must be between 1 and {MaxBlockSize} bytes.");
     if (settings.Algorithm == 'n')
       settings = settings with { BlockSize = 0 };
-    else if (settings.BlockSize == 0 && settings.Algorithm is 'x' or 'd'
+    else if (settings.BlockSize == 0 && settings.Algorithm is 'x' or 'd' && !settings.FixedBlockSize
              && items.Any(i => i.Kind == ItemKind.File && i.Length > SingleUnitLimit))
       // The xz and zstd encoders end their stream or frame every 64 MiB and start another, and
       // dar stops reading a unit at the first end: a file that large goes into blocks instead.
@@ -85,21 +128,44 @@ internal static class DarWriter {
 
     var headerFlags = (settings.TapeMarks ? DarArchive.FlagTapeMarks : 0) | (settings.BlockSize > 0 ? DarArchive.FlagCompressionBlockSize : 0);
     var header = new DarVersionHeader(11, 3, settings.Algorithm, "N/A", headerFlags, 0, (ulong)settings.BlockSize);
-    sink.Data(Bytes(header.Write));
+    DarBlockCipher? cipher = null;
+    byte[]? scramble = null;
+    if (settings.Encryption is { } encryption) {
+      var password = Encoding.UTF8.GetBytes(encryption.Password);
+      if (password.Length == 0)
+        throw new ArgumentException("DAR encryption needs a non-empty password.");
+      if (encryption.ClearBlockSize < 1)
+        throw new ArgumentOutOfRangeException(nameof(settings), "The DAR encryption block size must be positive.");
+      headerFlags |= DarArchive.FlagScrambled;
+      if (encryption.Cipher == 's')
+        scramble = password;
+      else {
+        var (kdf, key) = DarCrypto.NewKey(password, encryption.Cipher, encryption.KdfHash, encryption.Iterations);
+        cipher = DarCrypto.OpenCipher(encryption.Cipher, key);
+        headerFlags |= DarArchive.FlagKdf;
+        header = header with { Kdf = kdf };
+      }
+      header = header with { Flags = headerFlags, Cipher = encryption.Cipher };
+    }
+    // The header is written below the encryption and escape layers, in clear.
+    sink.Raw(Bytes(header.Write));
     var initialOffset = (ulong)sink.Position;
+    if (settings.Encryption is { } begin)
+      sink.BeginEncryption(cipher, scramble, begin.ClearBlockSize);
     if (settings.TapeMarks) {
       // Section 6: the data name and the in-place path open the sequential stream.
       sink.Mark((byte)'D');
       sink.Data(name);
       sink.Mark((byte)'P');
-      sink.Data(Bytes(s => DarPrimitives.WriteString(s, InPlace)));
+      sink.Data(Bytes(s => DarPrimitives.WriteString(s, settings.InPlace)));
     }
 
     WriteChildren(sink, root, settings);
 
     var catalogue = new MemoryStream();
     catalogue.Write(name);
-    DarPrimitives.WriteString(catalogue, InPlace);
+    DarPrimitives.WriteString(catalogue, settings.InPlace);
+    root.RootInode = settings.RootInode;
     WriteCatalogueDirectory(catalogue, root, "root");
     DarPrimitives.WriteChecksum(catalogue, DarPrimitives.Checksum(catalogue.GetBuffer().AsSpan(0, (int)catalogue.Length), 4));
 
@@ -109,15 +175,14 @@ internal static class DarWriter {
     var catalogueBytes = catalogue.ToArray();
     sink.Data(settings.Algorithm == 'n' ? catalogueBytes : Compress(settings.Algorithm, catalogueBytes, settings.Level, settings.BlockSize));
     sink.Raw(Bytes(s => DarPrimitives.WriteTerminator(s, catalogueAt)));
+    // An encrypted zone ends after the first terminator; the trailer and the last terminator are clear.
+    sink.EndEncryption();
     var trailerAt = (ulong)sink.Position;
     var trailerFlags = DarArchive.FlagInitialOffset | headerFlags;
     sink.Raw(Bytes((header with { Flags = trailerFlags, InitialOffset = initialOffset }).Write));
     sink.Raw(Bytes(s => DarPrimitives.WriteTerminator(s, trailerAt)));
     sink.Finish();
   }
-
-  // The -R root dar records; "." is accepted wherever an absolute path is.
-  private const string InPlace = ".";
 
   private static byte[] Bytes(Action<Stream> write) {
     using var ms = new MemoryStream();
@@ -170,7 +235,7 @@ internal static class DarWriter {
     switch (node.Kind) {
       case ItemKind.File:
         DarPrimitives.WriteInfinint(ms, (ulong)node.Size);
-        ms.WriteByte(0); // data flags
+        ms.WriteByte(node.DataFlags);
         ms.WriteByte((byte)node.Algorithm);
         break;
       case ItemKind.Directory:
@@ -192,8 +257,14 @@ internal static class DarWriter {
   }
 
   private static void WriteFile(DarArchiveSink sink, Node node, Settings settings) {
+    if (node.Item!.Kept is { } kept) {
+      WriteKeptFile(sink, node, kept, settings);
+      return;
+    }
     var algorithm = settings.Algorithm;
     var declared = node.Item!.Length;
+    if (settings.FixedBlockSize && settings.BlockSize == 0 && algorithm is 'x' or 'd' && declared > SingleUnitLimit)
+      algorithm = 'n'; // one stream or frame cannot hold it, and the archive's mode stays as it is
     using var source = node.Item.Open?.Invoke() ?? new MemoryStream([], writable: false);
     var checksum = new DarChecksum(DarPrimitives.DataChecksumWidth((ulong)declared));
 
@@ -248,6 +319,29 @@ internal static class DarWriter {
     if (settings.TapeMarks) {
       sink.Mark((byte)'R');
       sink.Data(DarPrimitives.EncodeChecksum(node.Checksum));
+    }
+  }
+
+  /// <summary>A carried-over file: its stored bytes copied as they are, under its own letter, flags and checksum.</summary>
+  private static void WriteKeptFile(DarArchiveSink sink, Node node, Kept kept, Settings settings) {
+    node.Size = (long)kept.Size;
+    node.Algorithm = kept.Algorithm;
+    node.DataFlags = kept.DataFlags;
+    node.Checksum = kept.Checksum;
+    if (settings.TapeMarks)
+      InlineEntry(sink, node);
+    node.Offset = (ulong)sink.Position;
+    var counter = new SinkStream(sink);
+    if (kept.OpenStored is { } open) {
+      using var stored = open();
+      stored.CopyTo(counter, CopyBuffer);
+    }
+    if ((ulong)counter.Count != kept.StorageSize)
+      throw new InvalidDataException($"'{node.Path}' gave {counter.Count} stored bytes, its catalogue entry says {kept.StorageSize}.");
+    node.StorageSize = kept.StorageSize;
+    if (settings.TapeMarks) {
+      sink.Mark((byte)'R');
+      sink.Data(DarPrimitives.EncodeChecksum(node.Checksum!));
     }
   }
 
@@ -402,7 +496,7 @@ internal static class DarWriter {
           DarPrimitives.WriteInfinint(cat, (ulong)child.Size);
           DarPrimitives.WriteInfinint(cat, child.Offset);
           DarPrimitives.WriteInfinint(cat, child.StorageSize);
-          cat.WriteByte(0); // data flags: no holes, not dirty, no delta signature
+          cat.WriteByte(child.DataFlags); // holes, dirty; never a delta signature
           cat.WriteByte((byte)child.Algorithm);
           DarPrimitives.WriteChecksum(cat, child.Checksum!);
           continue;
@@ -415,6 +509,10 @@ internal static class DarWriter {
   private static void WriteEntryHead(Stream s, Node node, string name) {
     s.WriteByte(Signature(node.Kind switch { ItemKind.Directory => 'd', ItemKind.Symlink => 'l', _ => 'f' }));
     DarPrimitives.WriteString(s, name);
+    if ((node.Item?.Kept?.RawInode ?? node.RootInode) is { } raw) {
+      s.Write(raw);
+      return;
+    }
     s.WriteByte(0x03); // EA none, FSA none
     DarPrimitives.WriteInfinint(s, node.Uid);
     DarPrimitives.WriteInfinint(s, node.Gid);
@@ -509,6 +607,8 @@ internal static class DarWriter {
     public ulong Offset { get; set; }
     public ulong StorageSize { get; set; }
     public char Algorithm { get; set; } = 'n';
+    public byte DataFlags { get; set; }
     public byte[]? Checksum { get; set; }
+    public byte[]? RootInode { get; set; }
   }
 }

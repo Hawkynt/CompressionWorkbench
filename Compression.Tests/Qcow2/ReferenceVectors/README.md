@@ -19,6 +19,18 @@ guest disk as QEMU reads it, backing chain included. Each image also passed `qem
 regeneration test rebuilds everything with QEMU and requires the same hashes (QEMU's output is
 deterministic for these inputs), then reads the fresh images with our reader as well.
 
+## External data files
+
+`Qcow2ExternalDataFileTests.Given_QemuTools_When_TheDataFileVectorsAreRegenerated_Then_TheyMatchTheCommittedOnes`
+made these (with `CWB_QCOW2_WRITE_VECTORS=1`) with `qemu-img create` and `qemu-io` writes on a
+256 KiB guest, 4 KiB clusters. `qemu-datafile.sha256` holds the SHA-256 of `qemu-img convert -O raw`
+of each image (data file next to it); each passed `qemu-img check`.
+
+| File | Made with | What it covers |
+| --- | --- | --- |
+| `datafile-raw.qcow2`, `datafile-raw.img` | `-o data_file=datafile-raw.img,data_file_raw=on` + pattern writes | guest clusters in an external data file that is itself the raw guest disk (incompatible bit 2, autoclear bit 1, data-file-name header extension) |
+| `datafile.qcow2`, `datafile.img` | `-o data_file=datafile.img` + pattern writes and a `write -z` over written data | an external data file shorter than the guest, a zero cluster, unallocated clusters |
+
 ## Encrypted images
 
 `mkencrypted.sh` (documentation, not a build input) made these with `qemu-img convert` from a

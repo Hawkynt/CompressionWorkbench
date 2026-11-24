@@ -13,7 +13,8 @@ namespace FileSystem.BcacheFs;
 internal static class BcacheFsJournalReader {
   internal static BcacheFsJournalDeviceLog ReadDevice(
       Stream device,
-      BcacheFsSuperblockRecord superblock) {
+      BcacheFsSuperblockRecord superblock,
+      BcacheFsCrypt? crypt = null) {
     ArgumentNullException.ThrowIfNull(device);
     ArgumentNullException.ThrowIfNull(superblock);
     if (!device.CanRead || !device.CanSeek)
@@ -51,7 +52,7 @@ internal static class BcacheFsJournalReader {
         var bytes = new byte[bucketBytes];
         device.Position = firstByte;
         device.ReadExactly(bytes);
-        ScanBucket(bytes, superblock, bucket, firstSector, blockBytes, replicas, diagnostics);
+        ScanBucket(bytes, superblock, crypt, bucket, firstSector, blockBytes, replicas, diagnostics);
       }
 
     return new BcacheFsJournalDeviceLog(superblock.DeviceIndex, replicas, diagnostics);
@@ -60,6 +61,7 @@ internal static class BcacheFsJournalReader {
   private static void ScanBucket(
       byte[] bucketBytes,
       BcacheFsSuperblockRecord superblock,
+      BcacheFsCrypt? crypt,
       long bucket,
       long firstSector,
       int blockBytes,
@@ -107,10 +109,22 @@ internal static class BcacheFsJournalReader {
         verification = new BcacheFsChecksumVerification(false, false,
           $"unknown checksum type {rawChecksumType}.");
       } else {
-        verification = BcacheFsChecksumCodec.VerifyVstruct(knownChecksum.Value, raw);
-        var encrypted = knownChecksum is BcacheFsChecksumType.ChaCha20Poly1305_80
-          or BcacheFsChecksumType.ChaCha20Poly1305_128;
-        if (!encrypted && !BcacheFsJournalFormat.TryParse(raw, superblock.FilesystemMagic, out parsed, out parseDiagnostic))
+        var encrypted = BcacheFsCrypt.IsMacType(knownChecksum.Value);
+        if (encrypted && crypt != null) {
+          // The MAC covers the set as stored; then everything from encrypted_start on is deciphered.
+          var nonce = BcacheFsNonce.ForJournal(sequence);
+          var stored = BcacheFsChecksum.Read(raw);
+          var computed = crypt.Mac(knownChecksum.Value, nonce, raw.AsSpan(16));
+          verification = stored == computed
+            ? new BcacheFsChecksumVerification(true, false, string.Empty)
+            : new BcacheFsChecksumVerification(false, false, $"journal MAC mismatch: stored {stored}, computed {computed}.");
+          if (verification.Valid)
+            crypt.Apply(nonce, raw.AsSpan(BcacheFsJournalFormat.EncryptedStart));
+        } else {
+          verification = BcacheFsChecksumCodec.VerifyVstruct(knownChecksum.Value, raw);
+        }
+        if ((!encrypted || (crypt != null && verification.Valid))
+            && !BcacheFsJournalFormat.TryParse(raw, superblock.FilesystemMagic, out parsed, out parseDiagnostic))
           parsed = null;
       }
 

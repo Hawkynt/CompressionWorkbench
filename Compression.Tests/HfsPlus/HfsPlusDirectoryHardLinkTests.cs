@@ -191,13 +191,166 @@ public sealed class HfsPlusDirectoryHardLinkTests {
     Assert.That(Read(image).Entries.Count(static e => e.Name == "Users" && !e.IsDirectory), Is.EqualTo(1));
   }
 
+  // ── Removing directory hard links ──────────────────────────────────
+
+  /// <summary>The catalog record body of the folder or file with key (<paramref name="parent"/>, <paramref name="name"/>).</summary>
+  private static byte[] Body(byte[] image, uint parent, string name) {
+    var volume = HfsPlusVolumeEditor.Open(image.ToArray());
+    var record = volume.Catalog.Records[volume.Catalog.Search(HfsPlusDirectoryLinkVolumes.Key(parent, name))];
+    return record.AsSpan(HfsPlusBTreeFile.DataOffset(record)).ToArray();
+  }
+
+  private static uint Cnid(byte[] image, string path) {
+    var cnid = 2u;
+    foreach (var part in path.Split('/')) cnid = BinaryPrimitives.ReadUInt32BigEndian(Body(image, cnid, part).AsSpan(8));
+    return cnid;
+  }
+
+  private static uint PrivateCnid(byte[] image) => Cnid(image, HfsPlusDirectoryLinkVolumes.PrivateFolder);
+
+  /// <summary>The CNID the inode's com.apple.system.hfs.firstlink attribute names.</summary>
+  private static uint FirstLink(byte[] image, uint inode) {
+    var volume = HfsPlusVolumeEditor.Open(image.ToArray());
+    var name = System.Text.Encoding.BigEndianUnicode.GetBytes("com.apple.system.hfs.firstlink");
+    var record = volume.Attributes!.Records.Single(r => BinaryPrimitives.ReadUInt32BigEndian(r.AsSpan(4)) == inode && r.AsSpan(14).StartsWith(name));
+    var data = HfsPlusBTreeFile.DataOffset(record);
+    var length = (int)BinaryPrimitives.ReadUInt32BigEndian(record.AsSpan(data + 12));
+    return uint.Parse(System.Text.Encoding.ASCII.GetString(record, data + 16, length).TrimEnd('\0'), System.Globalization.CultureInfo.InvariantCulture);
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenTwoLinksToADirectory_WhenTheFirstIsRemoved_ThenTheOtherShowsTheTreeAndTheChainFollows() {
+    var image = HfsPlusDirectoryLinkVolumes.Snapshots(out var inode);
+    var second = Cnid(image, SecondUsers);
+    using var ms = new MemoryStream();
+    ms.Write(image);
+    Assert.That(HfsPlusModifier.RemoveFile(ms, FirstUsers), Is.True);
+    var after = ms.ToArray();
+    var reader = Read(after);
+    var paths = reader.Entries.Select(static e => e.FullPath).ToList();
+    var inodeBody = Body(after, PrivateCnid(after), $"dir_{inode}");
+    Assert.Multiple(() => {
+      Assert.That(paths, Does.Not.Contain(FirstUsers));
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FullPath == SecondUsers + "/Pictures/photo.raw")), Is.EqualTo(HfsPlusDirectoryLinkVolumes.Photo));
+      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(inodeBody.AsSpan(44)), Is.EqualTo(1u), "link count");
+      Assert.That(FirstLink(after, inode), Is.EqualTo(second), "first link");
+      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(Body(after, Cnid(after, "Backups/2026-01-02"), "Users").AsSpan(32)), Is.Zero, "previous link");
+      Assert.That(BinaryPrimitives.ReadUInt16BigEndian(Body(after, Cnid(after, "Backups"), "2026-01-01").AsSpan(2)) & 0x40, Is.Zero, "the emptied snapshot folder no longer has a child link");
+      Assert.That(BinaryPrimitives.ReadUInt16BigEndian(Body(after, Cnid(after, "Backups"), "2026-01-02").AsSpan(2)) & 0x40, Is.Not.Zero, "the other still has one");
+      Assert.That(BinaryPrimitives.ReadUInt16BigEndian(Body(after, 2, "Backups").AsSpan(2)) & 0x40, Is.Not.Zero, "and so does their parent");
+    });
+  }
+
   [Test, Category("ExceptionalCase")]
-  public void GivenADirectoryHardLink_WhenRemovedInPlace_ThenItIsRefusedAndTheVolumeIsUnchanged() {
+  public void GivenTheLastLinkToADirectoryThatIsNotEmpty_WhenRemoved_ThenItIsRefusedAndTheVolumeIsUnchanged() {
     var image = HfsPlusDirectoryLinkVolumes.Snapshots(out _);
     using var ms = new MemoryStream();
     ms.Write(image);
-    Assert.Throws<NotSupportedException>(() => HfsPlusModifier.RemoveFile(ms, FirstUsers));
+    HfsPlusModifier.RemoveFile(ms, FirstUsers);
+    var afterFirst = ms.ToArray();
+    Assert.Throws<NotSupportedException>(() => HfsPlusModifier.RemoveFile(ms, SecondUsers));
+    Assert.That(ms.ToArray(), Is.EqualTo(afterFirst));
+  }
+
+  [Test, Category("ExceptionalCase")]
+  public void GivenADirectoryHardLink_WhenAFileWouldReplaceIt_ThenItIsRefusedAndTheVolumeIsUnchanged() {
+    var image = HfsPlusDirectoryLinkVolumes.Snapshots(out _);
+    using var ms = new MemoryStream();
+    ms.Write(image);
+    Assert.Throws<NotSupportedException>(() => HfsPlusModifier.AddFile(ms, FirstUsers, [1]));
     Assert.That(ms.ToArray(), Is.EqualTo(image));
+  }
+
+  /// <summary>Two links to an empty linked directory (its one placeholder file taken out again).</summary>
+  private static byte[] EmptyLinkedDirectory(out uint inode) {
+    var w = new HfsPlusWriter();
+    w.AddFile(HfsPlusDirectoryLinkVolumes.PrivateFolder + "/empty/.keep", []);
+    w.AddFile("one/link", []);
+    w.AddFile("two/link", []);
+    w.AddFile("plain.txt", "plain"u8.ToArray());
+    var image = w.Build(4096);
+    var volume = HfsPlusVolumeEditor.Open(image);
+    var folder = BinaryPrimitives.ReadUInt32BigEndian(Body(image, PrivateCnid(image), "empty").AsSpan(8));
+    var keep = volume.Catalog.Records[volume.Catalog.Search(HfsPlusDirectoryLinkVolumes.Key(folder, ".keep"))];
+    var keepCnid = BinaryPrimitives.ReadUInt32BigEndian(keep.AsSpan(HfsPlusBTreeFile.DataOffset(keep) + 8));
+    var thread = volume.Catalog.Records[volume.Catalog.Search(HfsPlusDirectoryLinkVolumes.Key(keepCnid, ""))];
+    volume.Catalog.RemoveAll(r => ReferenceEquals(r, keep) || ReferenceEquals(r, thread));
+    var folderIndex = volume.Catalog.Search(HfsPlusDirectoryLinkVolumes.Key(PrivateCnid(image), "empty"));
+    var folderRecord = volume.Catalog.Records[folderIndex].ToArray();
+    BinaryPrimitives.WriteUInt32BigEndian(folderRecord.AsSpan(HfsPlusBTreeFile.DataOffset(folderRecord) + 4), 0);   // valence
+    volume.Catalog.Replace(folderIndex, folderRecord);
+    volume.WriteHeader(32, volume.ReadHeader(32) - 1);   // fileCount
+    volume.Flush();
+    inode = HfsPlusDirectoryLinkVolumes.Link(image, "empty", "one/link", "two/link");
+    return image;
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenTheLastLinkToAnEmptyDirectory_WhenRemoved_ThenTheDirectoryGoesToo() {
+    var image = EmptyLinkedDirectory(out var inode);
+    using var ms = new MemoryStream();
+    ms.Write(image);
+    var folders = BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(1024 + 36));
+    HfsPlusModifier.RemoveFile(ms, "one/link");
+    HfsPlusModifier.RemoveFile(ms, "two/link");
+    var after = ms.ToArray();
+    var volume = HfsPlusVolumeEditor.Open(after.ToArray());
+    Assert.Multiple(() => {
+      Assert.That(volume.Catalog.Search(HfsPlusDirectoryLinkVolumes.Key(PrivateCnid(after), $"dir_{inode}")), Is.LessThan(0), "the inode is gone");
+      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(after.AsSpan(1024 + 36)), Is.EqualTo(folders - 1), "folderCount");
+      Assert.That(Read(after).Entries.Select(static e => e.FullPath), Is.EquivalentTo(new[] { "one", "two", "plain.txt" }));
+    });
+  }
+
+  private static IEnumerable<TestCaseData> LinkRemovals() {
+    yield return new TestCaseData("snapshots", new[] { FirstUsers }).SetName("GivenTheSnapshotVolume_WhenTheFirstLinkIsRemoved_ThenFsckHfsplusAcceptsIt");
+    yield return new TestCaseData("snapshots", new[] { SecondUsers }).SetName("GivenTheSnapshotVolume_WhenTheLastChainedLinkIsRemoved_ThenFsckHfsplusAcceptsIt");
+    yield return new TestCaseData("empty", new[] { "one/link" }).SetName("GivenAnEmptyLinkedDirectory_WhenOneLinkIsRemoved_ThenFsckHfsplusAcceptsIt");
+    yield return new TestCaseData("empty", new[] { "one/link", "two/link" }).SetName("GivenAnEmptyLinkedDirectory_WhenBothLinksAreRemoved_ThenFsckHfsplusAcceptsIt");
+  }
+
+  [TestCaseSource(nameof(LinkRemovals)), Category("ExternalFsInterop")]
+  public void LinkRemovedFsck(string volume, string[] links) {
+    HfsPlusOracles.RequireFsck();
+    var image = volume == "empty" ? EmptyLinkedDirectory(out _) : HfsPlusDirectoryLinkVolumes.Snapshots(out _);
+    HfsPlusOracles.AssertFsckClean(image, this._tmp, "before the removal");
+    using var ms = new MemoryStream();
+    ms.Write(image);
+    foreach (var link in links) Assert.That(HfsPlusModifier.RemoveFile(ms, link), Is.True, link);
+    HfsPlusOracles.AssertFsckClean(ms.ToArray(), this._tmp, string.Join(" and ", links) + " removed");
+  }
+
+  [Test, Category("ExternalFsInterop")]
+  public void GivenARemovedDirectoryLinkWhoseInodeStillCountsIt_WhenFsckHfsplusChecks_ThenItComplains() {
+    HfsPlusOracles.RequireFsck();
+    var image = HfsPlusDirectoryLinkVolumes.Snapshots(out var inode);
+    using var ms = new MemoryStream();
+    ms.Write(image);
+    HfsPlusModifier.RemoveFile(ms, FirstUsers);
+    var after = ms.ToArray();
+    var name = System.Text.Encoding.BigEndianUnicode.GetBytes($"dir_{inode}");
+    var record = after.AsSpan().IndexOf(name) + name.Length;
+    record += record & 1;
+    BinaryPrimitives.WriteUInt32BigEndian(after.AsSpan(record + 44), 2);
+    var (output, _) = HfsPlusOracles.Fsck(after, this._tmp);
+    Assert.That(output, Does.Not.Contain("appears to be OK"), output);
+  }
+
+  [Test, Category("ArchiveExternal")]
+  public void GivenTheFirstLinkRemoved_WhenUnhfsExtractsTheVolume_ThenItsTreeIsOurs() {
+    var image = HfsPlusDirectoryLinkVolumes.Snapshots(out _);
+    using var ms = new MemoryStream();
+    ms.Write(image);
+    HfsPlusModifier.RemoveFile(ms, FirstUsers);
+    var after = ms.ToArray();
+    var theirs = HfsPlusOracles.Unhfs(after, this._tmp);
+    var reader = Read(after);
+    var ours = reader.Entries.Where(static e => !e.IsDirectory).ToDictionary(static e => e.FullPath, e => reader.Extract(e), StringComparer.Ordinal);
+    Assert.That(theirs.Keys, Is.EquivalentTo(ours.Keys), "files");
+    Assert.That(ours.Keys, Has.Some.StartsWith(SecondUsers + "/"));
+    Assert.Multiple(() => {
+      foreach (var (path, bytes) in ours) Assert.That(theirs[path], Is.EqualTo(bytes), path);
+    });
   }
 
   [TestCase(true, TestName = "GivenAFileSeenThroughADirectoryHardLink_WhenRemoved_ThenItIsRefusedAndTheVolumeIsUnchanged")]

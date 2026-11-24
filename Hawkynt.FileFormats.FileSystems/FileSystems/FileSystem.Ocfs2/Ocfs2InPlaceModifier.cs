@@ -20,8 +20,12 @@ namespace FileSystem.Ocfs2;
 /// its entries. The result mounts with the Linux driver and passes
 /// <c>fsck.ocfs2 -fn</c>.</para>
 ///
-/// <para><b>Scope:</b> regular files in a tree of inline directories. A directory
-/// that is not inline, a full inline area, a path through a file, a hard-linked
+/// <para><b>Scope:</b> regular files in a tree of inline and extent-backed directories.
+/// An extent-backed directory is a leaf extent list in its dinode naming 4 KiB blocks of
+/// entries; a full one takes one more cluster, a full inline one moves its entries into
+/// its first block (the kernel's expansion) on a volume without indexed directories.
+/// An indexed directory keeps its index, block trailers and free list (see
+/// <c>docs/OCFS2-INDEXED-DIRS.md</c>). A path through a file, a hard-linked
 /// file or one carrying an xattr block, shared (reflinked) extents or an extent
 /// tree is refused with <see cref="NotSupportedException"/> before anything is
 /// written; a volume without room raises <see cref="IOException"/>, also before
@@ -98,21 +102,22 @@ public static class Ocfs2InPlaceModifier {
     ValidateStream(image);
     var volume = Ocfs2Allocators.Open(image);
     var (chain, missing) = ResolveDirectories(volume, parts[..^1]);
-    var (parentBlkno, parent) = chain[^1];
+    var parent = chain[^1];
 
-    var (inlineStart, inlineCapacity) = InlineWindow();
-    var exists = missing.Length == 0 && FindDirEntry(parent, inlineStart, inlineCapacity, leaf, out _, out _);
+    var exists = missing.Length == 0 && parent.Find(leaf, out _);
     if (exists && !replace)
       throw new IOException($"ocfs2: entry '{name}' already exists.");
 
     // Everything that can refuse is settled before the first write.
-    var entryOffset = -1;
+    DirSlot entry = default;
+    var grow = false;
+    var dxClusters = 0;
     (long Blkno, byte[] Dinode, Ocfs2Allocators.InodeSlot Slot)? old = null;
     if (exists) {
-      FindDirEntry(parent, inlineStart, inlineCapacity, leaf, out entryOffset, out _);
-      if (parent[entryOffset + 11] != FtRegFile)
+      parent.Find(leaf, out entry);
+      if (parent.FileType(entry) != FtRegFile)
         throw new NotSupportedException($"ocfs2: '{name}' is not a regular file.");
-      var oldBlk = (long)BinaryPrimitives.ReadUInt64LittleEndian(parent.AsSpan(entryOffset, 8));
+      var oldBlk = parent.Inode(entry);
       var oldDinode = volume.ReadDinode(oldBlk);
       EnsureRemovable(oldBlk, oldDinode, name);
       old = (oldBlk, oldDinode, volume.SlotOf(oldBlk, oldDinode));
@@ -120,8 +125,11 @@ public static class Ocfs2InPlaceModifier {
       if (missing.Length > 0 && !volume.InlineData)
         throw new NotSupportedException("ocfs2: new directories are made inline, which this volume's features do not allow.");
       var first = missing.Length > 0 ? missing[0] : leaf;
-      if (FindSlack(parent, inlineStart, inlineCapacity, DirEntrySize(first)) < 0)
-        throw new NotSupportedException($"ocfs2: the directory holding '{first}' has no room left in its inline area.");
+      if (!parent.HasRoom(DirEntrySize(first))) {
+        parent.EnsureGrowable(volume, first);
+        grow = true;
+      }
+      dxClusters = parent.DxClustersNeeded(first);
     }
 
     var inline = volume.InlineData && data.Length <= MaxInline;
@@ -144,6 +152,27 @@ public static class Ocfs2InPlaceModifier {
       }
       runs = got;
     }
+    long? growCluster = null;
+    if (grow) {
+      var got = volume.AllocateClusters(1, 1);
+      if (got == null) {
+        foreach (var taken in slots) volume.FreeInode(taken);
+        if (runs.Count > 0) volume.SetClusters(runs, used: false);
+        throw new IOException($"ocfs2: no room for the cluster the directory holding '{name}' needs to grow.");
+      }
+      growCluster = got[0].Start;
+    }
+    long? dxCluster = null;
+    if (dxClusters > 0) {
+      var got = volume.AllocateClusters(1, 1);
+      if (got == null) {
+        foreach (var taken in slots) volume.FreeInode(taken);
+        if (runs.Count > 0) volume.SetClusters(runs, used: false);
+        if (growCluster is { } g) volume.SetClusters([(g, 1L)], used: false);
+        throw new IOException($"ocfs2: no room for the cluster the index of the directory holding '{name}' needs.");
+      }
+      dxCluster = got[0].Start;
+    }
 
     // Data first, then the inode that names it, then the entry that names the inode.
     long written = 0;
@@ -160,9 +189,9 @@ public static class Ocfs2InPlaceModifier {
     volume.WriteBlock(slot.Blkno, BuildFileDinode(slot, data, inline, runs, volume.Generation, now));
 
     if (old is { } previous) {
-      BinaryPrimitives.WriteUInt64LittleEndian(parent.AsSpan(entryOffset, 8), (ulong)slot.Blkno);
-      Touch(parent, now);
-      volume.WriteBlock(parentBlkno, parent);
+      parent.SetInode(entry, slot.Blkno);
+      Touch(parent.Dinode, now);
+      parent.Flush(volume);
       Release(volume, previous.Blkno, previous.Dinode, previous.Slot, wipeData: true);
       return;
     }
@@ -172,18 +201,19 @@ public static class Ocfs2InPlaceModifier {
     var child = (Blkno: slot.Blkno, Name: leaf, Type: FtRegFile);
     for (var d = missing.Length - 1; d >= 0; --d) {
       var dirSlot = slots[d];
-      var dirParent = d == 0 ? parentBlkno : slots[d - 1].Blkno;
+      var dirParent = d == 0 ? parent.Blkno : slots[d - 1].Blkno;
       var links = (ushort)(child.Type == FtDir ? 3 : 2);
       volume.WriteBlock(dirSlot.Blkno, BuildDirDinode(dirSlot, dirParent, child, links, volume.Generation, now));
       child = (dirSlot.Blkno, missing[d], FtDir);
     }
 
-    InsertInlineDirEntry(parent, inlineStart, inlineCapacity, DirEntrySize(child.Name), child.Blkno, child.Name, child.Type);
+    if (growCluster is { } cluster) parent.Grow(cluster);
+    parent.Insert(DirEntrySize(child.Name), child.Blkno, child.Name, child.Type, dxCluster);
     if (child.Type == FtDir)
-      BinaryPrimitives.WriteUInt16LittleEndian(parent.AsSpan(OffLinks, 2),
-        (ushort)(BinaryPrimitives.ReadUInt16LittleEndian(parent.AsSpan(OffLinks, 2)) + 1));
-    Touch(parent, now);
-    volume.WriteBlock(parentBlkno, parent);
+      BinaryPrimitives.WriteUInt16LittleEndian(parent.Dinode.AsSpan(OffLinks, 2),
+        (ushort)(BinaryPrimitives.ReadUInt16LittleEndian(parent.Dinode.AsSpan(OffLinks, 2)) + 1));
+    Touch(parent.Dinode, now);
+    parent.Flush(volume);
   }
 
   /// <summary>
@@ -200,14 +230,12 @@ public static class Ocfs2InPlaceModifier {
     var volume = Ocfs2Allocators.Open(image);
     var (chain, missing) = ResolveDirectories(volume, parts[..^1]);
     if (missing.Length > 0) return false;
-    var (parentBlkno, parent) = chain[^1];
+    var parent = chain[^1];
 
-    var (inlineStart, inlineCapacity) = InlineWindow();
-    if (!FindDirEntry(parent, inlineStart, inlineCapacity, parts[^1], out var entryOffset, out var entryLen))
-      return false;
+    if (!parent.Find(parts[^1], out var entry)) return false;
 
-    var inodeBlk = (long)BinaryPrimitives.ReadUInt64LittleEndian(parent.AsSpan(entryOffset, 8));
-    var fileType = parent[entryOffset + 11];
+    var inodeBlk = parent.Inode(entry);
+    var fileType = parent.FileType(entry);
     if (fileType != FtRegFile)
       throw new NotSupportedException(
         $"ocfs2: refusing to remove non-regular-file entry '{name}' (file_type={fileType}).");
@@ -216,9 +244,9 @@ public static class Ocfs2InPlaceModifier {
     EnsureRemovable(inodeBlk, dinode, name);
     var slot = volume.SlotOf(inodeBlk, dinode);
 
-    RemoveInlineDirEntry(parent, inlineStart, inlineCapacity, entryOffset, entryLen);
-    Touch(parent, DateTimeOffset.UtcNow);
-    volume.WriteBlock(parentBlkno, parent);
+    parent.Remove(entry, parts[^1]);
+    Touch(parent.Dinode, DateTimeOffset.UtcNow);
+    parent.Flush(volume);
     Release(volume, inodeBlk, dinode, slot, wipeData);
     return true;
   }
@@ -236,28 +264,608 @@ public static class Ocfs2InPlaceModifier {
   }
 
   /// <summary>
-  /// Walks <paramref name="dirs"/> down from the root through inline
-  /// directories. Returns the directories found (root first) and the trailing
-  /// components that do not exist yet. A component that is not a directory, or
-  /// a directory that is not inline, is refused.
+  /// Walks <paramref name="dirs"/> down from the root through inline and
+  /// unindexed extent-backed directories. Returns the directories found (root
+  /// first) and the trailing components that do not exist yet. A component that
+  /// is not a directory, or a directory this editor does not keep, is refused.
   /// </summary>
-  private static (List<(long Blkno, byte[] Dinode)> Chain, string[] Missing) ResolveDirectories(Ocfs2Allocators volume, string[] dirs) {
-    var root = volume.ReadDinode(volume.RootDirBlkno);
-    EnsureInlineDir(root);
-    var chain = new List<(long, byte[])> { (volume.RootDirBlkno, root) };
-    var (inlineStart, inlineCapacity) = InlineWindow();
+  private static (List<Dir> Chain, string[] Missing) ResolveDirectories(Ocfs2Allocators volume, string[] dirs) {
+    var chain = new List<Dir> { Dir.Open(volume, volume.RootDirBlkno) };
     for (var i = 0; i < dirs.Length; ++i) {
-      var (_, current) = chain[^1];
-      if (!FindDirEntry(current, inlineStart, inlineCapacity, dirs[i], out var at, out _))
+      var current = chain[^1];
+      if (!current.Find(dirs[i], out var at))
         return (chain, dirs[i..]);
-      if (current[at + 11] != FtDir)
+      if (current.FileType(at) != FtDir)
         throw new NotSupportedException($"ocfs2: '{dirs[i]}' is not a directory.");
-      var blkno = (long)BinaryPrimitives.ReadUInt64LittleEndian(current.AsSpan(at, 8));
-      var dinode = volume.ReadDinode(blkno);
-      EnsureInlineDir(dinode);
-      chain.Add((blkno, dinode));
+      chain.Add(Dir.Open(volume, current.Inode(at)));
     }
     return (chain, []);
+  }
+
+  /// <summary>Where a directory entry sits: area −1 is an inline directory's dinode, area n its n-th block.</summary>
+  private readonly record struct DirSlot(int Area, int Offset, int Length);
+
+  /// <summary>
+  /// A directory as the editor changes it: inline (its entries in the dinode's inline area) or
+  /// extent-backed — a leaf extent list in the dinode naming the clusters whose 4 KiB blocks each
+  /// hold a run of entries, the last one stretched to the block's end, and <c>i_size</c> counting
+  /// the blocks in use — and, extent-backed, either plain or indexed.
+  /// </summary>
+  /// <remarks>
+  /// <para>An indexed directory (<c>OCFS2_INDEXED_DIR_FL</c>, on an <c>indexed-dirs</c> volume) ends
+  /// every block in a 64-byte trailer (<c>DIRTRL1</c>: a fake entry of length 64, the block's largest
+  /// usable hole, the next block of the free list, the block and its directory). Its index root
+  /// (<c>DXDIR01</c>, named by <c>i_dx_root</c>) heads the free list of blocks with a usable hole and
+  /// counts the entries, and holds the index itself: inline, a list of (major hash, minor hash,
+  /// block) entries in the root; or an extent list of leaf clusters (<c>DXLEAF1</c>), each covering
+  /// the major hashes from its cluster offset up to the next one's. A name's hash is the ext3 TEA
+  /// hash seeded with the superblock's <c>s_dx_seed</c> and <c>s_uuid_hash</c>; "." and ".." hash to
+  /// zero. A full inline index moves into one leaf cluster at offset 0; a full leaf splits at the
+  /// first major hash past its median that exceeds its offset, the entries from there moving into a
+  /// new cluster recorded at that hash. The layout is written down in <c>docs/OCFS2-INDEXED-DIRS.md</c>.</para>
+  /// <para>Refused before anything is written: extent trees deeper than the dinode or the index root,
+  /// a leaf that cannot be split, a plain extent-backed directory whose blocks end in trailers, and
+  /// growing a full inline directory on an <c>indexed-dirs</c> volume (the kernel would index it).</para>
+  /// </remarks>
+  private sealed class Dir {
+    private const ushort DynIndexedDir = 0x0008;   // OCFS2_INDEXED_DIR_FL
+    private const int OffDxRoot = 0x88;            // i_dx_root
+    private const int TrailerBytes = 64;
+    private const int MinRecLen = 16;              // OCFS2_DIR_REC_LEN(1)
+    private const int DxListOffset = 0xC0;         // dr_list / dr_entries
+    private const int DxRootEntries = DxListOffset + 8;
+    private const int LeafListOffset = 0x28;
+    private const int LeafEntries = LeafListOffset + 8;
+    private static readonly byte[] TrailerSignature = "DIRTRL1\0"u8.ToArray();
+    private static readonly byte[] LeafSignature = "DXLEAF1\0"u8.ToArray();
+
+    public long Blkno { get; }
+    public byte[] Dinode { get; }
+    public bool Inline { get; private set; }
+    public bool Indexed { get; private set; }
+    private readonly List<long> _blocks = [];
+    private readonly Dictionary<int, byte[]> _areas = [];
+    private readonly HashSet<int> _dirty = [];
+    private readonly Ocfs2Allocators _volume;
+    private long _dxRootBlkno;
+    private byte[] _dxRoot = [];
+    private readonly Dictionary<long, byte[]> _leaves = [];
+    private readonly HashSet<long> _dirtyLeaves = [];
+
+    private Dir(Ocfs2Allocators volume, long blkno, byte[] dinode) {
+      this._volume = volume;
+      this.Blkno = blkno;
+      this.Dinode = dinode;
+    }
+
+    public static Dir Open(Ocfs2Allocators volume, long blkno) {
+      var dinode = volume.ReadDinode(blkno);
+      var dir = new Dir(volume, blkno, dinode);
+      var dyn = BinaryPrimitives.ReadUInt16LittleEndian(dinode.AsSpan(OffDynFeatures, 2));
+      if ((dyn & DynInlineData) != 0) {
+        dir.Inline = true;
+        return dir;
+      }
+      if ((dyn & DynIndexedDir) != 0) {
+        if (!volume.IndexedDirs)
+          throw new InvalidDataException($"ocfs2: directory inode {blkno} is indexed on a volume without indexed directories.");
+        dir.Indexed = true;
+        dir._dxRootBlkno = (long)BinaryPrimitives.ReadUInt64LittleEndian(dinode.AsSpan(OffDxRoot, 8));
+        dir._dxRoot = volume.ReadBlock(dir._dxRootBlkno);
+        if (!dir._dxRoot.AsSpan(0, 8).SequenceEqual("DXDIR01\0"u8)
+            || (long)BinaryPrimitives.ReadUInt64LittleEndian(dir._dxRoot.AsSpan(0x30, 8)) != blkno)
+          throw new InvalidDataException($"ocfs2: the index root of directory inode {blkno} is not its DXDIR01 block.");
+        if (!dir.DxInline && BinaryPrimitives.ReadUInt16LittleEndian(dir._dxRoot.AsSpan(DxListOffset, 2)) != 0)
+          throw new NotSupportedException($"ocfs2: the index of directory inode {blkno} has an extent tree deeper than its root, which this editor does not walk.");
+      } else if (volume.IndexedDirs) {
+        throw new NotSupportedException($"ocfs2: directory inode {blkno} is not indexed on an indexed-dirs volume; its blocks' trailers are not kept here.");
+      }
+      if (BinaryPrimitives.ReadUInt16LittleEndian(dinode.AsSpan(Id2Offset, 2)) != 0)
+        throw new NotSupportedException($"ocfs2: directory inode {blkno} has an extent tree deeper than its dinode, which this editor does not walk.");
+      var size = (long)BinaryPrimitives.ReadUInt64LittleEndian(dinode.AsSpan(OffSize, 8));
+      if (size <= 0 || size % BlockSize != 0)
+        throw new InvalidDataException($"ocfs2: directory inode {blkno} has a size of {size}, not whole blocks.");
+      var cpos = 0L;
+      foreach (var (recCpos, start, clusters) in ReadLeafRecords(dinode)) {
+        if (recCpos != cpos)
+          throw new NotSupportedException($"ocfs2: directory inode {blkno} has a hole in its extent list.");
+        for (var c = 0; c < clusters; ++c) dir._blocks.Add(start + c);
+        cpos += clusters;
+      }
+      var used = (int)(size / BlockSize);
+      if (used > dir._blocks.Count)
+        throw new InvalidDataException($"ocfs2: directory inode {blkno} is larger than the clusters it owns.");
+      dir._blocks.RemoveRange(used, dir._blocks.Count - used);
+      if (dir.Indexed)
+        for (var area = 0; area < dir._blocks.Count; ++area)
+          if (!dir.Area(area).AsSpan(BlockSize - TrailerBytes + 0x10, 8).SequenceEqual(TrailerSignature))
+            throw new InvalidDataException($"ocfs2: block {dir._blocks[area]} of indexed directory inode {blkno} has no trailer.");
+      return dir;
+    }
+
+    private IEnumerable<int> Areas => this.Inline ? [-1] : Enumerable.Range(0, this._blocks.Count);
+
+    private byte[] Area(int area) {
+      if (area < 0) return this.Dinode;
+      if (!this._areas.TryGetValue(area, out var block)) this._areas[area] = block = this._volume.ReadBlock(this._blocks[area]);
+      return block;
+    }
+
+    private (int Start, int Capacity) Window(int area)
+      => area < 0 ? InlineWindow() : (0, BlockSize - (this.Indexed ? TrailerBytes : 0));
+
+    public bool Find(string name, out DirSlot slot) {
+      foreach (var area in this.Areas) {
+        var (start, capacity) = this.Window(area);
+        if (FindDirEntry(this.Area(area), start, capacity, name, out var offset, out var length)) {
+          slot = new DirSlot(area, offset, length);
+          return true;
+        }
+      }
+      slot = default;
+      return false;
+    }
+
+    public long Inode(DirSlot slot) => (long)BinaryPrimitives.ReadUInt64LittleEndian(this.Area(slot.Area).AsSpan(slot.Offset, 8));
+    public byte FileType(DirSlot slot) => this.Area(slot.Area)[slot.Offset + 11];
+
+    public void SetInode(DirSlot slot, long inode) {
+      BinaryPrimitives.WriteUInt64LittleEndian(this.Area(slot.Area).AsSpan(slot.Offset, 8), (ulong)inode);
+      this._dirty.Add(slot.Area);
+    }
+
+    // ── free list (indexed) ───────────────────────────────────────────────
+
+    private int TrailerAt => BlockSize - TrailerBytes;
+    private int AreaOf(long block) => this._blocks.IndexOf(block);
+    private ushort FreeLength(int area) => BinaryPrimitives.ReadUInt16LittleEndian(this.Area(area).AsSpan(this.TrailerAt + 0x0E, 2));
+    private long FreeNext(int area) => (long)BinaryPrimitives.ReadUInt64LittleEndian(this.Area(area).AsSpan(this.TrailerAt + 0x20, 8));
+    private long FreeHead {
+      get => (long)BinaryPrimitives.ReadUInt64LittleEndian(this._dxRoot.AsSpan(0x40, 8));
+      set => BinaryPrimitives.WriteUInt64LittleEndian(this._dxRoot.AsSpan(0x40, 8), (ulong)value);
+    }
+
+    private void SetFree(int area, ushort length, long next) {
+      BinaryPrimitives.WriteUInt16LittleEndian(this.Area(area).AsSpan(this.TrailerAt + 0x0E, 2), length);
+      BinaryPrimitives.WriteUInt64LittleEndian(this.Area(area).AsSpan(this.TrailerAt + 0x20, 8), (ulong)next);
+      this._dirty.Add(area);
+    }
+
+    /// <summary>The largest usable hole of a block: unused entries whole, used ones less the room their name needs; under the minimum entry length it counts as none.</summary>
+    private int LargestHole(int area) {
+      var (start, capacity) = this.Window(area);
+      var block = this.Area(area);
+      var largest = 0;
+      for (var cursor = start; cursor + 12 <= start + capacity;) {
+        var recLen = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(cursor + 8, 2));
+        if (recLen < 12) break;
+        var inode = BinaryPrimitives.ReadUInt64LittleEndian(block.AsSpan(cursor, 8));
+        var hole = inode == 0 ? recLen : recLen - ((12 + block[cursor + 10] + 3) & ~3);
+        largest = Math.Max(largest, hole);
+        cursor += recLen;
+      }
+      return largest < MinRecLen ? 0 : largest;
+    }
+
+    /// <summary>The block, as the free list orders them, that takes <paramref name="recLen" /> bytes, and the one before it in the list.</summary>
+    private (int Area, int Previous)? FreeListBlockFor(int recLen) {
+      var previous = -1;
+      var seen = new HashSet<long>();
+      for (var block = this.FreeHead; block != 0; ) {
+        if (!seen.Add(block)) throw new InvalidDataException($"ocfs2: the free list of directory inode {this.Blkno} loops.");
+        var area = this.AreaOf(block);
+        if (area < 0) throw new InvalidDataException($"ocfs2: the free list of directory inode {this.Blkno} names block {block}, which is not one of its blocks.");
+        var (start, capacity) = this.Window(area);
+        if (this.FreeLength(area) >= recLen && FindSlack(this.Area(area), start, capacity, recLen) >= 0) return (area, previous);
+        previous = area;
+        block = this.FreeNext(area);
+      }
+      return null;
+    }
+
+    public bool HasRoom(int recLen) => this.Indexed
+      ? this.FreeListBlockFor(recLen) is not null
+      : this.Areas.Any(area => {
+        var (start, capacity) = this.Window(area);
+        return FindSlack(this.Area(area), start, capacity, recLen) >= 0;
+      });
+
+    // ── entries ───────────────────────────────────────────────────────────
+
+    public void Insert(int recLen, long inode, string name, byte type, long? dxCluster) {
+      if (!this.Indexed) {
+        foreach (var area in this.Areas) {
+          var (start, capacity) = this.Window(area);
+          if (FindSlack(this.Area(area), start, capacity, recLen) < 0) continue;
+          InsertInlineDirEntry(this.Area(area), start, capacity, recLen, inode, name, type);
+          this._dirty.Add(area);
+          return;
+        }
+        throw new InvalidOperationException("ocfs2: the directory lost its room between check and insert.");
+      }
+
+      var (target, previous) = this.FreeListBlockFor(recLen)
+        ?? throw new InvalidOperationException("ocfs2: the directory lost its room between check and insert.");
+      var (s, c) = this.Window(target);
+      InsertInlineDirEntry(this.Area(target), s, c, recLen, inode, name, type);
+      this._dirty.Add(target);
+      var hole = this.LargestHole(target);
+      if (hole == 0) {
+        // Full now: out of the free list.
+        var next = this.FreeNext(target);
+        if (previous < 0) this.FreeHead = next;
+        else this.SetFree(previous, this.FreeLength(previous), next);
+        this.SetFree(target, 0, 0);
+      } else {
+        this.SetFree(target, (ushort)hole, this.FreeNext(target));
+      }
+      var (major, minor) = this.Hash(name);
+      this.DxInsert(major, minor, this._blocks[target], dxCluster);
+      this.AddEntryCount(+1);
+    }
+
+    public void Remove(DirSlot slot, string name) {
+      if (this.Indexed) {
+        var (major, minor) = this.Hash(name);
+        this.DxRemove(major, minor, this._blocks[slot.Area]);
+        this.AddEntryCount(-1);
+      }
+      var (start, capacity) = this.Window(slot.Area);
+      var wasListed = this.Indexed && this.FreeLength(slot.Area) != 0;
+      RemoveInlineDirEntry(this.Area(slot.Area), start, capacity, slot.Offset, slot.Length);
+      this._dirty.Add(slot.Area);
+      if (!this.Indexed) return;
+      var hole = (ushort)this.LargestHole(slot.Area);
+      if (wasListed) this.SetFree(slot.Area, hole, this.FreeNext(slot.Area));
+      else {
+        this.SetFree(slot.Area, hole, this.FreeHead);
+        this.FreeHead = this._blocks[slot.Area];
+      }
+    }
+
+    private void AddEntryCount(int delta) {
+      var count = BinaryPrimitives.ReadUInt32LittleEndian(this._dxRoot.AsSpan(0x38, 4));
+      BinaryPrimitives.WriteUInt32LittleEndian(this._dxRoot.AsSpan(0x38, 4), (uint)(count + delta));
+    }
+
+    // ── growth ────────────────────────────────────────────────────────────
+
+    /// <summary>Refuses, before anything is allocated, a directory that cannot take one more block.</summary>
+    public void EnsureGrowable(Ocfs2Allocators volume, string name) {
+      if (this.Inline) {
+        if (volume.IndexedDirs)
+          throw new NotSupportedException($"ocfs2: the directory holding '{name}' is full, and on an indexed-dirs volume growing it means indexing it, which this editor does not do.");
+        return;
+      }
+      var records = ReadLeafRecords(this.Dinode);
+      if (records.Count >= ExtentListCount)
+        throw new NotSupportedException($"ocfs2: the directory holding '{name}' has no extent record left to grow into.");
+    }
+
+    /// <summary>
+    /// Takes one more cluster (one 4 KiB block): an inline directory moves its entries, repacked, into
+    /// the block and becomes extent-backed, as the kernel expands one; an extent-backed directory
+    /// appends the block holding one empty entry that spans it — and, indexed, its trailer, the block
+    /// going to the head of the free list.
+    /// </summary>
+    public void Grow(long cluster) {
+      var block = new byte[BlockSize];
+      if (this.Inline) {
+        var (start, capacity) = InlineWindow();
+        var at = 0;
+        var last = -1;
+        for (var cursor = start; cursor + 12 <= start + capacity;) {
+          var recLen = BinaryPrimitives.ReadUInt16LittleEndian(this.Dinode.AsSpan(cursor + 8, 2));
+          if (recLen < 12) break;
+          var inode = BinaryPrimitives.ReadUInt64LittleEndian(this.Dinode.AsSpan(cursor, 8));
+          if (inode != 0) {
+            var natural = (12 + this.Dinode[cursor + 10] + 3) & ~3;
+            this.Dinode.AsSpan(cursor, natural).CopyTo(block.AsSpan(at));
+            BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(at + 8, 2), (ushort)natural);
+            last = at;
+            at += natural;
+          }
+          cursor += recLen;
+        }
+        if (last < 0) throw new InvalidDataException("ocfs2: an inline directory without entries cannot be expanded.");
+        BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(last + 8, 2), (ushort)(BlockSize - last));
+        this.Dinode.AsSpan(Id2Offset, BlockSize - Id2Offset).Clear();
+        BinaryPrimitives.WriteUInt16LittleEndian(this.Dinode.AsSpan(OffDynFeatures, 2),
+          (ushort)(BinaryPrimitives.ReadUInt16LittleEndian(this.Dinode.AsSpan(OffDynFeatures, 2)) & ~DynInlineData));
+        BinaryPrimitives.WriteUInt16LittleEndian(this.Dinode.AsSpan(Id2Offset + 2, 2), ExtentListCount);
+        WriteLeafRecords(this.Dinode, [(0u, cluster, 1L)]);
+        this.Inline = false;
+      } else {
+        var usable = BlockSize - (this.Indexed ? TrailerBytes : 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(8, 2), (ushort)usable);
+        if (this.Indexed) {
+          var t = BlockSize - TrailerBytes;
+          BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(t + 0x08, 2), TrailerBytes);   // db_compat_rec_len
+          TrailerSignature.CopyTo(block, t + 0x10);
+          BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(t + 0x28, 8), (ulong)cluster);   // db_blkno
+          BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(t + 0x30, 8), (ulong)this.Blkno); // db_parent_dinode
+        }
+        var records = ReadLeafRecords(this.Dinode).Select(static r => (r.Cpos, r.Start, (long)r.Clusters)).ToList();
+        var (lastCpos, lastStart, lastCount) = records[^1];
+        if (lastStart + lastCount == cluster && lastCount < ushort.MaxValue) records[^1] = (lastCpos, lastStart, lastCount + 1);
+        else records.Add(((uint)(lastCpos + lastCount), cluster, 1L));
+        WriteLeafRecords(this.Dinode, records);
+      }
+      this._blocks.Add(cluster);
+      var area = this._blocks.Count - 1;
+      this._areas[area] = block;
+      this._dirty.Add(area);
+      if (this.Indexed) {
+        this.SetFree(area, (ushort)this.LargestHole(area), this.FreeHead);
+        this.FreeHead = cluster;
+      }
+      BinaryPrimitives.WriteUInt32LittleEndian(this.Dinode.AsSpan(OffClusters, 4),
+        BinaryPrimitives.ReadUInt32LittleEndian(this.Dinode.AsSpan(OffClusters, 4)) + 1);
+      BinaryPrimitives.WriteUInt64LittleEndian(this.Dinode.AsSpan(OffSize, 8), (ulong)this._blocks.Count * BlockSize);
+    }
+
+    // ── the index ─────────────────────────────────────────────────────────
+
+    private bool DxInline => (this._dxRoot[0x2C] & 1) != 0;
+
+    /// <summary>The ext3 TEA name hash: (major, minor), "." and ".." zero.</summary>
+    private (uint Major, uint Minor) Hash(string name) => DxHash(Encoding.UTF8.GetBytes(name), this._volume.DxSeed);
+
+    private byte[] Leaf(long block) {
+      if (!this._leaves.TryGetValue(block, out var leaf)) {
+        this._leaves[block] = leaf = this._volume.ReadBlock(block);
+        if (!leaf.AsSpan(0, 8).SequenceEqual(LeafSignature))
+          throw new InvalidDataException($"ocfs2: block {block} of the index of directory inode {this.Blkno} is not a DXLEAF1 leaf.");
+      }
+      return leaf;
+    }
+
+    private List<(uint Cpos, int Clusters, long Block)> DxRecords() {
+      var used = BinaryPrimitives.ReadUInt16LittleEndian(this._dxRoot.AsSpan(DxListOffset + 4, 2));
+      var records = new List<(uint, int, long)>(used);
+      for (var i = 0; i < used; ++i) {
+        var at = DxListOffset + 0x10 + i * 16;
+        records.Add((BinaryPrimitives.ReadUInt32LittleEndian(this._dxRoot.AsSpan(at, 4)),
+          BinaryPrimitives.ReadUInt16LittleEndian(this._dxRoot.AsSpan(at + 4, 2)),
+          (long)BinaryPrimitives.ReadUInt64LittleEndian(this._dxRoot.AsSpan(at + 8, 8))));
+      }
+      return records;
+    }
+
+    /// <summary>The leaf a major hash belongs in: the last record starting at or below it, at the hash's cluster (its last, past its end); one block per cluster here.</summary>
+    private (long Block, uint Cpos, int Record) LeafFor(uint major) {
+      var records = this.DxRecords();
+      var index = -1;
+      for (var i = 0; i < records.Count; ++i) if (records[i].Cpos <= major) index = i;
+      if (index < 0) throw new InvalidDataException($"ocfs2: the index of directory inode {this.Blkno} has no leaf for hash 0x{major:X8}.");
+      var (cpos, clusters, block) = records[index];
+      var offset = major - cpos >= (uint)clusters ? (uint)(clusters - 1) : major - cpos;
+      return (block + offset, cpos + offset, index);
+    }
+
+    /// <summary>An entry list: (bytes, offset of de_count).</summary>
+    private static (int Count, int Used) ListSizes(byte[] block, int countAt)
+      => (BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(countAt, 2)), BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(countAt + 2, 2)));
+
+    /// <summary>
+    /// How many clusters inserting <paramref name="name" /> takes from the index: one
+    /// when the inline index or the leaf it lands in is full, else none. A leaf that cannot be
+    /// split so the name fits is refused here, before anything is allocated.
+    /// </summary>
+    public int DxClustersNeeded(string name) {
+      if (!this.Indexed) return 0;
+      var (major, _) = this.Hash(name);
+      if (this.DxInline) {
+        var (count, used) = ListSizes(this._dxRoot, DxListOffset + 4);
+        return used < count ? 0 : 1;
+      }
+      var (block, cpos, record) = this.LeafFor(major);
+      var leaf = this.Leaf(block);
+      var (leafCount, leafUsed) = ListSizes(leaf, LeafListOffset + 4);
+      if (leafUsed < leafCount) return 0;
+      if (this.DxRecords()[record].Clusters != 1)
+        throw new NotSupportedException($"ocfs2: the full index leaf of directory inode {this.Blkno} is part of a multi-cluster extent, which this editor does not split.");
+      var split = SplitHash(LeafEntries_(leaf, leafUsed), cpos, major)
+        ?? throw new NotSupportedException($"ocfs2: the full index leaf of directory inode {this.Blkno} holds only hash 0x{major:X8}; it cannot be split.");
+      var records = this.DxRecords();
+      if (records.Count >= BinaryPrimitives.ReadUInt16LittleEndian(this._dxRoot.AsSpan(DxListOffset + 2, 2)))
+        throw new NotSupportedException($"ocfs2: the index root of directory inode {this.Blkno} has no extent record left.");
+      var staying = LeafEntries_(leaf, leafUsed).Count(e => e.Major < split);
+      var moving = leafUsed - staying;
+      if ((major < split ? staying : moving) >= leafCount)
+        throw new NotSupportedException($"ocfs2: splitting the full index leaf of directory inode {this.Blkno} leaves no room for the new name.");
+      return 1;
+    }
+
+    private static List<(uint Major, uint Minor, long Block)> LeafEntries_(byte[] leaf, int used) {
+      var list = new List<(uint, uint, long)>(used);
+      for (var i = 0; i < used; ++i) {
+        var at = LeafEntries + i * 16;
+        list.Add((BinaryPrimitives.ReadUInt32LittleEndian(leaf.AsSpan(at, 4)), BinaryPrimitives.ReadUInt32LittleEndian(leaf.AsSpan(at + 4, 4)),
+          (long)BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(at + 8, 8))));
+      }
+      return list;
+    }
+
+    /// <summary>
+    /// Where a full leaf splits: with every entry on one major hash, refused when that is the new
+    /// name's, else just past the leaf's own offset when it is that, else the larger of it and the
+    /// new name's; otherwise the first major hash from the median on that exceeds the leaf's offset.
+    /// </summary>
+    private static uint? SplitHash(List<(uint Major, uint Minor, long Block)> entries, uint cpos, uint insertMajor) {
+      var sorted = entries.OrderBy(static e => e.Major).ThenBy(static e => e.Minor).ToList();
+      var first = sorted[0].Major;
+      if (sorted.All(e => e.Major == first)) {
+        if (first == insertMajor) return null;
+        if (first == cpos) return cpos + 1;
+        return first > insertMajor ? first : insertMajor;
+      }
+      for (var i = sorted.Count / 2; i < sorted.Count; ++i)
+        if (sorted[i].Major > cpos) return sorted[i].Major;
+      return null;
+    }
+
+    private static void WriteEntry(byte[] block, int at, uint major, uint minor, long dirent) {
+      BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(at, 4), major);
+      BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(at + 4, 4), minor);
+      BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(at + 8, 8), (ulong)dirent);
+    }
+
+    private byte[] NewLeaf(long block) {
+      var leaf = new byte[BlockSize];
+      LeafSignature.CopyTo(leaf, 0);
+      BinaryPrimitives.WriteUInt64LittleEndian(leaf.AsSpan(0x10, 8), (ulong)block);
+      BinaryPrimitives.WriteUInt32LittleEndian(leaf.AsSpan(0x18, 4), this._volume.Generation);
+      BinaryPrimitives.WriteUInt16LittleEndian(leaf.AsSpan(LeafListOffset + 4, 2), (ushort)((BlockSize - LeafEntries) / 16));
+      this._leaves[block] = leaf;
+      this._dirtyLeaves.Add(block);
+      return leaf;
+    }
+
+    private static void Append(byte[] block, int countAt, uint major, uint minor, long dirent) {
+      var used = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(countAt + 2, 2));
+      WriteEntry(block, countAt + 4 + used * 16, major, minor, dirent);
+      BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(countAt + 2, 2), (ushort)(used + 1));
+    }
+
+    private void DxInsert(uint major, uint minor, long dirent, long? cluster) {
+      if (this.DxInline) {
+        var (count, used) = ListSizes(this._dxRoot, DxListOffset + 4);
+        if (used < count) {
+          Append(this._dxRoot, DxListOffset + 4, major, minor, dirent);
+          return;
+        }
+        // The inline index moves into one leaf cluster at offset 0.
+        var block = cluster ?? throw new InvalidOperationException("ocfs2: the index needs a cluster it was not given.");
+        var leaf = this.NewLeaf(block);
+        for (var i = 0; i < used; ++i) {
+          var at = DxRootEntries + i * 16;
+          Append(leaf, LeafListOffset + 4, BinaryPrimitives.ReadUInt32LittleEndian(this._dxRoot.AsSpan(at, 4)),
+            BinaryPrimitives.ReadUInt32LittleEndian(this._dxRoot.AsSpan(at + 4, 4)), (long)BinaryPrimitives.ReadUInt64LittleEndian(this._dxRoot.AsSpan(at + 8, 8)));
+        }
+        this._dxRoot.AsSpan(DxListOffset, BlockSize - DxListOffset).Clear();
+        this._dxRoot[0x2C] &= unchecked((byte)~1);
+        BinaryPrimitives.WriteUInt16LittleEndian(this._dxRoot.AsSpan(DxListOffset + 2, 2), (ushort)((BlockSize - DxListOffset - 0x10) / 16));
+        this.WriteDxRecords([(0u, 1, block)]);
+        BinaryPrimitives.WriteUInt32LittleEndian(this._dxRoot.AsSpan(0x28, 4), 1);   // dr_clusters
+        Append(leaf, LeafListOffset + 4, major, minor, dirent);
+        return;
+      }
+
+      var (leafBlock, cpos, record) = this.LeafFor(major);
+      var target = this.Leaf(leafBlock);
+      var (leafCount, leafUsed) = ListSizes(target, LeafListOffset + 4);
+      if (leafUsed < leafCount) {
+        Append(target, LeafListOffset + 4, major, minor, dirent);
+        this._dirtyLeaves.Add(leafBlock);
+        return;
+      }
+
+      // A full leaf splits: sorted, the entries from the split hash on move into a new cluster
+      // recorded at that hash, and the new name goes where its hash now leads.
+      var newBlock = cluster ?? throw new InvalidOperationException("ocfs2: the index needs a cluster it was not given.");
+      var entries = LeafEntries_(target, leafUsed).OrderBy(static e => e.Major).ThenBy(static e => e.Minor).ToList();
+      var split = SplitHash(entries, cpos, major) ?? throw new InvalidOperationException("ocfs2: the index leaf cannot be split.");
+      target.AsSpan(LeafEntries, leafCount * 16).Clear();
+      BinaryPrimitives.WriteUInt16LittleEndian(target.AsSpan(LeafListOffset + 6, 2), 0);
+      var fresh = this.NewLeaf(newBlock);
+      foreach (var (m, n, b) in entries) Append(m >= split ? fresh : target, LeafListOffset + 4, m, n, b);
+      this._dirtyLeaves.Add(leafBlock);
+      var records = this.DxRecords();
+      records.Insert(record + 1, (split, 1, newBlock));
+      this.WriteDxRecords(records);
+      BinaryPrimitives.WriteUInt32LittleEndian(this._dxRoot.AsSpan(0x28, 4), BinaryPrimitives.ReadUInt32LittleEndian(this._dxRoot.AsSpan(0x28, 4)) + 1);
+      Append(major >= split ? fresh : target, LeafListOffset + 4, major, minor, dirent);
+    }
+
+    private void WriteDxRecords(List<(uint Cpos, int Clusters, long Block)> records) {
+      this._dxRoot.AsSpan(DxListOffset + 0x10, BlockSize - DxListOffset - 0x10).Clear();
+      BinaryPrimitives.WriteUInt16LittleEndian(this._dxRoot.AsSpan(DxListOffset + 4, 2), (ushort)records.Count);
+      for (var i = 0; i < records.Count; ++i) {
+        var at = DxListOffset + 0x10 + i * 16;
+        BinaryPrimitives.WriteUInt32LittleEndian(this._dxRoot.AsSpan(at, 4), records[i].Cpos);
+        BinaryPrimitives.WriteUInt16LittleEndian(this._dxRoot.AsSpan(at + 4, 2), (ushort)records[i].Clusters);
+        BinaryPrimitives.WriteUInt64LittleEndian(this._dxRoot.AsSpan(at + 8, 8), (ulong)records[i].Block);
+      }
+    }
+
+    private void DxRemove(uint major, uint minor, long dirent) {
+      byte[] block;
+      int countAt;
+      if (this.DxInline) {
+        block = this._dxRoot;
+        countAt = DxListOffset + 4;
+      } else {
+        var (leafBlock, _, _) = this.LeafFor(major);
+        block = this.Leaf(leafBlock);
+        countAt = LeafListOffset + 4;
+        this._dirtyLeaves.Add(leafBlock);
+      }
+      var used = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(countAt + 2, 2));
+      for (var i = 0; i < used; ++i) {
+        var at = countAt + 4 + i * 16;
+        if (BinaryPrimitives.ReadUInt32LittleEndian(block.AsSpan(at, 4)) != major
+            || BinaryPrimitives.ReadUInt32LittleEndian(block.AsSpan(at + 4, 4)) != minor
+            || (long)BinaryPrimitives.ReadUInt64LittleEndian(block.AsSpan(at + 8, 8)) != dirent) continue;
+        block.AsSpan(at + 16, (used - i - 1) * 16).CopyTo(block.AsSpan(at));
+        block.AsSpan(countAt + 4 + (used - 1) * 16, 16).Clear();
+        BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(countAt + 2, 2), (ushort)(used - 1));
+        return;
+      }
+      throw new InvalidDataException($"ocfs2: the index of directory inode {this.Blkno} has no entry for the name being removed.");
+    }
+
+    /// <summary>Writes the changed blocks, then the index, then the dinode that names them.</summary>
+    public void Flush(Ocfs2Allocators volume) {
+      foreach (var area in this._dirty.Where(static a => a >= 0).Order()) volume.WriteBlock(this._blocks[area], this._areas[area]);
+      foreach (var leaf in this._dirtyLeaves.Order()) volume.WriteBlock(leaf, this._leaves[leaf]);
+      if (this.Indexed) volume.WriteBlock(this._dxRootBlkno, this._dxRoot);
+      volume.WriteBlock(this.Blkno, this.Dinode);
+      this._dirty.Clear();
+      this._dirtyLeaves.Clear();
+    }
+  }
+
+  /// <summary>
+  /// The directory-index name hash: ext3's TEA hash in a Davies-Meyer arrangement. The state starts
+  /// as the volume's four seed words; the name is taken 16 bytes at a time, each block packed into
+  /// four words (bytes folded big-end first onto a pad of the remaining length repeated in every
+  /// byte, unused words left as that pad) and run through 16 TEA rounds (delta 0x9E3779B9) whose
+  /// sums are added to the first two state words. Major is the first word, minor the second; "."
+  /// and ".." hash to zero.
+  /// </summary>
+  internal static (uint Major, uint Minor) DxHash(ReadOnlySpan<byte> name, uint[] seed) {
+    if (name.SequenceEqual("."u8) || name.SequenceEqual(".."u8)) return (0, 0);
+    Span<uint> buf = [seed[0], seed[1], seed[2], seed[3]];
+    Span<uint> input = stackalloc uint[4];
+    for (var at = 0; at < name.Length; at += 16) {
+      var len = name.Length - at;
+      var pad = (uint)len | ((uint)len << 8);
+      pad |= pad << 16;
+      var take = Math.Min(len, 16);
+      var value = pad;
+      var word = 0;
+      for (var i = 0; i < take; ++i) {
+        value = name[at + i] + (value << 8);
+        if (i % 4 == 3) {
+          input[word++] = value;
+          value = pad;
+        }
+      }
+      if (word < 4) input[word++] = value;
+      while (word < 4) input[word++] = pad;
+
+      uint sum = 0, b0 = buf[0], b1 = buf[1];
+      uint a = input[0], b = input[1], c = input[2], d = input[3];
+      for (var round = 0; round < 16; ++round) {
+        sum += 0x9E3779B9;
+        b0 += ((b1 << 4) + a) ^ (b1 + sum) ^ ((b1 >> 5) + b);
+        b1 += ((b0 << 4) + c) ^ (b0 + sum) ^ ((b0 >> 5) + d);
+      }
+      buf[0] += b0;
+      buf[1] += b1;
+    }
+    return (buf[0], buf[1]);
   }
 
   /// <summary>

@@ -343,13 +343,149 @@ public class PeaTests {
     Assert.That(ms.ToArray(), Is.EqualTo(before));
   }
 
-  [Test, Category("Exception")]
-  public void GivenAVolumeOfASet_WhenModified_ThenRefused() {
+  // ── in-place modify of volume sets ──────────────────────────────────
+
+  /// <summary>pea's volume set <paramref name="set"/> placed on disk as set.000001.pea, …; returns the set name.</summary>
+  private string PlaceSet(string set) {
     var setBase = Path.Combine(this._tmpDir, "set");
-    var volumes = LoadVolumes("vol");
+    var volumes = LoadVolumes(set);
     for (var i = 0; i < volumes.Count; ++i) File.WriteAllBytes(PeaArchive.VolumePath(setBase, i + 1), volumes[i]);
-    using var f = new FileStream(PeaArchive.VolumePath(setBase, 1), FileMode.Open, FileAccess.ReadWrite);
-    Assert.That(() => new PeaFormatDescriptor().Remove(f, ["fox.txt"]), Throws.InstanceOf<NotSupportedException>());
+    return setBase;
+  }
+
+  private static List<byte[]> ReadSet(string setBase) => PeaArchive.VolumePaths(PeaArchive.VolumePath(setBase, 1)).Select(File.ReadAllBytes).ToList();
+
+  /// <summary>Edits the set through volume <paramref name="opened"/>, as the shell does through the volume it opened.</summary>
+  private static void EditSet(string setBase, int opened, IEnumerable<PeaArchive.Input> add, IEnumerable<string> remove, string? password = null) {
+    using var f = new FileStream(PeaArchive.VolumePath(setBase, opened), FileMode.Open, FileAccess.ReadWrite);
+    PeaArchive.Modify(f, add, remove, password);
+  }
+
+  [TestCase("vol", 5000)] // CRC32 volume checks, stored
+  [TestCase("volz", 200)] // SHA-1 volume checks, zlib
+  [Category("HappyPath")]
+  public void GivenPeaZipVolumeSet_WhenModified_ThenTheEditLandsAndTheSetKeepsItsVolumeSizeAndCheck(string set, int volumeSize) {
+    var setBase = this.PlaceSet(set);
+    var volumeCheck = LoadVolumes(set)[0][3];
+
+    EditSet(setBase, 1, [new("hello.txt", Added, SourceTime), new("new/added.txt", Added, SourceTime)], ["fox.txt"]);
+
+    var volumes = ReadSet(setBase);
+    Assert.That(volumes.SkipLast(1).Select(v => v.Length), Is.All.EqualTo(volumeSize));
+    Assert.That(volumes[0][3], Is.EqualTo(volumeCheck), "volume check");
+    AssertEdited(PeaArchive.ReadVolumes(volumes));
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenVolumeSet_WhenAnEditGrowsIt_ThenNewVolumesFollowBesideTheOthers() {
+    var setBase = this.PlaceSet("vol");
+    var before = LoadVolumes("vol").Count;
+    var big = Enumerable.Range(0, 20_000).Select(i => (byte)(i * 31)).ToArray();
+
+    EditSet(setBase, 1, [new("big.bin", big, SourceTime)], []);
+
+    var volumes = ReadSet(setBase);
+    Assert.That(volumes, Has.Count.GreaterThan(before + 3));
+    Assert.That(volumes.SkipLast(1).Select(v => v.Length), Is.All.EqualTo(5000));
+    var entries = PeaArchive.ReadVolumes(volumes);
+    Assert.That(entries.Single(e => e.Path == "big.bin").Data, Is.EqualTo(big));
+    Assert.That(entries.Single(e => e.Path == "fox.txt").Data, Is.EqualTo(Fox));
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenVolumeSet_WhenAnEditShrinksIt_ThenTheVolumesItNoLongerNeedsAreDeleted() {
+    var setBase = this.PlaceSet("vol");
+    Assert.That(File.Exists(PeaArchive.VolumePath(setBase, 3)));
+
+    EditSet(setBase, 1, [], ["fox.txt"]);
+
+    Assert.That(File.Exists(PeaArchive.VolumePath(setBase, 2)), Is.False);
+    Assert.That(File.Exists(PeaArchive.VolumePath(setBase, 3)), Is.False);
+    Assert.That(PeaArchive.ReadVolumes(ReadSet(setBase)).Select(e => e.Path), Is.EquivalentTo(new[] { "hello.txt", "empty.txt", "sub", "sub/n.txt" }));
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenVolumeSet_WhenEditedThroughALaterVolumeThatStays_ThenTheWholeSetIsRewritten() {
+    var setBase = this.PlaceSet("vol");
+
+    EditSet(setBase, 2, [new("new/added.txt", Added, SourceTime)], []);
+
+    var entries = PeaArchive.ReadVolumes(ReadSet(setBase));
+    Assert.That(entries.Single(e => e.Path == "new/added.txt").Data, Is.EqualTo(Added));
+    Assert.That(entries.Single(e => e.Path == "fox.txt").Data, Is.EqualTo(Fox));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenVolumeSet_WhenEditedThroughAVolumeTheEditWouldDelete_ThenRefusedAndEveryVolumeUntouched() {
+    var setBase = this.PlaceSet("vol");
+    var before = ReadSet(setBase);
+
+    Assert.That(() => EditSet(setBase, 3, [], ["fox.txt"]), Throws.InstanceOf<NotSupportedException>());
+
+    Assert.That(ReadSet(setBase), Is.EqualTo(before));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenVolumeSetWithADamagedVolume_WhenModified_ThenRefusedAndEveryVolumeUntouched() {
+    var setBase = this.PlaceSet("vol");
+    var damaged = PeaArchive.VolumePath(setBase, 2);
+    var bytes = File.ReadAllBytes(damaged);
+    bytes[100] ^= 0x01;
+    File.WriteAllBytes(damaged, bytes);
+    var before = ReadSet(setBase);
+
+    Assert.That(() => EditSet(setBase, 1, [], ["fox.txt"]), Throws.InstanceOf<InvalidDataException>());
+
+    Assert.That(ReadSet(setBase), Is.EqualTo(before));
+  }
+
+  [Test, Category("EdgeCase")]
+  public void GivenOneVolumeSet_WhenAnEditGrowsIt_ThenItStaysOneVolume() {
+    var setBase = Path.Combine(this._tmpDir, "one");
+    using (var f = File.Create(PeaArchive.VolumePath(setBase, 1)))
+      PeaArchive.Write(f, SmallInputs(), 0, volumeSize: 1_000_000);
+
+    EditSet(setBase, 1, [new("big.bin", new byte[50_000], SourceTime)], []);
+
+    Assert.That(File.Exists(PeaArchive.VolumePath(setBase, 2)), Is.False, "a one-volume set records no volume size to cut at");
+    Assert.That(PeaArchive.ReadVolumes(ReadSet(setBase)).Single(e => e.Path == "big.bin").Size, Is.EqualTo(50_000));
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenEncryptedVolumeSet_WhenModifiedWithItsPassword_ThenItStaysEncryptedAndSplit() {
+    var setBase = Path.Combine(this._tmpDir, "enc");
+    using (var f = File.Create(PeaArchive.VolumePath(setBase, 1)))
+      PeaArchive.Write(f, SmallInputs(), 0, streamCheck: PeaArchive.Check.Aes256Eax, volumeSize: 1000, password: "secret",
+        openVolume: n => File.Create(PeaArchive.VolumePath(setBase, n)));
+
+    EditSet(setBase, 1, [new("new/added.txt", Added, SourceTime)], ["hello.txt"], "secret");
+
+    var volumes = ReadSet(setBase);
+    Assert.That(volumes, Has.Count.GreaterThan(1));
+    Assert.That(volumes.SkipLast(1).Select(v => v.Length), Is.All.EqualTo(1000));
+    Assert.That(volumes[0][18], Is.EqualTo((byte)PeaArchive.Check.Aes256Eax));
+    var entries = PeaArchive.ReadVolumes(volumes, "secret");
+    Assert.That(entries.Select(e => e.Path), Is.EquivalentTo(new[] { "dir", "dir/fox.txt", "new", "new/added.txt" }));
+  }
+
+  [Test, Category("ExternalInterop")]
+  public void GivenEditedPeaZipVolumeSet_WhenPeaZipExtractsIt_ThenTheEditIsWhatComesOut() {
+    var pea = RequirePea();
+    var setBase = this.PlaceSet("volz");
+    EditSet(setBase, 1, [new("hello.txt", Added, SourceTime), new("new/added.txt", Added, SourceTime), new("big.bin", Fox.Reverse().ToArray(), SourceTime)], ["fox.txt"]);
+    Assert.That(File.Exists(PeaArchive.VolumePath(setBase, 3)), "the edited set should span several volumes");
+    var outDir = Path.Combine(this._tmpDir, "out");
+    Directory.CreateDirectory(outDir);
+
+    var r = FsInteropToolbox.RunWsl($"timeout 120 xvfb-run -a '{pea}' UNPEA '{FsInteropToolbox.WinToWsl(PeaArchive.VolumePath(setBase, 1))}' '{FsInteropToolbox.WinToWsl(outDir)}/' RESETDATE RESETATTR EXTRACT2DIR HIDDEN '' ''");
+    Assert.That(r.ExitCode, Is.EqualTo(0), $"pea UNPEA failed:\n{r.StdOut}\n{r.StdErr}");
+    var root = Directory.GetDirectories(outDir).Single();
+    var files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).ToDictionary(f => Path.GetRelativePath(root, f).Replace('\\', '/'), File.ReadAllBytes);
+    Assert.That(files.Keys, Is.EquivalentTo(new[] { "hello.txt", "empty.txt", "sub/n.txt", "new/added.txt", "big.bin" }));
+    Assert.That(files["hello.txt"], Is.EqualTo(Added));
+    Assert.That(files["new/added.txt"], Is.EqualTo(Added));
+    Assert.That(files["big.bin"], Is.EqualTo(Fox.Reverse().ToArray()));
+    Assert.That(files["sub/n.txt"], Is.EqualTo(Nested));
   }
 
   [TestCase("deflate9.pea", null)]

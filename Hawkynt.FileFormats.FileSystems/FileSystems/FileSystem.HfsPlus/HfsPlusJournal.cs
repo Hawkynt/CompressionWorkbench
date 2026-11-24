@@ -37,6 +37,7 @@ internal sealed class HfsPlusJournal {
   private const uint EndianMagic = 0x12345678;
   private const int HeaderChecksumBytes = 44;
   private const int BlockListChecksumBytes = 32;
+  private const uint CheckChecksumsFlag = 1;      // BLHDR_CHECK_CHECKSUMS
   private const uint FirstHeaderFlag = 2;         // BLHDR_FIRST_HEADER
 
   /// <summary>Byte offset of the journal header within the volume.</summary>
@@ -117,13 +118,33 @@ internal sealed class HfsPlusJournal {
   /// The (volume offset, bytes) writes a replay of the journal's committed transactions makes, in
   /// the order they apply; empty when the journal is empty or not readable.
   /// </summary>
-  internal List<(long Offset, byte[] Data)> Replay(Func<long, int, byte[]?> read) {
+  internal List<(long Offset, byte[] Data)> Replay(Func<long, int, byte[]?> read) => this.Plan(read).Writes;
+
+  /// <summary>
+  /// What a replay does: the writes, in the order they apply, and where the journal's start and
+  /// end both point once they are applied. <see cref="ReachedEnd"/> is false when a block list
+  /// between start and end failed its checks, so the walk never confirmed where the log ends.
+  /// </summary>
+  internal sealed record ReplayPlan(List<(long Offset, byte[] Data)> Writes, long NewStart, bool ReachedEnd);
+
+  /// <summary>
+  /// Plans the replay. The block lists from start to end are applied as committed. Past the end
+  /// the walk carries on while the log continues: a block list whose header checksum holds and
+  /// whose sequence number follows (the next transaction's is one more than the last one's; a
+  /// block list continuing a transaction repeats its number) and, when it is flagged
+  /// BLHDR_CHECK_CHECKSUMS, every block's TN1150 checksum over its whole bytes matches. A
+  /// transaction that is not whole there is not applied, and the journal then starts where the
+  /// last whole one ended. macOS 26 behaves exactly so on volumes it left with a committed and
+  /// with a torn transaction past the recorded end (Compression.Tests HfsPlusJournalAppleReplayTests).
+  /// </summary>
+  internal ReplayPlan Plan(Func<long, int, byte[]?> read) {
     var writes = new List<(long, byte[])>();
-    if (!this.TryReadHeader(read, out var header) || header.Start == header.End) return writes;
+    if (!this.TryReadHeader(read, out var header)) return new(writes, 0, false);
     var transactionStart = 0;   // index of the first write of the transaction being read
     var flagsTransactions = false;
     var position = header.Start;
     var guard = 0;
+    uint? lastSequence = null;
     while (position != header.End && guard++ < 1_000_000) {
       var listStart = position;
       var blockList = this.ReadCircular(read, header, ref position, (int)header.BlockListHeaderSize);
@@ -136,23 +157,127 @@ internal sealed class HfsPlusJournal {
       } else if (!flagsTransactions) {
         transactionStart = writes.Count;
       }
-      var listWrites = new List<(long, byte[])>();
-      var ok = true;
-      for (var i = 1; i < count && ok; i++) {
-        var bnum = U64(blockList, 16 + 16 * i, header.LittleEndian);
-        var size = (int)U32(blockList, 24 + 16 * i, header.LittleEndian);
-        if (size <= 0) { ok = false; break; }
-        var data = this.ReadCircular(read, header, ref position, size);
-        if (data is null) { ok = false; break; }
-        if (bnum != ulong.MaxValue) listWrites.Add(((long)bnum * header.SectorSize, data));
-      }
-      if (!ok) break;
+      if (this.ReadBlocks(read, header, blockList, count, ref position, verify: false) is not { } listWrites) break;
       writes.AddRange(listWrites);
+      lastSequence = U32(blockList, 28, header.LittleEndian);
       // A block list's bytes_used covers its header and every block, which is where the next one starts.
       position = Advance(header, listStart, bytesUsed);
     }
-    if (position != header.End) writes.RemoveRange(transactionStart, writes.Count - transactionStart);
-    return writes;
+    if (position != header.End) {
+      writes.RemoveRange(transactionStart, writes.Count - transactionStart);
+      return new(writes, position, false);
+    }
+    return new(writes, this.ContinuePastEnd(read, header, lastSequence, writes), true);
+  }
+
+  /// <summary>
+  /// Applies whole transactions that follow the recorded end (see <see cref="Plan"/>) and returns
+  /// the position just after the last one applied.
+  /// </summary>
+  private long ContinuePastEnd(Func<long, int, byte[]?> read, Header header, uint? lastSequence, List<(long, byte[])> writes) {
+    // Only a log whose replayed part numbers its transactions says what may follow it.
+    if (lastSequence is not { } last) return header.End;
+    var committedEnd = header.End;
+    var listStart = header.End;
+    var pending = new List<(long, byte[])>();
+    uint? transaction = null;
+    var transactionEnd = header.End;
+    for (var guard = 0; guard < 1_000_000; guard++) {
+      var position = listStart;
+      var blockList = this.ReadCircular(read, header, ref position, (int)header.BlockListHeaderSize);
+      if (blockList is null || !ValidBlockList(blockList, header, out var count, out var bytesUsed, out var flags)) break;
+      var sequence = U32(blockList, 28, header.LittleEndian);
+      if ((flags & FirstHeaderFlag) != 0) {
+        // A new transaction follows, so the one before it is whole.
+        if (transaction is { } previous) {
+          writes.AddRange(pending);
+          pending.Clear();
+          committedEnd = transactionEnd;
+          last = previous;
+          transaction = null;
+        }
+        if (sequence != unchecked(last + 1)) break;
+        transaction = sequence;
+      } else if (transaction is null || sequence != transaction.Value) {
+        break;
+      }
+      if (this.ReadBlocks(read, header, blockList, count, ref position, verify: (flags & CheckChecksumsFlag) != 0) is not { } listWrites) {
+        // A torn block list: the transaction it belongs to is dropped whole.
+        pending.Clear();
+        transaction = null;
+        break;
+      }
+      // The log past its end never runs over its start: those bytes are still the live log.
+      var next = Advance(header, listStart, bytesUsed);
+      if (Distance(header, header.End, next) > Distance(header, header.End, header.Start)) {
+        pending.Clear();
+        transaction = null;
+        break;
+      }
+      pending.AddRange(listWrites);
+      listStart = transactionEnd = next;
+      if (listStart == header.Start) break;
+    }
+    // The last transaction whose every block list checked out is whole as far as the log shows.
+    if (transaction is not null) {
+      writes.AddRange(pending);
+      committedEnd = transactionEnd;
+    }
+    return committedEnd;
+  }
+
+  /// <summary>The writes one block list carries, or null when a block is out of reach or (when verified) fails its checksum.</summary>
+  private List<(long, byte[])>? ReadBlocks(Func<long, int, byte[]?> read, Header header, byte[] blockList, int count, ref long position, bool verify) {
+    var listWrites = new List<(long, byte[])>();
+    for (var i = 1; i < count; i++) {
+      var bnum = U64(blockList, 16 + 16 * i, header.LittleEndian);
+      var size = (int)U32(blockList, 24 + 16 * i, header.LittleEndian);
+      if (size <= 0) return null;
+      var data = this.ReadCircular(read, header, ref position, size);
+      if (data is null) return null;
+      if (verify && Checksum(data) != U32(blockList, 28 + 16 * i, header.LittleEndian)) return null;
+      if (bnum != ulong.MaxValue) listWrites.Add(((long)bnum * header.SectorSize, data));
+    }
+    return listWrites;
+  }
+
+  /// <summary>
+  /// Replays the journal into <paramref name="image"/> itself, as a mount does: every write of
+  /// <see cref="Plan"/> applied, then the journal header's start and end both set to where the
+  /// log ends and its checksum recomputed. The result is byte-identical to the volume macOS leaves
+  /// after replaying the same journal. Returns false when the journal held nothing; throws
+  /// <see cref="NotSupportedException"/> (image untouched) when a block list before the recorded
+  /// end is damaged, since where macOS then restarts the log has not been measured.
+  /// </summary>
+  internal bool ReplayInPlace(byte[] image) {
+    byte[]? Read(long offset, int length) => offset >= 0 && offset + length <= image.Length ? image.AsSpan((int)offset, length).ToArray() : null;
+    if (!this.TryReadHeader(Read, out var header))
+      throw new NotSupportedException("HFS+: the volume's journal header is not valid; it is not replayed.");
+    var plan = this.Plan(Read);
+    if (header.Start == header.End && plan.NewStart == header.End) return false;
+    if (!plan.ReachedEnd)
+      throw new NotSupportedException("HFS+: a block list inside the journal is damaged; the journal is not replayed in place.");
+    foreach (var (offset, data) in plan.Writes) {
+      if (offset < 0 || offset + data.Length > image.Length)
+        throw new NotSupportedException("HFS+: the journal writes past the end of the image; it is not replayed in place.");
+    }
+    foreach (var (offset, data) in plan.Writes) data.CopyTo(image, offset);
+    var raw = image.AsSpan((int)this.Offset, HeaderChecksumBytes);
+    WriteU64(raw[8..], (ulong)plan.NewStart, header.LittleEndian);
+    WriteU64(raw[16..], (ulong)plan.NewStart, header.LittleEndian);
+    WriteU32(raw[36..], 0, header.LittleEndian);
+    WriteU32(raw[36..], Checksum(raw), header.LittleEndian);
+    return true;
+  }
+
+  private static void WriteU64(Span<byte> at, ulong value, bool little) {
+    if (little) BinaryPrimitives.WriteUInt64LittleEndian(at, value);
+    else BinaryPrimitives.WriteUInt64BigEndian(at, value);
+  }
+
+  private static void WriteU32(Span<byte> at, uint value, bool little) {
+    if (little) BinaryPrimitives.WriteUInt32LittleEndian(at, value);
+    else BinaryPrimitives.WriteUInt32BigEndian(at, value);
   }
 
   private static bool ValidBlockList(byte[] blockList, Header header, out int count, out long bytesUsed, out uint flags) {
@@ -184,6 +309,10 @@ internal sealed class HfsPlusJournal {
     if (position >= header.Size) position = header.SectorSize;
     return result;
   }
+
+  /// <summary>Bytes of log from <paramref name="from"/> forward to <paramref name="to"/>, wrapping past the header.</summary>
+  private static long Distance(Header header, long from, long to)
+    => to >= from ? to - from : header.Size - from + (to - header.SectorSize);
 
   private static long Advance(Header header, long position, long bytes) {
     position += bytes;

@@ -20,15 +20,30 @@ internal sealed class BcacheFsCoreVolume {
   internal required IReadOnlyList<string> Diagnostics { get; init; }
   internal required bool Recoverable { get; init; }
 
+  /// <summary>The unlocked encryption of an encrypted volume; null for a plain one.</summary>
+  internal BcacheFsCrypt? Crypt { get; init; }
+
   internal bool Clean => this.Superblock.Clean;
 
   internal BcacheFsTreeRoot? Root(BcacheFsBtreeId id)
     => this.EffectiveRoots.GetValueOrDefault((byte)id);
 
-  internal static BcacheFsCoreVolume Open(Stream device)
-    => Open([device]);
+  internal static BcacheFsCoreVolume Open(Stream device, string? passphrase = null)
+    => Open([device], passphrase);
 
-  internal static BcacheFsCoreVolume Open(IEnumerable<Stream> devices) {
+  /// <summary>
+  /// Opens a volume to edit it in place; an encrypted one is refused before anything is read
+  /// past its superblock, since the editors write plain metadata.
+  /// </summary>
+  /// <exception cref="NotSupportedException">The volume is encrypted.</exception>
+  internal static BcacheFsCoreVolume OpenForEdit(Stream device) {
+    if (BcacheFsDeviceSuperblocks.Read(device).Current is { } superblock && BcacheFsCrypt.IsEncrypted(superblock))
+      throw new NotSupportedException("bcachefs: an encrypted volume is not edited in place here.");
+    return Open(device);
+  }
+
+  /// <exception cref="UnauthorizedAccessException">The volume's key is wrapped and <paramref name="passphrase"/> is missing or wrong.</exception>
+  internal static BcacheFsCoreVolume Open(IEnumerable<Stream> devices, string? passphrase = null) {
     ArgumentNullException.ThrowIfNull(devices);
     var supplied = devices.ToList();
     if (supplied.Count == 0)
@@ -80,12 +95,15 @@ internal sealed class BcacheFsCoreVolume {
     else if (checkpoint != null)
       diagnostics.AddRange(checkpoint.Diagnostics);
 
+    // An encrypted volume's journal and b-tree nodes need its key from here on.
+    var crypt = BcacheFsCrypt.Unlock(global, passphrase);
+
     var deviceLogs = new List<BcacheFsJournalDeviceLog>();
     // Clean mounts need not read the journal for correctness, but doing so here
     // makes the core state complete and catches disagreeing replicas early. It is
     // an offline library; a future driver mount policy may choose the fast path.
     foreach (var (stream, _, current) in discovered)
-      deviceLogs.Add(BcacheFsJournalReader.ReadDevice(stream, current));
+      deviceLogs.Add(BcacheFsJournalReader.ReadDevice(stream, current, crypt));
 
     var journal = BcacheFsJournalLog.Merge(deviceLogs);
     var superblockBlacklists = ReadSuperblockBlacklists(global, diagnostics);
@@ -132,6 +150,7 @@ internal sealed class BcacheFsCoreVolume {
       EffectiveRoots = roots,
       Diagnostics = diagnostics,
       Recoverable = recoverable,
+      Crypt = crypt,
     };
   }
 

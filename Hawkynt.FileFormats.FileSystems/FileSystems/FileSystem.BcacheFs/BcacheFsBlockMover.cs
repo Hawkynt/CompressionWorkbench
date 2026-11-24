@@ -321,6 +321,15 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
       }
     }
 
+    // And what the indirect extents of the reflink tree occupy.
+    foreach (var (_, key) in this.ReadKeys(image, volume, BtreeReflink)) {
+      if (BcacheFsAllocationBuilder.IndirectAsExtent(key) is not { } extent
+          || BcacheFsAllocationBuilder.Footprint(extent) is not { } at) continue;
+      var bucket = at.Sector / bucketSectors;
+      claimed.TryGetValue(bucket, out var already);
+      claimed[bucket] = (uint)Math.Min(bucketSectors, already + at.DiskSectors);
+    }
+
     // What the alloc tree says.
     var recorded = new Dictionary<long, uint>();
     var occupied = new HashSet<long>();

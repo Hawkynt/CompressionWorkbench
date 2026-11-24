@@ -541,27 +541,79 @@ public static class PeaArchive {
   }
 
   /// <summary>
-  /// Edits a single-file PEA archive in place: drops the <paramref name="remove"/> paths (a folder
-  /// with everything beneath it), then adds <paramref name="add"/>, replacing files of the same
-  /// path. Everything else stays as it was: the archive's compression, object, stream and volume
-  /// checks, encryption kind and strength (under a fresh salt), system bytes, and every kept
-  /// object's stored name, time and attributes. New objects go under the archive's common folder,
-  /// their times in its encoding.
+  /// Edits a PEA archive in place: drops the <paramref name="remove"/> paths (a folder with
+  /// everything beneath it), then adds <paramref name="add"/>, replacing files of the same path.
+  /// Everything else stays as it was: the archive's compression, object, stream and volume checks,
+  /// encryption kind and strength (under a fresh salt), system bytes, and every kept object's
+  /// stored name, time and attributes. New objects go under the archive's common folder, their
+  /// times in its encoding. A volume set (a file stream named <c>name.000001.pea</c>, …) is
+  /// rewritten as a set again: cut at the size of its first volume when it has more than one, the
+  /// volumes it then needs written beside the first and the ones it no longer needs deleted.
   /// </summary>
-  /// <param name="archive">The archive; read, then rewritten from the start.</param>
+  /// <param name="archive">The archive, or one of its volumes; read, then rewritten from the start.</param>
   /// <param name="add">Objects to add or replace (null data: a folder).</param>
   /// <param name="remove">Paths to remove, as <see cref="PeaEntry.Path"/> gives them.</param>
   /// <param name="password">The password of an encrypted archive.</param>
-  /// <exception cref="NotSupportedException">A volume set: its volumes would all change size.</exception>
+  /// <exception cref="NotSupportedException">The opened volume is one the edited set no longer needs (open volume 1 instead).</exception>
   /// <exception cref="ArchivePasswordException">The archive is encrypted and the password is missing or wrong.</exception>
   public static void Modify(Stream archive, IEnumerable<Input> add, IEnumerable<string> remove, string? password = null) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(add);
     ArgumentNullException.ThrowIfNull(remove);
-    if (archive is FileStream { Name: { Length: > 0 } name } && VolumeSetBase(name) is not null)
-      throw new NotSupportedException("A PEA volume set is not edited in place: every volume after the change would move.");
+    if (archive is FileStream { Name: { Length: > 0 } name } && VolumeSetBase(name) is { } setBase) {
+      ModifySet(archive, name, setBase, add, remove, password);
+      return;
+    }
     var bytes = ReadAll(archive);
-    var entries = ReadVolumes([bytes], password); // verifies every check (and the password) first
+    using var rebuilt = new MemoryStream();
+    Rebuild(rebuilt, [bytes], add, remove, password, 0, null);
+    archive.Position = 0;
+    archive.SetLength(0);
+    rebuilt.Position = 0;
+    rebuilt.CopyTo(archive);
+    archive.Flush();
+  }
+
+  /// <summary>
+  /// Edits a volume set: every volume is read and verified, the edited archive is cut at the size
+  /// of the old volume 1 (a one-volume set stays one volume, since its volume size is not recorded)
+  /// and only then written back, volume by volume; volumes past the new last one are deleted.
+  /// </summary>
+  private static void ModifySet(Stream opened, string openedName, string setBase, IEnumerable<Input> add, IEnumerable<string> remove, string? password) {
+    var paths = VolumePaths(openedName);
+    var openedFull = Path.GetFullPath(openedName);
+    bool IsOpened(string p) => string.Equals(Path.GetFullPath(p), openedFull, StringComparison.Ordinal);
+    var volumes = paths.Select(p => IsOpened(p) ? ReadAll(opened) : File.ReadAllBytes(p)).ToList();
+    var volumeSize = volumes.Count > 1 ? volumes[0].LongLength : 0;
+
+    var built = new SortedDictionary<int, MemoryStream>();
+    var first = new MemoryStream();
+    built[1] = first;
+    Rebuild(first, volumes, add, remove, password, volumeSize, n => built[n] = new MemoryStream());
+    var openedNumber = paths.FindIndex(IsOpened) + 1;
+    if (openedNumber > built.Count)
+      throw new NotSupportedException($"The edited PEA set has {built.Count} volume(s), so the opened volume {openedNumber} would be deleted; open volume 1 to edit the set.");
+
+    foreach (var (number, content) in built) { // a disposed MemoryStream still gives its bytes
+      var path = VolumePath(setBase, number);
+      if (number <= paths.Count && IsOpened(paths[number - 1])) {
+        opened.Position = 0;
+        opened.SetLength(0);
+        opened.Write(content.ToArray());
+        opened.Flush();
+      } else {
+        using var f = File.Create(number <= paths.Count ? paths[number - 1] : path);
+        f.Write(content.ToArray());
+      }
+    }
+    for (var n = built.Count + 1; n <= paths.Count; ++n) File.Delete(paths[n - 1]);
+  }
+
+  /// <summary>Reads and verifies the <paramref name="volumes"/>, applies the edit and writes the archive with its own settings.</summary>
+  private static void Rebuild(Stream output, IReadOnlyList<byte[]> volumes, IEnumerable<Input> add, IEnumerable<string> remove, string? password,
+      long volumeSize, Func<int, Stream>? openVolume) {
+    var entries = ReadVolumes(volumes, password); // verifies every check (and the password) first
+    var bytes = volumes[0];
     var compression = bytes[16];
     var volumeCheck = (Check)bytes[3];
     var streamCheck = (Check)bytes[18];
@@ -593,14 +645,8 @@ public static class PeaArchive {
       } else objects.Add(NewObject(root, input.Path, input.Data, input.LastModified, timeEncoding));
     }
 
-    using var rebuilt = new MemoryStream();
-    WriteObjects(rebuilt, bytes.AsSpan(5, 4), objects, compression, objectCheck, streamCheck, volumeCheck,
-      0, null, PeaStreamCipher.Encrypts((byte)streamCheck) ? password : null, PeaStreamCipher.IsCascade((byte)streamCheck) ? bytes[9] : 0);
-    archive.Position = 0;
-    archive.SetLength(0);
-    rebuilt.Position = 0;
-    rebuilt.CopyTo(archive);
-    archive.Flush();
+    WriteObjects(output, bytes.AsSpan(5, 4), objects, compression, objectCheck, streamCheck, volumeCheck,
+      volumeSize, openVolume, PeaStreamCipher.Encrypts((byte)streamCheck) ? password : null, PeaStreamCipher.IsCascade((byte)streamCheck) ? bytes[9] : 0);
   }
 
   private const byte UnixTime = 0x30, DosTimeEncoding = 0x10;

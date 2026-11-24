@@ -83,6 +83,8 @@ internal static class BcacheFsInPlaceModifier {
     internal required Dictionary<int, List<Key>> PreservedTrees { get; init; }
     internal required Dictionary<ulong, List<Key>> Xattrs { get; init; }
     internal required List<Key> OtherInodeKeys { get; init; }
+    /// <summary>The reflink tree's indirect extents, refcounts as this edit leaves them.</summary>
+    internal required List<Key> Reflink { get; init; }
     internal required HashSet<long> OccupiedBuckets { get; init; }
     internal required Dictionary<long, BcacheFsMetadataCommit.BucketState> BucketStates { get; init; }
     internal required List<(long Offset, long Length)> FreedRanges { get; init; }
@@ -93,6 +95,7 @@ internal static class BcacheFsInPlaceModifier {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(inputs);
     EnsureWritable(image);
+    using var buckets = UseVolumeBuckets(image);
 
     var model = ReadModel(image);
     foreach (var input in inputs) {
@@ -122,6 +125,7 @@ internal static class BcacheFsInPlaceModifier {
           throw new InvalidOperationException($"bcachefs: '{path}' is a symbolic link, not a file to replace.");
         foreach (var key in existing.ExistingExtents)
           AddFreedRange(model.FreedRanges, key);
+        DropReflinks(model, existing.ExistingExtents);
         existing.Length = length;
         existing.Metadata = metadata;
         existing.Pending = new PendingPayload { Length = length, Open = open };
@@ -146,6 +150,7 @@ internal static class BcacheFsInPlaceModifier {
   internal static void Remove(Stream image, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(image);
     EnsureWritable(image);
+    using var buckets = UseVolumeBuckets(image);
     entryNames ??= [];
 
     var model = ReadModel(image);
@@ -165,6 +170,7 @@ internal static class BcacheFsInPlaceModifier {
       var file = model.Files[path];
       foreach (var key in file.ExistingExtents)
         AddFreedRange(model.FreedRanges, key);
+      DropReflinks(model, file.ExistingExtents);
       model.Files.Remove(path);
     }
 
@@ -191,6 +197,7 @@ internal static class BcacheFsInPlaceModifier {
   internal static void NormalizeMetadata(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     EnsureWritable(image);
+    using var buckets = UseVolumeBuckets(image);
     Commit(image, ReadModel(image));
   }
 
@@ -212,7 +219,7 @@ internal static class BcacheFsInPlaceModifier {
 
   /// <summary>Trees carried key by key.</summary>
   private static readonly int[] CarriedTrees = [
-    BtreeExtents, BtreeInodes, BtreeDirents, BtreeXattrs, BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees,
+    BtreeExtents, BtreeInodes, BtreeDirents, BtreeXattrs, BtreeReflink, BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees,
   ];
 
   /// <summary>Key types that mark a slot as empty rather than holding anything.</summary>
@@ -236,15 +243,58 @@ internal static class BcacheFsInPlaceModifier {
   /// other than this package's writer lays a device out (bucket size and journal),
   /// or holding keys in a tree it neither carries nor rebuilds.</para>
   /// </remarks>
-  internal static Dictionary<int, List<Key>> RequireWritableProfile(Stream image) {
-    ArgumentNullException.ThrowIfNull(image);
+  internal static Dictionary<int, List<Key>> RequireWritableProfile(Stream image) => RequireWritableProfile(image, writerLayout: true);
+
+  /// <summary>
+  /// Works in the bucket size of the volume <paramref name="image" /> holds for as long as the
+  /// result is not disposed: an edit of a volume <c>bcachefs format</c> made writes its nodes,
+  /// allocation keys and data in that volume's buckets. A b-tree node size other than the bucket
+  /// size is refused, as each node this editor writes fills a bucket of its own.
+  /// </summary>
+  private static IDisposable UseVolumeBuckets(Stream image) {
     image.Position = 0;
     var core = BcacheFsCoreVolume.Open(image);
+    image.Position = 0;
+    if (core.Members.Count != 1) return BcacheFsBucketGeometry.Use(WriterBucketSectors);   // refused by the profile check
+    var bucket = core.Members[0].BucketSizeSectors;
+    var node = core.Superblock.BtreeNodeSectors;
+    if (node != bucket)
+      throw new NotSupportedException(
+        $"bcachefs: the volume's b-tree nodes are {node} sectors but its buckets {bucket}; an edit here writes one node per bucket.");
+    var raw = core.Superblock.RawBytes;
+    var timeBase = (Int128)BinaryPrimitives.ReadUInt64LittleEndian(raw.AsSpan(128))
+      | ((Int128)BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(136)) << 64);
+    var precision = BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(140));
+    return BcacheFsBucketGeometry.Use(bucket, core.Superblock.BlockSizeSectors, timeBase, precision);
+  }
+
+  /// <summary>
+  /// Whether the volume is laid out as this package's writer lays one out: 64 KiB buckets and the
+  /// journal in buckets 33 to 48. Defragmentation and metadata relocation move things within that
+  /// layout only; adds and removes work on any single-device layout.
+  /// </summary>
+  internal static void RequireWriterLayout(Stream image) {
+    image.Position = 0;
+    var core = BcacheFsCoreVolume.Open(image);
+    image.Position = 0;
+    var geometry = BcacheFsSuperblockEditor.ReadGeometry(image);
+    image.Position = 0;
+    if (core.Members.Count != 1 || core.Members[0].BucketSizeSectors != WriterBucketSectors
+        || geometry.JournalBuckets.Count != 1
+        || geometry.JournalBuckets[0] != (BcacheFsWriter.JournalFirstBucket, BcacheFsWriter.JournalBuckets))
+      throw new NotSupportedException(
+        "bcachefs: the volume is not laid out as this package's writer lays one out (64 KiB buckets, journal in buckets 33-48); "
+        + "defragmentation and metadata relocation are implemented for that layout only.");
+  }
+
+  internal static Dictionary<int, List<Key>> RequireWritableProfile(Stream image, bool writerLayout) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var core = BcacheFsCoreVolume.OpenForEdit(image);
     if (!core.Recoverable)
       throw new InvalidDataException("bcachefs: the volume could not be recovered: " + string.Join("; ", core.Diagnostics));
 
-    const string profile = "in-place edits are implemented for single-device volumes laid out by this package's writer, "
-      + "at metadata version 1.3 or 1.4";
+    const string profile = "in-place edits are implemented for single-device volumes at metadata version 1.3 or 1.4";
     var version = core.Superblock.Version;
     if (version < BcacheFsFormat.Version || version > MaxEditableVersion)
       throw new NotSupportedException(
@@ -259,9 +309,9 @@ internal static class BcacheFsInPlaceModifier {
 
     image.Position = 0;
     var geometry = BcacheFsSuperblockEditor.ReadGeometry(image);
-    if (geometry.JournalBuckets.Count != 1
-        || geometry.JournalBuckets[0] != (BcacheFsWriter.JournalFirstBucket, BcacheFsWriter.JournalBuckets))
-      throw new NotSupportedException($"bcachefs: the journal is not where this package's writer puts it; {profile}.");
+    if (geometry.JournalBuckets.Count == 0)
+      throw new InvalidDataException("bcachefs: the superblock names no journal buckets.");
+    if (writerLayout) RequireWriterLayout(image);
 
     var trees = new Dictionary<int, List<Key>>();
     foreach (var id in BcacheFsOnDiskCatalog.KnownBtrees) {
@@ -284,7 +334,7 @@ internal static class BcacheFsInPlaceModifier {
   }
 
   private static Model ReadModel(Stream image) {
-    var trees = RequireWritableProfile(image);
+    var trees = RequireWritableProfile(image, writerLayout: false);
     image.Position = 0;
     var volume = BcacheFsVolume.Open(image);
     if (!volume.Valid)
@@ -305,11 +355,13 @@ internal static class BcacheFsInPlaceModifier {
       throw new InvalidDataException("bcachefs: root inode is missing.");
 
     var extentKeys = ReadTree(BtreeExtents);
-    var foreignExtent = extentKeys.FirstOrDefault(k => k.Type is not (KeyExtent or KeyInlineData or KeyReservation));
+    var foreignExtent = extentKeys.FirstOrDefault(k => k.Type is not (KeyExtent or KeyInlineData or KeyReservation or KeyReflinkP));
     if (foreignExtent.Value != null)
       throw new NotSupportedException(
-        $"bcachefs in-place mutation carries pointer extents, inline data and reservations; key type {foreignExtent.Type} "
-        + "(reflink or another indirect extent) is left read-only.");
+        $"bcachefs in-place mutation carries pointer extents, inline data, reservations and reflinks; key type {foreignExtent.Type} "
+        + "is left read-only.");
+    var reflink = ReadTree(BtreeReflink);
+    RequireConsistentReflinks(extentKeys, reflink);
 
     var dirents = ReadTree(BtreeDirents)
       .Where(k => k.Type == KeyDirent && k.Value.Length >= 9)
@@ -439,6 +491,9 @@ internal static class BcacheFsInPlaceModifier {
     // is therefore checked on what the commit writes, not on what it reads.
     foreach (var extent in extentKeys)
       ValidateExtent(extent, volume.BucketSectorCount);
+    foreach (var key in reflink)
+      if (BcacheFsAllocationBuilder.IndirectAsExtent(key) is { } extent)
+        ValidateExtent(extent, volume.BucketSectorCount);
 
     var preserved = new Dictionary<int, List<Key>> {
       [BtreeSubvolumes] = ReadTree(BtreeSubvolumes),
@@ -454,6 +509,7 @@ internal static class BcacheFsInPlaceModifier {
       PreservedTrees = preserved,
       Xattrs = xattrs,
       OtherInodeKeys = otherInodeKeys,
+      Reflink = reflink,
       OccupiedBuckets = occupied,
       BucketStates = bucketStates,
       FreedRanges = [],
@@ -471,7 +527,7 @@ internal static class BcacheFsInPlaceModifier {
   internal static bool IsCanonical(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
-    var core = BcacheFsCoreVolume.Open(image);
+    var core = BcacheFsCoreVolume.OpenForEdit(image);
     if (!core.Recoverable || core.Overlay.KeyUpdates.Count != 0
         || core.Journal.Sequences.Any(s => s.Sequence != CleanJournalSeq))
       return false;
@@ -524,7 +580,10 @@ internal static class BcacheFsInPlaceModifier {
   internal static void Canonicalize(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     EnsureWritable(image);
+    RequireWriterLayout(image);
     var model = ReadModel(image);
+    if (model.Reflink.Count != 0)
+      throw new NotSupportedException("bcachefs: the volume holds reflinked (shared) data, which is not moved into the writer's layout.");
     var moving = NonCanonicalExtents(model.Files.Values.SelectMany(f => f.FinalExtents));
     // Refused before a byte is written, so a refusal leaves the volume as it was.
     foreach (var file in model.Files.Values)
@@ -616,6 +675,7 @@ internal static class BcacheFsInPlaceModifier {
 
     var trees = BuildLogicalTrees(model);
     var userBuckets = trees[BtreeExtents]
+      .Concat(trees[BtreeReflink].Select(BcacheFsAllocationBuilder.IndirectAsExtent).OfType<Key>())
       .Select(BcacheFsAllocationBuilder.Footprint)
       .Where(f => f.HasValue)
       .Select(f => f!.Value.Sector / BucketSectors)
@@ -633,6 +693,7 @@ internal static class BcacheFsInPlaceModifier {
     // the new metadata generation may have landed in a bucket they emptied, and a
     // surviving key may share a region with a removed one, so both are spared.
     var spared = trees[BtreeExtents]
+      .Concat(trees[BtreeReflink].Select(BcacheFsAllocationBuilder.IndirectAsExtent).OfType<Key>())
       .Select(BcacheFsAllocationBuilder.Footprint)
       .Where(f => f.HasValue)
       .Select(f => (Offset: f!.Value.Sector * SectorSize, Length: (long)f.Value.RegionSectors * SectorSize))
@@ -673,18 +734,28 @@ internal static class BcacheFsInPlaceModifier {
     foreach (var dir in model.Directories.Values
       .Where(d => d.Path.Length != 0 && d.ExistingDirent == null)
       .OrderBy(d => d.Path.Count(c => c == '/'))) {
-      var parentInode = model.Directories[dir.ParentPath].Inode;
-      dir.DirentOffset = ReserveDirentOffset(used, parentInode, dir.Name);
+      var parent = model.Directories[dir.ParentPath];
+      dir.DirentOffset = ReserveDirentOffset(used, parent.Inode, HashSeedOf(parent), dir.Name);
     }
     foreach (var file in model.Files.Values.Where(f => f.ExistingDirent == null)) {
-      var parentInode = model.Directories[file.ParentPath].Inode;
-      file.DirentOffset = ReserveDirentOffset(used, parentInode, file.Name);
+      var parent = model.Directories[file.ParentPath];
+      file.DirentOffset = ReserveDirentOffset(used, parent.Inode, HashSeedOf(parent), file.Name);
     }
   }
 
-  private static ulong ReserveDirentOffset(Dictionary<ulong, HashSet<ulong>> used, ulong parent, string name) {
+  /// <summary>
+  /// The seed a directory's entries are hashed with: <c>bi_hash_seed</c>, the second word of its
+  /// <c>inode_v3</c>. The kernel draws it at random for a directory it makes; one this editor
+  /// makes gets the seed its writer gives it.
+  /// </summary>
+  private static ulong HashSeedOf(DirectoryState directory)
+    => directory.ExistingInode is { Value.Length: >= 16 } inode
+      ? BinaryPrimitives.ReadUInt64LittleEndian(inode.Value.AsSpan(8))
+      : BcacheFsWriter.HashSeed(directory.Inode);
+
+  private static ulong ReserveDirentOffset(Dictionary<ulong, HashSet<ulong>> used, ulong parent, ulong seed, string name) {
     if (!used.TryGetValue(parent, out var set)) used[parent] = set = [];
-    var offset = DirentHash(BcacheFsWriter.HashSeed(parent), name);
+    var offset = DirentHash(seed, name);
     while (!set.Add(offset)) ++offset;
     return offset;
   }
@@ -725,23 +796,29 @@ internal static class BcacheFsInPlaceModifier {
           got += n;
         }
 
-        var sectors = (got + SectorSize - 1) / SectorSize;
+        var sectors = BcacheFsBucketGeometry.RoundUpSectors(got);
         Array.Clear(buffer, got, sectors * SectorSize - got);
         var bucket = pending.Buckets[bucketIndex++];
-        var firstSector = bucket * BucketSectors;
-        image.Position = firstSector * SectorSize;
+        var bucketSector = bucket * BucketSectors;
+        image.Position = bucketSector * SectorSize;
         image.Write(buffer, 0, sectors * SectorSize);
 
-        var checksum = DataChecksum(buffer.AsSpan(0, sectors * SectorSize));
-        var value = new byte[16];
-        BinaryPrimitives.WriteUInt64LittleEndian(value, ExtentCrc32(sectors, checksum));
-        BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8),
-          ExtentPointer(firstSector, generation: model.BucketStates.GetValueOrDefault(bucket).Generation));
-        file.FinalExtents.Add(new Key(KeyExtent,
-          new Bpos(file.Inode, (ulong)(logicalSector + sectors), SnapshotIdMax),
-          (uint)sectors, value));
+        // A bucket larger than a crc32 entry can describe (bcachefs format's 128 KiB
+        // default) holds its data as several back-to-back extents.
+        for (var done = 0; done < sectors;) {
+          var piece = Math.Min(MaxCrc32ExtentSectors, sectors - done);
+          var checksum = DataChecksum(buffer.AsSpan(done * SectorSize, piece * SectorSize));
+          var value = new byte[16];
+          BinaryPrimitives.WriteUInt64LittleEndian(value, ExtentCrc32(piece, checksum));
+          BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8),
+            ExtentPointer(bucketSector + done, generation: model.BucketStates.GetValueOrDefault(bucket).Generation));
+          logicalSector += piece;
+          done += piece;
+          file.FinalExtents.Add(new Key(KeyExtent,
+            new Bpos(file.Inode, (ulong)logicalSector, SnapshotIdMax),
+            (uint)piece, value));
+        }
 
-        logicalSector += sectors;
         remaining -= got;
       }
     }
@@ -788,7 +865,7 @@ internal static class BcacheFsInPlaceModifier {
 
     foreach (var file in model.Files.Values) {
       var parentInode = model.Directories[file.ParentPath].Inode;
-      var sectors = (ulong)((file.Length + SectorSize - 1) / SectorSize);
+      var sectors = (ulong)BcacheFsBucketGeometry.RoundUpSectors(file.Length);
       // A file whose bytes are untouched keeps its inode as it is: its sector count
       // is what its extents hold, which for a sparse file or inline data is not its
       // length rounded up.
@@ -800,6 +877,7 @@ internal static class BcacheFsInPlaceModifier {
         ?? BcacheFsWriter.DirentKey(parentInode, file.DirentOffset, file.Name, file.Inode, DtReg));
     }
 
+    trees[BtreeReflink] = [.. model.Reflink];
     trees[BtreeSubvolumes] = [.. model.PreservedTrees[BtreeSubvolumes]];
     trees[BtreeSnapshots] = [.. model.PreservedTrees[BtreeSnapshots]];
     trees[BtreeSnapshotTrees] = [.. model.PreservedTrees[BtreeSnapshotTrees]];
@@ -826,12 +904,20 @@ internal static class BcacheFsInPlaceModifier {
         $"bcachefs metadata needs {count} buckets; an in-place commit budgets {MetadataBuckets}.");
 
     var lastSbBucket = (geometry.DeviceSectors - SbSlotSectors) / BucketSectors;
+    // A volume bcachefs format laid out keeps its superblock slots and journal wherever it chose;
+    // no node goes there.
+    var fixedBuckets = new HashSet<long>();
+    for (var sector = 0L; sector < PrimarySbSector + SbSlotSectors; sector += BucketSectors) fixedBuckets.Add(sector / BucketSectors);
+    foreach (var slot in geometry.SuperblockSectors)
+      for (var sector = slot; sector < slot + SbSlotSectors; sector += BucketSectors) fixedBuckets.Add(sector / BucketSectors);
+    foreach (var (start, journalCount) in geometry.JournalBuckets)
+      for (var b = start; b < start + journalCount; ++b) fixedBuckets.Add(b);
     // The reservation first, and within it the buckets still at generation zero:
     // a backpointer into a reused bucket is one a newer bcachefs throws away and
     // rebuilds when it upgrades the volume (see FreeDataBuckets).
     var candidates = new List<long>();
     for (var bucket = (long)FirstMetadataBucket; bucket < lastSbBucket; ++bucket) {
-      if (userBuckets.Contains(bucket)) continue;
+      if (userBuckets.Contains(bucket) || fixedBuckets.Contains(bucket)) continue;
       candidates.Add(bucket);
       if (!IsMetadataReservation(bucket) && candidates.Count >= count + MetadataBuckets) break;
     }
@@ -970,6 +1056,69 @@ internal static class BcacheFsInPlaceModifier {
   /// <summary>
   /// An extent's checksummed region must lie inside one bucket of device 0.
   /// </summary>
+  // ── Reflinks ────────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// The stretch of the reflink tree a <c>reflink_p</c> holds a reference to: <c>[idx - front_pad,
+  /// idx + size + back_pad)</c> (value: idx u64, front_pad u32, back_pad u32). Every indirect extent
+  /// overlapping it counts the reference once.
+  /// </summary>
+  private static (ulong Start, ulong End) ReferencedRange(Key reflinkP) {
+    if (reflinkP.Value.Length < 8)
+      throw new InvalidDataException($"bcachefs: reflink_p at inode {reflinkP.Position.Inode} is too short.");
+    var idx = BinaryPrimitives.ReadUInt64LittleEndian(reflinkP.Value);
+    var front = reflinkP.Value.Length >= 12 ? BinaryPrimitives.ReadUInt32LittleEndian(reflinkP.Value.AsSpan(8)) : 0u;
+    var back = reflinkP.Value.Length >= 16 ? BinaryPrimitives.ReadUInt32LittleEndian(reflinkP.Value.AsSpan(12)) : 0u;
+    return (idx - front, idx + reflinkP.Size + back);
+  }
+
+  private static bool Overlaps(Key indirect, (ulong Start, ulong End) range)
+    => indirect.Position.Offset > range.Start && indirect.Position.Offset - indirect.Size < range.End;
+
+  /// <summary>
+  /// Refuses a reflink tree an edit here would publish wrong: a key that is not an indirect extent,
+  /// or a refcount that is not the number of <c>reflink_p</c> keys referencing the extent — the
+  /// only thing an edit changes is that count, and it starts from the truth or not at all.
+  /// </summary>
+  private static void RequireConsistentReflinks(List<Key> extents, List<Key> reflink) {
+    var foreign = reflink.FirstOrDefault(k => k.Type is not (KeyReflinkV or KeyIndirectInlineData));
+    if (foreign.Value != null)
+      throw new NotSupportedException($"bcachefs: the reflink tree holds key type {foreign.Type}, which an edit here does not carry.");
+    var ranges = extents.Where(static k => k.Type == KeyReflinkP).Select(ReferencedRange).ToList();
+    foreach (var key in reflink) {
+      if (key.Value.Length < 8)
+        throw new InvalidDataException($"bcachefs: indirect extent at {key.Position.Offset} is too short.");
+      var refcount = BinaryPrimitives.ReadUInt64LittleEndian(key.Value);
+      var counted = (ulong)ranges.Count(r => Overlaps(key, r));
+      if (refcount != counted)
+        throw new NotSupportedException(
+          $"bcachefs: the indirect extent ending at {key.Position.Offset} counts {refcount} references but {counted} reach it; it is not edited.");
+    }
+  }
+
+  /// <summary>
+  /// Takes away the references a removed or replaced file's <c>reflink_p</c> keys held: each
+  /// indirect extent they reach counts one fewer, and one no file references any more is dropped,
+  /// its data freed with it.
+  /// </summary>
+  private static void DropReflinks(Model model, IEnumerable<Key> extents) {
+    foreach (var range in extents.Where(static k => k.Type == KeyReflinkP).Select(ReferencedRange).ToList()) {
+      for (var i = model.Reflink.Count - 1; i >= 0; --i) {
+        var key = model.Reflink[i];
+        if (!Overlaps(key, range)) continue;
+        var value = key.Value.ToArray();
+        var refcount = BinaryPrimitives.ReadUInt64LittleEndian(value);
+        if (refcount <= 1) {
+          if (BcacheFsAllocationBuilder.IndirectAsExtent(key) is { } extent) AddFreedRange(model.FreedRanges, extent);
+          model.Reflink.RemoveAt(i);
+          continue;
+        }
+        BinaryPrimitives.WriteUInt64LittleEndian(value, refcount - 1);
+        model.Reflink[i] = key with { Value = value };
+      }
+    }
+  }
+
   private static void ValidateExtent(Key extent, int bucketSectors) {
     if (extent.Type != KeyExtent) return;
     if (BcacheFsAllocationBuilder.Footprint(extent) is not { } at)

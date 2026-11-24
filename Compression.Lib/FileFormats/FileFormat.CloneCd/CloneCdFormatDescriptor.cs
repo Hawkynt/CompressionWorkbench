@@ -15,7 +15,10 @@ namespace FileFormat.CloneCd;
 /// <para>This descriptor parses the CCD text and surfaces a <c>metadata.ini</c>
 /// distilling the version, disc/session/track counts and per-track modes, plus a
 /// verbatim <c>FULL.ccd</c> entry. When the referenced <c>.img</c> / <c>.sub</c>
-/// sit next to the <c>.ccd</c> on disk they are also surfaced as data entries.
+/// sit next to the <c>.ccd</c> on disk they are also surfaced as data entries, and every
+/// track of the TOC is listed as <c>track-NN.iso</c> (Mode 1), <c>track-NN.wav</c> (CD-DA)
+/// or <c>track-NN.mode2</c> (Mode 2 subheader and data), under <c>session-NN/</c> after the
+/// first session (layout in <c>docs/CLONECD-ON-DISK.md</c>).
 /// The raw <c>.ccd</c> never throws on malformed input — it degrades to
 /// <c>parse_status=partial</c>.</para>
 ///
@@ -101,6 +104,9 @@ public sealed class CloneCdFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     var idx = 2;
     foreach (var (name, len) in DiscoverCompanions(stream))
       entries.Add(new ArchiveEntryInfo(idx++, name, len, len, "Stored", false, false, null));
+    foreach (var (track, length) in Tracks(stream))
+      entries.Add(new ArchiveEntryInfo(idx++, track.EntryName, length, (long)(track.DataEnd - track.Index1) * CloneCdWriter.RawSectorSize,
+        track.Kind.ToString(), false, false, null));
     return entries;
   }
 
@@ -121,6 +127,10 @@ public sealed class CloneCdFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       if (path != null && File.Exists(path))
         WriteFile(outputDir, name, File.ReadAllBytes(path));
     }
+
+    foreach (var (track, _) in Tracks(stream))
+      if (Wants(files, track.EntryName))
+        WriteFile(outputDir, track.EntryName, ReadTrack(stream, track));
   }
 
   /// <summary>
@@ -151,6 +161,10 @@ public sealed class CloneCdFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       return new FileStream(path, FileMode.Open, FileAccess.Read,
         FileShare.Read | FileShare.Delete, 64 * 1024, FileOptions.RandomAccess);
 
+    foreach (var (track, _) in Tracks(archive))
+      if (string.Equals(track.EntryName, entryName, StringComparison.Ordinal))
+        return new MemoryStream(ReadTrack(archive, track), writable: false);
+
     throw new FileNotFoundException($"CloneCD entry '{entryName}' does not exist.", entryName);
   }
 
@@ -158,37 +172,91 @@ public sealed class CloneCdFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public long? MaxTotalArchiveSize => null;
 
   /// <summary>Gets what <see cref="Create"/> accepts.</summary>
-  public string AcceptedInputsDescription => "accepts: one .iso (Mode 1 user data, whole 2048-byte sectors); the .img and .sub are written beside the .ccd";
+  public string AcceptedInputsDescription =>
+    "accepts: tracks in disc order - .iso (Mode 1, whole 2048-byte sectors), .wav (CD-DA PCM: 44.1 kHz, 16-bit, stereo), " +
+    ".mode2 (Mode 2, whole 2336-byte sectors: subheader and data); tracks under session-NN/ go to session NN; " +
+    "the .img and .sub are written beside the .ccd";
 
-  /// <summary>Accepts one ISO image as the data track.</summary>
+  /// <summary>Accepts ISO images, CD-DA WAV files and Mode 2 sector files, at the root or under <c>session-NN/</c>.</summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
-    if (input.ArchiveName.EndsWith(".iso", StringComparison.OrdinalIgnoreCase)) {
+    ArgumentNullException.ThrowIfNull(input);
+    if (input.IsDirectory || TrackPath(input.ArchiveName) is { Kind: not null, Session: > 0 }) {
       reason = null;
       return true;
     }
-    reason = $"'{input.ArchiveName}' is not an ISO image; {this.AcceptedInputsDescription}";
+    reason = $"'{input.ArchiveName}' is no CloneCD track; {this.AcceptedInputsDescription}";
     return false;
   }
 
   /// <summary>
-  /// Writes a single-session disc with one Mode 1 data track: the control file to <paramref name="output"/>,
-  /// and the raw sectors and subchannel to <c>.img</c> and <c>.sub</c> files beside it, so the output has to
-  /// be a file.
+  /// Writes the disc the inputs describe, one track per file in input order, sessions from their <c>session-NN/</c>
+  /// folders: the control file to <paramref name="output"/>, and the raw sectors and subchannel to <c>.img</c> and
+  /// <c>.sub</c> files beside it, so the output has to be a file.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var files = inputs.Where(i => !i.IsDirectory).ToList();
-    if (files.Count != 1) throw new ArgumentException($"CloneCD: exactly one ISO image is needed, not {files.Count} files.");
-    if (!this.CanAccept(files[0], out var reason)) throw new ArgumentException(reason);
+    if (files.Count == 0) throw new ArgumentException("CloneCD: at least one track is needed.");
+    var sessions = new SortedDictionary<int, List<CloneCdTrackSource>>();
+    foreach (var input in files) {
+      if (!this.CanAccept(input, out var reason)) throw new ArgumentException(reason);
+      var (session, kind) = TrackPath(input.ArchiveName);
+      var content = input.ReadContent();
+      var data = kind == CloneCdTrackKind.Audio ? CloneCdLayout.PcmFromWave(content) : content;
+      if (!sessions.TryGetValue(session, out var list)) sessions[session] = list = [];
+      list.Add(new CloneCdTrackSource(kind!.Value, data));
+    }
+    if (sessions.Keys.Where((k, i) => k != i + 1).Any())
+      throw new ArgumentException("CloneCD: sessions must be numbered 1, 2, 3 ... without gaps.");
     if (output is not FileStream file)
       throw new NotSupportedException("CloneCD: an image set is three files (.ccd, .img, .sub), so it can only be created at a file path.");
-    var set = CloneCdWriter.FromIso(files[0].ReadContent());
+    var set = CloneCdWriter.Build([.. sessions.Values]);
     var stem = Path.Combine(Path.GetDirectoryName(file.Name) ?? ".", Path.GetFileNameWithoutExtension(file.Name));
     File.WriteAllBytes(stem + ".img", set.Img);
     File.WriteAllBytes(stem + ".sub", set.Sub);
     output.Write(set.Ccd);
   }
+
+  /// <summary>The session (1 at the root, NN under <c>session-NN/</c>) and the track kind its extension names.</summary>
+  private static (int Session, CloneCdTrackKind? Kind) TrackPath(string archiveName) {
+    var parts = archiveName.Replace('\\', '/').Trim('/').Split('/');
+    var session = 1;
+    if (parts.Length == 2 && parts[0].StartsWith("session-", StringComparison.OrdinalIgnoreCase) &&
+        int.TryParse(parts[0].AsSpan(8), NumberStyles.None, CultureInfo.InvariantCulture, out var n))
+      session = n;
+    else if (parts.Length != 1)
+      return (0, null);
+    CloneCdTrackKind? kind = Path.GetExtension(parts[^1]).ToLowerInvariant() switch {
+      ".iso" => CloneCdTrackKind.Mode1,
+      ".wav" => CloneCdTrackKind.Audio,
+      ".mode2" => CloneCdTrackKind.Mode2,
+      _ => null,
+    };
+    return (session, kind);
+  }
+
+  /// <summary>The tracks of the image set and their extracted lengths, when the <c>.img</c> sits beside the control file and matches it.</summary>
+  private static List<(CloneCdTrack Track, long Length)> Tracks(Stream stream) {
+    var result = new List<(CloneCdTrack, long)>();
+    if (ImgPath(stream) is not { } imgPath || !File.Exists(imgPath)) return result;
+    var text = ReadText(stream, out _);
+    using var img = File.OpenRead(imgPath);
+    var layout = CloneCdLayout.TryParse(text, img);
+    if (layout == null || layout.ImgSectors * CloneCdWriter.RawSectorSize > img.Length) return result;
+    foreach (var track in layout.Tracks)
+      if (layout.ExtractedLength(track, img) is var length and > 0)
+        result.Add((track, length));
+    return result;
+  }
+
+  private static byte[] ReadTrack(Stream stream, CloneCdTrack track) {
+    using var img = File.OpenRead(ImgPath(stream)!);
+    return CloneCdLayout.TryParse(ReadText(stream, out _), img)!.ReadTrack(track, img);
+  }
+
+  private static string? ImgPath(Stream stream)
+    => SourceDirectory(stream) is { } dir && SourceBaseName(stream) is { } baseName ? Path.Combine(dir, baseName + ".img") : null;
 
   private static bool Wants(string[]? files, string name)
     => files == null || files.Length == 0 || MatchesFilter(name, files);

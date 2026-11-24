@@ -26,8 +26,8 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | --- | ---: | --- |
 | `MISSING` | 161 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 31 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 57 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 337 | covered with no known gap against what the sources list |
+| `PARTIAL` | 56 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 338 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 443 | in our registry, listed by none of the eight sources |
 
 ### Per source
@@ -41,9 +41,9 @@ read-only rows.
 | libarchive (formats + filters) | 28 | 28 | 100.0 | 27 |
 | XADMaster / The Unarchiver | 127 | 108 | 85.0 | 94 |
 | binwalk v3 | 79 | 56 | 70.9 | 51 |
-| Universal Extractor 2 | 124 | 104 | 83.9 | 73 |
-| PRONOM | 87 | 83 | 95.4 | 74 |
-| Wikipedia | 268 | 197 | 73.5 | 155 |
+| Universal Extractor 2 | 124 | 104 | 83.9 | 74 |
+| PRONOM | 87 | 83 | 95.4 | 75 |
+| Wikipedia | 268 | 197 | 73.5 | 156 |
 | Wikipedia (de): list of compression programs | 124 | 78 | 62.9 | 48 |
 
 These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-20. The source inventories retain their original 2026-10-19 snapshot; the German list is revision 268525499 (2026-07-05). The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.
@@ -95,7 +95,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 | 6 | StuffIt | PARTIAL | 2 | Method 8 (no sample); segmented sets are read and written, verified with unar on our own sets (no real sample); method 14 is read and verified with unar; classic DES and StuffIt 5 RC4 reads and writes are proven. Rung 1: XADMaster (LGPL); oracle: unar. |
 | 7 | StuffIt X | PARTIAL | 2 | Method 7 (JPEG recompression) and AES, Blowfish, DES and RC4 encryption are read: StuffIt Deluxe's own archives restore testfile.jpg byte for byte and open with their password (rung 1: KaitoKit, MIT; unar decodes neither). Neither is written. Archives with a recovery record are refused; their layout is measured in [STUFFITX-RECOVERY-ON-DISK](../STUFFITX-RECOVERY-ON-DISK.md). Every other coding is read and the writer stores or codes Deflate, Brimstone, Darkhorse, Cyanide, Blend, Obscured and Iron streams, optionally behind the English or x86 preprocessor, all verified with unar. Rung 1: XADMaster (LGPL); oracle: unar. |
 | 8 | ALZip | OK | 2 | Done: split sets read and written; obfuscated deflate (method 3) read and written (rung 1: XADMaster), our method-3 output extracted byte-exact by unar, ALZip 5.52 and Bandizip 7.38. No ALZip release we could run writes method 3, so no ALZip-made method-3 sample exists. |
-| 9 | PEA | OK | 2 | Done: volume sets, every single-cipher encryption and the TRI*/SRI*/HRI* triple cascades are read and written, single-file archives edited in place, all verified with pea. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
+| 9 | PEA | OK | 2 | Done: volume sets, every single-cipher encryption and the TRI*/SRI*/HRI* triple cascades are read and written, single files and volume sets edited in place, all verified with pea. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
 | 10 | PAK (NoGate) | MISSING | 2 | Rung 1: XADMaster's Crushed method (BB_ArcDistill already covers Distilled). Needs a real sample; PAK 2.51 under DOSBox is the oracle. |
 | 11 | 7-Zip-zstd coders in 7z | PARTIAL | 2 | Write Zstandard, Brotli and LZ4 (the encoders exist); decode LZ5 and Lizard (BB_Lizard exists). Oracle: 7-Zip-zstd. |
 | 12 | ASPack | PARTIAL (read-only) | 2 | The read side is real; creating packed executables is not a goal. |
@@ -244,12 +244,11 @@ running real-world samples. The file named at the end of each row is where the l
 | APFS | `Apfs` | 3 | Fusion: only the main device is read, tier-2 blocks are refused; per-file-key encryption refused (ApfsReader.cs) |
 | Compiled HTML Help (CHM) | `Chm` | 3 | content sections above 1 unsupported (ChmReader.cs) |
 | FreeArc | `FreeArc` | 3 | only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs) |
-| QCOW / QCOW2 | `Qcow2` | 3 | no encryption, backing files, zstd clusters or extended L2 (Qcow2Structures.cs) |
+| QCOW / QCOW2 | `Qcow2` | 3 | reads everything listed; in-place edits refused on images with backing files, zstd clusters, extended L2, refcount widths other than 16 bits, and encrypted images with an external data file (Qcow2Structures.cs) |
 | SquashFS | `SquashFs` | 3 | SquashFS v4 only; v1-v3 rejected (SquashFsSuperblock.cs) |
 | UDF | `Udf` | 3 | type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs) |
 | Windows PE | `Mz`, `PeResources` | 3 | archive view of resources/overlay, not a full PE section extractor |
 | SQX | `Sqx` | 1 | audio (5), text/PPMd (6) and ultra (7) methods, encryption and split volumes are refused (SqxReader.cs) |
-| ZPAQ | `Zpaq` | 3 | encrypted (`-key`), multi-part and `-index` archives are refused; modify rewrites a single version instead of appending one (ZpaqReader.cs, ZpaqWriter.cs) |
 | Compact Pro | `CompactPro` | 2 | stored and RLE only; LZ+RLE and LZ+Huffman unsupported (CompactProReader.cs) |
 | DiskDoubler | `DiskDoubler` | 2 | single files only (no DDAR/DDA2 archives); methods 0, 1, 6, 9 decoded and checked against unar on real files; 2-5, 7, 8, 10 and delta refused (DiskDoublerReader.cs) |
 | EnCase / Expert Witness (E01) | `Ewf` | 2 | single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs) |

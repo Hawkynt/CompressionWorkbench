@@ -130,6 +130,21 @@ internal static class CdiCdSectorIntegrity {
     WriteEcc(rawSector, zeroAddressForParity: true);
   }
 
+  /// <summary>
+  /// Writes the EDC of a Mode-2 Form-2 sector: CRC over the subheader and the 2,324 data bytes,
+  /// stored in the last four bytes. Form 2 has no ECC.
+  /// </summary>
+  internal static void RegenerateMode2Form2(Span<byte> rawSector) {
+    RequireRawSector(rawSector);
+    if (rawSector[15] != 2 || (rawSector[Mode2SubheaderOffset + 2] & Mode2Form2Flag) == 0)
+      throw new InvalidDataException("CD-ROM Mode-2 Form-2 integrity regeneration requires a Form-2 sector.");
+
+    BinaryPrimitives.WriteUInt32LittleEndian(rawSector.Slice(Mode2Form2EdcOffset, sizeof(uint)),
+      ComputeEdc(rawSector[Mode2SubheaderOffset..Mode2Form2EdcOffset]));
+  }
+
+  private const int Mode2Form2EdcOffset = 2348;
+
   private static int GetUserDataOffset(CdiTrackInfo track) => (track.Mode, track.ReadMode) switch {
     (CdiTrackMode.Mode1, CdiReadMode.Mode1_2048) => 0,
     (CdiTrackMode.Mode1, CdiReadMode.Raw2352 or CdiReadMode.Raw2352_Q16 or CdiReadMode.Raw2352_Pw96) =>

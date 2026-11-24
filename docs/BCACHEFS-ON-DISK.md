@@ -223,7 +223,7 @@ cache with its terminating NUL, so the size is the target length plus one (read:
 - A stretch of a file no extent covers is a hole and reads as zeroes (the sparse
   file in the v1.39.6 reference volume).
 - Compressed extents are decoded and every checksummed extent is verified on
-  read; encrypted extents are refused per file (see below).
+  read; an encrypted volume is read with its key ("Encryption" below).
 
 ## Compressed and checksummed data
 
@@ -278,12 +278,97 @@ result when it is at least one block smaller.
 in whole words (the tail beyond the inode size is padding). The key covers
 `size` sectors ending at its position like any extent; anything past the data
 reads as zeroes. `indirect_inline_data` (19) is the same thing in the reflink
-tree, reached only through a `reflink_p`, which this reader does not follow.
+tree, reached through a `reflink_p`.
 
-**Encryption** needs the volume key (ChaCha20, MAC by Poly1305) and this
-repository has no implementation of either, so a file with an encrypted extent
-is listed but refused with that reason. An unknown compression or checksum type
-is refused the same way rather than guessed at.
+**Reflinks** — `cp --reflink` moves the file's data into the **reflink tree** (btree 7):
+`KEY_TYPE_reflink_v` (16) keys at inode 0, positioned like extents by the sector one past their
+end, whose value is a 64-bit **refcount** followed by an ordinary extent's entries (crc, pointer).
+Every name of the data then holds `KEY_TYPE_reflink_p` (15) keys in the extents tree: the value is
+`idx` (u64), `front_pad` (u32), `back_pad` (u32); the file stretch `[end - size, end)` reads the
+reflink tree's `[idx, idx + size)`, and the key holds a reference to `[idx - front_pad, idx + size +
+back_pad)`. A partial overwrite of a clone splits its `reflink_p` around a new plain extent and pads
+the halves so they still reference the whole indirect extent. Measured on volumes the 6.8 kernel
+reflinked: a `reflink_v`'s refcount is the number of `reflink_p` keys whose padded range overlaps
+it, and its backpointer names btree 7 and the indirect key. The reader cuts an indirect extent at
+its front the way it cuts a partly overwritten extent; a stretch no indirect extent covers is
+refused, as the kernel reports a missing indirect extent.
+
+An unknown compression or checksum type is refused rather than guessed at.
+Encrypted extents are read with the volume's key (next section).
+
+## Encryption
+
+Read in v1.3.4 `checksum.[ch]`, `btree_io.[ch]`, `journal_io.c`,
+`bcachefs_format.h` and the tools' `crypto.c`; confirmed against volumes
+bcachefs-tools 1.3.x and v1.39.6 and the 6.8 kernel wrote
+(`Compression.Tests/BcacheFs/ReferenceVectors/README.md`,
+`BcacheFsEncryptionTests`): every MAC below is checked against what they stored,
+and every file decrypts to the bytes that went in.
+
+**The cipher.** ChaCha20 (RFC 8439) under a 256-bit master key, started from a
+16-byte block `d[0..3]` of little-endian words: `d[0]` is the block counter,
+`d[1..3]` the 96-bit nonce. Advancing a nonce by *n* bytes (a multiple of 64)
+adds *n*/64 to `d[0]`. **Checksum types 3 and 4** are Poly1305 MACs: the
+one-time key is the first 32 keystream bytes of the item's nonce with bit 31 of
+`d[3]` flipped (`BCH_NONCE_POLY`); the tag's first 10 bytes (type 3,
+`chacha20_poly1305_80`) or all 16 (type 4) are the checksum, low word first.
+Encrypt, then MAC: the MAC covers the stored ciphertext. Metadata always uses
+type 4; data uses type 3 unless the volume was formatted `--wide_macs`.
+
+**The key.** Superblock field 2 (`crypt`, 64 bytes): field header, `flags`
+(bits 0–3 the KDF type, 0 = scrypt), `kdf_flags` (log2 of scrypt N in bits
+0–15, r in 16–31, p in 32–47; the formatter writes 14, 3, 4), then the 40-byte
+`bch_encrypted_key`: a magic word and the 32-byte master key. The key is in the
+clear when the magic reads `"bch**key"` (`0x79656B2A2A686362`, formatted
+`--no_passphrase`); otherwise magic and key are ChaCha20-encrypted under the
+*user key*, scrypt of the passphrase bytes with the 7-byte salt `"bcache\0"`, from
+the nonce `{0, 0, m_lo, m_hi}` where `m` is the first word of the internal UUID
+(the same word the journal and b-tree magics are XORed from). A wrong passphrase
+shows as a magic that does not decrypt to `"bch**key"`.
+
+**B-tree nodes.** The bset headers (`seq`, `journal_seq`, `flags`, `version`,
+`u64s`) stay in the clear so a node can be walked without the key. The nonce of a
+bset is `{entry offset in bytes, seq lo, seq hi, journal_seq lo ^ 2<<28}`, the
+entry offset being 0 for the first bset and the byte offset of the
+`btree_node_entry` for an appended one. In the first bset the node header from
+`flags` to the bset (112 bytes: `flags`, `min_key`, `max_key`, the unused
+pointer, the key format) is enciphered from that nonce, then the keys from the
+nonce advanced by 128 bytes (112 rounded up to a ChaCha20 block). An appended
+bset enciphers its keys from its own nonce. The MAC of the first bset covers the
+node from its magic to its last key; that of an appended entry covers the entry
+after its checksum.
+
+**Journal sets.** Nonce `{0, seq lo, seq hi, 3<<28}`; everything from
+`encrypted_start` (byte 44: after csum, magic, seq, version, flags and u64s) to
+the end of the set is enciphered; the MAC covers the set after its checksum.
+
+**Extents.** The nonce is made from the key's version and the checksum entry:
+`{size << 22, version.lo lo, version.lo hi, (version.hi | compression << 24) ^
+1<<28}`, where compression and size (decoded sectors) are those of a compressed
+region and zero otherwise, advanced by the entry's `nonce` field in sectors
+(`nonce << 9` bytes). The whole encoded region is enciphered — compressed data
+and padding included — and its MAC covers it as stored. The writer gives every
+encrypted extent a fresh version from the volume's key-version counter (the
+`key_version` usage entry of the clean section), so no two share a nonce.
+Inline data lives in the b-tree and is protected with its node.
+
+The superblock, its sections (the clean section included) and the journal
+headers named above are never encrypted.
+
+**What the writer does with it.** `BcacheFsWriter.SetEncryption` adds the crypt
+field (after `members_v1`, as the formatter places it), sets the superblock's
+encryption type (`flags[1]` bits 10–13, 1) and, for `--wide_macs`, bit 9;
+nodes and the journal entry use type 4, data extents type 3 in a `crc64` entry
+or type 4 in a `crc128` entry; extents get versions 1…n and the clean section's
+`key_version` is n. Checked (`BcacheFsEncryptedWriterTests`): bcachefs-tools
+1.3.4 `fsck -n` unlocks our wrapped key from the passphrase on standard input
+and finds nothing to repair, `unlock` refuses a wrong passphrase, and the 6.8
+kernel mounts a key-in-the-clear volume of ours, shows the same tree and bytes,
+writes into it, and what it wrote reads back here. Under WSL the tools never get
+past the superblock of a passphrase volume of their own (they cannot open it
+through the kernel keyring), so the only passphrase-wrapped key they made is
+checked by unwrapping it (`bcachefs-tools-1.39-encrypted-key.img.gz`).
+In-place edits of an encrypted volume are refused.
 
 ## What the kernel does to it
 
@@ -308,16 +393,41 @@ Every edit re-publishes every tree from the keys it read, taken from the recover
 view (every visible bset, packed or not, the journal replayed), so it runs on any
 volume whose every tree it either carries or rebuilds:
 
-- carried key by key: extents (pointer extents, inline data, reservations), inodes
+- carried key by key: extents (pointer extents, inline data, reservations, `reflink_p`), the
+  reflink tree (`reflink_v`, `indirect_inline_data`; refcounts must equal the references found, and
+  removing or replacing a file counts its references down, dropping an indirect extent at zero), inodes
   (`inode_v3`, and whatever else the tree holds that names no file), dirents,
   xattrs (with their inode: kept while it survives, dropped with it), subvolumes,
   snapshots, snapshot trees;
 - rebuilt from what occupies the device: alloc, bucket_gens, freespace,
   need_discard, LRU, backpointers;
 - refused with the reason: a volume not cleanly shut down, of several members,
-  newer than **1.4**, with buckets other than 64 KiB or the journal elsewhere than
-  this writer puts it, with keys in any other tree (reflink, quotas, stripes,
-  logged ops …), or with an inode no directory reaches.
+  newer than **1.4**, with a b-tree node size other than its bucket size, with keys
+  in any other tree (quotas, stripes, logged ops …), or with an inode no directory
+  reaches.
+
+The volume's own layout is kept. Adds and removes work in whatever bucket size,
+block size and journal placement the superblock names — `bcachefs format`'s
+128 KiB default, `--bucket=32k` or `256k` with a matching `--btree_node_size`, its
+4 KiB block — and write in its units:
+
+- every node, data extent and the shutdown journal entry is a whole number of
+  blocks (the kernel rejects a node pointer whose `sectors_written` is not, and
+  so does our reader);
+- a bucket holds its data as back-to-back extents of at most 128 sectors, the most
+  a `bch_extent_crc32` entry's 7-bit size fields describe;
+- no node goes into a superblock slot or a journal bucket, wherever they lie;
+- inode times are stored as the superblock's precision from its time base —
+  nanoseconds from the instant `bcachefs format` ran, against this writer's 100 ns
+  from the epoch (a time not on that grid rounds down).
+
+Defragmentation and metadata relocation move things within this writer's layout
+(64 KiB buckets, the journal in buckets 33–48) and refuse any other with the volume
+unchanged. Proven by `BcacheFsForeignLayoutTests` (fsck after edits on default,
+32 KiB and 256 KiB volumes; the 1.3 reference volume read back) and the
+`…FormatVolumeTheKernelWroteInto_WhenWeEditInPlace…` kernel tests (Linux 6.8 wrote
+into the formatted volume, we edited it, fsck is clean, the kernel reads what we
+read and keeps writing).
 
 A file whose bytes are not touched keeps its inode and extents exactly: a sparse
 file's sector count is what its extents hold, not its length rounded up. The

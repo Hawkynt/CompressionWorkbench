@@ -3675,20 +3675,78 @@ Optical track kind stored in a DiscJuggler CDI descriptor.
 
 ### Namespace `FileFormat.CloneCd`
 
-[`CloneCdWriter`](#clonecdwriter) · [`CloneCdWriter.ImageSet`](#clonecdwriterimageset)
+[`CloneCdLayout`](#clonecdlayout) · [`CloneCdTrack`](#clonecdtrack) · [`CloneCdTrackKind`](#clonecdtrackkind) · [`CloneCdTrackSource`](#clonecdtracksource) · [`CloneCdWriter`](#clonecdwriter) · [`CloneCdWriter.ImageSet`](#clonecdwriterimageset)
 
-#### `CloneCdWriter`
+#### `CloneCdLayout`
 
-Writes a CloneCD image set of a single-session disc with one Mode 1 data track: the `.ccd` control file, the raw `.img` (2352-byte sectors with sync, BCD address, EDC and ECC from ECMA-130) and the `.sub` subchannel (96 bytes per sector: P, Q, then R–W, each 12 bytes). Layout in `docs/CLONECD-ON-DISK.md`.
+The track map of a CloneCD image set, read from the TOC entries of the `.ccd` (and its `[TRACK n]` sections when present). The `.img` holds each session from its first track's point to its lead-out, the sessions one after the other: lead-outs, lead-ins and the first pre-gap of every session are not stored.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `ImgSectors` | `long ImgSectors { get; }` | Gets the number of sectors the `.img` must hold. |
+| `Tracks` | `IReadOnlyList<CloneCdTrack> Tracks { get; }` | Gets the tracks in disc order. |
+| `ExtractedLength` | `long ExtractedLength(CloneCdTrack track, Stream img)` | The length `ReadTrack` returns, found from the sector headers alone (the trailing sectors of another mode are left out the same way); 0 when the track holds no sector of its mode. |
+| `PcmFromWave` | `static byte[] PcmFromWave(ReadOnlySpan<byte> wav)` | Returns the PCM of a WAV file in CD-DA format (44.1 kHz, 16-bit, stereo, uncompressed); anything else is refused. |
+| `ReadTrack` | `byte[] ReadTrack(CloneCdTrack track, Stream img)` | Reads a track's user data from the `.img`: PCM as a WAV file for audio, 2,048 bytes per sector for Mode 1, and 2,336 bytes (subheader and data) per sector for Mode 2. Trailing sectors that are not of the track's mode (a following track's pre-gap the control file does not mark) are left out; any other sector of the wrong mode is refused rather than returned as data. |
+| `TryParse` | `static CloneCdLayout TryParse(string ccd, Stream img = null)` | Reads the track map from the control file text; `img` (optional) tells data tracks of a control file without `[TRACK n]` sections apart by their sector mode. Returns `null` when the TOC is incomplete or inconsistent, or the data tracks are scrambled. |
+| `Wave` | `static byte[] Wave(ReadOnlySpan<byte> pcm)` | Wraps CD-DA (44.1 kHz, 16-bit, stereo, little-endian) in a RIFF WAVE header. |
+
+#### `CloneCdTrack`
+
+A track of a CloneCD image and where its sectors sit in the `.img`.
+
+Implements `IEquatable<CloneCdTrack>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CloneCdTrack` | `CloneCdTrack(int Number, int Session, CloneCdTrackKind Kind, int? Index0, int Index1, int End, long ImgSector, int DataEnd)` | A track of a CloneCD image and where its sectors sit in the `.img`. |
+| `DataEnd` | `int DataEnd { get; init; }` | First sector after the user data: the next track's index 0 when the control file names it, else `End`. |
+| `End` | `int End { get; init; }` | First sector after the track's stored region: the next track's point or the session's lead-out. |
+| `EntryName` | `string EntryName { get; }` | The archive name of the track: `track-NN.iso`/`.wav`/`.mode2`, under `session-NN/` after the first session. |
+| `ImgSector` | `long ImgSector { get; init; }` | Index of the `Index1` sector in the `.img`. |
+| `Index0` | `int? Index0 { get; init; }` | First pre-gap sector stored in the `.img`, or `null` when none is known. |
+| `Index1` | `int Index1 { get; init; }` | First sector with user data (the TOC point). |
+| `Kind` | `CloneCdTrackKind Kind { get; init; }` | Audio, Mode 1 or Mode 2. |
+| `Number` | `int Number { get; init; }` | Track number (1–99). |
+| `Session` | `int Session { get; init; }` | Session the track belongs to. |
+
+#### `CloneCdTrackKind`
+
+What a track holds; the value is the CCD `MODE=` number.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Audio` | `0` | CD-DA: 2,352 bytes of 16-bit stereo PCM per sector. |
+| `Mode1` | `1` | Mode 1 data: 2,048 user bytes per sector, EDC and ECC. |
+| `Mode2` | `2` | Mode 2 (CD-ROM XA): an 8-byte subheader and 2,328 bytes per sector, Form 1 or Form 2 per sector. |
+
+#### `CloneCdTrackSource`
+
+One track to write. `Data` is PCM for `Audio` (padded with silence to whole sectors), whole 2,048-byte sectors for `Mode1`, and whole 2,336-byte sectors (subheader and data, the `MODE2/2336` convention) for `Mode2`; the subheader's Form 2 bit picks Form 2, otherwise the sector is Form 1.
+
+Implements `IEquatable<CloneCdTrackSource>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CloneCdTrackSource` | `CloneCdTrackSource(CloneCdTrackKind Kind, byte[] Data)` | One track to write. `Data` is PCM for `Audio` (padded with silence to whole sectors), whole 2,048-byte sectors for `Mode1`, and whole 2,336-byte sectors (subheader and data, the `MODE2/2336` convention) for `Mode2`; the subheader's Form 2 bit picks Form 2, otherwise the sector is Form 1. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Kind` | `CloneCdTrackKind Kind { get; init; }` |  |
+
+#### `CloneCdWriter`
+
+Writes CloneCD image sets: the `.ccd` control file, the raw `.img` (2,352-byte sectors with sync, BCD address, EDC and ECC from ECMA-130) and the `.sub` subchannel (96 bytes per sector: P, Q, then R–W). Discs may hold several sessions, each with audio, Mode 1 and Mode 2 tracks. Layout in `docs/CLONECD-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Mode2SectorSize` | `const int Mode2SectorSize` |  |
 | `RawSectorSize` | `const int RawSectorSize` |  |
 | `SubchannelSize` | `const int SubchannelSize` |  |
 | `UserDataSize` | `const int UserDataSize` |  |
+| `Build` | `static ImageSet Build(IReadOnlyList<IReadOnlyList<CloneCdTrackSource>> sessions)` | Builds the image set of a disc with the given sessions, each a list of tracks in disc order. |
 | `Crc16` | `static ushort Crc16(ReadOnlySpan<byte> data)` | CRC-16/CCITT (polynomial 0x1021, initial value 0), as the Q channel uses it before inversion. |
-| `FromIso` | `static ImageSet FromIso(ReadOnlySpan<byte> iso)` | Builds the image set of a data disc whose Mode 1 user data is `iso`. |
-| `Subchannel` | `static byte[] Subchannel(int sectors)` | The P and Q channels of track 1, a data track starting at LBA 0 and running for `sectors` sectors; R–W stay zero. |
+| `FromIso` | `static ImageSet FromIso(ReadOnlySpan<byte> iso)` | Builds the image set of a single-session data disc whose Mode 1 user data is `iso`. |
+| `Subchannel` | `static byte[] Subchannel(int sectors)` | The P and Q channels of a single-session disc with one data track of `sectors` sectors; R–W stay zero. |
+| `WriteSector` | `static void WriteSector(Span<byte> raw, CloneCdTrackKind kind, int lba, ReadOnlySpan<byte> payload)` | Fills one raw sector at `lba`: audio as PCM (silence when `payload` is empty), data with sync, address, mode, the payload (zero user data in a pre- or post-gap) and EDC/ECC. |
 
 #### `CloneCdWriter.ImageSet`
 
@@ -5598,15 +5656,18 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
 #### `Qcow2Writer`
 
-Writes canonical self-contained QCOW2 v2 images with 64 KiB clusters and 16-bit eager refcounts. Sparse mode leaves all-zero guest clusters unallocated; dense mode physically allocates every guest cluster without changing guest bytes. With a password the guest data is LUKS-encrypted (crypt_method 2): a LUKS1 header (aes-256 xts-plain64, sha256, key slot 0) in its own clusters behind the refcount blocks, each data cluster encrypted with the IV of its host sector.
+Writes canonical self-contained QCOW2 v2 images with 64 KiB clusters and 16-bit eager refcounts. Sparse mode leaves all-zero guest clusters unallocated; dense mode physically allocates every guest cluster without changing guest bytes. With a password the guest data is LUKS-encrypted (crypt_method 2): a LUKS1 header (aes-256 xts-plain64, sha256, key slot 0) in its own clusters behind the refcount blocks, each data cluster encrypted with the IV of its host sector; with a legacy AES password (crypt_method 1) each sector is AES-128-CBC encrypted with the IV of its guest sector. With an external data file the image is a version 3 image of cluster tables only and the guest disk goes, raw, to the data file.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Qcow2Writer` | `Qcow2Writer()` |  |
 | `DefaultKeySlotIterations` | `const int DefaultKeySlotIterations` | PBKDF2 iterations of the passphrase in the LUKS key slot unless `SetPassword` says otherwise. |
 | `SetDiskImage` | `void SetDiskImage(byte[] data)` | Sets the raw guest disk image to wrap. |
+| `SetExternalDataFile` | `void SetExternalDataFile(string name, bool raw = true)` | Keeps the guest data in an external data file (qcow2.txt, incompatible feature bit 2) that the image's header names `name` and QEMU looks for next to the image. The image becomes a version 3 image holding only the cluster tables; with `raw` the data file is also declared a consistent raw image of the guest (autoclear bit 1). Write both with `WriteTo`. |
+| `SetLegacyAesPassword` | `void SetLegacyAesPassword(string password)` | Encrypts the guest data with QCOW2's legacy AES scheme (crypt_method 1) under `password`: AES-128-CBC per 512-byte sector with the guest sector number as IV, the key being the password's first 16 UTF-8 bytes (zero padded). The scheme has no key check and no key derivation and QEMU only keeps it for reading old images; it is offered for interoperability with tools that need it, `SetPassword` (LUKS) otherwise. |
 | `SetPassword` | `void SetPassword(string password, int keySlotIterations = 500000)` | Encrypts the guest data with LUKS under `password` (null: no encryption). |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes a canonical sparse QCOW2 image. |
+| `WriteTo` | `void WriteTo(Stream output, Stream dataFile, bool sparse = true)` | Writes an image whose guest data goes to `dataFile`: the whole guest disk as a raw image, each cluster at its own guest offset (see `SetExternalDataFile`). |
 | `WriteTo` | `void WriteTo(Stream output, bool sparse)` | Writes a canonical QCOW2 image. |
 
 ### Namespace `FileFormat.Scp`
@@ -8248,11 +8309,14 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BcacheFsReader` | `BcacheFsReader(Stream stream, bool leaveOpen = true)` | Initializes a new instance of `BcacheFsReader`. |
+| `BcacheFsReader` | `BcacheFsReader(Stream stream, string passphrase, bool leaveOpen = true)` | Initializes a new instance of `BcacheFsReader` for a volume that may be encrypted: `passphrase` unwraps its key when the key is wrapped (a volume formatted without a passphrase needs none). |
 | `Directories` | `IReadOnlyList<string> Directories { get; }` | Directories the volume holds, by full path. |
+| `Encrypted` | `bool Encrypted { get; }` | True when the volume is encrypted (and was unlocked, when `Valid`). |
 | `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Every file and symbolic link the volume holds, by full path. |
 | `ExtendedAttributes` | `IReadOnlyDictionary<string, IReadOnlyDictionary<string, byte[]>> ExtendedAttributes { get; }` | Extended attributes, by the full path of the file, link or directory that carries them (the empty path is the root), each by its full name such as `user.comment`. Nodes without any are absent. |
 | `Label` | `string Label { get; }` | The label the superblock carries. |
 | `Length` | `long Length { get; }` | The volume's length in bytes. |
+| `NeedsPassphrase` | `bool NeedsPassphrase { get; }` | True when the volume's key is wrapped by a passphrase that was not given or did not fit. |
 | `Status` | `string Status { get; }` | Why the volume did not read, when it did not. |
 | `Valid` | `bool Valid { get; }` | True when the volume's superblock and b-tree roots read as they should. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
@@ -8305,6 +8369,7 @@ Writes a bcachefs volume: a superblock, the b-trees that describe the files, and
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream, ArchiveEntryMetadata metadata = null)` | Adds a file whose bytes are read as the volume is written. |
 | `AddSymlink` | `void AddSymlink(string name, string target)` | Adds a symbolic link pointing at `target`. |
 | `EstimateSize` | `static long EstimateSize(IEnumerable<long> fileSizes)` | The smallest volume that holds `fileSizes`: the superblock slots, the journal, the b-tree reservation, the file data, and the slot at the tail. |
+| `SetEncryption` | `void SetEncryption(string passphrase, bool wideMacs = false)` | Encrypts the volume as `bcachefs format --encrypted` does: a random 256-bit master key, every b-tree node, the journal entry and every extent enciphered with ChaCha20 and authenticated with Poly1305. With a `passphrase` the key is wrapped by its scrypt-derived key (N 2^14, r 8, p 16, as the tools choose); without one it is stored in the clear (`--no_passphrase`), which still encrypts everything else. |
 | `SetImageSize` | `void SetImageSize(long bytes)` | Sets the total volume size in bytes. |
 | `SetInternalUuid` | `void SetInternalUuid(Guid uuid)` | Overrides the internal UUID, which is also what the metadata magic is derived from. |
 | `SetLabel` | `void SetLabel(string label)` | Sets the volume label; it is truncated into the superblock's 32-byte field. |
@@ -16183,7 +16248,7 @@ Implements `IFilesystemBlockMover`.
 
 #### `Ocfs2FormatDescriptor`
 
-R/W descriptor for OCFS2 (Oracle Cluster Filesystem 2). Supports: list, extract, create, true in-place modify (Add/Replace/Remove via `Ocfs2InPlaceModifier`), defragment, extent map. Reading is spec-correct against `fs/ocfs2/ocfs2_fs.h` (see `Ocfs2Reader`): INODE01 dinode signatures, the real `ocfs2_dinode` field offsets, the 8-byte `ocfs2_inline_data` header, and the 16-byte extent-list header. It reads images produced by the reference `mkfs.ocfs2` as well as the toolkit's own writer (verified by an external conformance test that reads a real `mkfs.ocfs2 -M local` volume).Writing produces a single-node ("local", no DLM) volume with 4 KB blocks/clusters, the full system-file suite (chain allocators split into cluster groups, a JBD2 journal of at least the kernel's 4 MiB minimum, slot map, local alloc, truncate log, orphan dir), inline or extent-backed directories and files. The Linux kernel driver mounts it and reads the tree back byte for byte, and `fsck.ocfs2 -fn` passes it before and after a kernel read-write mount (see `Ocfs2KernelMountTests`).Editing is in place or refused: Add/Replace/Remove work on regular files anywhere in a tree of inline directories (missing directories are made), on this package's volumes and on `mkfs.ocfs2`'s; defragmentation moves single-run files in place; shrink trims trailing free clusters in place. Anything else — an extent-backed directory, a file sharing extents — raises `NotSupportedException` and leaves the image as it was. Nothing is rebuilt, because a rebuild would draw a new UUID and reset every timestamp. DLM/heartbeat lockdown and multi-node cluster semantics are out of scope by design. References: `https://github.com/torvalds/linux/blob/master/fs/ocfs2/ocfs2_fs.h` — canonical on-disk header`https://www.kernel.org/doc/html/latest/filesystems/ocfs2.html` — kernel documentation`https://en.wikipedia.org/wiki/OCFS2` — Wikipedia article
+R/W descriptor for OCFS2 (Oracle Cluster Filesystem 2). Supports: list, extract, create, true in-place modify (Add/Replace/Remove via `Ocfs2InPlaceModifier`), defragment, extent map. Reading is spec-correct against `fs/ocfs2/ocfs2_fs.h` (see `Ocfs2Reader`): INODE01 dinode signatures, the real `ocfs2_dinode` field offsets, the 8-byte `ocfs2_inline_data` header, and the 16-byte extent-list header. It reads images produced by the reference `mkfs.ocfs2` as well as the toolkit's own writer (verified by an external conformance test that reads a real `mkfs.ocfs2 -M local` volume).Writing produces a single-node ("local", no DLM) volume with 4 KB blocks/clusters, the full system-file suite (chain allocators split into cluster groups, a JBD2 journal of at least the kernel's 4 MiB minimum, slot map, local alloc, truncate log, orphan dir), inline or extent-backed directories and files. The Linux kernel driver mounts it and reads the tree back byte for byte, and `fsck.ocfs2 -fn` passes it before and after a kernel read-write mount (see `Ocfs2KernelMountTests`).Editing is in place or refused: Add/Replace/Remove work on regular files anywhere in a tree of inline, extent-backed and indexed directories (missing directories are made; a full directory takes another block, a full inline one is expanded), on this package's volumes and on `mkfs.ocfs2`'s; defragmentation moves single-run files in place; shrink trims trailing free clusters in place. Anything else — an index deeper than its root, a file sharing extents — raises `NotSupportedException` and leaves the image as it was. Nothing is rebuilt, because a rebuild would draw a new UUID and reset every timestamp. DLM/heartbeat lockdown and multi-node cluster semantics are out of scope by design. References: `https://github.com/torvalds/linux/blob/master/fs/ocfs2/ocfs2_fs.h` — canonical on-disk header`https://www.kernel.org/doc/html/latest/filesystems/ocfs2.html` — kernel documentation`https://en.wikipedia.org/wiki/OCFS2` — Wikipedia article
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
@@ -16216,7 +16281,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `Ocfs2InPlaceModifier`
 
-True in-place R/W modifier for an OCFS2 (Oracle Cluster Filesystem 2) volume — this package's own or one `mkfs.ocfs2` made. Performs O(touched blocks) random-access I/O: the directories on the file's path, the allocator groups and dinodes a change moves, the file's dinode and its data clusters. Nothing else is read or rewritten. What it writes is what the kernel would: an inode is a bit of slot 0's inode allocator (`Ocfs2Allocators`), data clusters come out of the global bitmap with every group, chain record and used count kept in step, a file small enough to fit its dinode keeps its bytes inline on an inline-data volume, a missing directory on the path is made as an inline directory, and the parent's mtime/ctime (and link count, for a new subdirectory) move with its entries. The result mounts with the Linux driver and passes `fsck.ocfs2 -fn`.Scope: regular files in a tree of inline directories. A directory that is not inline, a full inline area, a path through a file, a hard-linked file or one carrying an xattr block, shared (reflinked) extents or an extent tree is refused with `NotSupportedException` before anything is written; a volume without room raises `IOException`, also before any write.
+True in-place R/W modifier for an OCFS2 (Oracle Cluster Filesystem 2) volume — this package's own or one `mkfs.ocfs2` made. Performs O(touched blocks) random-access I/O: the directories on the file's path, the allocator groups and dinodes a change moves, the file's dinode and its data clusters. Nothing else is read or rewritten. What it writes is what the kernel would: an inode is a bit of slot 0's inode allocator (`Ocfs2Allocators`), data clusters come out of the global bitmap with every group, chain record and used count kept in step, a file small enough to fit its dinode keeps its bytes inline on an inline-data volume, a missing directory on the path is made as an inline directory, and the parent's mtime/ctime (and link count, for a new subdirectory) move with its entries. The result mounts with the Linux driver and passes `fsck.ocfs2 -fn`.Scope: regular files in a tree of inline and extent-backed directories. An extent-backed directory is a leaf extent list in its dinode naming 4 KiB blocks of entries; a full one takes one more cluster, a full inline one moves its entries into its first block (the kernel's expansion) on a volume without indexed directories. An indexed directory keeps its index, block trailers and free list (see `docs/OCFS2-INDEXED-DIRS.md`). A path through a file, a hard-linked file or one carrying an xattr block, shared (reflinked) extents or an extent tree is refused with `NotSupportedException` before anything is written; a volume without room raises `IOException`, also before any write.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -17698,7 +17763,8 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` |  |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Knobs the writer honours. `VolumeLabel` is written into the master superblock label field (and the backup record); `ImageSize` drives `BlockCount` (4 KB blocks, clamped to the writer minimum); `FileBody` picks how regular files are stored (`Reiser4FileBody`). The 4 KB block size is fixed — the embedded mkfs.reiser4 templates are byte-exact 4096-byte captures — so it is intentionally not exposed. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Knobs the writer honours. `VolumeLabel` is written into the master superblock label field (and the backup record); `ImageSize` drives `BlockCount` (clamped to the writer minimum); `BlockSize` picks one of the block sizes `mkfs.reiser4 -b` makes (Auto is its 4 KB default, the only size a Reiser4 kernel on a 4 KiB-page machine mounts); `FileBody` picks how regular files are stored (`Reiser4FileBody`). |
+| `ReclaimSupport` | `LayoutReclaim ReclaimSupport { get; }` | Extent files can hold holes (units with start 0) and several names can share one stat key, both of which `fsck.reiser4` and the kernel accept on volumes this writer rebuilds. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `AddHardLink` | `void AddHardLink(Stream archive, string path, string existing)` | Adds `path` as a further name of the existing file `existing`. |
 | `AddSpecialFile` | `void AddSpecialFile(Stream archive, string path, ushort mode, ulong device = 0)` | Adds a device node (`device` = major << 20 \| minor), FIFO or socket. |
@@ -17713,7 +17779,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Reports the volume's layout: the reserved blocks, the tree nodes and the allocator bitmaps as metadata, then each file's extent runs. A volume whose journal still holds transactions to replay reports nothing: its blocks are not yet where the tree says. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Rebuilds the volume while carrying existing metadata, at the requested image size or the smallest that holds it. |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Rebuilds the volume while carrying existing metadata, at the requested image size or the smallest that holds it. `MakeSparse` turns all-zero extent blocks into holes; `DeduplicateWithLinks` makes identical regular files hard links of one object. Either way every file is read back and compared before the result is accepted. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes members and directory subtrees through a metadata-preserving rebuild. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds tightly while retaining native metadata, or copies through when the volume cannot be rebuilt smaller. |
 | `UpdateMetadata` | `void UpdateMetadata(Stream archive, string name, FileMetadata metadata)` | Updates a native object's mode, owner and timestamps through a staged rebuild. |
@@ -17839,13 +17905,14 @@ Creator for a Reiser4 filesystem image that starts from what `mkfs.reiser4 -fffy
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Reiser4Writer` | `Reiser4Writer()` |  |
-| `BlockSize` | `const int BlockSize` | Filesystem block size — 4 KB is the only supported value. Reiser4 theoretically supports 512 / 1024 / 2048 / 4096 / 8192, but the embedded templates are 4096-byte exact captures. |
+| `BlockSize` | `const int BlockSize` | The default block size, 4 KiB: what `mkfs.reiser4` makes unless told otherwise, and the only size a Reiser4 kernel on a 4 KiB-page machine mounts. |
 | `MinBlockCount` | `const ulong MinBlockCount` | Minimum block count we'll emit. mkfs.reiser4 itself rejects images below ~750 blocks, but we round up to 4096 (= 16 MB) to match the reference capture and avoid bitmap-truncation edge cases. |
-| `BlockCount` | `ulong BlockCount { get; set; }` | Total filesystem size in 4 KB blocks. Clamped to `MinBlockCount`. |
+| `BlockCount` | `ulong BlockCount { get; set; }` | Total filesystem size in blocks of `VolumeBlockSize`. Clamped to `MinBlockCount`. |
 | `FileBody` | `Reiser4FileBody FileBody { get; set; }` | How regular files are stored. `Profile` follows the captured mkfs profile, whose root names cryptcompress for new files. |
 | `Label` | `string Label { get; set; }` | Customisable label written to the master SB (NUL-padded to 16 bytes; longer strings are truncated; null = empty/zero). |
 | `MkfsId` | `uint? MkfsId { get; set; }` | Optional 32-bit mkfs identifier. When null, a random value is drawn from `Shared`. |
 | `Uuid` | `byte[] Uuid { get; set; }` | Optional 16-byte UUID. When null, a random Guid is used. |
+| `VolumeBlockSize` | `int VolumeBlockSize { get; set; }` | The block size of the volume to write: 512, 1024, 2048, 4096 (the default) or 8192, the sizes `mkfs.reiser4 -b` accepts. The fixed blocks are the 4096-byte captures cut to this size with the block size field patched in, which is what `mkfs.reiser4 -b` writes at each of them; the tree is laid out in nodes of this size. |
 | `AddDirectory` | `void AddDirectory(string name, FileMetadata metadata = null)` | Retains an explicit directory, including an empty directory. |
 | `AddFile` | `void AddFile(string name, byte[] data, FileMetadata metadata = null)` | Adds a regular file. |
 | `AddHardLink` | `void AddHardLink(string name, string existing)` | Adds `name` as a further name of the file at `existing`. |
@@ -17854,6 +17921,7 @@ Creator for a Reiser4 filesystem image that starts from what `mkfs.reiser4 -fffy
 | `AddSymlink` | `void AddSymlink(string name, string target, FileMetadata metadata = null)` | Adds a symbolic link whose target is `target`. |
 | `Build` | `byte[] Build()` | Builds the image fully in memory and returns the byte array. |
 | `EstimateBlockCount` | `static ulong EstimateBlockCount(IEnumerable<long> fileSizes)` | Smallest block count that holds `fileSizes`: the reserved blocks, every file's data blocks, the tree, and the bitmap blocks interleaved among them. |
+| `EstimateBlockCount` | `static ulong EstimateBlockCount(IEnumerable<long> fileSizes, int blockSize)` | Smallest block count, in blocks of `blockSize`, that holds `fileSizes`: the reserved blocks, every file's data blocks, the tree, and the bitmap blocks interleaved among them. |
 | `Write` | `void Write(Stream output)` | Streams the full image into `output` and leaves the stream positioned at the end. |
 
 ### Namespace `FileSystem.ReiserFs`
@@ -21353,7 +21421,7 @@ Implements `IEquatable<ZfsDataset>`.
 
 #### `ZfsEntry`
 
-One name in the pool's namespace: a file, directory or symbolic link of a ZPL dataset. Child datasets appear under their dataset name, snapshots under `<dataset>/.zfs/snapshot/<name>`.
+One name in the pool's namespace: a file, directory or symbolic link of a ZPL dataset. Child datasets appear under their dataset name, snapshots under `<dataset>/.zfs/snapshot/<name>`. A volume (zvol) is one file at its dataset's path holding the device's bytes, and its snapshots files named `<volume>@<name>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |

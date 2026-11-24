@@ -7,7 +7,7 @@ these bytes.
 | | |
 | --- | --- |
 | Written by | OpenZFS `zfs-2.2.2-0ubuntu9.5` / `zfs-kmod-2.2.2-0ubuntu9.5` (Ubuntu 24.04 kernel `6.8.0-146-generic`) inside the libguestfs appliance |
-| Recipe | `generate.sh` (host side) runs `generate-inner.sh` and `generate-crypt-inner.sh` in the appliance; `generate-crypt.sh` makes `cwbcrypt` alone (it did, 2026-11-20) |
+| Recipe | `generate.sh` (host side) runs `generate-inner.sh` and `generate-crypt-inner.sh` in the appliance; `generate-crypt.sh` makes `cwbcrypt` alone (it did, 2026-11-20); `generate-zvol.sh` runs `generate-zvol-inner.sh` for `cwbzvol` (2026-11-24) |
 | Created | 2026-10-19 |
 | Verified | `zpool scrub -w` of every pool reported "repaired 0B ... with 0 errors" before `zpool export` |
 | Manifests | `<pool>.manifest`, taken from the mounted pool before export: `sha256 size path` for files, `L path -> target` for symlinks, `D path` for directories |
@@ -28,12 +28,14 @@ the manifests together; the tests only ever compare the two.
 | `cwbgang` | 1 × 64 MiB | written with `metaslab_force_ganging=16384` and `metaslab_force_ganging_pct=100`, so its data blocks are gang blocks |
 | `cwbenc` | 1 × 64 MiB | dataset `secret` with `encryption=aes-256-gcm` (passphrase `cwb-passphrase`) beside a plain file; without the key the reader must refuse the dataset, not guess |
 | `cwbcrypt` | 1 × 64 MiB, ashift 9 | native encryption: `gcm256` (aes-256-gcm, passphrase `gcm-256-passphrase`, lz4) with child `gcm256/child` sharing its key (gzip), `ccm128` (aes-128-ccm, raw key `0123456789abcdef0123456789abcdef`, zstd), `gcm192` (aes-192-gcm, hex key `00112233445566778899aabbccddeeff` twice, off, `recordsize=16K`); each with text, random, sparse, empty, embedded-sized files, a fat-ZAP directory, links; snapshot `gcm256@s1`; manifest taken with the keys loaded |
+| `cwbzvol` | 1 × 64 MiB, ashift 9 | volumes (zvols): `vol` (8 MiB, `volblocksize=8K`, lz4: text, random bytes, a zeroed run) and its snapshot `vol@s1` taken before part of it was overwritten (`snapdev=visible`), `sparse` (32 MiB, `-s`, 16K, compression off: two islands), `fs/vol2` (2 MiB, 4K, gzip) below the file system `fs`; written through `/dev/zvol`, then `zpool trim` punched the freed blocks out of the file vdev; manifest = SHA-256 and length of each `/dev/zvol` device |
 
 ## Files
 
 | File | Bytes | SHA-256 |
 | --- | ---: | --- |
 | `cwbcrypt.img.gz` | 2405311 | `f3deb9f908cb853511a9898cf2d24879a1ab015c172d822dcba5fc450be33b40` |
+| `cwbzvol.img.gz` | 3453468 | `bdd30a009c1014222dced174d963f6522408dd2b102e92a99c44f0bba835cdcf` |
 | `cwbenc.img.gz` | 246606 | `9b8a896b91fce3345697945e60d86dbb39dd404ede8ca19ab41980a97bf5eef4` |
 | `cwbgang.img.gz` | 461623 | `06b303498f65d611ee07a7a966d44592a58a7c15a932585388a1529f5aba751e` |
 | `cwbmain.img.gz` | 3671133 | `289ffa2ac9fddcf47d57201786e1b0724a855946865005fe4f0bdb180fcf6727` |

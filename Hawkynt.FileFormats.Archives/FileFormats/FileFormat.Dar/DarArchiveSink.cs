@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Security.Cryptography;
 
 namespace FileFormat.Dar;
 
@@ -19,6 +20,16 @@ internal sealed class DarArchiveSink : IDisposable {
   private long _room;
   private int _matched;
   private bool _finished;
+  private long _archivePosition;
+  // the encryption layer between the escape layer and the slices (section 12)
+  private bool _encrypting;
+  private DarBlockCipher? _cipher;
+  private byte[]? _scramble;
+  private byte[] _clear = [];
+  private byte[] _encrypted = [];
+  private int _clearFill;
+  private ulong _blockNumber;
+  private long _clearPosition;
 
   /// <param name="openSlice">Opens slice <c>n</c> (1-based) for writing. Slice 1 is opened at once;
   /// the others only when data spills into them. Streams for slices after the first are disposed by
@@ -48,8 +59,52 @@ internal sealed class DarArchiveSink : IDisposable {
   public static int SliceHeaderLength(long sliceSize, long firstSliceSize)
     => BuildSliceHeader(new byte[DarSliceHeader.NameLength], sliceSize, firstSliceSize).Length;
 
-  /// <summary>The archive-level offset of the next byte: payload bytes written so far, escapes included.</summary>
-  public long Position { get; private set; }
+  /// <summary>
+  /// The offset of the next byte as the catalogue and the terminators record it: on the archive
+  /// level (payload bytes written so far, escapes included), but while a block cipher encrypts,
+  /// in the clear stream of the encrypted zone, which counts from 0 at its start.
+  /// </summary>
+  public long Position => this._encrypting && this._cipher != null ? this._clearPosition : this._archivePosition;
+
+  /// <summary>
+  /// Starts the encrypted zone: everything written from here passes through <paramref name="cipher"/>
+  /// in blocks of <paramref name="clearBlockSize"/> clear bytes, or, with <paramref name="scramble"/>,
+  /// is scrambled with the password. An elastic buffer of 1 to 51 200 bytes opens the zone.
+  /// </summary>
+  public void BeginEncryption(DarBlockCipher? cipher, byte[]? scramble, int clearBlockSize) {
+    if (this._encrypting || (cipher == null) == (scramble == null))
+      throw new InvalidOperationException("One encryption, either a block cipher or scrambling, starts once.");
+    this._encrypting = true;
+    this._cipher = cipher;
+    this._scramble = scramble;
+    if (cipher != null) {
+      this._clear = new byte[clearBlockSize];
+      this._encrypted = new byte[cipher.EncryptedSize(clearBlockSize)];
+    }
+    this.Encrypt(DarCrypto.Elastic(1 + RandomNumberGenerator.GetInt32(DarCrypto.ElasticDraw)));
+  }
+
+  /// <summary>
+  /// Ends the encrypted zone with an elastic buffer — for a block cipher sized so that the last
+  /// block is full, which is how dar tells encrypted blocks from the clear trailer — and returns
+  /// to clear output.
+  /// </summary>
+  public void EndEncryption() {
+    if (!this._encrypting)
+      return;
+    this._matched = 0;
+    var draw = 1 + RandomNumberGenerator.GetInt32(DarCrypto.ElasticDraw);
+    if (this._cipher != null) {
+      var block = this._clear.Length;
+      draw = draw / block * block + (block - this._clearFill);
+    }
+    this.Encrypt(DarCrypto.Elastic(draw));
+    if (this._clearFill != 0)
+      throw new InvalidOperationException("The DAR encrypted zone did not end on a block boundary.");
+    this._encrypting = false;
+    this._cipher = null;
+    this._scramble = null;
+  }
 
   /// <summary>How many slice files have been started.</summary>
   public int SliceCount { get; private set; }
@@ -111,13 +166,48 @@ internal sealed class DarArchiveSink : IDisposable {
   }
 
   private void RawBytes(ReadOnlySpan<byte> data) {
+    if (this._encrypting)
+      this.Encrypt(data);
+    else
+      this.SliceBytes(data);
+  }
+
+  private void Encrypt(ReadOnlySpan<byte> data) {
+    if (this._scramble is { } key) {
+      // each byte plus the password byte at its archive-level position, modulo the password length
+      Span<byte> chunk = stackalloc byte[4096];
+      while (!data.IsEmpty) {
+        var n = Math.Min(chunk.Length, data.Length);
+        for (var i = 0; i < n; ++i)
+          chunk[i] = (byte)(data[i] + key[(int)((this._archivePosition + i) % key.Length)]);
+        this.SliceBytes(chunk[..n]);
+        data = data[n..];
+      }
+      return;
+    }
+    var cipher = this._cipher!;
+    while (!data.IsEmpty) {
+      var n = Math.Min(this._clear.Length - this._clearFill, data.Length);
+      data[..n].CopyTo(this._clear.AsSpan(this._clearFill));
+      this._clearFill += n;
+      this._clearPosition += n;
+      data = data[n..];
+      if (this._clearFill == this._clear.Length) {
+        cipher.Encrypt(this._blockNumber++, this._clear, this._encrypted);
+        this.SliceBytes(this._encrypted);
+        this._clearFill = 0;
+      }
+    }
+  }
+
+  private void SliceBytes(ReadOnlySpan<byte> data) {
     while (!data.IsEmpty) {
       if (this._room == 0)
         this.OpenNextSlice();
       var n = (int)Math.Min(this._room, data.Length);
       this._slice!.Write(data[..n]);
       this._room -= n;
-      this.Position += n;
+      this._archivePosition += n;
       data = data[n..];
     }
   }

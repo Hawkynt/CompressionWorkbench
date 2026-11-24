@@ -6,8 +6,9 @@ namespace Compression.Tests.HfsPlus;
 /// <summary>
 /// Journaled volumes. A journal whose start equals its end holds nothing, and the in-place editor
 /// edits such a volume directly; one holding transactions is replayed into what the reader shows
-/// (the image untouched) and refused by every in-place writer, since a mount's replay would write
-/// those blocks over the edit. The journals here are laid out per Apple TN1150 "Journal"; volumes
+/// (the image untouched), replayed into the image itself before an add or remove (a mount's
+/// replay would otherwise write those blocks over the edit), and refused by defragmentation and
+/// wiping. The journals here are laid out per Apple TN1150 "Journal"; volumes
 /// <c>mkfs.hfsplus -J</c> formats, and <c>fsck.hfsplus</c>'s verdict on edited ones, are the
 /// external checks at the end.
 /// </summary>
@@ -247,22 +248,37 @@ public sealed class HfsPlusJournalTests {
     return onDisk;
   }
 
-  [Test, Category("ExceptionalCase")]
-  public void GivenAJournalHoldingTransactions_WhenAFileIsAdded_ThenItIsRefusedAndTheVolumeIsUnchanged() {
+  [Test, Category("HappyPath")]
+  public void GivenAJournalHoldingTransactions_WhenAFileIsAdded_ThenTheJournalIsReplayedFirstAndLeftEmpty() {
     var image = Dirty();
     using var ms = new MemoryStream();
     ms.Write(image);
-    Assert.Throws<NotSupportedException>(() => HfsPlusModifier.AddFile(ms, "more.txt", [1]));
-    Assert.That(ms.ToArray(), Is.EqualTo(image));
+    HfsPlusModifier.AddFile(ms, "more.txt", [1]);
+    var after = ms.ToArray();
+    var journal = HfsPlusJournal.Locate(after, after.AsSpan(1024, 512), BlockSize)!;
+    Assert.Multiple(() => {
+      Assert.That(Paths(after), Is.EquivalentTo(new[] { "old.txt", "new.txt", "more.txt" }), "the pending transaction's file is kept");
+      Assert.That(journal.TryReadHeader(after, out var header), Is.True);
+      Assert.That(header.Start, Is.EqualTo(header.End));
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenAJournalHoldingTransactions_WhenTheFileItAddsIsRemoved_ThenTheReplayedFileIsGone() {
+    var image = Dirty();
+    using var ms = new MemoryStream();
+    ms.Write(image);
+    Assert.That(HfsPlusModifier.RemoveFile(ms, "new.txt"), Is.True);
+    Assert.That(Paths(ms.ToArray()), Is.EqualTo(new[] { "old.txt" }));
   }
 
   [Test, Category("ExceptionalCase")]
-  public void GivenAJournalHoldingTransactions_WhenAFileIsRemoved_ThenItIsRefusedAndTheVolumeIsUnchanged() {
+  public void GivenAJournalHoldingTransactions_WhenAMissingFileIsRemoved_ThenTheVolumeIsUnchanged() {
     var image = Dirty();
     using var ms = new MemoryStream();
     ms.Write(image);
-    Assert.Throws<NotSupportedException>(() => HfsPlusModifier.RemoveFile(ms, "old.txt"));
-    Assert.That(ms.ToArray(), Is.EqualTo(image));
+    Assert.That(HfsPlusModifier.RemoveFile(ms, "absent.txt"), Is.False);
+    Assert.That(ms.ToArray(), Is.EqualTo(image), "nothing edited, so nothing replayed either");
   }
 
   [Test, Category("ExceptionalCase")]

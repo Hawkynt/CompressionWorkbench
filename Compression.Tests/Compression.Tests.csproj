@@ -321,11 +321,17 @@
     </EmbeddedResource>
     <!-- Volumes a Reiser4 kernel wrote under mkfs.reiser4 plugin profiles, with the kernel's read-back;
          see Reiser4/ReferenceVectors/README.md. -->
+    <!-- An OCFS2 volume the Linux kernel filled with indexed directories; see Ocfs2/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Ocfs2\ReferenceVectors\*.gz">
+      <LogicalName>Ocfs2Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="Reiser4\ReferenceVectors\*.gz;Reiser4\ReferenceVectors\*.manifest">
       <LogicalName>Reiser4Vectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- The QEMU harness that lets a Reiser4 kernel judge what the writer produces. -->
     <None Include="Reiser4\KernelOracle\*.sh" CopyToOutputDirectory="PreserveNewest" LinkBase="Reiser4\KernelOracle" />
+    <!-- kernel-run.sh sources ../../Support/cwb-rmtree.sh relative to itself, so it travels along. -->
+    <None Include="Support\cwb-rmtree.sh" CopyToOutputDirectory="PreserveNewest" LinkBase="Support" />
     <!-- Drives a NetBSD live image under qemu for the NetBSD-only file systems (CHFS, LFS). -->
     <None Include="Support\NetBsdGuest\netbsd-guest.py" CopyToOutputDirectory="PreserveNewest" />
     <!-- CHFS images NetBSD 11.1's makefs built; see Chfs/ReferenceVectors/README.md. -->
@@ -567,6 +573,10 @@
     <EmbeddedResource Include="HfsPlus\ReferenceVectors\*.gz">
       <LogicalName>HfsPlusVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- go-apfs-v3's journaled volumes macOS 26 left mid-transaction; see HfsPlus/ReferenceVectors/journal/README.md. -->
+    <EmbeddedResource Include="HfsPlus\ReferenceVectors\journal\*.gz">
+      <LogicalName>HfsPlusJournalVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Rock Ridge images xorriso wrote; see Iso/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Iso\ReferenceVectors\*.gz;Iso\ReferenceVectors\manifest-*.txt">
       <LogicalName>IsoVectors.%(Filename)%(Extension)</LogicalName>
@@ -588,7 +598,7 @@
       <LogicalName>SevenZipVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- QCOW2 images qemu-img / qemu-io wrote, with the raw hashes qemu-img converted them to; see Qcow2/ReferenceVectors/README.md. -->
-    <EmbeddedResource Include="Qcow2\ReferenceVectors\*.qcow2;Qcow2\ReferenceVectors\*.qcow2.gz;Qcow2\ReferenceVectors\*.raw;Qcow2\ReferenceVectors\*.sha256">
+    <EmbeddedResource Include="Qcow2\ReferenceVectors\*.qcow2;Qcow2\ReferenceVectors\*.qcow2.gz;Qcow2\ReferenceVectors\*.raw;Qcow2\ReferenceVectors\*.img;Qcow2\ReferenceVectors\*.sha256">
       <LogicalName>Qcow2Vectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- UDF volumes mkudffs formatted and the Linux udf driver filled (sparable, metadata, VAT); see Udf/ReferenceVectors/README.md. -->

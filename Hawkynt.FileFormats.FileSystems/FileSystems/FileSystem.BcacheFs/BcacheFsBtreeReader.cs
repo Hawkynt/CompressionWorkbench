@@ -285,6 +285,12 @@ internal static class BcacheFsBtreeReader {
       return false;
     }
 
+    // An encrypted node: every bset's MAC is checked and its ciphertext deciphered in place
+    // before anything behind the clear bset headers is read.
+    var decrypted = new HashSet<int>();
+    if (volume.Crypt is { } crypt && !TryDecryptNode(bytes, crypt, blockSectors * SectorSize, decrypted, out error))
+      return false;
+
     var flags = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(24));
     var rawBtree = (flags & 0xFUL) | (((flags >> 9) & 0xFFFFUL) << 4);
     var actualLevel = (byte)((flags >> 4) & 0xF);
@@ -315,7 +321,7 @@ internal static class BcacheFsBtreeReader {
       return false;
 
     var sets = new List<BcacheFsBsetRecord>();
-    if (!TryReadSet(bytes, 0, true, format, volume, expectedBtree, expectedLevel, out var first, out error))
+    if (!TryReadSet(bytes, 0, true, format, volume, decrypted, expectedBtree, expectedLevel, out var first, out error))
       return false;
     if (!first!.Visible) {
       error = $"first bset has blacklisted journal sequence {first.JournalSequence}.";
@@ -384,7 +390,7 @@ internal static class BcacheFsBtreeReader {
         break;
       }
 
-      if (!TryReadSet(bytes, next, false, format, volume, expectedBtree, expectedLevel, out var appended, out error))
+      if (!TryReadSet(bytes, next, false, format, volume, decrypted, expectedBtree, expectedLevel, out var appended, out error))
         return false;
       if (!appended!.Visible && explicitSectors != 0) {
         error = $"blacklisted bset journal sequence {appended.JournalSequence} lies inside sectors_written at sector {next / SectorSize}.";
@@ -433,6 +439,7 @@ internal static class BcacheFsBtreeReader {
       bool first,
       BcacheFsKeyFormat keyFormat,
       BcacheFsCoreVolume volume,
+      IReadOnlySet<int> decrypted,
       byte btreeId,
       byte level,
       out BcacheFsBsetRecord? set,
@@ -482,9 +489,13 @@ internal static class BcacheFsBtreeReader {
     }
     var csumType = (BcacheFsChecksumType)rawCsumType;
     var checksumStart = first ? 0 : entryOffset;
-    var verification = BcacheFsChecksumCodec.VerifyVstruct(
-      csumType,
-      node.AsSpan(checksumStart, end - checksumStart));
+    var verification = BcacheFsCrypt.IsMacType(csumType)
+      ? decrypted.Contains(entryOffset)
+        ? new BcacheFsChecksumVerification(true, false, string.Empty)
+        : new BcacheFsChecksumVerification(false, volume.Crypt == null, volume.Crypt == null
+          ? "the volume is encrypted and was opened without its key."
+          : $"bset at sector offset {entryOffset / SectorSize} fails its MAC.")
+      : BcacheFsChecksumCodec.VerifyVstruct(csumType, node.AsSpan(checksumStart, end - checksumStart));
     if (!verification.Valid) {
       error = verification.Diagnostic;
       return false;
@@ -536,6 +547,53 @@ internal static class BcacheFsBtreeReader {
       keys,
       end);
     error = string.Empty;
+    return true;
+  }
+
+  /// <summary>
+  /// Checks and deciphers, in place, the bsets of an encrypted node: the first one's MAC covers
+  /// the node from its magic to its last key, and its ciphertext is the node header from
+  /// <c>flags</c> to the bset (112 bytes, then the keystream skips to the next 64-byte block)
+  /// and its keys; each appended bset (same sequence, at the next block boundary) has a MAC over
+  /// itself and enciphered keys. The nonce is the entry's byte offset, the bset's sequence and
+  /// its journal sequence. A plain node is left alone; the offsets deciphered are recorded.
+  /// </summary>
+  private static bool TryDecryptNode(byte[] node, BcacheFsCrypt crypt, int blockBytes, HashSet<int> decrypted, out string error) {
+    error = string.Empty;
+    var firstType = (BcacheFsChecksumType)(BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(NodeHeaderBytes + 16)) & 0xF);
+    if (!BcacheFsCrypt.IsMacType(firstType)) return true;
+
+    var sequence = BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(NodeHeaderBytes));
+    var journalSequence = BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(NodeHeaderBytes + 8));
+    var end = FirstKeysOffset + BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(NodeHeaderBytes + 22)) * sizeof(ulong);
+    if (end > node.Length) {
+      error = "first bset overruns the bytes read for this node.";
+      return false;
+    }
+    var nonce = BcacheFsNonce.ForBset(sequence, journalSequence, 0);
+    if (BcacheFsChecksum.Read(node) != crypt.Mac(firstType, nonce, node.AsSpan(16, end - 16))) {
+      error = "btree node fails its MAC: the key is wrong or the node is damaged.";
+      return false;
+    }
+    const int headerCipherStart = 24;
+    crypt.Apply(nonce, node.AsSpan(headerCipherStart, NodeHeaderBytes - headerCipherStart));
+    crypt.Apply(nonce.Add(RoundUp(NodeHeaderBytes - headerCipherStart, 64)), node.AsSpan(FirstKeysOffset, end - FirstKeysOffset));
+    decrypted.Add(0);
+
+    var next = RoundUp(end, blockBytes);
+    while (next + AppendedEntryHeaderBytes <= node.Length) {
+      var bset = next + 16;
+      if (BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(bset)) != sequence) break;
+      var type = (BcacheFsChecksumType)(BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(bset + 16)) & 0xF);
+      var setEnd = next + AppendedEntryHeaderBytes + BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(bset + 22)) * sizeof(ulong);
+      if (!BcacheFsCrypt.IsMacType(type) || setEnd > node.Length) break;
+      var setNonce = BcacheFsNonce.ForBset(sequence, BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(bset + 8)), next);
+      // A bset whose MAC fails stays as it is; the set reader reports it.
+      if (BcacheFsChecksum.Read(node.AsSpan(next)) != crypt.Mac(type, setNonce, node.AsSpan(bset, setEnd - bset))) break;
+      crypt.Apply(setNonce, node.AsSpan(next + AppendedEntryHeaderBytes, setEnd - next - AppendedEntryHeaderBytes));
+      decrypted.Add(next);
+      next = RoundUp(setEnd, blockBytes);
+    }
     return true;
   }
 

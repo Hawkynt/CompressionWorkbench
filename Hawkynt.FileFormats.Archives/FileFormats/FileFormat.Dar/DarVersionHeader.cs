@@ -22,12 +22,25 @@ public sealed record DarVersionHeader(int Major, int Minor, char Algorithm, stri
   /// <summary>Whether escape marks (tape marks) are interleaved with the data.</summary>
   public bool HasTapeMarks => (this.Flags & DarArchive.FlagTapeMarks) != 0;
 
+  /// <summary>The cipher letter (<c>s</c> scrambling, <c>b</c> Blowfish, <c>a</c> AES-256, <c>t</c>
+  /// Twofish-256, <c>p</c> Serpent-256, <c>c</c> Camellia-256); NUL when not encrypted or, before
+  /// format 9, not recorded.</summary>
+  public char Cipher { get; init; }
+
+  /// <summary>The key-derivation parameters, when recorded (flag 0x0400).</summary>
+  internal DarKdf? Kdf { get; init; }
+
+  /// <summary>Whether the archive is encrypted (flag 0x20).</summary>
+  public bool IsEncrypted => (this.Flags & DarArchive.FlagScrambled) != 0;
+
+  /// <summary>Whether the key is stored encrypted for GnuPG recipients (flag 0x04).</summary>
+  public bool HasCryptedKey => (this.Flags & DarArchive.FlagCryptedKey) != 0;
+
   /// <summary>Whether the archive format is at least <paramref name="major"/>.<paramref name="minor"/>.</summary>
   public bool AtLeast(int major, int minor) => (this.Major, this.Minor).CompareTo((major, minor)) >= 0;
 
   /// <summary>Parses a version header or trailer from the start of <paramref name="s"/> and checks its checksum.</summary>
   /// <exception cref="InvalidDataException">Malformed or failing its checksum.</exception>
-  /// <exception cref="NotSupportedException">Carries encryption parameters this reader does not decode.</exception>
   public static DarVersionHeader Parse(ReadOnlySpan<byte> s, out int length) {
     if (s.Length < 7)
       throw new InvalidDataException("The DAR version header is truncated.");
@@ -57,8 +70,19 @@ public sealed record DarVersionHeader(int Major, int Minor, char Algorithm, stri
     ulong initialOffset = 0, blockSize = 0;
     if ((flags & DarArchive.FlagInitialOffset) != 0)
       initialOffset = DarPrimitives.ReadInfinint(s, ref pos);
-    if ((flags & (DarArchive.FlagScrambled | DarArchive.FlagCryptedKey | DarArchive.FlagKdf)) != 0)
-      throw new NotSupportedException("The DAR archive is encrypted.");
+    var cipher = '\0';
+    if ((flags & DarArchive.FlagScrambled) != 0 && major >= 9) {
+      if (pos >= s.Length)
+        throw new InvalidDataException("The DAR version header ends inside its cipher.");
+      cipher = (char)s[pos++];
+    }
+    if ((flags & DarArchive.FlagCryptedKey) != 0) {
+      // the symmetric key, encrypted for GnuPG recipients: an infinint size, then the key
+      var size = DarPrimitives.ReadInfinint(s, ref pos);
+      if (size > (ulong)(s.Length - pos))
+        throw new InvalidDataException("The DAR encrypted key runs past the version header.");
+      pos += (int)size;
+    }
     if ((flags & DarArchive.FlagReferenceSlicing) != 0) {
       // slice layout of the archive of reference (isolated catalogues): first size, other size,
       // first header size, other header size, all infinints, then the older-format byte.
@@ -68,6 +92,18 @@ public sealed record DarVersionHeader(int Major, int Minor, char Algorithm, stri
         throw new InvalidDataException("The DAR reference slicing is truncated.");
       ++pos;
     }
+    DarKdf? kdf = null;
+    if ((flags & DarArchive.FlagKdf) != 0) {
+      var saltSize = DarPrimitives.ReadInfinint(s, ref pos);
+      if (saltSize > (ulong)(s.Length - pos))
+        throw new InvalidDataException("The DAR key-derivation salt runs past the version header.");
+      var salt = s.Slice(pos, (int)saltSize).ToArray();
+      pos += (int)saltSize;
+      var iterations = DarPrimitives.ReadInfinint(s, ref pos);
+      if (pos >= s.Length)
+        throw new InvalidDataException("The DAR version header ends inside its key-derivation parameters.");
+      kdf = new DarKdf(salt, iterations, (char)s[pos++]);
+    }
     if ((flags & DarArchive.FlagCompressionBlockSize) != 0)
       blockSize = DarPrimitives.ReadInfinint(s, ref pos);
     var end = pos;
@@ -75,7 +111,7 @@ public sealed record DarVersionHeader(int Major, int Minor, char Algorithm, stri
     if (!DarPrimitives.Checksum(s[..end], stored.Length).AsSpan().SequenceEqual(stored))
       throw new InvalidDataException("The DAR version header fails its checksum.");
     length = pos;
-    return new DarVersionHeader(major, minor, algorithm, comment, flags, initialOffset, blockSize);
+    return new DarVersionHeader(major, minor, algorithm, comment, flags, initialOffset, blockSize) { Cipher = cipher, Kdf = kdf };
   }
 
   /// <summary>Writes this header in the layout dar 2.7/2.8 write.</summary>
@@ -100,6 +136,15 @@ public sealed record DarVersionHeader(int Major, int Minor, char Algorithm, stri
     }
     if ((this.Flags & DarArchive.FlagInitialOffset) != 0)
       DarPrimitives.WriteInfinint(body, this.InitialOffset);
+    if ((this.Flags & DarArchive.FlagScrambled) != 0)
+      body.WriteByte((byte)this.Cipher);
+    if ((this.Flags & DarArchive.FlagKdf) != 0) {
+      var kdf = this.Kdf ?? throw new InvalidOperationException("The DAR KDF flag needs key-derivation parameters.");
+      DarPrimitives.WriteInfinint(body, (ulong)kdf.Salt.Length);
+      body.Write(kdf.Salt);
+      DarPrimitives.WriteInfinint(body, kdf.Iterations);
+      body.WriteByte((byte)kdf.Hash);
+    }
     if ((this.Flags & DarArchive.FlagCompressionBlockSize) != 0)
       DarPrimitives.WriteInfinint(body, this.BlockSize);
     var bytes = body.ToArray();

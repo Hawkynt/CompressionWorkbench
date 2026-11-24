@@ -46,7 +46,8 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsOptimize |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories |
+    FormatCapabilities.SupportsPassword;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -155,14 +156,14 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
     try {
       if (stream.CanSeek) stream.Position = 0;
-      using var reader = new BcacheFsReader(stream);
+      using var reader = new BcacheFsReader(stream, password);
       if (reader.Valid) {
         var index = 0;
         foreach (var entry in reader.Entries) {
           // A link lists the length of the target it stores, not of what it points at.
           var size = entry.LinkTarget is { } link ? Encoding.UTF8.GetByteCount(link) : entry.Size;
           entries.Add(new ArchiveEntryInfo(index++, entry.Name, size, size,
-            "stored", false, false, null, IsSymlink: entry.LinkTarget != null, LinkTarget: entry.LinkTarget));
+            "stored", false, reader.Encrypted, null, IsSymlink: entry.LinkTarget != null, LinkTarget: entry.LinkTarget));
         }
 
         // the volume's own description travels with its files, on a readable
@@ -209,7 +210,9 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
     try {
       if (stream.CanSeek) stream.Position = 0;
-      using var reader = new BcacheFsReader(stream);
+      using var reader = new BcacheFsReader(stream, password);
+      if (reader.NeedsPassphrase)
+        throw new UnauthorizedAccessException(reader.Status);
       if (reader.Valid) {
         foreach (var entry in reader.Entries) {
           if (files is { Length: > 0 } && !MatchesFilter(entry.Name, files)) continue;
@@ -228,7 +231,7 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
         if (sb.Valid) WriteIfMatch(outputDir, "superblock.bin", sb.RawBytes, files);
         return;
       }
-    } catch {
+    } catch (Exception e) when (e is not UnauthorizedAccessException) {
       // Fall through to the conservative carver view.
     }
 
@@ -252,7 +255,9 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
 
-    using var reader = new BcacheFsReader(archive);
+    using var reader = new BcacheFsReader(archive, password);
+    if (reader.NeedsPassphrase)
+      throw new UnauthorizedAccessException(reader.Status);
     if (reader.Valid) {
       var entry = reader.Entries.FirstOrDefault(e =>
         string.Equals(e.Name, entryName, StringComparison.Ordinal));
@@ -382,6 +387,11 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public void Shrink(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
+    // A rebuild writes the files back unencrypted: an encrypted volume is refused, not decrypted.
+    input.Position = 0;
+    if (BcacheFsDeviceSuperblocks.Read(input).Current is { } superblock && BcacheFsCrypt.IsEncrypted(superblock))
+      throw new NotSupportedException("bcachefs: an encrypted volume is not rebuilt here; the rebuild would store it unencrypted.");
+    input.Position = 0;
 
     // a file, not a MemoryStream: a rebuilt volume can outgrow what a byte[] holds
     using var rebuilt = new FileStream(
@@ -479,7 +489,7 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(target);
     ArgumentNullException.ThrowIfNull(options);
-    if (options.UnitSize is not (0 or BcacheFsFormat.BucketBytes))
+    if (options.UnitSize != 0 && options.UnitSize != BcacheFsFormat.BucketBytes)
       throw new NotSupportedException(
         $"bcachefs bucket size is fixed at {BcacheFsFormat.BucketBytes} bytes in this profile.");
     if (options.MakeSparse || options.DeduplicateWithLinks)
@@ -627,6 +637,8 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     var writer = new BcacheFsWriter();
     var label = options?.GetOption("VolumeLabel", "") ?? "";
     if (!string.IsNullOrEmpty(label)) writer.SetLabel(label);
+    // A password makes an encrypted volume whose key it wraps, as `bcachefs format --encrypted` does.
+    if (options?.Password is { Length: > 0 } password) writer.SetEncryption(password);
     return writer;
   }
 

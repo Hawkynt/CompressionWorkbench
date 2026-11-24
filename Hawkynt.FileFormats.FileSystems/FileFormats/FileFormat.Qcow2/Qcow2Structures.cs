@@ -26,8 +26,13 @@ internal readonly record struct Qcow2Header(
   byte CompressionType = 0,
   string? BackingFormat = null,
   long FdeOffset = 0,
-  long FdeLength = 0
+  long FdeLength = 0,
+  string? DataFileName = null
 ) {
+  /// <summary>Whether guest clusters live in an external data file (incompatible feature bit 2).</summary>
+  public bool ExternalData => (this.IncompatibleFeatures & Qcow2Structures.IncompatibleExternalData) != 0;
+  /// <summary>Whether the external data file is itself a consistent raw image of the guest (autoclear bit 1).</summary>
+  public bool DataFileRaw => (this.AutoclearFeatures & Qcow2Structures.AutoclearDataFileRaw) != 0;
   public int ClusterSize => 1 << this.ClusterBits;
   /// <summary>Whether L2 entries carry a 64-bit subcluster bitmap (128-bit entries).</summary>
   public bool ExtendedL2 => (this.IncompatibleFeatures & Qcow2Structures.IncompatibleExtendedL2) != 0;
@@ -58,6 +63,10 @@ internal static class Qcow2Structures {
   private const ulong KnownIncompatible = IncompatibleDirty | IncompatibleCorrupt | IncompatibleExternalData
                                           | IncompatibleCompressionType | IncompatibleExtendedL2;
 
+  // Autoclear feature bits (qcow2.txt, "autoclear_features").
+  internal const ulong AutoclearBitmaps = 1UL << 0;
+  internal const ulong AutoclearDataFileRaw = 1UL << 1;
+
   internal const byte CompressionZlib = 0;
   internal const byte CompressionZstd = 1;
 
@@ -65,6 +74,7 @@ internal static class Qcow2Structures {
   private const uint ExtensionEnd = 0;
   private const uint ExtensionBackingFormat = 0xE2792ACA;
   private const uint ExtensionFullDiskEncryption = 0x0537BE77;
+  internal const uint ExtensionDataFileName = 0x44415441;
 
   // crypt_method values (qcow2.txt).
   internal const uint CryptNone = 0;
@@ -152,6 +162,7 @@ internal static class Qcow2Structures {
     byte compressionType = 0;
     string? backingFormat = null;
     long fdeOffset = 0, fdeLength = 0;
+    string? dataFileName = null;
     var extensionsStart = version == 3 ? headerLength : 72U;
     var headerAreaEnd = Math.Min(clusterSize, stream.Length);
     if (version == 3 && headerLength > 104 && headerLength <= headerAreaEnd) {
@@ -171,6 +182,8 @@ internal static class Qcow2Structures {
           throw new InvalidDataException("QCOW2: header extension runs past the first cluster.");
         if (type == ExtensionBackingFormat)
           backingFormat = System.Text.Encoding.ASCII.GetString(area, at + 8, (int)length);
+        else if (type == ExtensionDataFileName)
+          dataFileName = System.Text.Encoding.UTF8.GetString(area, at + 8, (int)length);
         else if (type == ExtensionFullDiskEncryption && length >= 16) {
           var offset = BinaryPrimitives.ReadUInt64BigEndian(area.AsSpan(at + 8));
           var size = BinaryPrimitives.ReadUInt64BigEndian(area.AsSpan(at + 16));
@@ -204,15 +217,16 @@ internal static class Qcow2Structures {
       compressionType,
       backingFormat,
       fdeOffset,
-      fdeLength);
+      fdeLength,
+      dataFileName);
   }
 
   /// <summary>
-  /// Refuses what the reader cannot decode: unknown encryption methods, an external data file,
-  /// unknown incompatible features and unknown compression types. AES and LUKS images are read
-  /// with a password (<see cref="Qcow2Encryption"/>). Dirty and corrupt images are read
-  /// (QEMU reads them too; neither bit changes what the guest clusters contain), zstd clusters
-  /// and extended L2 entries are decoded, and backing files are followed by <see cref="Qcow2Stream"/>.
+  /// Refuses what the reader cannot decode: unknown encryption methods, unknown incompatible
+  /// features and unknown compression types. AES and LUKS images are read with a password
+  /// (<see cref="Qcow2Encryption"/>). Dirty and corrupt images are read (QEMU reads them too;
+  /// neither bit changes what the guest clusters contain), zstd clusters and extended L2 entries
+  /// are decoded, and backing files and external data files are followed by <see cref="Qcow2Stream"/>.
   /// </summary>
   internal static void ValidateReadableProfile(in Qcow2Header header) {
     if (header.CryptMethod is not (CryptNone or CryptAes or CryptLuks))
@@ -222,8 +236,8 @@ internal static class Qcow2Structures {
     var unknown = header.IncompatibleFeatures & ~KnownIncompatible;
     if (unknown != 0)
       throw new NotSupportedException($"QCOW2: unsupported incompatible feature mask 0x{unknown:X16}.");
-    if ((header.IncompatibleFeatures & IncompatibleExternalData) != 0)
-      throw new NotSupportedException("QCOW2: guest data in an external data file is not supported.");
+    if (header.DataFileRaw && !header.ExternalData)
+      throw new InvalidDataException("QCOW2: the raw-data-file bit is set without an external data file.");
     var declared = (header.IncompatibleFeatures & IncompatibleCompressionType) != 0;
     if (!declared && header.CompressionType != CompressionZlib)
       throw new InvalidDataException("QCOW2: a compression type other than zlib needs the compression-type feature bit.");
@@ -240,12 +254,18 @@ internal static class Qcow2Structures {
   internal static bool IsSelfContainedPlain(in Qcow2Header header)
     => !header.HasBackingFile && header.BackingFileOffset == 0 && header.CryptMethod == 0 && header.IncompatibleFeatures == 0;
 
-  internal static bool IsWritableProfile(in Qcow2Header header)
+  /// <summary>
+  /// The images the in-place writer handles: no backing file, snapshots or features other than an
+  /// external data file (raw or not), with 16-bit refcounts; AES- or LUKS-encrypted ones when
+  /// <paramref name="keyed"/> (opened with their password) and their data is in the image itself.
+  /// </summary>
+  internal static bool IsWritableProfile(in Qcow2Header header, bool keyed = false)
     => header.BackingFileOffset == 0
        && header.BackingFileSize == 0
-       && header.CryptMethod == 0
-       && header.IncompatibleFeatures == 0
-       && header.AutoclearFeatures == 0
+       && (header.CryptMethod == CryptNone
+           || (keyed && header.CryptMethod is (CryptAes or CryptLuks) && !header.ExternalData))
+       && (header.IncompatibleFeatures & ~IncompatibleExternalData) == 0
+       && (header.AutoclearFeatures & ~AutoclearDataFileRaw) == 0
        && header.RefcountOrder == 4
        && header.RefcountTableOffset > 0
        && header.RefcountTableClusters > 0

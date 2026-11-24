@@ -12,9 +12,10 @@ namespace FileSystem.HfsPlus;
 /// <para>
 /// Opening refuses what an edit could not keep consistent: a special file continued in the
 /// extents overflow file (those extents would have to be edited too), an allocation file too
-/// small for the volume, and a journal that still holds transactions — a write beside them would
-/// be undone or corrupted by the replay a mount performs. A journal whose start equals its end
-/// holds nothing, so editing the volume directly leaves it as consistent as the journal says.
+/// small for the volume. A journal that still holds transactions is replayed into the image first
+/// (a write beside them would otherwise be undone or corrupted by the replay a mount performs);
+/// with its start equal to its end it holds nothing, so editing the volume directly leaves it as
+/// consistent as the journal says.
 /// Sources: Apple TN1150 "HFS Plus Volume Format" (volume header, allocation file, B-trees,
 /// journal) — the normative specification.
 /// </para>
@@ -77,26 +78,34 @@ internal sealed class HfsPlusVolumeEditor {
       throw new InvalidDataException($"HFS+: the volume declares an allocation block size of {blockSize}.");
     if ((long)totalBlocks * blockSize > image.Length)
       throw new InvalidDataException("HFS+: the volume is larger than the image holding it.");
-    RequireEmptyJournal(image, vh, blockSize);
+    ReplayJournal(image, vh, blockSize);
+    // The replay may have rewritten the volume header itself.
+    vh = image.AsSpan(VolumeHeaderOffset, 512);
+    blockSize = BinaryPrimitives.ReadUInt32BigEndian(vh[40..]);
+    totalBlocks = BinaryPrimitives.ReadUInt32BigEndian(vh[44..]);
+    if (blockSize < 512 || (blockSize & (blockSize - 1)) != 0 || (long)totalBlocks * blockSize > image.Length)
+      throw new InvalidDataException("HFS+: the volume header the journal replay left is not valid.");
     return new HfsPlusVolumeEditor(image, blockSize, totalBlocks, signature == HfsxSignature);
   }
 
   /// <summary>
-  /// Refuses a journaled volume whose journal holds transactions (TN1150 "Journal": the journal
-  /// is empty when its header's start equals its end), one whose journal lives on another device,
-  /// and one whose journal header is not recognisable.
+  /// Leaves the journal empty before an edit (TN1150 "Journal": the journal is empty when its
+  /// header's start equals its end). One still holding transactions — a volume macOS did not
+  /// unmount — is replayed into the image first, exactly as a mount replays it
+  /// (<see cref="HfsPlusJournal.ReplayInPlace"/>), so the edit lands on the volume macOS would
+  /// see. Refused: a journal on another device, one whose header is not recognisable, and one
+  /// damaged before its recorded end.
   /// </summary>
-  private static void RequireEmptyJournal(byte[] image, ReadOnlySpan<byte> vh, uint blockSize) {
+  private static void ReplayJournal(byte[] image, ReadOnlySpan<byte> vh, uint blockSize) {
     if ((BinaryPrimitives.ReadUInt32BigEndian(vh[4..]) & VolumeJournaledMask) == 0) return;
     var journal = HfsPlusJournal.Locate(image, vh, blockSize)
                   ?? throw new NotSupportedException("HFS+: the volume is journaled but its journal cannot be found; it is not edited.");
     if (journal.OnOtherDevice)
       throw new NotSupportedException("HFS+: the volume's journal lives on another device; the in-place editor cannot see it.");
     if (journal.NeedsInitialization) return;
-    if (!journal.TryReadHeader(image, out var header))
+    if (!journal.TryReadHeader(image, out _))
       throw new NotSupportedException("HFS+: the volume's journal header is not valid; the in-place editor does not edit it.");
-    if (header.Start != header.End)
-      throw new NotSupportedException("HFS+: the volume's journal holds transactions not yet replayed; mount the volume (or replay the journal) before editing it.");
+    journal.ReplayInPlace(image);
   }
 
   // ── Key order ───────────────────────────────────────────────────────────

@@ -1,4 +1,6 @@
 using System.Buffers.Binary;
+using System.Text;
+using Compression.Registry;
 using Compression.Core.Dictionary.Lz4;
 using Compression.Core.Dictionary.Lzo;
 using Compression.Core.Streams;
@@ -70,6 +72,12 @@ public sealed record DarEntry(
 
   /// <summary>Whether the stored data uses dar's hole records.</summary>
   public bool IsSparse => (this.DataFlags & DarArchive.DataWithHoles) != 0;
+
+  /// <summary>The inode exactly as the catalogue stores it (flag byte to the last EA/FSA field).</summary>
+  internal byte[] RawInode { get; init; } = [];
+
+  /// <summary>The data flags as stored, the dirty bit included.</summary>
+  internal byte RawDataFlags { get; init; }
 }
 
 /// <summary>
@@ -105,7 +113,8 @@ public sealed class DarArchive {
   private readonly Stream _archive;
   private readonly long _limit;
 
-  private DarArchive(Stream archive, long limit, DarVersionHeader trailer, byte[] dataName, string inPlace, List<DarEntry> entries) {
+  private DarArchive(Stream archive, long limit, DarVersionHeader trailer, byte[] dataName, string inPlace, List<DarEntry> entries, byte[] rootInode) {
+    this.RootInode = rootInode;
     this._archive = archive;
     this._limit = limit;
     this.Trailer = trailer;
@@ -123,14 +132,21 @@ public sealed class DarArchive {
   /// <summary>The <c>-R</c> root path recorded at backup time.</summary>
   public string InPlace { get; }
 
+  /// <summary>The root directory's inode exactly as the catalogue stores it.</summary>
+  internal byte[] RootInode { get; }
+
   /// <summary>Every catalogue entry below the root, in catalogue order.</summary>
   public IReadOnlyList<DarEntry> Entries { get; }
 
   /// <summary>Reads the archive-level stream (slice headers and trailers already removed).</summary>
+  /// <param name="archive">The archive level.</param>
+  /// <param name="password">The password of an encrypted archive (dar's <c>-K</c>); ignored otherwise.</param>
+  /// <param name="clearBlockSize">Clear bytes per encrypted block (dar's <c>-#</c>), which the archive does not record.</param>
   /// <exception cref="InvalidDataException">The structures contradict the format.</exception>
+  /// <exception cref="ArchivePasswordException">The archive is encrypted and the password is missing, or it does not decrypt the archive.</exception>
   /// <exception cref="NotSupportedException">The archive uses a feature this reader refuses
-  /// (encryption, a newer or older format, an unknown compression).</exception>
-  public static DarArchive Read(Stream archive) {
+  /// (GnuPG encryption, a newer or older format, an unknown compression).</exception>
+  public static DarArchive Read(Stream archive, string? password = null, int clearBlockSize = DarCrypto.DefaultClearBlockSize) {
     var length = archive.Length;
     var trailerAt = (long)DarPrimitives.ReadTerminator(archive, length, out var term2Start);
     if (trailerAt >= term2Start || term2Start - trailerAt > MaxTrailer)
@@ -140,7 +156,51 @@ public sealed class DarArchive {
     archive.ReadExactly(trailerBytes);
     var trailer = DarVersionHeader.Parse(trailerBytes, out _);
     Refuse(trailer);
+    if (!trailer.IsEncrypted)
+      return ReadLevel(archive, trailerAt, trailer);
 
+    if (string.IsNullOrEmpty(password))
+      throw new ArchivePasswordException($"The DAR archive is encrypted ({DarCrypto.CipherName(trailer.Cipher)}); a password is needed.", false);
+    var (level, end) = OpenEncrypted(archive, trailerAt, trailer, Encoding.UTF8.GetBytes(password), clearBlockSize);
+    try {
+      return ReadLevel(level, end, trailer);
+    } catch (InvalidDataException e) {
+      // A wrong key decrypts to noise, which no structure survives; dar cannot tell either.
+      throw new ArchivePasswordException($"The DAR archive does not decrypt with this password, or it is damaged: {e.Message}", true);
+    }
+  }
+
+  /// <summary>
+  /// The clear level of an encrypted archive (section 12) and where its final elastic buffer
+  /// starts: the zone from the initial offset to the version trailer, decrypted block by block or
+  /// unscrambled.
+  /// </summary>
+  private static (Stream Level, long End) OpenEncrypted(Stream archive, long trailerAt, DarVersionHeader trailer, byte[] password, int clearBlockSize) {
+    var start = (long)trailer.InitialOffset;
+    if ((trailer.Flags & FlagInitialOffset) == 0 || start <= 0 || start >= trailerAt)
+      throw new InvalidDataException("The DAR version trailer of an encrypted archive records no plausible initial offset.");
+    Stream level;
+    try {
+      if (trailer.Cipher == 's')
+        level = new DarUnscramblingStream(archive, start, trailerAt, password);
+      else {
+        var kdf = trailer.Kdf ?? throw new NotSupportedException("The DAR archive is encrypted without recorded key-derivation parameters (a format before 10).");
+        var key = DarCrypto.DeriveKey(password, trailer.Cipher, kdf);
+        level = new DarDecryptingStream(archive, start, trailerAt, DarCrypto.OpenCipher(trailer.Cipher, key), clearBlockSize);
+      }
+      // The final elastic buffer hides the first terminator; read it backwards from the end.
+      var tail = (int)Math.Min(level.Length, DarCrypto.ElasticDraw + 2L * clearBlockSize);
+      var bytes = new byte[tail];
+      level.Position = level.Length - tail;
+      level.ReadExactly(bytes);
+      var elastic = DarCrypto.ElasticSizeAtEnd(bytes);
+      return (level, level.Length - elastic);
+    } catch (InvalidDataException e) {
+      throw new ArchivePasswordException($"The DAR archive does not decrypt with this password, or it is damaged: {e.Message}", true);
+    }
+  }
+
+  private static DarArchive ReadLevel(Stream archive, long trailerAt, DarVersionHeader trailer) {
     var catalogueAt = (long)DarPrimitives.ReadTerminator(archive, trailerAt, out var term1Start);
     if (catalogueAt >= term1Start || term1Start - catalogueAt > MaxCatalogue)
       throw new InvalidDataException("The first DAR terminator does not point at a plausible catalogue.");
@@ -154,15 +214,17 @@ public sealed class DarArchive {
     }
     var catalogue = Decompress(trailer.Algorithm, trailer.BlockSize, stored, -1);
 
-    var (dataName, inPlace, entries) = ParseCatalogue(catalogue, trailer);
-    return new DarArchive(archive, term1Start, trailer, dataName, inPlace, entries);
+    var (dataName, inPlace, entries, rootInode) = ParseCatalogue(catalogue, trailer);
+    return new DarArchive(archive, term1Start, trailer, dataName, inPlace, entries, rootInode);
   }
 
   private static void Refuse(DarVersionHeader v) {
     if (v.Major < 8 || (v.Major, v.Minor).CompareTo(NewestFormat) > 0)
       throw new NotSupportedException($"DAR archive format {v.Major}.{v.Minor} is outside the supported range 8.0 to {NewestFormat.Major}.{NewestFormat.Minor}.");
-    if ((v.Flags & FlagScrambled) != 0 || (v.Flags & FlagCryptedKey) != 0)
-      throw new NotSupportedException("The DAR archive is encrypted.");
+    if (v.HasCryptedKey)
+      throw new NotSupportedException("The DAR archive is encrypted for GnuPG recipients; only password encryption is read.");
+    if (v.IsEncrypted && !DarCrypto.IsKnownCipher(v.Cipher))
+      throw new NotSupportedException($"The DAR archive is encrypted with an unknown or unrecorded cipher {DarCrypto.CipherName(v.Cipher)}.");
     if ((v.Flags & ~KnownFlags) != 0)
       throw new NotSupportedException($"The DAR archive header has unknown flags 0x{v.Flags & ~KnownFlags:X}.");
     if (!IsKnownAlgorithm(v.Algorithm))
@@ -236,6 +298,15 @@ public sealed class DarArchive {
     }
     if (checksum != null && !checksum.Value.AsSpan().SequenceEqual(entry.Checksum))
       throw new InvalidDataException($"'{entry.Path}' fails its DAR data checksum.");
+  }
+
+  /// <summary>The stored bytes of <paramref name="entry"/>'s data as they went into the archive: compressed, unescaped.</summary>
+  internal Stream OpenStored(DarEntry entry) {
+    if (!entry.HasData || entry.Offset > (ulong)this._limit || entry.StorageSize > (ulong)this._limit)
+      throw new InvalidDataException($"'{entry.Path}' has no stored data inside the archive.");
+    return this.Trailer.HasTapeMarks
+      ? new DarDataStreams.Unescape(this._archive, (long)entry.Offset, (long)entry.StorageSize, this._limit)
+      : new DarDataStreams.Range(this._archive, (long)entry.Offset, (long)entry.StorageSize);
   }
 
   /// <summary>A forward-only decoder for one compression unit read from <paramref name="stored"/>.</summary>
@@ -332,7 +403,7 @@ public sealed class DarArchive {
     return buffer.AsSpan(0, n).ToArray();
   }
 
-  private static (byte[] DataName, string InPlace, List<DarEntry> Entries) ParseCatalogue(byte[] cat, DarVersionHeader v) {
+  private static (byte[] DataName, string InPlace, List<DarEntry> Entries, byte[] RootInode) ParseCatalogue(byte[] cat, DarVersionHeader v) {
     var c = new Cursor(cat, v);
     if (cat.Length < DarSliceHeader.NameLength)
       throw new InvalidDataException("The DAR catalogue is shorter than its data name.");
@@ -345,14 +416,14 @@ public sealed class DarArchive {
     if (((root & 0x1F) | 0x60) != 'd')
       throw new InvalidDataException("The DAR catalogue does not start with the root directory.");
     _ = c.String(); // the root's name ("root")
-    _ = ReadInode(ref c);
+    var rootInode = ReadInode(ref c).Raw;
     ReadDirectory(ref c, "", entries, labels, 0);
     var end = c.Pos;
     var stored = c.Checksum();
     var computed = DarPrimitives.Checksum(cat.AsSpan(0, end), stored.Length);
     if (!computed.AsSpan().SequenceEqual(stored))
       throw new InvalidDataException("The DAR catalogue fails its checksum.");
-    return (dataName, inPlace, entries);
+    return (dataName, inPlace, entries, rootInode);
   }
 
   private static void ReadDirectory(ref Cursor c, string prefix, List<DarEntry> entries, Dictionary<ulong, DarEntry> labels, int depth) {
@@ -413,9 +484,10 @@ public sealed class DarArchive {
     }
   }
 
-  private readonly record struct Inode(ushort Permissions, ulong Uid, ulong Gid, DateTime? Access, DateTime? Modified, DateTime? Change, bool Ea, bool Fsa);
+  private readonly record struct Inode(ushort Permissions, ulong Uid, ulong Gid, DateTime? Access, DateTime? Modified, DateTime? Change, bool Ea, bool Fsa, byte[] Raw);
 
   private static Inode ReadInode(ref Cursor c) {
+    var start = c.Pos;
     var flag = c.Byte();
     var ea = flag & 0x07;
     var fsa = flag & 0x18;
@@ -441,7 +513,7 @@ public sealed class DarArchive {
       _ = c.Infinint();
       _ = c.Checksum();
     }
-    return new(perm, uid, gid, access, modified, change, ea == 1, fsa == 0x10);
+    return new(perm, uid, gid, access, modified, change, ea == 1, fsa == 0x10, c.Bytes(start, c.Pos));
   }
 
   private static DarEntry ReadInodeEntry(ref Cursor c, string path, char type, int status) {
@@ -460,7 +532,7 @@ public sealed class DarArchive {
     var inode = ReadInode(ref c);
     ulong size = 0, offset = 0, storage = 0;
     var algorithm = 'n';
-    byte flags = 0;
+    byte flags = 0, rawFlags = 0;
     byte[]? checksum = null;
     string? target = null;
     switch (kind) {
@@ -484,6 +556,7 @@ public sealed class DarArchive {
             _ = c.Infinint();
           _ = c.Checksum();
         }
+        rawFlags = flags;
         flags &= unchecked((byte)~DataDirty);
         break;
       case DarEntryKind.Symlink when saved == DarSavedStatus.Saved:
@@ -495,11 +568,13 @@ public sealed class DarArchive {
         break;
     }
     return new DarEntry(path, kind, saved, inode.Permissions, inode.Uid, inode.Gid, inode.Access, inode.Modified,
-      inode.Change, size, offset, storage, algorithm, flags, checksum, target, inode.Ea, inode.Fsa, null);
+      inode.Change, size, offset, storage, algorithm, flags, checksum, target, inode.Ea, inode.Fsa, null) { RawInode = inode.Raw, RawDataFlags = rawFlags };
   }
 
   private struct Cursor(byte[] data, DarVersionHeader version) {
     public int Pos;
+
+    public readonly byte[] Bytes(int start, int end) => data.AsSpan(start, end - start).ToArray();
     public readonly DarVersionHeader Version => version;
 
     public byte Byte() {

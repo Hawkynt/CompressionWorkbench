@@ -362,6 +362,22 @@ public sealed class Blowfish {
   }
 
   /// <summary>
+  /// Whether the key schedule left a value twice in one S-box — what libgcrypt rejects as a weak
+  /// Blowfish key, so software built on it cannot use such a key.
+  /// </summary>
+  public bool HasWeakKey {
+    get {
+      foreach (var box in (ReadOnlySpan<uint[]>)[_s0, _s1, _s2, _s3]) {
+        var seen = new HashSet<uint>(256);
+        foreach (var v in box)
+          if (!seen.Add(v))
+            return true;
+      }
+      return false;
+    }
+  }
+
+  /// <summary>
   /// Encrypts an 8-byte block in-place (big-endian).
   /// </summary>
   /// <param name="block">The 8-byte block to encrypt.</param>

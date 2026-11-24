@@ -18,27 +18,33 @@ namespace FileFormat.Dar;
 /// sparse files expanded, hard links resolved, every data and catalogue checksum checked, members
 /// of any size streamed to disk.
 /// Directories and regular files are extracted; symlinks, devices, pipes and sockets are listed
-/// but not materialised. Encrypted archives, unknown compression and newer formats are refused:
-/// listing then falls back to the raw slice (<c>FULL.dar</c>) and a <c>metadata.ini</c> naming the
-/// reason, and never throws.</para>
+/// but not materialised. Password-encrypted archives (scrambling, Blowfish, AES-256, Twofish-256,
+/// Serpent-256, Camellia-256 under argon2 or PBKDF2) are read with their password; GnuPG-encrypted
+/// archives, unknown compression and newer formats are refused: listing then falls back to the raw
+/// slice (<c>FULL.dar</c>) and a <c>metadata.ini</c> naming the reason, and never throws.</para>
 ///
 /// <para>Writing: format 11.3, stored or compressed with gzip, bzip2, xz, zstd or lz4, in one slice
 /// or cut at <see cref="SliceSizeOption"/> / <see cref="FirstSliceSizeOption"/> (dar's <c>-s</c> /
-/// <c>-S</c>), with or without <see cref="TapeMarksOption"/>; file data is streamed, symlinks and
-/// uid/gid/permissions/times are kept. dar 2.7.13 and 2.8.6 accept it (<c>dar -t</c>, also
-/// sequentially) and restore the input byte for byte (see
-/// <c>Compression.Tests/Dar/DarExternalConformanceTests.cs</c>).</para>
+/// <c>-S</c>), with or without <see cref="TapeMarksOption"/>, encrypted with a password like dar's
+/// <c>-K</c>; file data is streamed, symlinks and uid/gid/permissions/times are kept. dar 2.7.13
+/// and 2.8.6 accept it (<c>dar -t</c>, also sequentially) and restore the input byte for byte (see
+/// <c>Compression.Tests/Dar/DarExternalConformanceTests.cs</c> and <c>DarEncryptionOracleTests.cs</c>).</para>
+///
+/// <para>Editing: files are added, replaced and removed in place, kept entries carried over byte
+/// for byte under the archive's own settings (<see cref="DarEditor"/>); dar tests and restores the
+/// result (<c>DarEditOracleTests.cs</c>).</para>
 ///
 /// <para>Layout derived from dar's documentation and from archives written by dar 2.4.24 to 2.8.6:
 /// <c>docs/DAR-ON-DISK.md</c>.</para>
 /// </summary>
-public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
+public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IFormatOptionsSchema {
   public string Id => "Dar";
   public string DisplayName => "Disk ARchive (DAR)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.SupportsDirectories | FormatCapabilities.SupportsPassword;
   public string DefaultExtension => ".dar";
   public IReadOnlyList<string> Extensions => [".dar"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -56,13 +62,13 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "Disk ARchive (dar / libdar), formats 8.1-11.3: single and multi-slice, tape marks, " +
-    "gzip/bzip2/xz/zstd/lz4/lzo streaming and block compression, sparse files and hard links; " +
-    "writes dar-compatible format-11.3 archives, sliced or not, with or without tape marks.";
+    "gzip/bzip2/xz/zstd/lz4/lzo streaming and block compression, sparse files and hard links, password encryption; " +
+    "writes and edits dar-compatible format-11.3 archives, sliced or not, with or without tape marks, encrypted or not.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var seekable = stream.CanSeek ? stream : Buffer(stream);
     try {
-      var (archive, set, _) = TryOpen(seekable);
+      var (archive, set, _) = TryOpen(seekable, password);
       if (archive == null) {
         var length = seekable.Length;
         return [
@@ -71,7 +77,7 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         ];
       }
       using (set)
-        return archive.Entries.Select((e, i) => ToInfo(i, e)).ToList();
+        return archive.Entries.Select((e, i) => ToInfo(i, e, archive.Trailer.IsEncrypted)).ToList();
     } finally {
       if (!ReferenceEquals(seekable, stream))
         seekable.Dispose();
@@ -81,7 +87,7 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var seekable = stream.CanSeek ? stream : Buffer(stream);
     try {
-      var (archive, set, problem) = TryOpen(seekable);
+      var (archive, set, problem) = TryOpen(seekable, password);
       if (archive == null) {
         ExtractFallback(seekable, outputDir, files, problem);
         return;
@@ -105,6 +111,14 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// default; <c>false</c> is <c>dar -at</c>).</summary>
   public const string TapeMarksOption = "TapeMarks";
 
+  /// <summary>Option key: the key-derivation hash for the block ciphers (dar's <c>--kdf-param :hash</c>):
+  /// argon2 (the default), sha512, sha1 or md5.</summary>
+  public const string KdfHashOption = "KdfHash";
+
+  /// <summary>Option key: the key-derivation iteration count (dar's <c>--kdf-param count</c>);
+  /// 10 000 for argon2 and 200 000 for the others by default, as dar.</summary>
+  public const string KdfIterationsOption = "KdfIterations";
+
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new(SliceSizeOption, "Slice size", FormatOptionKind.String, "",
       Description: "Cut the archive into slice files of this size (dar -s), named basename.1.dar, basename.2.dar, ... "
@@ -120,6 +134,13 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new(CompressionBlockSizeOption, "Compression block size", FormatOptionKind.String, "",
       Description: "Compress in independent blocks of this many clear bytes (dar -z algo:level:size); empty is "
                  + "streaming compression. xz and zstd files over 64 MiB always use 8 MiB blocks.",
+      IsOptimizationAxis: false),
+    new(KdfHashOption, "Key derivation", FormatOptionKind.String, "argon2",
+      Description: "With a password and a block cipher: the key-derivation hash (dar --kdf-param): argon2, sha512, sha1 or md5.",
+      IsOptimizationAxis: false),
+    new(KdfIterationsOption, "Key derivation iterations", FormatOptionKind.String, "",
+      Description: "With a password and a block cipher: the iteration count (dar --kdf-param); empty is dar's default, "
+                 + "10000 for argon2 and 200000 otherwise.",
       IsOptimizationAxis: false),
   ];
 
@@ -139,7 +160,7 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       options.GetOptionBool(TapeMarksOption, false),
       ParseSize(options.GetString(SliceSizeOption), SliceSizeOption),
       ParseSize(options.GetString(FirstSliceSizeOption), FirstSliceSizeOption),
-      (int)blockSize);
+      (int)blockSize) { Encryption = EncryptionOf(options) };
     if (settings.FirstSliceSize > 0 && settings.SliceSize == 0)
       throw new ArgumentException($"DAR option {FirstSliceSizeOption} needs {SliceSizeOption} as well.");
     var items = inputs.Select(ToItem).ToList();
@@ -152,6 +173,24 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       ? name[..^".1.dar".Length]
       : throw new ArgumentException("A sliced DAR archive must be written to a file named basename.1.dar, so its other slices can go beside it.");
     DarWriter.Write(n => n == 1 ? output : File.Create($"{baseName}.{n.ToString(CultureInfo.InvariantCulture)}.dar"), items, settings);
+  }
+
+  /// <summary>
+  /// The encryption <paramref name="options"/> ask for: none without a password; otherwise the
+  /// cipher <see cref="FormatCreateOptions.EncryptionMethod"/> names (aes256 by default; blowfish,
+  /// twofish256, serpent256, camellia256 or scrambling) under the key derivation the options name.
+  /// </summary>
+  internal static DarWriter.Encryption? EncryptionOf(FormatCreateOptions options) {
+    if (string.IsNullOrEmpty(options.Password))
+      return null;
+    var cipher = DarCrypto.CipherFor(options.EncryptionMethod);
+    var hash = DarCrypto.KdfHashFor(options.GetString(KdfHashOption));
+    var iterationsText = options.GetString(KdfIterationsOption);
+    ulong iterations = hash == 'a' ? 10000UL : 200000UL;
+    if (!string.IsNullOrWhiteSpace(iterationsText)
+        && (!ulong.TryParse(iterationsText.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out iterations) || iterations is 0 or > int.MaxValue))
+      throw new ArgumentException($"DAR option {KdfIterationsOption} '{iterationsText}' is not an iteration count.");
+    return new DarWriter.Encryption(cipher, options.Password, hash, iterations);
   }
 
   /// <summary>Parses a dar-style size: digits with an optional k/M/G/T suffix in powers of 1024.</summary>
@@ -167,7 +206,21 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return value << shift;
   }
 
-  private static DarWriter.Item ToItem(ArchiveInputInfo input) {
+  /// <summary>Adds or replaces files in place (<see cref="DarEditor"/>); an encrypted archive needs the password overload.</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) => DarEditor.Edit(archive, inputs, [], null);
+
+  /// <inheritdoc />
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, ArchiveMutationOptions options)
+    => DarEditor.Edit(archive, inputs, [], options?.Password);
+
+  /// <summary>Removes entries in place, a directory with everything below it (<see cref="DarEditor"/>).</summary>
+  public void Remove(Stream archive, string[] entryNames) => DarEditor.Edit(archive, [], entryNames ?? [], null);
+
+  /// <inheritdoc />
+  public void Remove(Stream archive, string[] entryNames, ArchiveMutationOptions options)
+    => DarEditor.Edit(archive, [], entryNames ?? [], options?.Password);
+
+  internal static DarWriter.Item ToItem(ArchiveInputInfo input) {
     var meta = input.Metadata;
     var inMemory = input.InMemoryContent;
     FileSystemInfo? info = null;
@@ -208,14 +261,14 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     };
   }
 
-  private static ArchiveEntryInfo ToInfo(int index, DarEntry e) => new(
+  private static ArchiveEntryInfo ToInfo(int index, DarEntry e, bool encrypted) => new(
     index,
     e.Path,
     (long)Math.Min(e.Size, long.MaxValue),
     e.HasData ? (long)Math.Min(e.StorageSize, long.MaxValue) : 0,
     e.HasData ? DarArchive.AlgorithmName(e.Algorithm) : "Stored",
     e.Kind == DarEntryKind.Directory,
-    false,
+    encrypted,
     e.LastModified,
     Kind: KindName(e),
     IsSymlink: e.Kind == DarEntryKind.Symlink,
@@ -280,12 +333,16 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
-  private static (DarArchive? Archive, DarSliceSet? Set, string? Problem) TryOpen(Stream stream) {
+  private static (DarArchive? Archive, DarSliceSet? Set, string? Problem) TryOpen(Stream stream, string? password) {
     DarSliceSet? set = null;
     try {
       set = DarSliceSet.Open(stream);
-      var archive = DarArchive.Read(set.Archive);
+      var archive = DarArchive.Read(set.Archive, password);
       return (archive, set, null);
+    } catch (ArchivePasswordException) {
+      // a missing or wrong password is the caller's to resolve, not a reason to fall back
+      set?.Dispose();
+      throw;
     } catch (Exception e) when (e is InvalidDataException or NotSupportedException or EndOfStreamException or IOException
                                   or OverflowException or ArgumentException or IndexOutOfRangeException) {
       set?.Dispose();
