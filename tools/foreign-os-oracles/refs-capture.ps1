@@ -39,7 +39,7 @@ function New-RefsVhd([string] $Path, [int] $SizeMb, [hashtable] $Format) {
 }
 
 function Get-Manifest([string] $Root) {
-  Get-ChildItem -LiteralPath $Root -Recurse -File -Force |
+  Get-ChildItem -LiteralPath $Root -Recurse -File -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -notmatch 'System Volume Information' } |
     ForEach-Object {
       [pscustomobject]@{

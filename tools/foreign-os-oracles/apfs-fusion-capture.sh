@@ -29,7 +29,8 @@ created=0
 for form in "-main $MAIN -secondary $TIER2" "-main $MAIN $TIER2" "$MAIN $TIER2"; do
   log "diskutil apfs createContainer $form"
   # shellcheck disable=SC2086
-  if sudo diskutil apfs createContainer $form >> capture.log 2>&1; then created=1; break; fi
+  if sudo diskutil apfs createContainer $form > create.log 2>&1; then created=1; cat create.log >> capture.log; break; fi
+  cat create.log >> capture.log
 done
 if [ "$created" != 1 ]; then
   log "no Fusion container could be created from disk images"
@@ -40,8 +41,8 @@ fi
 
 diskutil apfs list -plist > apfs-list.plist
 diskutil apfs list >> capture.log
-CONTAINER=$(diskutil apfs list -plist | plutil -extract Containers.0.ContainerReference raw -o - - 2>/dev/null)
-FUSION=$(diskutil apfs list -plist | plutil -extract Containers.0.Fusion raw -o - - 2>/dev/null)
+CONTAINER=$(sed -n 's/.*Created new APFS Container \(disk[0-9]*\).*/\1/p' create.log | head -1)
+FUSION=$(diskutil apfs list "$CONTAINER" | grep -i -E 'fusion|Physical Store' | tr '\n' ' ')
 log "container=$CONTAINER fusion=$FUSION"
 sudo diskutil apfs addVolume "$CONTAINER" APFS Fusion >> capture.log 2>&1
 VOL=/Volumes/Fusion
