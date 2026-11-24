@@ -255,18 +255,16 @@ internal static class Qcow2Structures {
     => !header.HasBackingFile && header.BackingFileOffset == 0 && header.CryptMethod == 0 && header.IncompatibleFeatures == 0;
 
   /// <summary>
-  /// The images the in-place writer handles: no backing file, snapshots or features other than an
-  /// external data file (raw or not), with 16-bit refcounts; AES- or LUKS-encrypted ones when
-  /// <paramref name="keyed"/> (opened with their password) and their data is in the image itself.
+  /// The images the in-place writer handles: no internal snapshots, not marked dirty or corrupt,
+  /// any refcount width, zstd or deflate compression, extended L2 entries, an external data file
+  /// (raw or not) and a backing file (which is only ever read); AES- or LUKS-encrypted ones when
+  /// <paramref name="keyed"/> (opened with their password).
   /// </summary>
   internal static bool IsWritableProfile(in Qcow2Header header, bool keyed = false)
-    => header.BackingFileOffset == 0
-       && header.BackingFileSize == 0
-       && (header.CryptMethod == CryptNone
-           || (keyed && header.CryptMethod is (CryptAes or CryptLuks) && !header.ExternalData))
-       && (header.IncompatibleFeatures & ~IncompatibleExternalData) == 0
+    => (header.CryptMethod == CryptNone || (keyed && header.CryptMethod is (CryptAes or CryptLuks)))
+       && (header.IncompatibleFeatures & ~(IncompatibleExternalData | IncompatibleCompressionType | IncompatibleExtendedL2)) == 0
        && (header.AutoclearFeatures & ~AutoclearDataFileRaw) == 0
-       && header.RefcountOrder == 4
+       && !(header.DataFileRaw && header.HasBackingFile)
        && header.RefcountTableOffset > 0
        && header.RefcountTableClusters > 0
        && header.SnapshotCount == 0
