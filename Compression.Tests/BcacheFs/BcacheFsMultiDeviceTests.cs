@@ -90,6 +90,59 @@ public sealed class BcacheFsMultiDeviceTests {
     BcacheFsKernel.AssertFsckClean(paths);
   }
 
+  /// <summary>
+  /// Defragmenting several members: every file is read back unchanged, fsck over all members is
+  /// clean, and with one copy everything the first member can hold moves onto it — data crossing
+  /// from one member to another — each file's runs one after the other.
+  /// </summary>
+  [TestCase("", DefragMode.ConsolidateAtStart, "64M", "96M", TestName = "GivenTwoMembersOneCopy_WhenConsolidatedAtStart_ThenDataMovesOntoTheFirstMemberAndFsckIsClean")]
+  [TestCase("", DefragMode.ConsolidateAtEnd, "64M", "96M", TestName = "GivenTwoMembersOneCopy_WhenConsolidatedAtEnd_ThenFsckIsClean")]
+  [TestCase("--replicas=2", DefragMode.ConsolidateAtStart, "64M", "96M", TestName = "GivenTwoMirroredMembers_WhenConsolidated_ThenFsckIsClean")]
+  [TestCase("--replicas=2", DefragMode.ConsolidateAtStart, "64M", "64M", "64M", TestName = "GivenThreeMembersTwoCopies_WhenConsolidated_ThenFsckIsClean")]
+  [Category("ExternalFsInterop")]
+  public void DefragmentMembers(string options, DefragMode mode, params string[] sizes) {
+    BcacheFsOracleGate.RequireBcachefsTools();
+    var paths = this.Format(options, sizes);
+    var members = paths.Select(p => (Stream)new FileStream(p, FileMode.Open, FileAccess.ReadWrite)).ToArray();
+    try {
+      // Edit through the members in reverse so the data is spread over them, then gather it.
+      var expected = Edit([.. members.Reverse()]);
+      var lengths = members.Select(m => m.Length).ToArray();
+      new BcacheFsFormatDescriptor().DefragmentVolume(members, new DefragOptions { Mode = mode });
+      Assert.That(members.Select(m => m.Length), Is.EqualTo(lengths), "every member keeps its size");
+      Assert.That(Read(members), Is.EquivalentTo(expected));
+
+      if (options.Length == 0 && mode == DefragMode.ConsolidateAtStart) {
+        using var reader = new BcacheFsReader(members);
+        var extents = reader.Entries.Where(e => e.LinkTarget == null).OrderBy(e => e.Name, StringComparer.Ordinal)
+          .SelectMany(e => e.Extents).ToArray();
+        Assert.That(extents.All(x => x.Device == 0), Is.True, "with one copy, the data the first member holds is all on it");
+        Assert.That(extents.Select(x => x.FirstSector), Is.Ordered, "file after file, run after run");
+      }
+    } finally {
+      foreach (var member in members) member.Dispose();
+    }
+    BcacheFsKernel.AssertFsckClean(paths);
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenTwoMembers_WhenDefragmentedWithAnUnsupportedMode_ThenItIsRefusedAndBothAreUnchanged() {
+    BcacheFsOracleGate.RequireBcachefsTools();
+    var paths = this.Format("", "64M", "64M");
+    var before = paths.Select(File.ReadAllBytes).ToArray();
+    var members = paths.Select(p => (Stream)new FileStream(p, FileMode.Open, FileAccess.ReadWrite)).ToArray();
+    try {
+      Assert.Throws<NotSupportedException>(() =>
+        new BcacheFsFormatDescriptor().DefragmentVolume(members, new DefragOptions { Mode = DefragMode.FillHolesLazy }));
+      Assert.Throws<NotSupportedException>(() =>
+        new BcacheFsFormatDescriptor().DefragmentVolume(members, new DefragOptions { MetadataZonePlacement = MetadataZone.Back }));
+    } finally {
+      foreach (var member in members) member.Dispose();
+    }
+    for (var i = 0; i < paths.Length; ++i)
+      Assert.That(File.ReadAllBytes(paths[i]).SequenceEqual(before[i]), Is.True, $"member {i} unchanged");
+  }
+
   [Test, Category("ExternalFsInterop")]
   public void GivenTwoCopies_WhenOneMemberIsLeftOut_ThenTheOtherStillReadsEveryFile() {
     BcacheFsOracleGate.RequireBcachefsTools();

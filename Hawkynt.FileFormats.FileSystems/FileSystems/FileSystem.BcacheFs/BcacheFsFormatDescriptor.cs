@@ -388,6 +388,24 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     foreach (var device in devices) BcacheFsSuperblockEditor.Restamp(device);
   }
 
+  /// <summary>
+  /// Defragments a volume spread over <paramref name="devices" />: every file's data laid down
+  /// again, file after file, at the front (<see cref="DefragMode.ConsolidateAtStart" />) or back
+  /// (<see cref="DefragMode.ConsolidateAtEnd" />) of the members' data areas, member 0 filled
+  /// first, with the volume's copies on different members. A volume of one member gets the
+  /// single-device pass (<see cref="Defragment(Stream, DefragOptions)" />) with all its modes.
+  /// </summary>
+  public void DefragmentVolume(IReadOnlyList<Stream> devices, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(devices);
+    ArgumentNullException.ThrowIfNull(options);
+    if (devices.Count == 1) {
+      this.Defragment(devices[0], options);
+      return;
+    }
+    BcacheFsInPlaceModifier.ConsolidateDevices(devices, options);
+    foreach (var device in devices) BcacheFsSuperblockEditor.Restamp(device);
+  }
+
   /// <summary>Removes files and directories in place from a volume spread over <paramref name="devices" />.</summary>
   public void RemoveFromVolume(IReadOnlyList<Stream> devices, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(devices);

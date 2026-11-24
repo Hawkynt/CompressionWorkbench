@@ -362,7 +362,24 @@ is). What changes against one device:
   "split brain" and refuses to mount (measured).
 - A volume holding two copies of everything is read from either member alone.
 
-Defragmentation stays single-device. Proven by `BcacheFsMultiDeviceTests` (fsck over
+Defragmenting several members (`DefragmentVolume`) reads every live run (checksum
+verified, compression decoded) into a temporary staging file, then lays each file's
+runs down again in path order at the front (`ConsolidateAtStart`) or back
+(`ConsolidateAtEnd`) of the members' data areas (past the metadata reservation,
+never a superblock slot or the journal), filling member 0 before member 1 — data
+moves between members — with `data_replicas` copies on distinct members, encoded as
+the volume asks; holes and inline data stay. One metadata commit follows and the old
+places are zeroed where nothing new landed. Other modes, metadata zone placement
+and reflinked data are refused unchanged; a single member gets the single-device
+pass with all its modes. Proven by `BcacheFsMultiDeviceTests` (fsck over all
+members after gathering two members with one copy at the front — every run then on
+member 0, in order — and at the back, two mirrored members, three members with two
+copies; refusals unchanged), the kernel round trips below (each volume gathered at
+the front and the back after the kernel and we wrote into it, fsck clean, the
+kernel's listing equal to ours after each), and a mirrored 1.39 volume gathered and
+checked by 1.39 fsck.
+
+Proven for edits by `BcacheFsMultiDeviceTests` (fsck over
 all members after edits on two members with one copy, two with two copies, three
 with two copies, and two with two copies of 32 KiB nodes in 64 KiB buckets; each
 member of a mirrored pair read alone; an edit through one member of two refused

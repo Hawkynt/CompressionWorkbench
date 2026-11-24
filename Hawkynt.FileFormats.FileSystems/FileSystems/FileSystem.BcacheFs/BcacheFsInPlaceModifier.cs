@@ -845,6 +845,162 @@ internal static class BcacheFsInPlaceModifier {
         + string.Join("; ", discrepancies));
   }
 
+  /// <summary>
+  /// Defragments a volume spread over several members: every file's data is laid down again,
+  /// file after file in path order, at the front of the members' data areas
+  /// (<see cref="DefragMode.ConsolidateAtStart" />) or their back
+  /// (<see cref="DefragMode.ConsolidateAtEnd" />), filling member 0 before member 1 and so on —
+  /// so data moves between members — with as many copies, each on another member, as the volume
+  /// asks for. Holes stay holes, inline data stays inline; each run keeps its place in its file.
+  /// </summary>
+  /// <remarks>
+  /// <para>Every live run is read (checksums verified, compression decoded) and staged in a
+  /// temporary file before the first byte moves, because its new place may be where another run
+  /// is now. It is written back encoded as the volume asks (<see cref="BcacheFsExtentEncoder" />),
+  /// then one metadata generation is published and the runs' old places are zeroed where nothing
+  /// new landed. Like the single-device pass this is an offline operation: an interruption between
+  /// the data and the commit leaves the old generation pointing at moved data.</para>
+  ///
+  /// <para>Refused before anything is written: reflinked data (moving one file would unshare it),
+  /// other placement modes, and metadata zone placement.</para>
+  /// </remarks>
+  internal static void ConsolidateDevices(IReadOnlyList<Stream> streams, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(streams);
+    ArgumentNullException.ThrowIfNull(options);
+    foreach (var stream in streams) EnsureWritable(stream);
+    if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd))
+      throw new NotSupportedException($"bcachefs: defragmenting several members implements ConsolidateAtStart and ConsolidateAtEnd, not {options.Mode}.");
+    if (options.MetadataZonePlacement != MetadataZone.Unchanged)
+      throw new NotSupportedException("bcachefs: defragmenting several members keeps the metadata where commits put it.");
+    using var buckets = UseVolumeBuckets(streams);
+    var model = ReadModel(streams);
+    if (model.Reflink.Count != 0)
+      throw new NotSupportedException("bcachefs: the volume holds reflinked (shared) data; moving one file's runs would unshare it.");
+    var devices = model.Devices;
+
+    // Stage every live run first: (file, index in its extents, start sector in the file, sectors).
+    using var staging = new FileStream(Path.Combine(Path.GetTempPath(), $"cwb-bcachefs-{Guid.NewGuid():N}.stage"),
+      FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 1 << 16, FileOptions.DeleteOnClose);
+    var runs = new List<(FileState File, int Index, ulong Start, uint Sectors, long StagedAt)>();
+    foreach (var file in model.Files.Values.OrderBy(f => f.Path, StringComparer.Ordinal))
+      for (var i = 0; i < file.FinalExtents.Count; ++i) {
+        var key = file.FinalExtents[i];
+        if (key.Type != KeyExtent) continue;
+        var live = ReadLive(devices, key);
+        runs.Add((file, i, key.Position.Offset - key.Size, key.Size, staging.Position));
+        staging.Write(live);
+      }
+
+    // Where the copies go: the data area of every member allowed user data, in member order, each
+    // walked from its front or its back.
+    var atEnd = options.Mode == DefragMode.ConsolidateAtEnd;
+    var area = new Dictionary<byte, Queue<long>>();
+    foreach (var (device, geometry) in devices.Geometry) {
+      if (!devices.Allows(device, DataUser)) continue;
+      var first = (long)FirstMetadataBucket + MetadataBuckets;
+      var last = (geometry.DeviceSectors - SbSlotSectors) / BucketSectors;
+      var fixedBuckets = geometry.JournalBuckets.SelectMany(j => Enumerable.Range(0, (int)j.Count).Select(k => j.Start + k)).ToHashSet();
+      foreach (var slot in geometry.SuperblockSectors)
+        for (var b = slot / BucketSectors; b <= (slot + SbSlotSectors - 1) / BucketSectors; ++b) fixedBuckets.Add(b);
+      var order = Enumerable.Range(0, (int)Math.Max(0, last - first)).Select(k => first + k).Where(b => !fixedBuckets.Contains(b));
+      area[device] = new Queue<long>(atEnd ? order.Reverse() : order);
+    }
+    var copies = devices.DataReplicas;
+    long[] NextBuckets() {
+      // The first members (in index order) that still have room, one bucket on each.
+      var members = area.Where(a => a.Value.Count != 0).OrderBy(a => a.Key).Take(copies).ToArray();
+      if (members.Length < copies)
+        throw new IOException($"bcachefs: the members' data areas do not hold the volume's data in {copies} copies.");
+      return [.. members.Select(m => BcacheFsBucketId.Of(m.Key, m.Value.Dequeue()))];
+    }
+
+    // The old places are freed; the new ones are spared when the freed ranges are zeroed.
+    foreach (var (file, index, _, _, _) in runs) AddFreedRange(model.FreedRanges, file.FinalExtents[index]);
+
+    var pieceSectors = Math.Min(MaxCrc32ExtentSectors, BucketSectors);
+    long[]? current = null;
+    var fill = 0;
+    var replacements = new Dictionary<FileState, List<(int Index, List<Key> Keys)>>();
+    foreach (var (file, index, start, sectors, stagedAt) in runs) {
+      var live = new byte[sectors * SectorSize];
+      staging.Position = stagedAt;
+      staging.ReadExactly(live);
+      var keys = new List<Key>();
+      for (var done = 0; done < sectors;) {
+        var piece = (int)Math.Min(pieceSectors, sectors - done);
+        var encoded = BcacheFsExtentEncoder.Encode(live.AsSpan(done * SectorSize, piece * SectorSize), piece, model.DataOptions);
+        if (current == null || fill + encoded.RegionSectors > BucketSectors) {
+          current = NextBuckets();
+          fill = 0;
+        }
+        foreach (var copy in current) {
+          var stream = devices[BcacheFsBucketId.Device(copy)];
+          stream.Position = (BcacheFsBucketId.Index(copy) * BucketSectors + fill) * SectorSize;
+          stream.Write(encoded.Region, 0, encoded.RegionSectors * SectorSize);
+          model.OccupiedBuckets.Add(copy);
+        }
+        var value = new byte[encoded.Entry.Length + 8 * current.Length];
+        encoded.Entry.CopyTo(value, 0);
+        for (var c = 0; c < current.Length; ++c)
+          BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(encoded.Entry.Length + 8 * c),
+            ExtentPointer(BcacheFsBucketId.Index(current[c]) * BucketSectors + fill, BcacheFsBucketId.Device(current[c]),
+              model.BucketStates.GetValueOrDefault(current[c]).Generation));
+        fill += encoded.RegionSectors;
+        done += piece;
+        keys.Add(new Key(KeyExtent, new Bpos(file.Inode, start + (ulong)done, SnapshotIdMax), (uint)piece, value));
+      }
+      if (!replacements.TryGetValue(file, out var list)) replacements[file] = list = [];
+      list.Add((index, keys));
+    }
+
+    // Each run's key gives way to the keys of its new pieces, at the same place in the file.
+    foreach (var (file, list) in replacements) {
+      var byIndex = list.ToDictionary(x => x.Index, x => x.Keys);
+      var rebuilt = new List<Key>();
+      for (var i = 0; i < file.FinalExtents.Count; ++i)
+        if (byIndex.TryGetValue(i, out var keys)) rebuilt.AddRange(keys);
+        else rebuilt.Add(file.FinalExtents[i]);
+      file.FinalExtents.Clear();
+      file.FinalExtents.AddRange(rebuilt);
+    }
+
+    Commit(model);
+  }
+
+  /// <summary>
+  /// A pointer extent's live data, read from the first supplied member holding a copy, its
+  /// checksum verified and its compression decoded.
+  /// </summary>
+  private static byte[] ReadLive(BcacheFsDevices devices, Key extent) {
+    if (!BcacheFsExtentCodec.TryParseEntries(extent.Value, out var entries, out var error))
+      throw new InvalidDataException($"bcachefs extent at {extent.Position}: {error}");
+    BcacheFsExtentCrc? crc = null;
+    foreach (var entry in entries) {
+      switch (entry.KnownType) {
+        case BcacheFsExtentEntryType.Crc32 or BcacheFsExtentEntryType.Crc64 or BcacheFsExtentEntryType.Crc128:
+          if (!BcacheFsExtentCodec.TryReadExtentCrc(entry, out crc, out error))
+            throw new InvalidDataException($"bcachefs extent at {extent.Position}: {error}");
+          break;
+        case BcacheFsExtentEntryType.Pointer: {
+          var word = BinaryPrimitives.ReadUInt64LittleEndian(entry.RawBytes);
+          if ((word & (1UL << 1)) != 0) break;                                // a cached copy
+          var (device, sector) = BcacheFsBucketId.Pointer(word);
+          if (!devices.Streams.TryGetValue(device, out var stream)) break;
+          if (crc != null) {
+            if (crc.Nonce != 0 || crc.ChecksumType is BcacheFsChecksumType.ChaCha20Poly1305_80 or BcacheFsChecksumType.ChaCha20Poly1305_128)
+              throw new NotSupportedException($"bcachefs: the extent at {extent.Position} is encrypted; it is not moved.");
+            return BcacheFsExtentData.ReadLive(stream, new BcacheFsStoredExtent(sector, crc, null), (int)extent.Size);
+          }
+          var raw = new byte[extent.Size * SectorSize];
+          stream.Position = sector * SectorSize;
+          stream.ReadExactly(raw);
+          return raw;
+        }
+      }
+    }
+    throw new InvalidDataException($"bcachefs extent at {extent.Position} has no copy on a supplied member.");
+  }
+
   private static void AssignNewDirentOffsets(Model model) {
     var used = new Dictionary<ulong, HashSet<ulong>>();
     foreach (var dir in model.Directories.Values) {

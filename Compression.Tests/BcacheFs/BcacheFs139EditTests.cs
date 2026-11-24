@@ -212,6 +212,11 @@ public sealed class BcacheFs139EditTests {
     try {
       var expected = Edit(members, populate ? "hello.txt" : null);
       Assert.That(Read(members), Is.EquivalentTo(expected));
+      // Several members: gathered at the front as well, still in the volume's encoding.
+      if (members.Length > 1) {
+        new BcacheFsFormatDescriptor().DefragmentVolume(members, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+        Assert.That(Read(members), Is.EquivalentTo(expected));
+      }
     } finally {
       foreach (var member in members) member.Dispose();
     }
