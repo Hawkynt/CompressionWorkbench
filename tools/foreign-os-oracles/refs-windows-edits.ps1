@@ -22,6 +22,22 @@ Invoke-Probe @('gen', $gen)
 Invoke-Probe @('pattern', '30', '65536', (Join-Path $WorkDir 'replace-same.bin'))
 Invoke-Probe @('pattern', '31', '300000', (Join-Path $WorkDir 'replace-grow.bin'))
 Invoke-Probe @('pattern', '32', '20000', (Join-Path $WorkDir 'replace-shrink.bin'))
+Invoke-Probe @('pattern', '33', '70000', (Join-Path $WorkDir 'replace-grow-small.bin'))
+Invoke-Probe @('pattern', '34', '30000', (Join-Path $WorkDir 'added.bin'))
+
+# CWB_REFS_OPS limits the edits made (comma list); CWB_REFS_KEEP names the edits whose volumes
+# (base, win-<op>, ours-<op>) are kept for upload, so an artifact holds only what is compared.
+# A bench branch may pin both in refs-bench.txt beside this script (ops=..., keep=...).
+$bench = Join-Path $PSScriptRoot 'refs-bench.txt'
+if (Test-Path $bench) {
+  foreach ($line in Get-Content $bench) {
+    if ($line -match '^ops=(.*)$') { $env:CWB_REFS_OPS = $Matches[1] }
+    if ($line -match '^keep=(.*)$') { $env:CWB_REFS_KEEP = $Matches[1] }
+    if ($line -match '^variants=(.*)$') { $Variants = @($Matches[1] -split ',') }
+  }
+}
+$onlyOps = @(($env:CWB_REFS_OPS -split ',') | Where-Object { $_ })
+$keepOps = @(($env:CWB_REFS_KEEP -split ',') | Where-Object { $_ })
 
 function Mount-Rw([string] $Vhd) {
   $img = Mount-DiskImage -ImagePath $Vhd -PassThru
@@ -56,13 +72,18 @@ foreach ($name in $Variants) {
     'replace-same' = { param($r) Copy-Item (Join-Path $WorkDir 'replace-same.bin') (Join-Path $r 'replace-me.bin') -Force }
     'replace-grow' = { param($r) Copy-Item (Join-Path $WorkDir 'replace-grow.bin') (Join-Path $r 'replace-me.bin') -Force }
     'replace-shrink' = { param($r) Copy-Item (Join-Path $WorkDir 'replace-shrink.bin') (Join-Path $r 'replace-me.bin') -Force }
+    'replace-grow-small' = { param($r) Copy-Item (Join-Path $WorkDir 'replace-grow-small.bin') (Join-Path $r 'replace-me.bin') -Force }
     'remove'       = { param($r) Remove-Item (Join-Path $r 'remove-me.bin') -Force }
     'remove-small' = { param($r) Remove-Item (Join-Path $r 'many/f007.txt') -Force }
+    'add'          = { param($r) Copy-Item (Join-Path $WorkDir 'added.bin') (Join-Path $r 'added.bin') -Force }
+    'add-dir'      = { param($r) New-Item -ItemType Directory -Path (Join-Path $r 'new-folder') | Out-Null }
     'rename'       = { param($r) Rename-Item (Join-Path $r 'rename-me.txt') 'renamed.txt' }
     'rename-long'  = { param($r) Rename-Item (Join-Path $r 'small.txt') 'a-much-longer-name-for-the-small-file.txt' }
+    'rename-unicode' = { param($r) Rename-Item (Join-Path $r 'rename-me.txt') ([string]::new([char[]]@(0x47,0x72,0xFC,0xDF,0x65,0x2D,0x3A9,0x3BC,0x3AD,0x3B3,0x3B1,0x2D,0x65E5,0x672C)) + '.txt') }
   }
   $record = [ordered]@{ variant = $name; partitionOffset = $offset; bytes = $length; ops = @() }
   foreach ($op in $edits.Keys) {
+    if ($onlyOps.Count -gt 0 -and $op -ne 'noop' -and $op -notin $onlyOps) { continue }
     # Windows makes the edit.
     $copy = Join-Path $WorkDir "$name.win.vhd"
     Copy-Item $vhd $copy -Force
@@ -105,6 +126,11 @@ foreach ($name in $Variants) {
       Remove-Item $copy -Force
     }
     $record.ops += $verdict
+  }
+  foreach ($file in Get-ChildItem -LiteralPath $dir -Filter '*.refs') {
+    $op = $file.BaseName -replace '^(win|ours)-', ''
+    if ($file.BaseName -eq 'base' -and $keepOps.Count -gt 0) { continue }
+    if ($op -notin $keepOps) { Remove-Item -LiteralPath $file.FullName -Force }
   }
   $summary += $record
   Remove-Item $vhd -Force

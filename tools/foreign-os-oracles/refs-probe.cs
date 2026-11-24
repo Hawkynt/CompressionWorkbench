@@ -12,7 +12,7 @@
 //   refs-probe pattern <seed> <length> <out>   the bytes an edit writes, for Windows to write too
 //   refs-probe read <image.refs> <out.json>    what our reader lists and extracts (path, size, sha256)
 //   refs-probe mutate <image.refs> <op> <out.refs> <result.json>
-//        op: rename | rename-long | replace-same | replace-grow | replace-shrink | remove | remove-small | clone | defrag
+//        op: rename | rename-long | rename-unicode | replace-same | replace-grow | replace-shrink | replace-grow-small | add | add-dir | remove | remove-small | clone | defrag
 //
 // Every result is JSON so the PowerShell side can compare it with Get-FileHash.
 
@@ -119,6 +119,10 @@ static int Mutate(string image, string op, string output, string resultPath) {
         expectation = new { replaced = "replace-me.bin", size = data.Length, sha256 = Sha256(data) };
         break;
       }
+      case "rename-unicode":
+        descriptor.Rename(stream, "rename-me.txt", "Gr\u00FC\u00DFe-\u03A9\u03BC\u03AD\u03B3\u03B1-\u65E5\u672C.txt");
+        expectation = new { renamed = new[] { "rename-me.txt", "Gr\u00FC\u00DFe-\u03A9\u03BC\u03AD\u03B3\u03B1-\u65E5\u672C.txt" } };
+        break;
       case "rename-long":
         descriptor.Rename(stream, "small.txt", "a-much-longer-name-for-the-small-file.txt");
         expectation = new { renamed = new[] { "small.txt", "a-much-longer-name-for-the-small-file.txt" } };
@@ -129,6 +133,22 @@ static int Mutate(string image, string op, string output, string resultPath) {
         expectation = new { replaced = "replace-me.bin", size = data.Length, sha256 = Sha256(data) };
         break;
       }
+      case "replace-grow-small": {
+        var data = Pattern(70000, 33);
+        descriptor.Add(stream, [ArchiveInputInfo.InMemory("replace-me.bin", data)]);
+        expectation = new { replaced = "replace-me.bin", size = data.Length, sha256 = Sha256(data) };
+        break;
+      }
+      case "add": {
+        var data = Pattern(30000, 34);
+        descriptor.Add(stream, [ArchiveInputInfo.InMemory("added.bin", data)]);
+        expectation = new { added = "added.bin", size = data.Length, sha256 = Sha256(data) };
+        break;
+      }
+      case "add-dir":
+        descriptor.Add(stream, [new ArchiveInputInfo("new-folder", "new-folder", true)]);
+        expectation = new { added = "new-folder/" };
+        break;
       case "remove-small":
         descriptor.Remove(stream, ["many/f007.txt"]);
         expectation = new { removed = "many/f007.txt" };
