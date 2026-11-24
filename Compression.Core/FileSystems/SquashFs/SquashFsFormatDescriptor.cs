@@ -87,7 +87,12 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'h', (byte)'s', (byte)'q', (byte)'s'], Confidence: 0.95),
-    new([(byte)'s', (byte)'q', (byte)'s', (byte)'h'], Confidence: 0.95)
+    new([(byte)'s', (byte)'q', (byte)'s', (byte)'h'], Confidence: 0.95),
+    // the sqlzma build of 3.x and the LZMA build of 3.0, either byte order
+    new([(byte)'s', (byte)'h', (byte)'s', (byte)'q'], Confidence: 0.85),
+    new([(byte)'q', (byte)'s', (byte)'h', (byte)'s'], Confidence: 0.85),
+    new([(byte)'h', (byte)'s', (byte)'q', (byte)'t'], Confidence: 0.85),
+    new([(byte)'t', (byte)'q', (byte)'s', (byte)'h'], Confidence: 0.85),
   ];
   /// <summary>
   /// Gets the methods.
