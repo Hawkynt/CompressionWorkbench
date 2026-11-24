@@ -48,6 +48,9 @@ internal static class RefsInPlaceRemove {
     var target = targets[0];
     if (BinaryPrimitives.ReadUInt16LittleEndian(target.Key.AsSpan(2)) != 1)
       throw new NotSupportedException($"ReFS: '{normalized}' has its own object; only files held in their directory row are removed.");
+    // The file-number row (type 0x20) goes with the name row.
+    var idRow = RefsDirectoryRows.FindIdRow(rows, RefsDirectoryRows.FileNumber(target.Value), Encoding.Unicode.GetString(target.Key, 4, target.Key.Length - 4))
+      ?? throw new NotSupportedException($"ReFS: the file-number row of '{normalized}' was not found; it is not removed.");
 
     var clusters = new List<ulong>();
     foreach (var extent in file.Extents)
@@ -73,9 +76,11 @@ internal static class RefsInPlaceRemove {
     }
     // The allocator rewrite changed pages, so the directory row is read afresh.
     var current = RefsMetadataReader.Open(image);
-    var row = current.WalkTree(RefsInPlaceRename.ResolveDirectoryRoot(current, parentPath), virtualAddresses: true)
-      .Single(r => r.Key.AsSpan().SequenceEqual(target.Key));
+    var currentRows = current.WalkTree(RefsInPlaceRename.ResolveDirectoryRoot(current, parentPath), virtualAddresses: true).ToList();
+    var row = currentRows.Single(r => r.Key.AsSpan().SequenceEqual(target.Key));
+    var currentIdRow = currentRows.Single(r => r.Key.AsSpan().SequenceEqual(idRow.Key));
     var after = new RefsMetadataGraph(image, current);
-    after.RefreshChecksumPaths([RefsPageEditor.DeleteRow(after, row)]);
+    RefsPageEditor.DeleteRow(after, row);
+    after.RefreshChecksumPaths([RefsPageEditor.DeleteRow(after, currentIdRow)]);
   }
 }

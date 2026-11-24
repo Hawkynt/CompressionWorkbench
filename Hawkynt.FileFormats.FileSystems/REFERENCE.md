@@ -17896,7 +17896,7 @@ Implements `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Replaces existing files in place: a same-length overwrite of any number of files (`RefsInPlaceOverwrite`) or one length-changing replacement (`RefsInPlaceResize`). Creating files is refused. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Replaces or adds files in place: a same-length overwrite of any number of files (`RefsInPlaceOverwrite`), or one length-changing replacement (`RefsInPlaceResize`), or one new file (`RefsInPlaceAdd`). Creating directories is refused. |
 | `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` | Performs the analyze layout operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
