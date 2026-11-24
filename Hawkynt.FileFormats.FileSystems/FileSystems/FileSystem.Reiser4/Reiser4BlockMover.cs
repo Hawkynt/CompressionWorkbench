@@ -33,6 +33,7 @@ public sealed class Reiser4BlockMover : IFilesystemBlockMover {
   private readonly Dictionary<string, List<Unit>> _unitsOf = new(StringComparer.Ordinal);
   private ushort _nodePlugin;
   private long _imageLength;
+  private Reiser4Layout _layout = Reiser4Layout.Default;
 
   /// <summary>Reads the tree once and notes where every extent unit is.</summary>
   public void Init(Stream image) {
@@ -46,6 +47,7 @@ public sealed class Reiser4BlockMover : IFilesystemBlockMover {
     if (volume.ReplayedTransactions > 0)
       throw new NotSupportedException("Reiser4: the journal holds transactions to replay; blocks cannot be moved in place.");
     this._nodePlugin = volume.NodePlugin;
+    this._layout = volume.Layout;
     var seen = new HashSet<Reiser4Key>();
     foreach (var (path, _, obj, _) in volume.Paths) {
       if (obj.Stat.Kind != Reiser4Stat.Regular || obj.Body.Count == 0 || obj.Body[0].Plugin != Reiser4ItemPlugin.Extent || !seen.Add(obj.StatKey))
@@ -57,14 +59,14 @@ public sealed class Reiser4BlockMover : IFilesystemBlockMover {
         for (var at = 0; at < body.Length; at += 16) {
           var start = BinaryPrimitives.ReadUInt64LittleEndian(body.AsSpan(at));
           var width = BinaryPrimitives.ReadUInt64LittleEndian(body.AsSpan(at + 8));
-          var bytes = (long)Math.Min((ulong)Math.Max(0, remaining), width * Reiser4Writer.BlockSize);
-          remaining -= (long)(width * Reiser4Writer.BlockSize);
+          var bytes = (long)Math.Min((ulong)Math.Max(0, remaining), width * (ulong)this._layout.BlockSize);
+          remaining -= (long)(width * (ulong)this._layout.BlockSize);
           if (start == 0) continue;
-          if ((ulong)((bytes + Reiser4Writer.BlockSize - 1) / Reiser4Writer.BlockSize) != width)
+          if ((ulong)((bytes + this._layout.BlockSize - 1) / this._layout.BlockSize) != width)
             throw new NotSupportedException($"Reiser4: '{path}' holds blocks past its end, which cannot be moved in place.");
           units.Add(new Unit {
-            Node = item.Block, Field = item.BodyOffset + at, Original = checked((long)start * Reiser4Writer.BlockSize),
-            Length = bytes, Width = width, Current = checked((long)start * Reiser4Writer.BlockSize),
+            Node = item.Block, Field = item.BodyOffset + at, Original = checked((long)start * this._layout.BlockSize),
+            Length = bytes, Width = width, Current = checked((long)start * this._layout.BlockSize),
           });
         }
       }
@@ -73,10 +75,10 @@ public sealed class Reiser4BlockMover : IFilesystemBlockMover {
   }
 
   /// <summary>A block, which is what an extent unit counts in.</summary>
-  public int BlockSize => Reiser4Writer.BlockSize;
+  public int BlockSize => this._layout.BlockSize;
 
   /// <summary>First byte a file may occupy: past the jump area, the superblocks, the journal, the status and backup blocks and the first two nodes.</summary>
-  public long FirstDataByte => Math.Min(this._imageLength, 25L * Reiser4Writer.BlockSize);
+  public long FirstDataByte => Math.Min(this._imageLength, (long)this._layout.FirstData * this._layout.BlockSize);
 
   /// <summary>Each call notes where one unit's run has got to.</summary>
   public bool RepointsRunsIndependently => true;
@@ -98,9 +100,9 @@ public sealed class Reiser4BlockMover : IFilesystemBlockMover {
     ArgumentNullException.ThrowIfNull(fileName);
     if (this._imageLength == 0) this.Init(image);
     if (oldOffset == newOffset) return;
-    if (newOffset % Reiser4Writer.BlockSize != 0)
+    if (newOffset % this._layout.BlockSize != 0)
       throw new NotSupportedException(
-        $"Reiser4: {newOffset} is not on a {Reiser4Writer.BlockSize}-byte block boundary, which is all an extent can name.");
+        $"Reiser4: {newOffset} is not on a {this._layout.BlockSize}-byte block boundary, which is all an extent can name.");
     if (!this._unitsOf.TryGetValue(fileName, out var units))
       throw new InvalidOperationException($"Reiser4: the tree names no extent file '{fileName}', so it cannot be repointed.");
     // By where the run is now rather than where it began: the planner may put a run down more
@@ -120,8 +122,8 @@ public sealed class Reiser4BlockMover : IFilesystemBlockMover {
     var nodes = new Dictionary<ulong, byte[]>();
     byte[] Node(ulong block) {
       if (nodes.TryGetValue(block, out var cached)) return cached;
-      var buffer = new byte[Reiser4Writer.BlockSize];
-      image.Position = checked((long)block * Reiser4Writer.BlockSize);
+      var buffer = new byte[this._layout.BlockSize];
+      image.Position = checked((long)block * this._layout.BlockSize);
       image.ReadExactly(buffer);
       return nodes[block] = buffer;
     }
@@ -129,16 +131,16 @@ public sealed class Reiser4BlockMover : IFilesystemBlockMover {
     var bitmaps = new Dictionary<ulong, byte[]>();
     byte[] Bitmap(ulong index) {
       if (bitmaps.TryGetValue(index, out var cached)) return cached;
-      var buffer = new byte[Reiser4Writer.BlockSize];
-      image.Position = checked((long)(index == 0 ? 18 : index * Reiser4Writer.BlocksPerBitmap) * Reiser4Writer.BlockSize);
+      var buffer = new byte[this._layout.BlockSize];
+      image.Position = checked((long)this._layout.BitmapBlock(index) * this._layout.BlockSize);
       image.ReadExactly(buffer);
       return bitmaps[index] = buffer;
     }
     void Mark(long offset, ulong width, bool used) {
-      var first = (ulong)(offset / Reiser4Writer.BlockSize);
+      var first = (ulong)(offset / this._layout.BlockSize);
       for (var block = first; block < first + width; ++block) {
-        var map = Bitmap(block / Reiser4Writer.BlocksPerBitmap);
-        var bit = block % Reiser4Writer.BlocksPerBitmap;
+        var map = Bitmap(block / this._layout.BlocksPerBitmap);
+        var bit = block % this._layout.BlocksPerBitmap;
         ref var cell = ref map[4 + (int)(bit >> 3)];
         cell = used ? (byte)(cell | 1 << (int)(bit & 7)) : (byte)(cell & ~(1 << (int)(bit & 7)));
       }
@@ -146,20 +148,20 @@ public sealed class Reiser4BlockMover : IFilesystemBlockMover {
 
     foreach (var unit in units.Where(static u => u.Current != u.Original)) Mark(unit.Original, unit.Width, used: false);
     foreach (var unit in units.Where(static u => u.Current != u.Original)) {
-      if (unit.Current < 0 || unit.Current % Reiser4Writer.BlockSize != 0)
+      if (unit.Current < 0 || unit.Current % this._layout.BlockSize != 0)
         throw new InvalidOperationException("Reiser4: a run did not land on a block boundary inside the volume.");
       Mark(unit.Current, unit.Width, used: true);
-      BinaryPrimitives.WriteUInt64LittleEndian(Node(unit.Node).AsSpan(unit.Field), (ulong)(unit.Current / Reiser4Writer.BlockSize));
+      BinaryPrimitives.WriteUInt64LittleEndian(Node(unit.Node).AsSpan(unit.Field), (ulong)(unit.Current / this._layout.BlockSize));
     }
 
     foreach (var (block, node) in nodes) {
       if (this._nodePlugin == 1) Reiser4Volume.SealNode41(node);
-      image.Position = checked((long)block * Reiser4Writer.BlockSize);
+      image.Position = checked((long)block * this._layout.BlockSize);
       image.Write(node);
     }
     foreach (var (index, map) in bitmaps) {
       Reiser4Volume.SealBitmap(map);
-      image.Position = checked((long)(index == 0 ? 18 : index * Reiser4Writer.BlocksPerBitmap) * Reiser4Writer.BlockSize);
+      image.Position = checked((long)this._layout.BitmapBlock(index) * this._layout.BlockSize);
       image.Write(map);
     }
     image.Flush();

@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using System.Text;
 using Compression.Core.DiskImage;
 
@@ -36,10 +37,17 @@ namespace FileSystem.Reiser4;
 /// </para>
 /// </summary>
 public sealed class Reiser4Writer {
-  /// <summary>Filesystem block size — 4 KB is the only supported value. Reiser4
-  /// theoretically supports 512 / 1024 / 2048 / 4096 / 8192, but the embedded
-  /// templates are 4096-byte exact captures.</summary>
+  /// <summary>The default block size, 4 KiB: what <c>mkfs.reiser4</c> makes unless told otherwise,
+  /// and the only size a Reiser4 kernel on a 4 KiB-page machine mounts.</summary>
   public const int BlockSize = 4096;
+
+  /// <summary>
+  /// The block size of the volume to write: 512, 1024, 2048, 4096 (the default) or 8192, the sizes
+  /// <c>mkfs.reiser4 -b</c> accepts. The fixed blocks are the 4096-byte captures cut to this size
+  /// with the block size field patched in, which is what <c>mkfs.reiser4 -b</c> writes at each of
+  /// them; the tree is laid out in nodes of this size.
+  /// </summary>
+  public int VolumeBlockSize { get; set; } = BlockSize;
 
   /// <summary>Minimum block count we'll emit. mkfs.reiser4 itself rejects
   /// images below ~750 blocks, but we round up to 4096 (= 16 MB) to match the
@@ -48,6 +56,8 @@ public sealed class Reiser4Writer {
 
   private const ulong ReservedBlockCount = 25;
 
+  private const int MasterBlockSizeOff = 18;
+  private const int BackupBlockSizeOff = 19;
   private const int MasterUuidOff = 20;
   private const int MasterLabelOff = 36;
   private const int BackupUuidOff = 0x15;
@@ -64,7 +74,7 @@ public sealed class Reiser4Writer {
   /// drawn from <see cref="Random.Shared"/>.</summary>
   public uint? MkfsId { get; set; }
 
-  /// <summary>Total filesystem size in 4 KB blocks. Clamped to
+  /// <summary>Total filesystem size in blocks of <see cref="VolumeBlockSize" />. Clamped to
   /// <see cref="MinBlockCount"/>.</summary>
   public ulong BlockCount { get; set; } = MinBlockCount;
 
@@ -167,14 +177,25 @@ public sealed class Reiser4Writer {
   /// Smallest block count that holds <paramref name="fileSizes" />: the reserved blocks, every
   /// file's data blocks, the tree, and the bitmap blocks interleaved among them.
   /// </summary>
-  public static ulong EstimateBlockCount(IEnumerable<long> fileSizes) {
+  public static ulong EstimateBlockCount(IEnumerable<long> fileSizes) => EstimateBlockCount(fileSizes, BlockSize);
+
+  /// <summary>
+  /// Smallest block count, in blocks of <paramref name="blockSize" />, that holds
+  /// <paramref name="fileSizes" />: the reserved blocks, every file's data blocks, the tree, and
+  /// the bitmap blocks interleaved among them.
+  /// </summary>
+  public static ulong EstimateBlockCount(IEnumerable<long> fileSizes, int blockSize) {
     ArgumentNullException.ThrowIfNull(fileSizes);
+    if (!Reiser4Layout.IsSupported(blockSize))
+      throw new NotSupportedException($"Reiser4: block size {blockSize} is not one mkfs.reiser4 makes (512, 1024, 2048, 4096 or 8192).");
+    var layout = new Reiser4Layout(blockSize);
     var sizes = fileSizes as IReadOnlyCollection<long> ?? [.. fileSizes];
-    var blocks = ReservedBlockCount;
-    blocks += (ulong)((sizes.Count + DirEntriesPerBlock - 1) / Math.Max(1, DirEntriesPerBlock));
+    var blocks = layout.FirstData;
+    var entriesPerBlock = Math.Max(1, (blockSize - DirHeadSize) / DirEntrySize);
+    blocks += (ulong)((sizes.Count + entriesPerBlock - 1) / entriesPerBlock);
     foreach (var size in sizes)
-      blocks += (ulong)((size + BlockSize - 1) / BlockSize);
-    blocks += blocks / BlocksPerBitmap + 2;
+      blocks += (ulong)((size + blockSize - 1) / blockSize);
+    blocks += blocks / layout.BlocksPerBitmap + 2;
     return Math.Max(MinBlockCount, blocks + blocks / 20);
   }
 
@@ -208,21 +229,39 @@ public sealed class Reiser4Writer {
       throw new ArgumentException("UUID must be exactly 16 bytes.", nameof(this.Uuid));
     var mkfsId = this.MkfsId ?? unchecked((uint)Random.Shared.Next(int.MinValue, int.MaxValue));
     var label = TrimLabel(this.Label);
+    var blockSize = this.VolumeBlockSize;
+    if (!Reiser4Layout.IsSupported(blockSize))
+      throw new NotSupportedException($"Reiser4: block size {blockSize} is not one mkfs.reiser4 makes (512, 1024, 2048, 4096 or 8192).");
 
-    var master = LoadTemplate(16);
+    // mkfs.reiser4 -b writes the same master, format, status and backup records at every block
+    // size — all of them end within the first 512 bytes — and differs only in the block size
+    // fields of the master (offset 18) and the backup (offset 19) and in the counters.
+    var master = Sized(LoadTemplate(16), blockSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(master.AsSpan(MasterBlockSizeOff), (ushort)blockSize);
     uuid.AsSpan().CopyTo(master.AsSpan(MasterUuidOff, 16));
     Array.Clear(master, MasterLabelOff, 16);
     label.AsSpan().CopyTo(master.AsSpan(MasterLabelOff, 16));
 
-    var backup = LoadTemplate(22);
+    var backup = Sized(LoadTemplate(22), blockSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(backup.AsSpan(BackupBlockSizeOff), (ushort)blockSize);
     uuid.AsSpan().CopyTo(backup.AsSpan(BackupUuidOff, 16));
     Array.Clear(backup, BackupLabelOff, 16);
     label.AsSpan().CopyTo(backup.AsSpan(BackupLabelOff, 16));
 
-    var plan = Reiser4Plan.Fresh(master, LoadTemplate(17), LoadTemplate(21), backup, LoadTemplate(24), mkfsId,
-      Math.Max(this.BlockCount, MinBlockCount));
+    var plan = Reiser4Plan.Fresh(new Reiser4Layout(blockSize), master, Sized(LoadTemplate(17), blockSize),
+      Sized(LoadTemplate(21), blockSize), backup, LoadTemplate(24), mkfsId, Math.Max(this.BlockCount, MinBlockCount));
     plan.FileBody = this.FileBody;
     return plan;
+  }
+
+  /// <summary>A captured 4096-byte record cut (or zero-extended) to <paramref name="blockSize" /> bytes.</summary>
+  private static byte[] Sized(byte[] template, int blockSize) {
+    if (template.Length == blockSize) return template;
+    if (template.AsSpan(Math.Min(blockSize, template.Length)).IndexOfAnyExcept((byte)0) >= 0)
+      throw new InvalidOperationException("Reiser4: a captured fixed block holds data past the target block size.");
+    var sized = new byte[blockSize];
+    template.AsSpan(0, Math.Min(blockSize, template.Length)).CopyTo(sized);
+    return sized;
   }
 
   private static byte[] TrimLabel(string? label) {

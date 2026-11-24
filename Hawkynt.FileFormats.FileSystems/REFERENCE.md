@@ -17698,7 +17698,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` |  |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Knobs the writer honours. `VolumeLabel` is written into the master superblock label field (and the backup record); `ImageSize` drives `BlockCount` (4 KB blocks, clamped to the writer minimum); `FileBody` picks how regular files are stored (`Reiser4FileBody`). The 4 KB block size is fixed — the embedded mkfs.reiser4 templates are byte-exact 4096-byte captures — so it is intentionally not exposed. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Knobs the writer honours. `VolumeLabel` is written into the master superblock label field (and the backup record); `ImageSize` drives `BlockCount` (clamped to the writer minimum); `BlockSize` picks one of the block sizes `mkfs.reiser4 -b` makes (Auto is its 4 KB default, the only size a Reiser4 kernel on a 4 KiB-page machine mounts); `FileBody` picks how regular files are stored (`Reiser4FileBody`). |
 | `ReclaimSupport` | `LayoutReclaim ReclaimSupport { get; }` | Extent files can hold holes (units with start 0) and several names can share one stat key, both of which `fsck.reiser4` and the kernel accept on volumes this writer rebuilds. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `AddHardLink` | `void AddHardLink(Stream archive, string path, string existing)` | Adds `path` as a further name of the existing file `existing`. |
@@ -17840,13 +17840,14 @@ Creator for a Reiser4 filesystem image that starts from what `mkfs.reiser4 -fffy
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Reiser4Writer` | `Reiser4Writer()` |  |
-| `BlockSize` | `const int BlockSize` | Filesystem block size — 4 KB is the only supported value. Reiser4 theoretically supports 512 / 1024 / 2048 / 4096 / 8192, but the embedded templates are 4096-byte exact captures. |
+| `BlockSize` | `const int BlockSize` | The default block size, 4 KiB: what `mkfs.reiser4` makes unless told otherwise, and the only size a Reiser4 kernel on a 4 KiB-page machine mounts. |
 | `MinBlockCount` | `const ulong MinBlockCount` | Minimum block count we'll emit. mkfs.reiser4 itself rejects images below ~750 blocks, but we round up to 4096 (= 16 MB) to match the reference capture and avoid bitmap-truncation edge cases. |
-| `BlockCount` | `ulong BlockCount { get; set; }` | Total filesystem size in 4 KB blocks. Clamped to `MinBlockCount`. |
+| `BlockCount` | `ulong BlockCount { get; set; }` | Total filesystem size in blocks of `VolumeBlockSize`. Clamped to `MinBlockCount`. |
 | `FileBody` | `Reiser4FileBody FileBody { get; set; }` | How regular files are stored. `Profile` follows the captured mkfs profile, whose root names cryptcompress for new files. |
 | `Label` | `string Label { get; set; }` | Customisable label written to the master SB (NUL-padded to 16 bytes; longer strings are truncated; null = empty/zero). |
 | `MkfsId` | `uint? MkfsId { get; set; }` | Optional 32-bit mkfs identifier. When null, a random value is drawn from `Shared`. |
 | `Uuid` | `byte[] Uuid { get; set; }` | Optional 16-byte UUID. When null, a random Guid is used. |
+| `VolumeBlockSize` | `int VolumeBlockSize { get; set; }` | The block size of the volume to write: 512, 1024, 2048, 4096 (the default) or 8192, the sizes `mkfs.reiser4 -b` accepts. The fixed blocks are the 4096-byte captures cut to this size with the block size field patched in, which is what `mkfs.reiser4 -b` writes at each of them; the tree is laid out in nodes of this size. |
 | `AddDirectory` | `void AddDirectory(string name, FileMetadata metadata = null)` | Retains an explicit directory, including an empty directory. |
 | `AddFile` | `void AddFile(string name, byte[] data, FileMetadata metadata = null)` | Adds a regular file. |
 | `AddHardLink` | `void AddHardLink(string name, string existing)` | Adds `name` as a further name of the file at `existing`. |
@@ -17855,6 +17856,7 @@ Creator for a Reiser4 filesystem image that starts from what `mkfs.reiser4 -fffy
 | `AddSymlink` | `void AddSymlink(string name, string target, FileMetadata metadata = null)` | Adds a symbolic link whose target is `target`. |
 | `Build` | `byte[] Build()` | Builds the image fully in memory and returns the byte array. |
 | `EstimateBlockCount` | `static ulong EstimateBlockCount(IEnumerable<long> fileSizes)` | Smallest block count that holds `fileSizes`: the reserved blocks, every file's data blocks, the tree, and the bitmap blocks interleaved among them. |
+| `EstimateBlockCount` | `static ulong EstimateBlockCount(IEnumerable<long> fileSizes, int blockSize)` | Smallest block count, in blocks of `blockSize`, that holds `fileSizes`: the reserved blocks, every file's data blocks, the tree, and the bitmap blocks interleaved among them. |
 | `Write` | `void Write(Stream output)` | Streams the full image into `output` and leaves the stream positioned at the end. |
 
 ### Namespace `FileSystem.ReiserFs`

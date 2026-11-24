@@ -20,16 +20,19 @@ internal static class Reiser4TestLayouts {
     var descriptor = new Reiser4FormatDescriptor();
     image.Position = 0;
     var extents = descriptor.EnumerateExtents(image).ToList();
-    var used = extents.Max(static e => e.Offset + e.Length);
+    // Bitmaps and superblock copies sit at fixed places all over the volume; what is in use is the rest.
+    var used = extents.Where(static e => e.FileName is not ("Block-allocator bitmap" or "Superblock copy")).Max(static e => e.Offset + e.Length);
     var mover = new Reiser4BlockMover();
     mover.Init(image);
+    var layout = new Reiser4Layout(mover.BlockSize);
+    var copies = layout.BackupCopies((ulong)(image.Length / mover.BlockSize)).ToHashSet();
     var top = image.Length;
     var files = extents.Where(static e => e.Kind == Compression.Registry.DefragBlockKind.Used).GroupBy(static e => e.FileName!).ToList();
     for (var i = 0; i < files.Count; i += 2)
       foreach (var run in files[i]) {
         var blocks = (run.Length + mover.BlockSize - 1) / mover.BlockSize * mover.BlockSize;
         var target = (top - blocks) / mover.BlockSize * mover.BlockSize;
-        while (IsBitmap(target, blocks, mover.BlockSize)) target -= mover.BlockSize;
+        while (IsReserved(target, blocks, layout, copies)) target -= mover.BlockSize;
         Assert.That(target, Is.GreaterThan(used), "the volume has room to scatter into");
         mover.MoveExtent(image, run.Offset, target, run.Length);
         mover.UpdateAllocationAfterMove(image, run.FileName!, run.Offset, target, run.Length);
@@ -39,9 +42,10 @@ internal static class Reiser4TestLayouts {
     image.Position = 0;
   }
 
-  private static bool IsBitmap(long offset, long length, int blockSize) {
+  private static bool IsReserved(long offset, long length, Reiser4Layout layout, HashSet<ulong> copies) {
+    var blockSize = layout.BlockSize;
     for (var block = (ulong)(offset / blockSize); block < (ulong)((offset + length) / blockSize); ++block)
-      if (block == 18 || block % Reiser4Writer.BlocksPerBitmap == 0) return true;
+      if (layout.IsBitmapBlock(block) || copies.Contains(block)) return true;
     return false;
   }
 }

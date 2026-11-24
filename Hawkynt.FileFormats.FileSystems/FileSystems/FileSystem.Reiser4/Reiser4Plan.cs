@@ -68,6 +68,9 @@ internal sealed class Reiser4Plan {
   internal ulong MinimumBlocks { get; set; }
   internal ulong NextObjectId { get; set; }
 
+  /// <summary>Block size and fixed-block positions of the volume being laid out.</summary>
+  internal Reiser4Layout Layout { get; set; } = Reiser4Layout.Default;
+
   /// <summary>How new regular files are stored.</summary>
   internal Reiser4FileBody FileBody { get; set; } = Reiser4FileBody.Extents;
 
@@ -75,7 +78,7 @@ internal sealed class Reiser4Plan {
   internal IReadOnlyList<Reiser4PlanObject> Objects => [.. this._objects.Values.OrderBy(static o => o.StatKey)];
   internal Reiser4PlanObject Root => this._objects[Reiser4Volume.RootStatKey];
 
-  private int MaxItemBody => Reiser4Volume.BlockSize - (this.NodePlugin == 1 ? 32 : Reiser4Tree.NodeHeaderBytes) - Reiser4Tree.ItemHeaderBytes;
+  private int MaxItemBody => this.Layout.BlockSize - (this.NodePlugin == 1 ? 32 : Reiser4Tree.NodeHeaderBytes) - Reiser4Tree.ItemHeaderBytes;
 
   // ── Construction ───────────────────────────────────────────────────────
 
@@ -87,15 +90,17 @@ internal sealed class Reiser4Plan {
   internal static Reiser4Plan FromVolume(Reiser4Volume volume, bool sparse = false) {
     if (!volume.TreeValid || volume.Root is null)
       throw new NotSupportedException($"Reiser4: refusing to rebuild: {volume.Problem ?? "the tree was not read"}.");
-    var status = volume.ReadBlock(21);
+    var layout = volume.Layout;
+    var status = volume.ReadBlock(layout.Status);
     if (!status.AsSpan(0, 15).SequenceEqual("ReiSeR4StATusBl"u8) || BinaryPrimitives.ReadUInt64LittleEndian(status.AsSpan(16)) != 0)
       throw new NotSupportedException("Reiser4: refusing to rebuild: the status block does not mark the volume consistent.");
-    var format = volume.ReadBlock(17);
+    var format = volume.ReadBlock(layout.Format);
     var plan = new Reiser4Plan {
-      Master = volume.ReadBlock(16),
+      Layout = layout,
+      Master = volume.ReadBlock(layout.Master),
       Format = format,
       Status = status,
-      Backup = volume.ReadBlock(22),
+      Backup = volume.ReadBlock(layout.Backup),
       NodePlugin = volume.NodePlugin,
       MkfsId = BinaryPrimitives.ReadUInt32LittleEndian(format.AsSpan(48)),
       MinimumBlocks = volume.BlockCount,
@@ -108,7 +113,7 @@ internal sealed class Reiser4Plan {
         if (sparse && obj.Stat.Kind == Reiser4Stat.Regular) {
           planned.Extents.AddRange(SparseUnits(volume, obj));
           var allocated = planned.Extents.Where(static u => u.Payload is not null).Aggregate(0UL, static (sum, u) => sum + u.Width);
-          planned.SetBytes(allocated * Reiser4Volume.BlockSize);
+          planned.SetBytes(allocated * (ulong)layout.BlockSize);
         } else
           foreach (var (start, width) in volume.ExtentUnits(obj))
             planned.Extents.Add(new Reiser4PlanUnit(width, start == 0 ? null : BlockPayload(volume, start, width)));
@@ -125,11 +130,13 @@ internal sealed class Reiser4Plan {
   }
 
   /// <summary>An empty volume made from the captured mkfs blocks: a root directory holding only its dot entries.</summary>
-  internal static Reiser4Plan Fresh(byte[] master, byte[] format, byte[] status, byte[] backup, byte[] rootLeaf, uint mkfsId, ulong blocks) {
-    var rootStatOffset = BinaryPrimitives.ReadUInt16LittleEndian(rootLeaf.AsSpan(Reiser4Volume.BlockSize - Reiser4Tree.ItemHeaderBytes + 32));
-    var rootStatEnd = BinaryPrimitives.ReadUInt16LittleEndian(rootLeaf.AsSpan(Reiser4Volume.BlockSize - 2 * Reiser4Tree.ItemHeaderBytes + 32));
+  /// <param name="layout">The volume's block size; the fixed blocks passed in are of that size.</param>
+  /// <param name="rootLeaf">A captured first leaf (of any block size) holding the root's stat data as its first item.</param>
+  internal static Reiser4Plan Fresh(Reiser4Layout layout, byte[] master, byte[] format, byte[] status, byte[] backup, byte[] rootLeaf, uint mkfsId, ulong blocks) {
+    var rootStatOffset = BinaryPrimitives.ReadUInt16LittleEndian(rootLeaf.AsSpan(rootLeaf.Length - Reiser4Tree.ItemHeaderBytes + 32));
+    var rootStatEnd = BinaryPrimitives.ReadUInt16LittleEndian(rootLeaf.AsSpan(rootLeaf.Length - 2 * Reiser4Tree.ItemHeaderBytes + 32));
     var plan = new Reiser4Plan {
-      Master = master, Format = format, Status = status, Backup = backup,
+      Layout = layout, Master = master, Format = format, Status = status, Backup = backup,
       NodePlugin = 0, MkfsId = mkfsId, MinimumBlocks = blocks, NextObjectId = 0x10000,
     };
     var root = new Reiser4PlanObject { StatKey = Reiser4Volume.RootStatKey, Stat = rootLeaf.AsSpan(rootStatOffset, rootStatEnd - rootStatOffset).ToArray() };
@@ -161,10 +168,10 @@ internal sealed class Reiser4Plan {
       else units.Add(new Reiser4PlanUnit(1, null));
     }
     foreach (var (start, width) in volume.ExtentUnits(file)) {
-      for (ulong i = 0; i < width && logical < size; ++i, logical += Reiser4Volume.BlockSize) {
+      for (ulong i = 0; i < width && logical < size; ++i, logical += (ulong)volume.BlockSize) {
         if (start == 0) { AddHole(); continue; }
         var block = start + i;
-        var inFile = (int)Math.Min((ulong)Reiser4Volume.BlockSize, size - logical);
+        var inFile = (int)Math.Min((ulong)volume.BlockSize, size - logical);
         if (volume.ReadBlock(block).AsSpan(0, inFile).IndexOfAnyExcept((byte)0) < 0) { AddHole(); continue; }
         if (runWidth > 0 && runStart + runWidth == block) ++runWidth;
         else { FlushRun(); runStart = block; runWidth = 1; }
@@ -175,9 +182,9 @@ internal sealed class Reiser4Plan {
   }
 
   private static FilePayload BlockPayload(Reiser4Volume volume, ulong start, ulong width)
-    => FilePayload.FromStream(checked((long)width * Reiser4Volume.BlockSize), () => {
+    => FilePayload.FromStream(checked((long)width * volume.BlockSize), () => {
       var buffer = new MemoryStream();
-      volume.CopyBlocks(start, width, buffer, checked((long)width * Reiser4Volume.BlockSize));
+      volume.CopyBlocks(start, width, buffer, checked((long)width * volume.BlockSize));
       buffer.Position = 0;
       return buffer;
     });
@@ -324,7 +331,7 @@ internal sealed class Reiser4Plan {
       if (this.Plugin(parent, Reiser4PsetMember.Create) == 4) return Reiser4FileBody.Compressed;
       body = this.Plugin(parent, Reiser4PsetMember.Formatting) switch { 0 => Reiser4FileBody.Extents, 1 => Reiser4FileBody.Tails, _ => Reiser4FileBody.Smart };
     }
-    if (body == Reiser4FileBody.Smart) body = size > 4 * Reiser4Volume.BlockSize ? Reiser4FileBody.Extents : Reiser4FileBody.Tails;
+    if (body == Reiser4FileBody.Smart) body = size > 4L * this.Layout.BlockSize ? Reiser4FileBody.Extents : Reiser4FileBody.Tails;
     return body;
   }
 
@@ -375,9 +382,10 @@ internal sealed class Reiser4Plan {
       file.SetBytes(size);
       return;
     }
-    var blocks = (size + Reiser4Volume.BlockSize - 1) / Reiser4Volume.BlockSize;
+    var blockSize = (ulong)this.Layout.BlockSize;
+    var blocks = (size + blockSize - 1) / blockSize;
     if (blocks > 0) file.Extents.Add(new Reiser4PlanUnit(blocks, payload));
-    file.SetBytes(blocks * Reiser4Volume.BlockSize);
+    file.SetBytes(blocks * blockSize);
   }
 
   /// <summary>Adds a symbolic link holding <paramref name="target" />.</summary>
@@ -385,6 +393,9 @@ internal sealed class Reiser4Plan {
     var bytes = Encoding.UTF8.GetBytes(target);
     if (bytes.Length is 0 or > 4095 || Array.IndexOf(bytes, (byte)0) >= 0)
       throw new NotSupportedException("Reiser4: a symlink target must be 1..4095 bytes without NUL.");
+    // The target lives in the stat data, and a stat data is one item in one node.
+    if (44 + bytes.Length + 1 > this.MaxItemBody)
+      throw new NotSupportedException($"Reiser4: a {bytes.Length}-byte symlink target does not fit a {this.Layout.BlockSize}-byte node.");
     if (this.Find(path) is not null) throw new InvalidDataException($"Reiser4: '{Normalize(path)}' already exists.");
     var (parent, name) = this.ParentOf(path);
     this.Link(parent, name, this.NewStat(metadata, 0xA1FF, (ulong)bytes.Length, 0, bytes, null), metadata?.ObjectId ?? 0);
