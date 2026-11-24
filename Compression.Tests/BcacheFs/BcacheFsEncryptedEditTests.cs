@@ -266,6 +266,38 @@ public sealed class BcacheFsEncryptedEditTests {
   }
 
   /// <summary>
+  /// The kernel stores encrypted zstd extents in our key-in-the-clear volume; defragmentation
+  /// moves each region as stored (MAC, nonce and compression kept, no nonce reused), and fsck and
+  /// the kernel agree with our reader afterwards.
+  /// </summary>
+  [Test, Category("ExternalFsInterop")]
+  public void GivenEncryptedCompressedExtentsTheKernelWrote_WhenDefragmented_ThenTheyStayCompressedAndTheKernelAndFsckAgree() {
+    BcacheFsKernel.Require();
+    var path = this.Write("kernel-zstd.img", null, imageSize: 192L << 20);
+    BcacheFsKernel.Session(path, """
+      set -e
+      cd /sysroot
+      mkdir -p packed
+      seq 1 80000 > packed/seq.txt
+      yes 'an encrypted line the kernel compresses' | head -c 400000 > packed/yes.txt
+      sync
+      """, "noatime,compression=zstd");
+    var compressed = BcacheFsKernelMountTests.CompressedRegions(path);
+    Assert.That(compressed, Is.GreaterThan(0), "precondition: the kernel stored compressed extents");
+
+    var seen = NonceCensus(path);
+    using (var image = new FileStream(path, FileMode.Open, FileAccess.ReadWrite))
+      new BcacheFsFormatDescriptor().Defragment(image, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+    foreach (var (nonce, cipher) in NonceCensus(path))
+      if (seen.TryGetValue(nonce, out var before))
+        Assert.That(cipher, Is.EqualTo(before), $"nonce {nonce} reused for different ciphertext");
+
+    AssertFsckClean(path, null);
+    Assert.That(Listing(BcacheFsKernel.Session(path, ListingScript)), Is.EquivalentTo(Ours(path, null)));
+    Assert.That(BcacheFsKernelMountTests.CompressedRegions(path), Is.EqualTo(compressed), "the moved extents stay compressed");
+  }
+
+  /// <summary>
   /// The kernel writes into our key-in-the-clear volume, we edit, defragment and shrink it, and
   /// the kernel must see exactly what we read, and fsck must find nothing to repair, each time.
   /// </summary>

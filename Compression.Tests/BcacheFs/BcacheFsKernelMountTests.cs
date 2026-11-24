@@ -356,11 +356,11 @@ public sealed class BcacheFsKernelMountTests {
   /// <summary>
   /// Data the kernel stored compressed is carried through our in-place edits as it
   /// is: its accounting uses the compressed size, the kernel still reads it, and a
-  /// defragmentation that would have to decode it to move it is refused with the
-  /// volume left byte for byte as it was.
+  /// defragmentation moves each compressed region as it is stored (checksum and
+  /// compression kept), after which fsck and the kernel agree with our reader.
   /// </summary>
   [Test, Category("RoundTrip")]
-  public void GivenAVolumeTheKernelWroteCompressedDataInto_WhenWeEditInPlace_ThenTheKernelAgreesAndDefragmentIsRefusedUnchanged() {
+  public void GivenAVolumeTheKernelWroteCompressedDataInto_WhenWeEditAndDefragmentInPlace_ThenTheKernelAndFsckAgreeAndItStaysCompressed() {
     BcacheFsKernel.Require();
     var path = Path.Combine(this._tmpDir, "compressed.img");
     using (var stream = File.Create(path)) Sampler().Writer.WriteTo(stream);
@@ -385,11 +385,27 @@ public sealed class BcacheFsKernelMountTests {
     BcacheFsKernel.AssertFsckClean(path);
     AssertSameTree(ParseListing(BcacheFsKernel.Session(path, ListingScript)), ReadOurselves(path));
 
-    var before = File.ReadAllBytes(path);
+    // Defragmentation moves the compressed regions as they are stored, checksum and all.
+    var compressedBefore = CompressedRegions(path);
+    Assert.That(compressedBefore, Is.GreaterThan(0), "precondition: the kernel stored compressed extents");
     using (var image = new FileStream(path, FileMode.Open, FileAccess.ReadWrite))
-      Assert.Throws<NotSupportedException>(() =>
-        descriptor.Defragment(image, new DefragOptions { Mode = DefragMode.ConsolidateAtStart }));
-    Assert.That(File.ReadAllBytes(path).SequenceEqual(before), Is.True, "a refused defragmentation changes nothing");
+      descriptor.Defragment(image, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+    BcacheFsKernel.AssertFsckClean(path);
+    AssertSameTree(ParseListing(BcacheFsKernel.Session(path, ListingScript)), ReadOurselves(path));
+    Assert.That(CompressedRegions(path), Is.EqualTo(compressedBefore), "the moved extents stay compressed");
+  }
+
+  /// <summary>How many distinct compressed regions the extents tree points at.</summary>
+  internal static int CompressedRegions(string path, string? passphrase = null) {
+    using var image = File.OpenRead(path);
+    var core = BcacheFsCoreVolume.Open(image, passphrase);
+    return BcacheFsBtreeReader.ReadTree(core, BcacheFsBtreeId.Extents).MaterializedLeafSlots
+      .Where(k => k.RawType == BcacheFsFormat.KeyExtent)
+      .Select(k => BcacheFsAllocationBuilder.Footprint(new BcacheFsFormat.Key(k.RawType, k.Position, k.Size, k.Value)))
+      .Where(f => f is { Compressed: true })
+      .Select(f => f!.Value.Sector)
+      .Distinct()
+      .Count();
   }
 }
 

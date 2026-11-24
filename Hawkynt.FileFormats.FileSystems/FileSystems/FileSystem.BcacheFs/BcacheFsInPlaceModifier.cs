@@ -542,14 +542,20 @@ internal static class BcacheFsInPlaceModifier {
       .Where(x => x.At.HasValue)
       .Select(x => (x.Key, At: x.At!.Value))
       .ToList();
-    var perBucket = placed.GroupBy(x => x.At.Sector / BucketSectors).ToDictionary(g => g.Key, g => g.Count());
+    // Several keys may share one encoded region (the kernel splits an extent and keeps its
+    // region): a bucket holding one region at its start is canonical for compressed extents,
+    // which are moved by their region; a plain extent must be alone in its bucket and cover its
+    // region exactly.
+    var keysPerBucket = placed.GroupBy(x => x.At.Sector / BucketSectors).ToDictionary(g => g.Key, g => g.Count());
+    var regionsPerBucket = placed.GroupBy(x => x.At.Sector / BucketSectors)
+      .ToDictionary(g => g.Key, g => g.Select(x => x.At.Sector).Distinct().Count());
     return placed
       .Where(x => x.At.Sector % BucketSectors != 0
         || IsMetadataReservation(x.At.Sector / BucketSectors)
-        || perBucket[x.At.Sector / BucketSectors] != 1
-        || x.At.RegionOffset != 0
-        || x.At.RegionSectors != x.Key.Size
-        || x.At.Compressed)
+        || regionsPerBucket[x.At.Sector / BucketSectors] != 1
+        || (!x.At.Compressed && (keysPerBucket[x.At.Sector / BucketSectors] != 1
+          || x.At.RegionOffset != 0
+          || x.At.RegionSectors != x.Key.Size)))
       .Select(x => x.Key.Position)
       .ToHashSet();
   }
@@ -560,8 +566,10 @@ internal static class BcacheFsInPlaceModifier {
   /// copied into a fresh one with a new checksum over exactly its live data.
   /// </summary>
   /// <remarks>
-  /// Holes stay holes and inline data stays inline. A compressed or encrypted
-  /// extent is refused rather than rewritten: moving it would mean decoding it.
+  /// Holes stay holes and inline data stays inline. A compressed region (encrypted or
+  /// not) is copied as stored to a bucket of its own, every key sharing it repointed: its
+  /// checksum or MAC, nonce and compression do not depend on where it lies. A plain
+  /// encrypted extent is deciphered and enciphered again under a fresh key version.
   /// </remarks>
   internal static void Canonicalize(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
@@ -572,23 +580,40 @@ internal static class BcacheFsInPlaceModifier {
     foreach (var file in model.Files.Values)
       foreach (var key in file.FinalExtents)
         if (moving.Contains(key.Position) && BcacheFsAllocationBuilder.Footprint(key) is { } coded
-            && (coded.Compressed || (coded.Encrypted && model.Crypt == null)))
+            && coded.Encrypted && !coded.Compressed && model.Crypt == null)
           throw new NotSupportedException(
-            $"bcachefs: '{file.Path}' has a compressed extent, which an edit here does not move.");
+            $"bcachefs: '{file.Path}' has an encrypted extent and the volume was opened without its key.");
     if (moving.Count > FreeDataBuckets(model).Count)
       throw new IOException("bcachefs: not enough free buckets to bring the volume into the writer's layout.");
 
     var free = FreeDataBuckets(model);
     var buffer = new byte[BucketBytes];
+    // A compressed region (encrypted or not) moves as it is stored: its checksum or MAC and its
+    // nonce do not depend on where it lies. Keys sharing a region follow it to the same bucket.
+    var movedRegions = new Dictionary<long, long>();
 
     foreach (var file in model.Files.Values) {
       for (var i = 0; i < file.FinalExtents.Count; ++i) {
         var key = file.FinalExtents[i];
         if (!moving.Contains(key.Position)) continue;
         var at = BcacheFsAllocationBuilder.Footprint(key)!.Value;
-        if (at.Compressed)
-          throw new NotSupportedException(
-            $"bcachefs: '{file.Path}' has a compressed extent, which an edit here does not move.");
+        if (at.Compressed) {
+          if (!movedRegions.TryGetValue(at.Sector, out var regionBucket)) {
+            if (free.Count == 0)
+              throw new IOException("bcachefs: not enough free buckets to bring the volume into the writer's layout.");
+            regionBucket = free.Dequeue();
+            model.OccupiedBuckets.Add(regionBucket);
+            var regionBytes = at.RegionSectors * SectorSize;
+            image.Position = at.Sector * SectorSize;
+            image.ReadExactly(buffer, 0, regionBytes);
+            image.Position = regionBucket * (long)BucketBytes;
+            image.Write(buffer, 0, regionBytes);
+            movedRegions[at.Sector] = regionBucket;
+            AddFreedRange(model.FreedRanges, key);
+          }
+          file.FinalExtents[i] = Repoint(key, at.Sector, regionBucket * BucketSectors);
+          continue;
+        }
         if (free.Count == 0)
           throw new IOException("bcachefs: not enough free buckets to bring the volume into the writer's layout.");
 
@@ -621,6 +646,24 @@ internal static class BcacheFsInPlaceModifier {
     }
 
     Commit(image, model);
+  }
+
+  /// <summary>The extent key with its pointer at <paramref name="from"/> moved to <paramref name="to"/>; everything else as it was.</summary>
+  private static Key Repoint(Key key, long from, long to) {
+    if (!BcacheFsExtentCodec.TryParseEntries(key.Value, out var entries, out var error))
+      throw new InvalidDataException("bcachefs: " + error);
+    var value = (byte[])key.Value.Clone();
+    var at = 0;
+    foreach (var entry in entries) {
+      if (entry.KnownType == BcacheFsExtentEntryType.Pointer) {
+        var word = BinaryPrimitives.ReadUInt64LittleEndian(value.AsSpan(at));
+        if (PointerSector(word) == from)
+          BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(at),
+            ExtentPointer(to, (byte)((word >> 48) & 0xFF), (byte)((word >> 56) & 0xFF)));
+      }
+      at += entry.RawBytes.Length;
+    }
+    return key with { Value = value };
   }
 
   /// <summary>

@@ -425,8 +425,15 @@ past 1.14*). Defragmentation first brings a volume the kernel wrote into the sha
 this writer produces — every pointer extent alone at the start of a bucket past the
 metadata reservation, its checksummed region exactly its live data — by copying
 the live bytes of every other extent into a bucket of its own with a fresh crc32c;
-holes stay holes, inline data stays inline, and a compressed or encrypted extent is
-refused rather than decoded and moved.
+holes stay holes and inline data stays inline. A compressed region (encrypted or
+not) is copied as it is stored into a bucket of its own and every key sharing it
+repointed — its checksum or MAC, its nonce and its compression do not depend on
+where it lies — so it stays compressed; such a bucket (one region at its start,
+whatever share of it each key covers) counts as already in shape. A plain encrypted
+extent is deciphered and enciphered again under a fresh key version. Checked: the
+6.8 kernel writes zstd extents (plain and encrypted) into our volume, we defragment
+it, and fsck finds it clean, the kernel lists exactly what we read, and as many
+compressed regions remain as before.
 
 ## Upgrading past 1.14
 
