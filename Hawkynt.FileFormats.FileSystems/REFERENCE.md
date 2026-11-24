@@ -8887,7 +8887,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileSystem.Chfs`
 
-[`ChfsEntry`](#chfsentry) · [`ChfsFormatDescriptor`](#chfsformatdescriptor) · [`ChfsReader`](#chfsreader)
+[`ChfsEntry`](#chfsentry) · [`ChfsFormatDescriptor`](#chfsformatdescriptor) · [`ChfsGeometry`](#chfsgeometry) · [`ChfsReader`](#chfsreader) · [`ChfsWriteNode`](#chfswritenode) · [`ChfsWriter`](#chfswriter)
 
 #### `ChfsEntry`
 
@@ -8898,6 +8898,8 @@ Implements `IEquatable<ChfsEntry>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ChfsEntry` | `ChfsEntry(string Path, ulong Vno, uint Mode, uint Uid, uint Gid, uint MTime, byte[] Data)` | One vnode of a CHFS image, after replaying its nodes. |
+| `ATime` | `uint ATime { get; init; }` | Access time (UNIX seconds). |
+| `CTime` | `uint CTime { get; init; }` | Status-change time (UNIX seconds). |
 | `Data` | `byte[] Data { get; init; }` | Contents (files), target (symlinks) or device number (device nodes). |
 | `Gid` | `uint Gid { get; init; }` | The node's gid field. |
 | `IsDirectory` | `bool IsDirectory { get; }` |  |
@@ -8906,6 +8908,7 @@ Implements `IEquatable<ChfsEntry>`.
 | `MTime` | `uint MTime { get; init; }` | Modification time (UNIX seconds). |
 | `Mode` | `uint Mode { get; init; }` | Unix mode word. |
 | `Path` | `string Path { get; init; }` | Slash-separated path from the root (vnode 2). |
+| `Size` | `uint Size { get; init; }` | The size the vnode records (for a directory, whatever its writer put there). |
 | `Uid` | `uint Uid { get; init; }` | The node's uid field. |
 | `Vno` | `ulong Vno { get; init; }` | Vnode number. |
 
@@ -8913,7 +8916,7 @@ Implements `IEquatable<ChfsEntry>`.
 
 CHFS — NetBSD's Chip File System for raw NOR and NAND flash. An image starts with the erase-counter header magic "RDES" (`0x53454452`).
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8930,10 +8933,27 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files by laying the image out again with the same geometry. Everything the image holds is kept: names, contents, modes, owners, the three times, link targets, device numbers, directory sizes and each eraseblock's erase count. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a NAND image with `makefs`'s default geometry (2 KiB pages, 128 KiB eraseblocks, the geometry of NetBSD's `nandemulator(4)`): directories 0755 and files 0644 unless the input carries a Unix mode, owner and group from the input (root otherwise), and each input's modification time as its access, modification and change time. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files or whole directories by laying the image out again (see `Add`). |
+
+#### `ChfsGeometry`
+
+The flash an image is laid out for.
+
+Implements `IEquatable<ChfsGeometry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ChfsGeometry` | `ChfsGeometry(int PageSize, int EraseBlockSize, bool Nand)` | The flash an image is laid out for. |
+| `Default` | `static ChfsGeometry Default { get; }` | `makefs -t chfs`'s defaults, and the geometry of NetBSD's `nandemulator(4)`: NAND, 2 KiB pages, 128 KiB eraseblocks. |
+| `EraseBlockSize` | `int EraseBlockSize { get; init; }` | Eraseblock size. |
+| `Nand` | `bool Nand { get; init; }` | True for NAND eraseblock headers (with a serial), false for NOR. |
+| `PageSize` | `int PageSize { get; init; }` | Flash page size: the eraseblock header sits one page in, and nodes start two pages in. |
 
 #### `ChfsReader`
 
@@ -8951,8 +8971,39 @@ Reads CHFS (NetBSD's Chip File System for raw NOR/NAND flash) images as NetBSD's
 | `TypeVnode` | `const ushort TypeVnode` |  |
 | `Entries` | `IReadOnlyList<ChfsEntry> Entries { get; }` | Every vnode below the root, parents before children. |
 | `EraseBlockSize` | `int EraseBlockSize { get; }` | Eraseblock size, from the distance between erase-counter headers. |
+| `EraseCounts` | `IReadOnlyList<uint> EraseCounts { get; }` | Each eraseblock's erase count, in image order (0 for an erased block). |
 | `IsNand` | `bool IsNand { get; }` | True when the eraseblock headers are the 16-byte NAND form (with a serial). |
 | `PageSize` | `int PageSize { get; }` | Page size: where each eraseblock's second header starts. |
+
+#### `ChfsWriteNode`
+
+One vnode to write: a directory (with children), a regular file, a symbolic link or a device node.
+
+Implements `IEquatable<ChfsWriteNode>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ChfsWriteNode` | `ChfsWriteNode(string Name, uint Mode)` | One vnode to write: a directory (with children), a regular file, a symbolic link or a device node. |
+| `ATime` | `uint ATime { get; init; }` | Gets the access time (UNIX seconds). |
+| `CTime` | `uint CTime { get; init; }` | Gets the status-change time (UNIX seconds). |
+| `Children` | `IReadOnlyList<ChfsWriteNode> Children { get; init; }` | Gets a directory's entries; they are written sorted by name, as `makefs` does. |
+| `Data` | `byte[] Data { get; init; }` | Gets the file contents, the link target or a device node's device number. |
+| `DirectorySize` | `uint DirectorySize { get; init; }` | Gets the size a directory's vnode records (`makefs` copies the source directory's size; FFS reports 512). |
+| `Gid` | `uint Gid { get; init; }` | Gets the value stored in the vnode's gid field. |
+| `MTime` | `uint MTime { get; init; }` | Gets the modification time (UNIX seconds). |
+| `Mode` | `uint Mode { get; init; }` | The Unix mode word, file type included (0x4000 directory, 0x8000 file, 0xA000 symlink, …). |
+| `Name` | `string Name { get; init; }` | The name in its parent directory (1 to 255 UTF-8 bytes, no '/'); ignored for the root. |
+| `Uid` | `uint Uid { get; init; }` | Gets the value stored in the vnode's uid field. |
+
+#### `ChfsWriter`
+
+Writes CHFS images as NetBSD's `makefs -t chfs` lays them out (docs/CHFS-ON-DISK.md): every eraseblock opens with an erase-counter page and an eraseblock-header page, then each directory's entries in name order get a vnode node, a directory-entry node and (for anything but a directory) data nodes; subdirectories follow, depth first. A node that does not fit in the rest of an eraseblock starts the next one; gaps are 0xFF (erased flash).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultDataNodeSize` | `const int DefaultDataNodeSize` | The largest data node the writer emits by default: the kernel's 4 KiB block, which is how long the data nodes the kernel writes are. NetBSD 9.5 reads back files cut into smaller nodes wrongly (see docs/CHFS-ON-DISK.md); `makefs` cuts at the page size. |
+| `DefaultDirectorySize` | `const uint DefaultDirectorySize` | The directory size `makefs` records for a directory on FFS. |
+| `Write` | `static void Write(Stream output, ChfsWriteNode root, ChfsGeometry? geometry = null, IReadOnlyList<uint> eraseCounts = null, int dataNodeSize = 4096)` | Writes the image of the tree under `root`. |
 
 ### Namespace `FileSystem.Coherent`
 
