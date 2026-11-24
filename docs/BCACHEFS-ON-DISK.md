@@ -423,13 +423,19 @@ block size and journal placement the superblock names — `bcachefs format`'s
   nanoseconds from the instant `bcachefs format` ran, against this writer's 100 ns
   from the epoch (a time not on that grid rounds down).
 
-Defragmentation and metadata relocation move things within this writer's layout
-(64 KiB buckets, the journal in buckets 33–48) and refuse any other with the volume
-unchanged. Proven by `BcacheFsForeignLayoutTests` (fsck after edits on default,
-32 KiB and 256 KiB volumes; the 1.3 reference volume read back) and the
+Defragmentation and metadata relocation work in the same units: data moves in
+whole buckets of the volume's size, never before the end of this writer's metadata
+reservation (bucket 113), and relocated metadata keeps clear of the volume's
+superblock slots and journal buckets wherever `bcachefs format` put them (on a
+1 GiB volume the journal runs well past bucket 48), packing nodes several to a
+bucket where they are smaller. Proven by `BcacheFsForeignLayoutTests` (fsck after
+edits and a defragmentation with metadata placed before content on default,
+32 KiB and 256 KiB volumes; the 1.3 reference volume edited, consolidated at start
+and end and with its metadata moved to the back, then read back) and the
 `…FormatVolumeTheKernelWroteInto_WhenWeEditInPlace…` kernel tests (Linux 6.8 wrote
 into the formatted volume, we edited it, fsck is clean, the kernel reads what we
-read and keeps writing).
+read and keeps writing; then two defragmentations, each followed by fsck and the
+kernel's listing).
 
 A file whose bytes are not touched keeps its inode and extents exactly: a sparse
 file's sector count is what its extents hold, not its length rounded up. The
@@ -438,11 +444,13 @@ is replaced by the one shutdown entry.
 
 New data goes into free buckets still at generation zero first (see *Upgrading
 past 1.14*). Defragmentation first brings a volume the kernel wrote into the shape
-this writer produces — every pointer extent alone at the start of a bucket past the
-metadata reservation, its checksummed region exactly its live data — by copying
-the live bytes of every other extent into a bucket of its own with a fresh crc32c;
-holes stay holes, inline data stays inline, and a compressed or encrypted extent is
-refused rather than decoded and moved.
+this writer produces — every bucket past the metadata reservation holding the
+extents of one file, back to back from its first sector, each checksummed region
+exactly its live data (one 128-sector extent per 64 KiB of bucket) —
+by copying the live bytes of every other extent into a bucket of its own with a
+fresh crc32c; holes stay holes, inline data stays inline, and a compressed or
+encrypted extent, or one longer than a crc32 entry holds, is refused rather than
+decoded or split, before anything is written.
 
 ## Upgrading past 1.14
 
