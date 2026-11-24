@@ -337,7 +337,7 @@ public sealed class BcacheFsReader : IDisposable {
         var from = (int)Math.Min(body.Length, (long)cut * SectorSize);
         add(key, new Extent(0, sectors, at) { Stored = new BcacheFsStoredExtent(0, null, body[from..]) });
       } else {
-        if (!TryLocate(core, body, out var sector, out var stored, out reason)) return false;
+        if (!TryLocate(core, body, target.Version, out var sector, out var stored, out reason)) return false;
         add(key, stored is { Crc: { } crc }
           ? new Extent(sector, sectors, at) { Stored = stored with { Crc = crc with { Offset = crc.Offset + cut } } }
           : new Extent(sector + cut, sectors, at));
@@ -362,9 +362,9 @@ public sealed class BcacheFsReader : IDisposable {
   /// </summary>
   private static bool TryLocate(BcacheFsCoreVolume core, BcacheFsRawKey key, out long sector,
       out BcacheFsStoredExtent? stored, out string reason)
-    => TryLocate(core, key.Value, out sector, out stored, out reason);
+    => TryLocate(core, key.Value, key.Version, out sector, out stored, out reason);
 
-  private static bool TryLocate(BcacheFsCoreVolume core, byte[] value, out long sector,
+  private static bool TryLocate(BcacheFsCoreVolume core, byte[] value, BcacheFsKeyVersion version, out long sector,
       out BcacheFsStoredExtent? stored, out string reason) {
     sector = -1;
     stored = null;
@@ -386,7 +386,7 @@ public sealed class BcacheFsReader : IDisposable {
           if ((word & (1UL << 1)) != 0) break;                                // a cached copy is not the data
           var region = PointerSector(word);
           if (current is { } encoded && (encoded.Compressed || encoded.ChecksumType != BcacheFsChecksumType.None))
-            stored = new BcacheFsStoredExtent(region, encoded, null) { Version = key.Version };
+            stored = new BcacheFsStoredExtent(region, encoded, null) { Version = version };
           sector = current?.Compressed == true ? region : region + offset;
           reason = string.Empty;
           return true;
