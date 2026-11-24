@@ -153,7 +153,7 @@ public sealed class BcacheFsForeignLayoutTests {
   /// A node smaller than a bucket: the nodes of one commit share metadata buckets. Enough files
   /// that the dirent and inode trees grow interior nodes, so several nodes land in one bucket.
   /// </summary>
-  [TestCase("64M", "--bucket=256k --btree_node_size=64k", 40, TestName = "GivenNodesAQuarterOfTheBucket_WhenEdited_ThenFsckIsClean")]
+  [TestCase("128M", "--bucket=256k --btree_node_size=64k", 40, TestName = "GivenNodesAQuarterOfTheBucket_WhenEdited_ThenFsckIsClean")]
   [TestCase("256M", "--bucket=128k --btree_node_size=16k", 600, TestName = "GivenManyNodesPerBucket_WhenManyFilesAreAdded_ThenFsckIsClean")]
   [Category("ExternalFsInterop")]
   public void SmallNodes(string size, string options, int fileCount) {

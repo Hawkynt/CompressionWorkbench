@@ -113,6 +113,7 @@ internal static class BcacheFsSuperblockEditor {
         BinaryPrimitives.WriteUInt64LittleEndian(sb.AsSpan(104), (ulong)slot);
         BinaryPrimitives.WriteUInt64LittleEndian(sb.AsSpan(112), seq);
         StampMemberSequences(sb, seq);
+        if (BcacheFsBucketGeometry.Accounting) MarkBtreeBitmaps(sb, published.Nodes);
         Stamp(sb);
         image.Position = slot * SectorSize;
         image.Write(sb);
@@ -128,6 +129,42 @@ internal static class BcacheFsSuperblockEditor {
   /// written by a commit, so every record gets the commit's sequence; a volume whose records
   /// carry none (1.3) is left so.
   /// </summary>
+  /// <summary>
+  /// From 1.7 (<c>mi_btree_bitmap</c>) each member record says, one bit per
+  /// <c>1 &lt;&lt; btree_bitmap_shift</c> sectors of its device, where b-tree nodes may be, and fsck
+  /// wants every node inside a marked region. The regions holding <paramref name="nodes" /> are
+  /// marked on top of what the record had; a node past the 64 regions the bitmap covers widens
+  /// them, each bit then standing for the two it replaces.
+  /// </summary>
+  private static void MarkBtreeBitmaps(byte[] sb, IReadOnlyList<BcacheFsAllocationBuilder.Node> nodes) {
+    const int shiftOffset = 28, bitmapOffset = 128;
+    foreach (var (type, offset, length) in Sections(sb)) {
+      if (type != FieldMembersV2 || length < 16) continue;
+      var memberBytes = BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(offset + 8));
+      if (memberBytes < bitmapOffset + 8) continue;
+      var index = 0;
+      for (var at = offset + 16; at + memberBytes <= offset + length; at += memberBytes, ++index) {
+        var mine = nodes.Where(n => n.Device == index).ToList();
+        if (mine.Count == 0) continue;
+        var shift = (int)sb[at + shiftOffset];
+        var bitmap = BinaryPrimitives.ReadUInt64LittleEndian(sb.AsSpan(at + bitmapOffset));
+        var end = mine.Max(n => n.Sector + NodeSectors);
+        while (end > 64L << shift) {
+          var wider = 0UL;
+          for (var bit = 0; bit < 64; ++bit)
+            if ((bitmap & (1UL << bit)) != 0) wider |= 1UL << (bit / 2);
+          bitmap = wider;
+          ++shift;
+        }
+        foreach (var node in mine)
+          for (var bit = node.Sector >> shift; bit << shift < node.Sector + NodeSectors; ++bit)
+            bitmap |= 1UL << (int)bit;
+        sb[at + shiftOffset] = (byte)shift;
+        BinaryPrimitives.WriteUInt64LittleEndian(sb.AsSpan(at + bitmapOffset), bitmap);
+      }
+    }
+  }
+
   private static void StampMemberSequences(byte[] sb, ulong seq) {
     const int seqOffset = 120;
     foreach (var (type, offset, length) in Sections(sb)) {

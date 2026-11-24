@@ -127,7 +127,7 @@ internal sealed class BcacheFsNodeBuilder {
     BinaryPrimitives.WriteUInt64LittleEndian(bset, this.Seq);
     BinaryPrimitives.WriteUInt64LittleEndian(bset[8..], 0);        // journal_seq
     BinaryPrimitives.WriteUInt32LittleEndian(bset[16..], CsumTypeCrc32CNonzero);
-    BinaryPrimitives.WriteUInt16LittleEndian(bset[20..], BcacheFsFormat.Version);
+    BinaryPrimitives.WriteUInt16LittleEndian(bset[20..], BcacheFsBucketGeometry.Version);
     BinaryPrimitives.WriteUInt16LittleEndian(bset[22..], (ushort)(keyBytes / 8));
 
     // The checksum covers everything after itself, up to the last word the node claims.

@@ -12,7 +12,8 @@ namespace FileSystem.BcacheFs;
 /// edit sets them for its own flow of control; everything else sees the writer's.
 /// </summary>
 internal static class BcacheFsBucketGeometry {
-  private sealed record Units(int Bucket, int Block, int Node, Int128 TimeBase, uint TimePrecision, int MetadataReplicas);
+  private sealed record Units(int Bucket, int Block, int Node, Int128 TimeBase, uint TimePrecision, int MetadataReplicas,
+    ushort Version, int ExtentBpShift, ulong JournalSeq);
 
   private static readonly AsyncLocal<Units?> Current = new();
 
@@ -21,6 +22,30 @@ internal static class BcacheFsBucketGeometry {
 
   /// <summary>Sectors per b-tree node in effect: the bucket size unless the volume says otherwise.</summary>
   internal static int NodeSectors => Current.Value?.Node ?? Sectors;
+
+  /// <summary>
+  /// The metadata version the volume being written is at: this writer's 1.3, what a commit keeps
+  /// for a volume at 1.4, or <see cref="BcacheFsFormat.VersionPerDevFragmentationLru" /> (1.39),
+  /// whose derived trees, accounting and superblock follow that version's rules.
+  /// </summary>
+  internal static ushort Version => Current.Value?.Version ?? BcacheFsFormat.Version;
+
+  /// <summary>Whether the volume keeps its space accounts in the accounting tree (1.39) rather than the superblock.</summary>
+  internal static bool Accounting => Version >= BcacheFsFormat.VersionPerDevFragmentationLru;
+
+  /// <summary>
+  /// How far a backpointer's key shifts a device sector up (<c>BCH_SB_EXTENT_BP_SHIFT</c>): the
+  /// room below is the offset into a compressed extent. Ten unless the superblock says otherwise.
+  /// </summary>
+  internal static int ExtentBpShift => Current.Value?.ExtentBpShift ?? BcacheFsFormat.BackpointerShift;
+
+  /// <summary>
+  /// The sequence number the shutdown journal entry and the clean section carry. This writer
+  /// starts the journal at one; at 1.39 an inode records the journal sequence it was last written
+  /// at and fsck refuses one from the future, so a commit there carries the journal on from the
+  /// volume's last clean sequence.
+  /// </summary>
+  internal static ulong JournalSeq => Current.Value?.JournalSeq ?? BcacheFsFormat.CleanJournalSeq;
 
   /// <summary>Copies of every b-tree node, and so pointer entries in every pointer to one.</summary>
   internal static int MetadataReplicas => Current.Value?.MetadataReplicas ?? 1;
@@ -39,7 +64,8 @@ internal static class BcacheFsBucketGeometry {
   /// times of <paramref name="timePrecision" /> ns from <paramref name="timeBase" /> until the result is disposed.
   /// </summary>
   internal static IDisposable Use(int sectors, int blockSectors = 1, Int128? timeBase = null, uint? timePrecision = null,
-      int? nodeSectors = null, int metadataReplicas = 1) {
+      int? nodeSectors = null, int metadataReplicas = 1, ushort? version = null, int? extentBpShift = null,
+      ulong? journalSeq = null) {
     if (metadataReplicas is < 1 or > 4)
       throw new NotSupportedException($"bcachefs: {metadataReplicas} metadata replicas is outside the 1 to 4 a volume can ask for.");
     if (sectors < 8 || (sectors & (sectors - 1)) != 0)
@@ -51,7 +77,9 @@ internal static class BcacheFsBucketGeometry {
       throw new NotSupportedException($"bcachefs: a b-tree node of {node} sectors is not a power of two between a block and a {sectors}-sector bucket.");
     var previous = Current.Value;
     Current.Value = new Units(sectors, blockSectors, node, timeBase ?? 0,
-      Math.Max(1u, timePrecision ?? BcacheFsFormat.TimePrecisionNanoseconds), metadataReplicas);
+      Math.Max(1u, timePrecision ?? BcacheFsFormat.TimePrecisionNanoseconds), metadataReplicas,
+      version ?? BcacheFsFormat.Version, extentBpShift is > 0 ? extentBpShift.Value : BcacheFsFormat.BackpointerShift,
+      Math.Max(BcacheFsFormat.CleanJournalSeq, journalSeq ?? BcacheFsFormat.CleanJournalSeq));
     return new Restore(previous);
   }
 

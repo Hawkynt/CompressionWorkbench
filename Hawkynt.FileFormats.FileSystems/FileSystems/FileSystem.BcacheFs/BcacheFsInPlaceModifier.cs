@@ -106,6 +106,7 @@ internal static class BcacheFsInPlaceModifier {
     ArgumentNullException.ThrowIfNull(inputs);
     foreach (var device in devices) EnsureWritable(device);
     using var buckets = UseVolumeBuckets(devices);
+    if (inputs.Any(i => !i.IsDirectory)) RequirePlainDataOptions(devices);
 
     var model = ReadModel(devices);
     foreach (var input in inputs) {
@@ -229,14 +230,15 @@ internal static class BcacheFsInPlaceModifier {
   /// </remarks>
   internal const ushort MaxEditableVersion = (1 << 10) | 4;
 
-  /// <summary>Trees derived from what occupies the device and rebuilt by every commit.</summary>
+  /// <summary>Trees derived from what occupies the device and rebuilt by every commit (the accounting tree at 1.39).</summary>
   private static readonly int[] RebuiltTrees = [
-    BtreeAlloc, BtreeBucketGens, BtreeFreespace, BtreeNeedDiscard, BtreeLru, BtreeBackpointers,
+    BtreeAlloc, BtreeBucketGens, BtreeFreespace, BtreeNeedDiscard, BtreeLru, BtreeBackpointers, BtreeAccounting,
   ];
 
-  /// <summary>Trees carried key by key.</summary>
+  /// <summary>Trees carried key by key (at 1.39 also the logged operations, the inode cursor among them, and subvolume children).</summary>
   private static readonly int[] CarriedTrees = [
     BtreeExtents, BtreeInodes, BtreeDirents, BtreeXattrs, BtreeReflink, BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees,
+    BtreeLoggedOps, BtreeSubvolumeChildren,
   ];
 
   /// <summary>Key types that mark a slot as empty rather than holding anything.</summary>
@@ -286,7 +288,43 @@ internal static class BcacheFsInPlaceModifier {
       | ((Int128)BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(136)) << 64);
     var precision = BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(140));
     var replicas = EffectiveReplicas(core, DataBtree);
-    return BcacheFsBucketGeometry.Use(bucket, core.Superblock.BlockSizeSectors, timeBase, precision, node, replicas);
+    // BCH_SB_EXTENT_BP_SHIFT: flags[6] bits 40 to 47; zero means the default ten.
+    var extentBpShift = core.Superblock.Flags.Length > 6 ? (int)((core.Superblock.Flags[6] >> 40) & 0xFF) : 0;
+    // At 1.39 the journal goes on from where the volume left it (see BcacheFsBucketGeometry.JournalSeq).
+    ulong? journalSeq = core.Superblock.Version >= VersionPerDevFragmentationLru
+      ? Math.Max(core.Checkpoint?.JournalSequence ?? 0, core.Journal.Sequences.Select(s => s.Sequence).DefaultIfEmpty(0UL).Max()) + 1
+      : null;
+    return BcacheFsBucketGeometry.Use(bucket, core.Superblock.BlockSizeSectors, timeBase, precision, node, replicas,
+      core.Superblock.Version, extentBpShift, journalSeq);
+  }
+
+  /// <summary>
+  /// From 1.33 every extent that does not match the volume's IO options carries a reconcile entry
+  /// saying what work it still owes (compressing it, checksumming it another way, moving it), and
+  /// fsck checks it. New data here is written uncompressed with crc32c checksums wherever the
+  /// volume allows, which only matches a volume asking for exactly that, so adding files to a 1.39
+  /// volume with compression, another data checksum, erasure coding or a target is refused before
+  /// anything is written. Removing them is not.
+  /// </summary>
+  private static void RequirePlainDataOptions(IReadOnlyList<Stream> devices) {
+    if (!BcacheFsBucketGeometry.Accounting) return;
+    foreach (var device in devices) device.Position = 0;
+    var flags = BcacheFsCoreVolume.Open(devices).Superblock.Flags;
+    foreach (var device in devices) device.Position = 0;
+    ulong Bits(int word, int from, int to) => word < flags.Length ? (flags[word] >> from) & ((1UL << (to - from)) - 1) : 0;
+    var compression = Bits(1, 4, 8) | (Bits(4, 56, 60) << 4);
+    var background = Bits(2, 0, 4) | (Bits(4, 60, 64) << 4);
+    var checksum = Bits(0, 44, 48);
+    var refusal = compression != 0 ? "compression"
+      : background != 0 ? "background compression"
+      : checksum != 1 ? "a data checksum other than crc32c"
+      : Bits(3, 0, 16) != 0 ? "erasure coding"
+      : (Bits(1, 28, 40) | Bits(1, 40, 52) | Bits(1, 52, 64) | Bits(3, 16, 28)) != 0 ? "a target"
+      : null;
+    if (refusal != null)
+      throw new NotSupportedException(
+        $"bcachefs: the volume asks for {refusal}; at 1.39 new data that does not match carries reconcile work, "
+        + "which an edit here does not write. Removing files is supported.");
   }
 
   /// <summary>
@@ -328,7 +366,7 @@ internal static class BcacheFsInPlaceModifier {
 
     const string profile = "in-place edits are implemented for volumes at metadata version 1.3 or 1.4, with every member device supplied";
     var version = core.Superblock.Version;
-    if (version < BcacheFsFormat.Version || version > MaxEditableVersion)
+    if (version < BcacheFsFormat.Version || (version > MaxEditableVersion && version != VersionPerDevFragmentationLru))
       throw new NotSupportedException(
         $"bcachefs: the volume is metadata version {version >> 10}.{version & 0x3FF}; {profile}.");
     if (!core.Clean)
@@ -548,7 +586,16 @@ internal static class BcacheFsInPlaceModifier {
       [BtreeSubvolumes] = ReadTree(BtreeSubvolumes),
       [BtreeSnapshots] = ReadTree(BtreeSnapshots),
       [BtreeSnapshotTrees] = ReadTree(BtreeSnapshotTrees),
+      [BtreeLoggedOps] = ReadTree(BtreeLoggedOps),
+      [BtreeSubvolumeChildren] = ReadTree(BtreeSubvolumeChildren),
     };
+    // A logged operation other than the inode cursor is one a crash left to resume.
+    var pendingOp = preserved[BtreeLoggedOps].FirstOrDefault(k => k.Type != (byte)BcacheFsKeyType.InodeAllocCursor);
+    if (pendingOp.Value != null)
+      throw new NotSupportedException($"bcachefs: the volume has a logged operation (key type {pendingOp.Type}) still to resume.");
+    // At 1.39 a reservation's sectors are accounted per replica count, which this does not rebuild.
+    if (BcacheFsBucketGeometry.Accounting && extentKeys.Any(k => k.Type == KeyReservation))
+      throw new NotSupportedException("bcachefs: the volume holds reservations, whose 1.39 accounting an edit here does not rebuild.");
 
     var maxInode = inodeKeys.Keys.DefaultIfEmpty(FirstDynamicInode - 1).Max();
     return new Model {
@@ -968,6 +1015,8 @@ internal static class BcacheFsInPlaceModifier {
     trees[BtreeSubvolumes] = [.. model.PreservedTrees[BtreeSubvolumes]];
     trees[BtreeSnapshots] = [.. model.PreservedTrees[BtreeSnapshots]];
     trees[BtreeSnapshotTrees] = [.. model.PreservedTrees[BtreeSnapshotTrees]];
+    trees[BtreeLoggedOps] = [.. model.PreservedTrees[BtreeLoggedOps]];
+    trees[BtreeSubvolumeChildren] = [.. model.PreservedTrees[BtreeSubvolumeChildren]];
 
     foreach (var list in trees.Values)
       list.Sort((a, b) => Compare(a.Position, b.Position));
@@ -1029,9 +1078,10 @@ internal static class BcacheFsInPlaceModifier {
     // A volume bcachefs format laid out keeps its superblock slots and journal wherever it chose;
     // no node goes there.
     var fixedBuckets = new HashSet<long>();
-    for (var sector = 0L; sector < PrimarySbSector + SbSlotSectors; sector += BucketSectors) fixedBuckets.Add(sector / BucketSectors);
+    // Every bucket a slot touches, its last included where the slot ends inside one.
+    for (var b = 0L; b <= (PrimarySbSector + SbSlotSectors - 1) / BucketSectors; ++b) fixedBuckets.Add(b);
     foreach (var slot in geometry.SuperblockSectors)
-      for (var sector = slot; sector < slot + SbSlotSectors; sector += BucketSectors) fixedBuckets.Add(sector / BucketSectors);
+      for (var b = slot / BucketSectors; b <= (slot + SbSlotSectors - 1) / BucketSectors; ++b) fixedBuckets.Add(b);
     foreach (var (start, journalCount) in geometry.JournalBuckets)
       for (var b = start; b < start + journalCount; ++b) fixedBuckets.Add(b);
     // The reservation first, and within it the buckets still at generation zero:

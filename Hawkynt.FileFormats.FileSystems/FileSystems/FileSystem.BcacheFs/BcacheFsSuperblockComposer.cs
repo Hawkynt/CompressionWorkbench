@@ -112,8 +112,10 @@ internal static class BcacheFsSuperblockComposer {
   internal static List<BcacheFsAllocationBuilder.ReplicaSet> MergeReplicas(
       IEnumerable<BcacheFsAllocationBuilder.ReplicaSet> declared, BcacheFsAllocationBuilder.VolumeUsage usage) {
     var result = declared.Distinct().ToList();
+    // From 1.36 (no_sb_user_data_replicas) the superblock declares the b-tree's sets only;
+    // the accounting tree carries the rest.
     foreach (var set in usage.Replicas.Keys.OrderBy(s => s.DataType).ThenBy(s => string.Join(",", s.Devices)))
-      if (!result.Contains(set)) result.Add(set);
+      if (!result.Contains(set) && (!BcacheFsBucketGeometry.Accounting || set.DataType == DataBtree)) result.Add(set);
     return result;
   }
 
@@ -297,6 +299,23 @@ internal static class BcacheFsSuperblockComposer {
       return e;
     }
 
+    // From 1.39 the totals live in the accounting tree: a clean shutdown leaves the key
+    // version, the clocks and the roots.
+    if (BcacheFsBucketGeometry.Accounting) {
+      entries.Add(FsUsage(FsUsageKeyVersion, 0, 0));
+      for (byte clock = 0; clock < 2; ++clock) {
+        var e = Entry(2, JsetClock);
+        e[8] = clock;
+        entries.Add(e);
+      }
+      foreach (var root in roots) {
+        var e = Entry(root.Pointer.Bytes / 8, JsetBtreeRoot, (byte)root.Btree, (byte)root.Level);
+        WriteKey(e.AsSpan(8), root.Pointer);
+        entries.Add(e);
+      }
+      return entries;
+    }
+
     entries.Add(FsUsage(FsUsageInodes, 0, inodes));
     entries.Add(FsUsage(FsUsageKeyVersion, 0, 0));
     for (byte copies = 0; copies < 4; ++copies)
@@ -349,7 +368,7 @@ internal static class BcacheFsSuperblockComposer {
     // flags, the two retired clock fields, and the journal sequence come first.
     var payload = 16 + entries.Sum(e => e.Length);
     var section = Section(FieldClean, payload);
-    BinaryPrimitives.WriteUInt64LittleEndian(section.AsSpan(16), CleanJournalSeq);
+    BinaryPrimitives.WriteUInt64LittleEndian(section.AsSpan(16), BcacheFsBucketGeometry.JournalSeq);
     var cursor = 24;
     foreach (var e in entries) {
       e.CopyTo(section, cursor);
@@ -380,11 +399,11 @@ internal static class BcacheFsSuperblockComposer {
     const int header = 56;
     var jset = new byte[BcacheFsBucketGeometry.RoundUpSectors(header + payload) * SectorSize];
     BinaryPrimitives.WriteUInt64LittleEndian(jset.AsSpan(16), superblockMagic ^ JsetMagic);
-    BinaryPrimitives.WriteUInt64LittleEndian(jset.AsSpan(24), CleanJournalSeq);
-    BinaryPrimitives.WriteUInt32LittleEndian(jset.AsSpan(32), BcacheFsFormat.Version);
+    BinaryPrimitives.WriteUInt64LittleEndian(jset.AsSpan(24), BcacheFsBucketGeometry.JournalSeq);
+    BinaryPrimitives.WriteUInt32LittleEndian(jset.AsSpan(32), BcacheFsBucketGeometry.Version);
     BinaryPrimitives.WriteUInt32LittleEndian(jset.AsSpan(36), CsumTypeCrc32CNonzero);  // flags: checksum type, a flush
     BinaryPrimitives.WriteUInt32LittleEndian(jset.AsSpan(40), (uint)(payload / 8));
-    BinaryPrimitives.WriteUInt64LittleEndian(jset.AsSpan(48), CleanJournalSeq);         // last_seq
+    BinaryPrimitives.WriteUInt64LittleEndian(jset.AsSpan(48), BcacheFsBucketGeometry.JournalSeq); // last_seq
     var cursor = header;
     foreach (var e in entries) {
       e.CopyTo(jset, cursor);

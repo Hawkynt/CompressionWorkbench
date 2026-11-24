@@ -88,6 +88,24 @@ internal static class BcacheFsFormat {
   // Superblock section types.
   internal const uint FieldJournal = 0;
   internal const uint FieldMembersV1 = 1;
+  /// <summary>
+  /// Metadata version 1.39 (<c>per_dev_fragmentation_lru</c>), the newest bcachefs-tools 1.39.6
+  /// writes: space accounting in the accounting tree, backpointers carrying the bucket generation,
+  /// a fragmentation LRU per device. The one version past 1.4 an edit here re-publishes.
+  /// </summary>
+  internal const ushort VersionPerDevFragmentationLru = (1 << 10) | 39;
+
+  internal const int BtreeLoggedOps = 17;
+  internal const int BtreeSubvolumeChildren = 19;
+  internal const int BtreeAccounting = 20;
+  internal const byte KeyAccounting = 34;
+
+  /// <summary>Where the per-device bucket fragmentation LRUs start (one id per member) from 1.39.</summary>
+  internal const ulong LruBucketFragmentationStart = 1 << 13;
+
+  /// <summary>A 1.39 <c>bch_alloc_v4</c>: eight words, <c>journal_seq_empty</c> and <c>stripe_sectors</c> after the original six.</summary>
+  internal const int AllocV4BytesV139 = 64;
+
   internal const uint FieldReplicasV0 = 3;
   internal const uint FieldReplicasV1 = 7;
   internal const uint FieldClean = 6;

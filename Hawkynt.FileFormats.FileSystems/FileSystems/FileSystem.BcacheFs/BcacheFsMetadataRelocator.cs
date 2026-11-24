@@ -55,8 +55,8 @@ internal static class BcacheFsMetadataRelocator {
     // The superblock slots and the journal stay where the volume has them.
     var fixedBuckets = new HashSet<long>();
     foreach (var slot in geometry.SuperblockSectors.Prepend(0))
-      for (var sector = slot; sector < Math.Max(slot, PrimarySbSector) + SbSlotSectors; sector += BucketSectors)
-        fixedBuckets.Add(sector / BucketSectors);
+      for (var b = slot / BucketSectors; b <= (Math.Max(slot, PrimarySbSector) + SbSlotSectors - 1) / BucketSectors; ++b)
+        fixedBuckets.Add(b);
     foreach (var (start, count) in geometry.JournalBuckets)
       for (var b = start; b < start + count; ++b) fixedBuckets.Add(b);
     // Where a node is smaller than a bucket, each target bucket takes several nodes.
