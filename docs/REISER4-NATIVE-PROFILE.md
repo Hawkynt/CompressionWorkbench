@@ -101,7 +101,8 @@ mode, links, size), Unix (bit 1: uid, gid, atime, mtime, ctime, then 64-bit byte
 number `major << 20 | minor` of a device node), large times (bit 2, 12 bytes), symlink (bit 3: the
 target, as long as the light-weight size, then a NUL), plugin set (bit 4) and heir set (bit 8)
 (a count of 4-byte pairs), flags (bit 5, 4 bytes). The crypto extension (bit 7), a cipher in the
-plugin set and a chained mask (bit 15) are refused: no key is available for encrypted files.
+plugin set and a chained mask (bit 15) are refused: no key is available for encrypted files, and no
+released Reiser4 implementation ever wrote one (see "Encrypted files" below).
 
 ### File bodies
 
@@ -129,6 +130,28 @@ them). A directory's `size` is its number of entries including the dot entries, 
 of its units (26 + 24 bytes each, plus a long name and its NUL), its `nlink` 2 plus its
 subdirectories (3 plus them for the root). The writer recomputes these, and a file's `nlink`, from
 the namespace; every other stat-data byte is carried.
+
+## Encrypted files
+
+The format reserves room for them — plugin-set member 8 (cipher), member 9 (digest) and the crypto
+stat-data extension (bit 7: key length, signature length, key fingerprint) — but nothing has ever
+produced one, so there is no volume to read and no reference to write against:
+
+* **reiser4progs** (1.2.2 and master) defines a single cipher id, `none` (0); `mkfs.reiser4 -o`
+  cannot name any other.
+* **The kernel** (the Reiser4 tree from 2002 to the current SFRN 5.x sources) defines `none` in every
+  revision. From November 2005 to October 2006 it also listed an `aes` cipher plugin, built only
+  with `CONFIG_CRYPTO_AES_586` (32-bit x86). Creating a file whose cipher is not `none` fails with
+  `EINVAL` unless the inode already carries an instantiated key, and the only function that
+  instantiates one from user-supplied key material (`create_crypto_stat`, later
+  `create_crypto_info`) has no caller anywhere in the tree in the revisions of 2005-11-08 and
+  2006-01-20, and has been compiled out (`#if 0`) from 2006-10 to today. No ioctl, mount option or
+  attribute ever passed a key in.
+
+Checked by searching every file of the kernel tree at those revisions and the current cipher table
+in both implementations. An object whose plugin set names a cipher, or whose stat data carries the
+crypto extension, is therefore refused rather than guessed at; it can only come from damage or a
+private build.
 
 ## Journal
 
