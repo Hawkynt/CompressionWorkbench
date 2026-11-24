@@ -121,13 +121,18 @@ public class DarReaderTests {
   }
 
   [Test]
-  public void GivenAnEncryptedArchive_WhenListed_ThenItIsRefusedHonestly() {
-    Assert.That(List("encrypted.1.dar").Select(e => e.Name), Is.EqualTo(new[] { "FULL.dar", "metadata.ini" }));
-    var outDir = this.ExtractVector("encrypted.1.dar", ["metadata.ini"]);
-    var meta = File.ReadAllText(Path.Combine(outDir, "metadata.ini"));
-    Assert.That(meta, Does.Contain("archive_problem=The DAR archive is encrypted."));
-    Assert.That(meta, Does.Contain("parse_status=partial"));
+  public void GivenDarsAesArchive_WhenReadWithItsPassword_ThenItsEmptyCatalogueDecrypts() {
+    var set = DarSliceSet.Open(new MemoryStream(DarFixtures.Vector("encrypted.1.dar")));
+    var archive = DarArchive.Read(set.Archive, "cwb-fixture");
+    Assert.That((archive.Trailer.Cipher, archive.Trailer.Kdf!.Hash, archive.Trailer.Kdf.Iterations), Is.EqualTo(('a', 'a', 10000UL)));
+    Assert.That(archive.Entries, Is.Empty);
   }
+
+  [TestCase(null, false)]
+  [TestCase("cwb-fixturE", true)]
+  public void GivenDarsAesArchive_WhenListedWithoutItsPassword_ThenThePasswordIsAskedFor(string? password, bool supplied)
+    => Assert.That(() => new DarFormatDescriptor().List(new MemoryStream(DarFixtures.Vector("encrypted.1.dar")), password),
+      Throws.InstanceOf<ArchivePasswordException>().With.Property(nameof(ArchivePasswordException.PasswordWasSupplied)).EqualTo(supplied));
 
   [Test]
   public void GivenDar286Output_WhenRead_ThenBothFilesComeBack() {

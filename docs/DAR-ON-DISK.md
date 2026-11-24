@@ -38,7 +38,7 @@ accepted bytes we wrote that depend on it.
 ## 1. Layers
 
 From outside in [doc]: **slices** split the archive into files. Inside them is an optional
-**encryption** layer (refused here), an optional **escape** layer (tape marks), a **compression**
+**encryption** layer (section 12), an optional **escape** layer (tape marks), a **compression**
 layer, and an optional **sparse** layer per file. Glue the slice payloads together and you get the
 *archive level*:
 
@@ -305,6 +305,8 @@ Format 11.3, in one slice or a slice set, with or without tape marks:
   ends in `N`. The descriptor puts slice `n` beside the first, which must be named
   `basename.1.dar`.
 - **Tape marks** (`TapeMarks`): the layout of section 6, data escaped on the way out.
+- **Encryption** (a password): section 12, with every cipher and key derivation dar offers;
+  argon2 with 10 000 iterations by default, as dar 2.7.13 writes.
 - **Streaming**: file data goes from its source to the slices as it is read, so memory does not
   grow with file size; only the catalogue is held. Files up to 4 MiB are compressed in memory
   first and stored as they are when compression would not shrink them, as dar does. Larger files
@@ -335,11 +337,13 @@ accepted. A 5 GiB file, stored and sliced or gzip-compressed with tape marks, pa
 
 ## 11. Refused, unverified and open
 
-- **Refused**: encrypted archives (flags 0x20, 0x04 or 0x0400), formats before 8 or after 11.3,
-  unknown compression letters and unknown header flags. `List()` then returns the raw slice and a
-  `metadata.ini` that names the reason, and does not throw. dar's ciphers (blowfish, AES-256,
-  twofish, serpent, camellia) sit under a key derivation dar alone defines; nothing here derives
-  that layer, so encryption stays refused in both directions.
+- **Refused**: archives whose key is encrypted for GnuPG recipients (flag 0x04: an OpenPGP
+  message this repository does not decode), block-cipher archives without recorded key-derivation
+  parameters (formats before 10), formats before 8 or after 11.3, unknown compression letters and
+  unknown header flags. `List()` then returns the raw slice and a `metadata.ini` that names the
+  reason, and does not throw. A missing or wrong password is reported as such instead.
+- **Crypto block size**: dar's `-#` is not recorded in the archive; the reader assumes dar's
+  default of 10 240 clear bytes, so an archive written with another `-#` does not decrypt.
 - **Delta patches** (saved status 1) are listed, but extraction is refused because the data is a
   binary diff against another archive. Not-saved and inode-only entries are listed and have no
   data to extract.
@@ -350,6 +354,66 @@ accepted. A 5 GiB file, stored and sliced or gzip-compressed with tape marks, pa
 - **Not written**: hard links, devices, pipes, sockets, EAs and FSAs; the archive input model
   carries none of them.
 
+## 12. Encryption
+
+dar encrypts with a password (`-K [algo:]pass`) by scrambling or with one of five block ciphers,
+or for GnuPG recipients [doc]. Everything below was read from libdar's source [src] and checked
+against dar 2.7.13 (libgcrypt and libargon2 build) both ways [measured].
+
+**Header fields.** Flag 0x20 marks an encrypted archive; from format 9 it is followed, after the
+initial offset, by the cipher letter: `s` scrambling, `b` Blowfish, `a` AES-256, `t` Twofish-256,
+`p` Serpent-256, `c` Camellia-256. Flag 0x04 adds the GnuPG-encrypted key (infinint size, bytes),
+then the reference slicing, then flag 0x0400's key derivation: an infinint salt size, the salt, an
+infinint iteration count and a hash letter, `a` argon2, `5` SHA-512, `1` SHA-1, `m` MD5 — then the
+block size of 0x0800. dar 2.7.13 writes header flags `05 20` (0x0420) with a 32-byte salt
+(16 for Blowfish), 10 000 iterations and `a`; the trailer adds 0x08 and the initial offset
+[measured].
+
+**Key.** PBKDF2-HMAC over the password bytes with the salt and count, or argon2id with
+t = count, m = 100 KiB, p = 1. The key is 56 bytes for Blowfish and 32 for the others [src]. A
+Blowfish key that leaves a value twice in one S-box is rejected by libgcrypt as weak; dar then
+draws a new salt [src], and so does the writer here.
+
+**Zones.** The version header stays clear. The encrypted zone runs from the initial offset to the
+version trailer; the trailer and the second terminator stay clear after it [src][measured]. Its
+clear content is: an elastic buffer of 1–51 200 bytes, the escape/compression layers (file data,
+catalogue), the first terminator, and a final elastic buffer. For a block cipher every offset in
+the catalogue and the first terminator counts in this clear stream from 0 at its start; for
+scrambling it stays an archive-level offset [src][measured].
+
+**Elastic buffer.** One byte: `X`. Two: `FF FE`. More: random filler, `FF`, the length in base
+254 least significant digit first, `FE`, filler; the filler never holds `X`, `FE` or `FF`. It is
+read backwards from its end: the last `X` or `FE`, then digits up to `FF` [src][measured].
+
+**Block ciphers** (CBC). The clear stream is cut into blocks of 10 240 bytes (`-#`). Block *n*
+(from 0) is padded with an elastic buffer to the next whole cipher block *beyond* it — so a full
+block of 10 240 bytes takes 10 256 bytes under the 16-byte ciphers and 10 248 under Blowfish — and
+encrypted under the initialisation vector E_essiv(*n* as a big-endian cipher block). The ESSIV
+key is SHA-256 of the key under AES-256, or for Blowfish SHA-1 of the key under Blowfish
+[src][measured: libdar's own self-test vectors, and dar 2.7.13]. The final elastic buffer is
+sized so the last block is full: dar tells the encrypted blocks from the clear trailer by the
+short read at the end [src].
+
+**Scrambling.** Each byte of the zone plus the password byte at its archive-level position
+modulo the password length; no key derivation [src][measured].
+
+## 13. Editing in place
+
+An edit rewrites the archive with its own settings: format 11.3, the compression letter and block
+size, tape marks, the slice sizes of slice 1's header, and the encryption (cipher, KDF hash and
+count, a new salt). Kept entries go across unchanged — their inode bytes, and for files the stored
+(compressed, unescaped) data, compression letter, data flags (holes included) and checksum — after
+each kept file has passed its checksum; added files are written as by the writer. The new archive
+is written to temporary files first; only then does it replace the old slices, and slices it no
+longer needs are deleted. Refused, with the archive untouched: entries whose data is not in the
+archive (differential archives), hard links, devices, pipes and sockets, entries with EA or FSA
+data (dar records Linux FSA for every inode on ext4), delta signatures, formats before 9, lzo as
+the archive's compression, and an edit through a slice the edited set would no longer have.
+
+dar 2.7.13 tests (`dar -t`, sequentially too with tape marks) and restores byte for byte what an
+edit leaves of its own archives — default, `-at -zgzip`, block mode, xz, slice sets, AES-256,
+scrambled slice sets, sparse files carried over — and of ours [measured].
+
 ## Sources
 
 - dar documentation, `doc/Notes.html`, "Archive structure in brief" (slice, archive and catalogue
@@ -357,5 +421,8 @@ accepted. A 5 GiB file, stored and sliced or gzip-compressed with tape marks, pa
 - libdar 2.8.6 source (GPL), read to derive sections 2–9 and not copied: `real_infinint`,
   `limitint`, `crc`, `datetime`, `header`, `header_version`, `header_flags`, `archive_version`,
   `terminateur`, `escape`, `sparse_file`, `compressor`, `block_compressor`,
-  `compress_block_header`, `catalogue`, `cat_*`. [src]
-- dar 2.7.13 and 2.8.6 binaries as oracles. [measured]
+  `compress_block_header`, `catalogue`, `cat_*`; libdar 2.7.13 (GPL), read the same way for
+  sections 12 and 13: `crypto_sym`, `tronconneuse`, `elastic`, `scrambler`, `header_version`,
+  `macro_tools`, `archive_options`, `crypto`, `archive_aux`. [src]
+- dar 2.7.13 and 2.8.6 binaries as oracles; for encryption the 2.7.13 package, the 2.8.6 build
+  having no libgcrypt. [measured]

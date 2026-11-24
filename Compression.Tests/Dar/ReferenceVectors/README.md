@@ -42,7 +42,7 @@ Built by `make-fixtures.sh` (run inside WSL / Linux). The source tree, rebuilt b
 | `tree-zstd-block.1.dar`, `tree-gzip-block.1.dar` | `dar -c … -z<algo>:6:16k` | block compression (header flag 0x0800, block size 16384) |
 | `multi.1.dar` … `multi.3.dar` | `dar -c multi -S 3k -s 2k` | a three-slice set |
 | `empty.1.dar` | `dar -c empty -R /tmp/cwbdar/empty` | a catalogue holding only the root |
-| `encrypted.1.dar` | `dar -c encrypted -K aes:cwb-fixture -R /tmp/cwbdar/empty` | an encrypted archive the reader must refuse |
+| `encrypted.1.dar` | `dar -c encrypted -K aes:cwb-fixture -R /tmp/cwbdar/empty` | AES-256 under dar's default key derivation (argon2, 10 000 iterations); the reader opens it with `cwb-fixture` |
 
 `dar -t` accepts every one of them (the encrypted one with `-K aes:cwb-fixture`).
 
