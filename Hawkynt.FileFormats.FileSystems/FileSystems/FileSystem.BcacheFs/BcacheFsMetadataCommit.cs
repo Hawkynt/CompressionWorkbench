@@ -174,7 +174,9 @@ internal static class BcacheFsMetadataCommit {
 
     var metadataBuckets = placement.Values.SelectMany(b => b).Select(BucketOfSlot).ToHashSet();
     foreach (var bucket in metadataBuckets)
-      ZeroRange(devices[BcacheFsBucketId.Device(bucket)], BcacheFsBucketId.Index(bucket) * BucketBytes, BucketBytes);
+      ZeroRange(devices[BcacheFsBucketId.Device(bucket)],
+        BcacheFsBucketId.Index(bucket) * BcacheFsBucketGeometry.SectorsOf(BcacheFsBucketId.Device(bucket)) * SectorSize,
+        BcacheFsBucketGeometry.SectorsOf(BcacheFsBucketId.Device(bucket)) * SectorSize);
 
     byte GenerationOf(long bucket) => final.GetValueOrDefault(bucket).Generation;
 
@@ -191,7 +193,8 @@ internal static class BcacheFsMetadataCommit {
   }
 
   private static long BucketOfSlot(long slot)
-    => BcacheFsBucketId.Of(BcacheFsBucketId.Device(slot), BcacheFsBucketId.Index(slot) * NodeSectors / BucketSectors);
+    => BcacheFsBucketId.Of(BcacheFsBucketId.Device(slot),
+      BcacheFsBucketId.Index(slot) * NodeSectors / BcacheFsBucketGeometry.SectorsOf(BcacheFsBucketId.Device(slot)));
 
   /// <summary>Stamps the generation of the bucket an extent's data sits in into its pointer.</summary>
   private static void StampGeneration(Key extent, IReadOnlyDictionary<long, BucketState> states) {

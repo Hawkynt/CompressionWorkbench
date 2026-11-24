@@ -185,9 +185,9 @@ internal static class BcacheFsSuperblockEditor {
     if (geometry.JournalBuckets.Count == 0)
       throw new InvalidDataException("bcachefs: the superblock names no journal buckets.");
     foreach (var (start, count) in geometry.JournalBuckets)
-      BcacheFsMetadataCommit.ZeroRange(image, start * BucketBytes, count * BucketBytes);
+      BcacheFsMetadataCommit.ZeroRange(image, start * geometry.BucketSize * SectorSize, count * geometry.BucketSize * SectorSize);
     var entry = BcacheFsSuperblockComposer.JournalEntry(magic, published.Roots, published.Usage, published.Inodes, replicas);
-    image.Position = geometry.JournalBuckets[0].Start * BucketBytes;
+    image.Position = geometry.JournalBuckets[0].Start * geometry.BucketSize * SectorSize;
     image.Write(entry);
   }
 

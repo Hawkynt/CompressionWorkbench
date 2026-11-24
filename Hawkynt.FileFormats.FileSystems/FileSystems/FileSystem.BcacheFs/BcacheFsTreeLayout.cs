@@ -145,7 +145,7 @@ internal static class BcacheFsTreeLayout {
       var at = checked(BcacheFsBucketId.Index(slot) * NodeSectors);
       if (copies.Any(c => c.Device == device))
         throw new InvalidOperationException($"bcachefs placement put two copies of a node of tree {btree} on member {device}.");
-      copies.Add((device, at, BcacheFsBucketId.Of(device, at / BucketSectors)));
+      copies.Add((device, at, BcacheFsBucketId.Of(device, at / BcacheFsBucketGeometry.SectorsOf(device))));
     }
 
     var builder = new BcacheFsNodeBuilder {

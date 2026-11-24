@@ -20,6 +20,14 @@ internal sealed class BcacheFsDevices {
   /// <summary>Which data types each member may hold (<c>BCH_MEMBER_DATA_ALLOWED</c>), as a bit per type.</summary>
   internal IReadOnlyDictionary<byte, byte> DataAllowed { get; init; } = new Dictionary<byte, byte>();
 
+  /// <summary>
+  /// How many copies a copy on each member counts as (<c>BCH_MEMBER_DURABILITY</c>, stored plus
+  /// one); zero for a cache device, which holds no copy of its own.
+  /// </summary>
+  internal IReadOnlyDictionary<byte, int> Durability { get; init; } = new Dictionary<byte, int>();
+
+  internal int DurabilityOf(byte device) => this.Durability.TryGetValue(device, out var d) ? d : 1;
+
   /// <summary>Copies of every b-tree node (<c>metadata_replicas</c>).</summary>
   internal int MetadataReplicas { get; init; } = 1;
 
@@ -44,16 +52,24 @@ internal sealed class BcacheFsDevices {
     ArgumentNullException.ThrowIfNull(core);
     var geometry = new Dictionary<byte, BcacheFsAllocationBuilder.Geometry>();
     var allowed = new Dictionary<byte, byte>();
+    var durability = new Dictionary<byte, int>();
     foreach (var (index, stream) in core.Devices) {
       stream.Position = 0;
-      geometry[index] = BcacheFsSuperblockEditor.ReadGeometry(stream);
-      if (index < core.Members.Count) allowed[index] = core.Members[index].DataAllowed;
+      var own = BcacheFsSuperblockEditor.ReadGeometry(stream);
+      if (index < core.Members.Count) {
+        var member = core.Members[index];
+        allowed[index] = member.DataAllowed;
+        durability[index] = member.Durability == 0 ? 1 : member.Durability - 1;
+        own = own with { MemberBucketSectors = member.BucketSizeSectors };
+      }
+      geometry[index] = own;
     }
     var flags0 = core.Superblock.Flags.Length > 0 ? core.Superblock.Flags[0] : 0UL;
     return new BcacheFsDevices {
       Streams = core.Devices,
       Geometry = geometry,
       DataAllowed = allowed,
+      Durability = durability,
       MetadataReplicas = Math.Max(1, (int)((flags0 >> 48) & 0xF)),
       DataReplicas = Math.Max(1, (int)((flags0 >> 52) & 0xF)),
     };
@@ -74,7 +90,7 @@ internal static class BcacheFsBucketId {
   internal static long Index(long id) => id & IndexMask;
 
   /// <summary>The bucket a device sector lies in.</summary>
-  internal static long OfSector(byte device, long sector) => Of(device, sector / BucketSectors);
+  internal static long OfSector(byte device, long sector) => Of(device, sector / BcacheFsBucketGeometry.SectorsOf(device));
 
   /// <summary>A pointer's device and sector, as one 64-bit extent or b-tree pointer word holds them.</summary>
   internal static (byte Device, long Sector) Pointer(ulong word) => ((byte)((word >> 48) & 0xFF), PointerSector(word));

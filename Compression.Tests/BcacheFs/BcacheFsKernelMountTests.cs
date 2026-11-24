@@ -463,13 +463,18 @@ public sealed class BcacheFsKernelMountTests {
   [TestCase("", 2, TestName = "GivenTwoMembersTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
   [TestCase("--replicas=2", 2, TestName = "GivenTwoMirroredMembersTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
   [TestCase("--replicas=2", 3, TestName = "GivenThreeMembersTwoCopiesTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
+  [TestCase("", 2, "--bucket=64k|--bucket=128k", TestName = "GivenMembersWithDifferentBucketsTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
+  [TestCase("--replicas=2", 2, "--durability=2|--durability=1", TestName = "GivenADurabilityTwoMemberTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
+  [TestCase("", 2, "--durability=0|--durability=1", TestName = "GivenACacheMemberTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
   [Category("RoundTrip")]
-  public void MultiDeviceKernelRoundTrip(string formatOptions, int memberCount) {
+  public void MultiDeviceKernelRoundTrip(string formatOptions, int memberCount, string perMember = "") {
     BcacheFsKernel.Require();
     var paths = Enumerable.Range(0, memberCount).Select(i => Path.Combine(this._tmpDir, $"member{i}.img")).ToArray();
     var wsl = paths.Select(FsInteropToolbox.WinToWsl).ToArray();
+    // Options for one member alone go in front of it ('|' between members).
+    var own = perMember.Length == 0 ? new string[memberCount] : perMember.Split('|');
     var format = FsInteropToolbox.RunWsl(string.Join(" && ", wsl.Select(p => $"truncate -s 96M {p}"))
-      + $" && bcachefs format -q {formatOptions} {string.Join(" ", wsl)}");
+      + $" && bcachefs format -q {formatOptions} {string.Join(" ", wsl.Select((p, i) => $"{own[i]} {p}"))}");
     Assert.That(format.ExitCode, Is.Zero, format.StdOut + format.StdErr);
     BcacheFsKernel.Session(paths, """
       set -e
