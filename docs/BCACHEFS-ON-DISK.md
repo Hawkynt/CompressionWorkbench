@@ -455,21 +455,35 @@ as layouts from its format headers (constants only):
 - Carried as they are: `logged_ops` (the inode allocation cursor; any other logged
   operation, one a crash left to resume, is refused) and `subvolume_children`.
 
+- **New data matches the volume's IO options**, so it owes no reconcile work (from
+  1.33 an extent that does not match carries a reconcile entry): each run of at most
+  128 sectors is compressed with `background_compression`, else `compression`, by
+  this package's own LZ4 (block), DEFLATE ("gzip", raw stream) or zstd (frame behind
+  a 32-bit length) encoder, kept raw and marked *incompressible* where that is no
+  smaller, and checksummed with `data_checksum` (crc32c in a crc32 entry, crc64 and
+  xxhash in a crc64 entry, none without an entry when uncompressed). Encoded runs
+  are packed back to back into the bucket, a run that does not fit going to the
+  next. On a 1.3/1.4 volume data stays crc32c and uncompressed, byte for byte as
+  before.
+
 Refused, before anything is written: reservations (their 1.39 accounting is per
-replica count), pending reconcile work (`bcachefs format --source` with two copies
-leaves some), and **adding data** to a volume asking for compression, background
-compression, a data checksum other than crc32c, erasure coding or a target — from
-1.33 an extent not matching the volume's options carries a reconcile entry, which
-this does not write. Removing files from such a volume works; its own compressed
-and incompressible extents are accounted.
+replica count), pending reconcile work (`bcachefs format --source` with two copies,
+or with background compression, leaves some), and adding data to a volume asking
+for erasure coding or a target, which would place it.
 
 Proof is 1.39's own `fsck -n` (a 6.8 kernel stops at 1.4), with the tool named in
 `CWB_BCACHEFS_EXTRA`: `BcacheFs139EditTests` edits a populated 1.39 volume, an
-empty one with 128 KiB buckets, an empty mirrored one on two members and the
-checked-in 1.39 reference volume, each fsck-clean afterwards; removes a file from
-an lz4 volume (fsck-clean) and refuses adding to it unchanged; refuses a volume
-with pending reconcile work unchanged. The checked-in 1.39 reference volumes are
-edited (or, compressed, have a file removed) and read back everywhere.
+empty one with 128 KiB buckets, an empty mirrored one on two members, volumes
+asking for lz4, gzip with crc64, zstd with xxhash, background zstd and no data
+checksum (with a compressible file among the added ones), and the checked-in 1.39
+reference volume, each fsck-clean afterwards; refuses a volume with pending
+reconcile work unchanged. The checked-in 1.39 reference volumes (plain, lz4/crc32c,
+gzip/crc64, zstd/xxhash) are edited and read back everywhere. fsck checks the
+structure, accounting and checksums of the compressed runs, not that they decode:
+every gzip and zstd run written into the reference volumes is decoded by a
+reference decoder (Python's zlib, the zstd tool) back to the file's bytes; LZ4 runs
+rest on this package's reader and the codec's own conformance tests, as no
+reference LZ4 block decoder is installed here.
 
 ## Upgrading past 1.14
 

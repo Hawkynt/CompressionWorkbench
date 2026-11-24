@@ -82,6 +82,9 @@ internal static class BcacheFsInPlaceModifier {
   private sealed class Model {
     internal required BcacheFsDevices Devices { get; init; }
     internal required ulong Magic { get; init; }
+
+    /// <summary>How new data is stored: crc32c and uncompressed, or at 1.39 as the volume's options ask.</summary>
+    internal BcacheFsExtentEncoder.DataOptions DataOptions { get; init; } = BcacheFsExtentEncoder.DataOptions.Plain;
     internal required Dictionary<string, DirectoryState> Directories { get; init; }
     internal required Dictionary<string, FileState> Files { get; init; }
     internal required Dictionary<int, List<Key>> PreservedTrees { get; init; }
@@ -106,7 +109,7 @@ internal static class BcacheFsInPlaceModifier {
     ArgumentNullException.ThrowIfNull(inputs);
     foreach (var device in devices) EnsureWritable(device);
     using var buckets = UseVolumeBuckets(devices);
-    if (inputs.Any(i => !i.IsDirectory)) RequirePlainDataOptions(devices);
+    if (inputs.Any(i => !i.IsDirectory)) RequireWritableDataOptions(devices);
 
     var model = ReadModel(devices);
     foreach (var input in inputs) {
@@ -301,24 +304,18 @@ internal static class BcacheFsInPlaceModifier {
   /// <summary>
   /// From 1.33 every extent that does not match the volume's IO options carries a reconcile entry
   /// saying what work it still owes (compressing it, checksumming it another way, moving it), and
-  /// fsck checks it. New data here is written uncompressed with crc32c checksums wherever the
-  /// volume allows, which only matches a volume asking for exactly that, so adding files to a 1.39
-  /// volume with compression, another data checksum, erasure coding or a target is refused before
-  /// anything is written. Removing them is not.
+  /// fsck checks it. New data here is stored the way the volume asks — compressed with its
+  /// compression, checksummed with its data checksum (<see cref="BcacheFsExtentEncoder" />) — so
+  /// it owes nothing; erasure coding and targets, which would place it, are refused before
+  /// anything is written. Removing files is not affected.
   /// </summary>
-  private static void RequirePlainDataOptions(IReadOnlyList<Stream> devices) {
+  private static void RequireWritableDataOptions(IReadOnlyList<Stream> devices) {
     if (!BcacheFsBucketGeometry.Accounting) return;
     foreach (var device in devices) device.Position = 0;
     var flags = BcacheFsCoreVolume.Open(devices).Superblock.Flags;
     foreach (var device in devices) device.Position = 0;
     ulong Bits(int word, int from, int to) => word < flags.Length ? (flags[word] >> from) & ((1UL << (to - from)) - 1) : 0;
-    var compression = Bits(1, 4, 8) | (Bits(4, 56, 60) << 4);
-    var background = Bits(2, 0, 4) | (Bits(4, 60, 64) << 4);
-    var checksum = Bits(0, 44, 48);
-    var refusal = compression != 0 ? "compression"
-      : background != 0 ? "background compression"
-      : checksum != 1 ? "a data checksum other than crc32c"
-      : Bits(3, 0, 16) != 0 ? "erasure coding"
+    var refusal = Bits(3, 0, 16) != 0 ? "erasure coding"
       : (Bits(1, 28, 40) | Bits(1, 40, 52) | Bits(1, 52, 64) | Bits(3, 16, 28)) != 0 ? "a target"
       : null;
     if (refusal != null)
@@ -364,7 +361,7 @@ internal static class BcacheFsInPlaceModifier {
     if (!core.Recoverable)
       throw new InvalidDataException("bcachefs: the volume could not be recovered: " + string.Join("; ", core.Diagnostics));
 
-    const string profile = "in-place edits are implemented for volumes at metadata version 1.3 or 1.4, with every member device supplied";
+    const string profile = "in-place edits are implemented for volumes at metadata version 1.3, 1.4 or 1.39, with every member device supplied";
     var version = core.Superblock.Version;
     if (version < BcacheFsFormat.Version || (version > MaxEditableVersion && version != VersionPerDevFragmentationLru))
       throw new NotSupportedException(
@@ -601,6 +598,9 @@ internal static class BcacheFsInPlaceModifier {
     return new Model {
       Devices = devices,
       Magic = magic,
+      DataOptions = BcacheFsBucketGeometry.Accounting
+        ? BcacheFsExtentEncoder.Of(core.Superblock.Flags)
+        : BcacheFsExtentEncoder.DataOptions.Plain,
       Directories = directories,
       Files = files,
       PreservedTrees = preserved,
@@ -903,8 +903,17 @@ internal static class BcacheFsInPlaceModifier {
     }
   }
 
+  /// <summary>
+  /// Writes every pending file's data into the buckets allocated for it, as runs of at most a
+  /// crc32 entry's 128 sectors (and at most a bucket), each encoded as the volume asks
+  /// (<see cref="BcacheFsExtentEncoder" />) and packed back to back into the bucket, a run that
+  /// does not fit going on to the next. Compressed runs take no more room than raw ones, so the
+  /// buckets allocated for the raw length always suffice; plain crc32c runs fill each bucket
+  /// exactly. Every copy gets the same bytes on its own member, and the extent names them all.
+  /// </summary>
   private static void WritePendingData(Model model) {
-    var buffer = new byte[BucketBytes];
+    var pieceSectors = Math.Min(MaxCrc32ExtentSectors, BucketSectors);
+    var buffer = new byte[pieceSectors * SectorSize];
     foreach (var file in model.Files.Values.Where(f => f.Pending != null)) {
       file.FinalExtents.Clear();
       var pending = file.Pending!;
@@ -912,9 +921,10 @@ internal static class BcacheFsInPlaceModifier {
       var remaining = pending.Length;
       var logicalSector = 0L;
       var bucketIndex = 0;
+      var fill = 0;
 
       while (remaining > 0) {
-        var want = (int)Math.Min(BucketBytes, remaining);
+        var want = (int)Math.Min(buffer.Length, remaining);
         var got = 0;
         while (got < want) {
           var n = source.Read(buffer, got, want - got);
@@ -926,32 +936,34 @@ internal static class BcacheFsInPlaceModifier {
 
         var sectors = BcacheFsBucketGeometry.RoundUpSectors(got);
         Array.Clear(buffer, got, sectors * SectorSize - got);
+        var encoded = BcacheFsExtentEncoder.Encode(buffer.AsSpan(0, sectors * SectorSize), sectors, model.DataOptions);
+        if (fill + encoded.RegionSectors > BucketSectors) {
+          ++bucketIndex;
+          fill = 0;
+        }
+        if (bucketIndex >= pending.Buckets.Count)
+          throw new InvalidOperationException($"bcachefs: '{file.Path}' outgrew the buckets allocated for it.");
+
         // One bucket per copy, each on its own member; the bytes are the same in all.
-        var copies = pending.Buckets[bucketIndex++];
+        var copies = pending.Buckets[bucketIndex];
         foreach (var copy in copies) {
           var stream = model.Devices[BcacheFsBucketId.Device(copy)];
-          stream.Position = BcacheFsBucketId.Index(copy) * BucketBytes;
-          stream.Write(buffer, 0, sectors * SectorSize);
+          stream.Position = (BcacheFsBucketId.Index(copy) * BucketSectors + fill) * SectorSize;
+          stream.Write(encoded.Region, 0, encoded.RegionSectors * SectorSize);
         }
 
-        // A bucket larger than a crc32 entry can describe (bcachefs format's 128 KiB
-        // default) holds its data as several back-to-back extents; each extent is the
-        // checksum entry and then one pointer per copy.
-        for (var done = 0; done < sectors;) {
-          var piece = Math.Min(MaxCrc32ExtentSectors, sectors - done);
-          var checksum = DataChecksum(buffer.AsSpan(done * SectorSize, piece * SectorSize));
-          var value = new byte[8 + 8 * copies.Length];
-          BinaryPrimitives.WriteUInt64LittleEndian(value, ExtentCrc32(piece, checksum));
-          for (var c = 0; c < copies.Length; ++c)
-            BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8 + 8 * c),
-              ExtentPointer(BcacheFsBucketId.Index(copies[c]) * BucketSectors + done, BcacheFsBucketId.Device(copies[c]),
-                model.BucketStates.GetValueOrDefault(copies[c]).Generation));
-          logicalSector += piece;
-          done += piece;
-          file.FinalExtents.Add(new Key(KeyExtent,
-            new Bpos(file.Inode, (ulong)logicalSector, SnapshotIdMax),
-            (uint)piece, value));
-        }
+        // The checksum/compression entry, then one pointer per copy.
+        var value = new byte[encoded.Entry.Length + 8 * copies.Length];
+        encoded.Entry.CopyTo(value, 0);
+        for (var c = 0; c < copies.Length; ++c)
+          BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(encoded.Entry.Length + 8 * c),
+            ExtentPointer(BcacheFsBucketId.Index(copies[c]) * BucketSectors + fill, BcacheFsBucketId.Device(copies[c]),
+              model.BucketStates.GetValueOrDefault(copies[c]).Generation));
+        logicalSector += sectors;
+        fill += encoded.RegionSectors;
+        file.FinalExtents.Add(new Key(KeyExtent,
+          new Bpos(file.Inode, (ulong)logicalSector, SnapshotIdMax),
+          (uint)sectors, value));
 
         remaining -= got;
       }
