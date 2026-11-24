@@ -100,9 +100,19 @@ internal static class RefsInPlaceResize {
 
     if (newClusters > oldClusters) {
       var need = checked((int)(newClusters - oldClusters));
-      if (U32(value, leaf + 8) < 28) throw new NotSupportedException($"ReFS: the extent table of '{normalized}' has no room for another entry.");
       var last = entries[^1];
       var lastPhysical = metadata.TranslateVirtualLcn(last.Vlcn + last.Run - 1);
+      // The clusters right after the file's last one, when free and virtually contiguous with
+      // it, extend its last entry; otherwise the new run gets an entry of its own.
+      var following = Enumerable.Range(1, need).Select(i => lastPhysical + (ulong)i).ToList();
+      var extendable = following.All(allocator!.CoversPhysical) && allocator.AreAllocated(following, expectedAllocated: false)
+        && following.Select((p, i) => metadata.TryPhysicalToVirtualLcn(p, out var v) && v == last.Vlcn + last.Run + (ulong)i).All(static ok => ok);
+      if (extendable) {
+        allocate.AddRange(following);
+        entries[^1] = last with { Run = last.Run + (uint)need };
+        goto Planned;
+      }
+      if (U32(value, leaf + 8) < 28) throw new NotSupportedException($"ReFS: the extent table of '{normalized}' has no room for another entry.");
       var (rowStart, rowLength) = allocator!.RangeOfPhysical(lastPhysical)
         ?? throw new NotSupportedException("ReFS: the allocator row holding the file's last cluster was not found.");
       if (!allocator.TryFindFreeRun(need, p => p >= rowStart && p < rowStart + rowLength, out var start))
@@ -117,6 +127,7 @@ internal static class RefsInPlaceResize {
       var dataEnd = leaf + (int)U32(value, leaf + 4);
       if (at != dataEnd) throw new NotSupportedException("ReFS: the extent leaf's entries are not packed as this editor expects.");
       entries.Add((vstart, last.Flags, (uint)oldClusters, (uint)need));
+      Planned:;
     } else if (newClusters < oldClusters) {
       var keep = new List<(ulong Vlcn, uint Flags, uint Vcn, uint Run)>();
       foreach (var entry in entries) {
@@ -155,12 +166,18 @@ internal static class RefsInPlaceResize {
     var oldCount = (int)U32(value, leaf + 20);
     var indexEnd = (int)U32(value, leaf + 0x20);
     var delta = entries.Count - oldCount;
-    W32(value, leaf + 4, U32(value, leaf + 4) + (uint)(delta * 24));
-    W32(value, leaf + 8, (uint)((int)U32(value, leaf + 8) - delta * 28));
-    W32(value, leaf + 16, (uint)(indexEnd - entries.Count * 4));
-    W32(value, leaf + 20, (uint)entries.Count);
-    var area = value.AsSpan(leaf + 0x28, indexEnd - 0x28);
-    area.Clear();
+    // ReFS 3.14 leaves (flags 0x0E00) number their index entries (offset | ordinal << 16) where
+    // 3.7 leaves (0x0600) tag them 0xFFFF; only the 3.7 form is rewritten when the count changes.
+    var leafFlags = U32(value, leaf + 12);
+    if (delta != 0 && leafFlags != 0x0600)
+      throw new NotSupportedException($"ReFS: the extent table of '{normalized}' would change its entry count in a leaf form this editor does not renumber.");
+    if (delta != 0) {
+      W32(value, leaf + 4, U32(value, leaf + 4) + (uint)(delta * 24));
+      W32(value, leaf + 8, (uint)((int)U32(value, leaf + 8) - delta * 28));
+      W32(value, leaf + 16, (uint)(indexEnd - entries.Count * 4));
+      W32(value, leaf + 20, (uint)entries.Count);
+      value.AsSpan(leaf + 0x28, indexEnd - 0x28).Clear();
+    }
     for (var i = 0; i < entries.Count; ++i) {
       var e = leaf + 0x28 + i * 24;
       W64(value, e, entries[i].Vlcn);
@@ -168,7 +185,7 @@ internal static class RefsInPlaceResize {
       W32(value, e + 12, entries[i].Vcn);
       W32(value, e + 16, 0);
       W32(value, e + 20, entries[i].Run);
-      W32(value, leaf + indexEnd - (entries.Count - i) * 4, (uint)(0x28 + i * 24) | 0xFFFF0000u);
+      if (delta != 0) W32(value, leaf + indexEnd - (entries.Count - i) * 4, (uint)(0x28 + i * 24) | 0xFFFF0000u);
     }
     if (!RefsPageEditor.CanReplaceValue(graph, row, value.Length))
       throw new NotSupportedException("ReFS: the directory page cannot take the rewritten row.");
@@ -184,13 +201,7 @@ internal static class RefsInPlaceResize {
 
   private static RefsAllocatorWriter MediumAllocator(RefsMetadataReader metadata, RefsMetadataGraph graph, RefsFileRecord file, string name) {
     var clusters = file.Extents.SelectMany(e => Enumerable.Range(0, (int)e.ClusterCount).Select(i => metadata.TranslateVirtualLcn(e.VirtualLcn + (ulong)i))).ToList();
-    try {
-      var allocator = new RefsAllocatorWriter(metadata, graph, RefsAllocatorTier.Medium, physicalAddressing: true);
-      if (clusters.All(allocator.CoversPhysical) && allocator.AreAllocated(clusters, expectedAllocated: true)) return allocator;
-    } catch (Exception e) when (e is InvalidOperationException or InvalidDataException) {
-      // fall through
-    }
-    throw new NotSupportedException($"ReFS: the Medium Allocator does not show the clusters of '{name}' the way Windows-formatted volumes do; it is not resized.");
+    return RefsAllocatorWriter.WindowsMedium(metadata, graph, clusters) ?? throw new NotSupportedException($"ReFS: the Medium Allocator does not show the clusters of '{name}' the way Windows-formatted volumes do; it is not resized.");
   }
 
   private static int FindOnce(byte[] value, ulong[] pattern, int from) {
@@ -208,7 +219,7 @@ internal static class RefsInPlaceResize {
   private static int FindLeaf(byte[] value, uint count) {
     var found = -1;
     for (var p = 0x80; p + 0x28 <= value.Length; p += 4) {
-      if (U32(value, p) != 0x28 || U32(value, p + 12) != 0x0600 || U32(value, p + 20) != count) continue;
+      if (U32(value, p) != 0x28 || U32(value, p + 12) is not (0x0600 or 0x0E00) || U32(value, p + 20) != count) continue;
       var end = U32(value, p + 4);
       var free = U32(value, p + 8);
       var indexStart = U32(value, p + 16);

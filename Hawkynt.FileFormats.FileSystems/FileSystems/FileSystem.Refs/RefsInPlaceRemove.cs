@@ -10,9 +10,9 @@ namespace FileSystem.Refs;
 /// checkpoint is then refreshed (<see cref="RefsMetadataGraph.RefreshChecksumPaths"/>).
 /// </summary>
 /// <remarks>
-/// Refused before the first write: directories, files with their own object (kind 2),
-/// sparse runs,
-/// integrity streams, clusters another stream shares, clusters the allocator does not show as
+/// Refused before the first write: directories, files with their own object (kind 2), sparse
+/// runs, extent entries of an unknown shape (integrity-stream entries, with their checksums,
+/// go with the row), clusters another stream shares, clusters the allocator does not show as
 /// allocated, and directories spanning more than one page.
 /// </remarks>
 internal static class RefsInPlaceRemove {
@@ -32,8 +32,10 @@ internal static class RefsInPlaceRemove {
     if (file.IsDirectory) throw new NotSupportedException($"ReFS: '{normalized}' is a directory; only files are removed.");
     if (file.Extents.Any(static e => e.IsSparse))
       throw new NotSupportedException($"ReFS: '{normalized}' has sparse runs; it is not removed in place.");
-    if (file.Extents.Any(static e => (e.Flags >> 16) > 0x18))
-      throw new NotSupportedException($"ReFS: '{normalized}' is an integrity stream; it is not removed in place.");
+    // An integrity stream's per-cluster checksums sit in its extent entries, inside the row
+    // that is deleted; only entries of a known shape are accepted.
+    if (file.Extents.Any(static e => (e.Flags >> 16) is var size && size != 0x18 && size != 0x18 + 4 * e.ClusterCount))
+      throw new NotSupportedException($"ReFS: '{normalized}' has extent entries of a shape this editor does not remove.");
 
     var directoryRoot = RefsInPlaceRename.ResolveDirectoryRoot(metadata, parentPath);
     var rows = metadata.WalkTree(directoryRoot, virtualAddresses: true).ToList();
@@ -59,22 +61,9 @@ internal static class RefsInPlaceRemove {
     if (!RefsPageEditor.CanReplaceValue(graph, target, target.Value.Length))
       throw new NotSupportedException("ReFS: the directory page is not one this editor rewrites.");
     if (clusters.Count > 0) {
-      // The Medium Allocator is keyed by physical LCN on Windows-formatted volumes and by
-      // virtual LCN on others; the addressing whose rows show every cluster of the file
-      // allocated is the one used, and a volume where both or neither do is refused.
-      var candidates = new List<RefsAllocatorWriter>();
-      foreach (var physical in new[] { true, false }) {
-        try {
-          var candidate = new RefsAllocatorWriter(metadata, graph, RefsAllocatorTier.Medium, physical);
-          if (clusters.All(candidate.CoversPhysical) && candidate.AreAllocated(clusters, expectedAllocated: true))
-            candidates.Add(candidate);
-        } catch (Exception e) when (e is InvalidOperationException or InvalidDataException) {
-          // not this addressing
-        }
-      }
-      if (candidates.Count != 1)
-        throw new NotSupportedException($"ReFS: the Medium Allocator does not show every cluster of '{normalized}' allocated under exactly one addressing; it is not removed.");
-      var allocator = candidates[0];
+      // The Medium Allocator of a Windows-formatted volume, keyed by physical LCN.
+      var allocator = RefsAllocatorWriter.WindowsMedium(metadata, graph, clusters)
+        ?? throw new NotSupportedException($"ReFS: the Medium Allocator does not show every cluster of '{normalized}' allocated the way Windows-formatted volumes do; it is not removed.");
       // Throws before writing when a row cannot be rewritten in place.
       try {
         allocator.SetAllocated(clusters, allocated: false);
