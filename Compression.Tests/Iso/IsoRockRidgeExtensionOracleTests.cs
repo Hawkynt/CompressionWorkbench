@@ -165,6 +165,35 @@ public sealed class IsoRockRidgeExtensionOracleTests {
     });
   }
 
+  [Test]
+  public void GivenGenisoimagesRelocatedImage_WhenXorrisoAndWeReadIt_ThenBothShowTheRealHierarchyAndContent() {
+    RequireTool("xorriso");
+    var iso = Path.Combine(this._dir, "relocated.iso");
+    using (var image = IsoRelocatedEditTests.Relocated())
+      File.WriteAllBytes(iso, image.ToArray());
+    var outDir = Path.Combine(this._dir, "osirrox-out");
+
+    var find = FsInteropToolbox.RunWsl($"xorriso -indev {Q(iso)} -find / 2>/dev/null");
+    var extract = FsInteropToolbox.RunWsl($"osirrox -indev {Q(iso)} -extract / {Q(outDir)} 2>&1");
+    Assert.That(find.ExitCode, Is.Zero, find.StdErr);
+    Assert.That(extract.ExitCode, Is.Zero, extract.StdOut);
+
+    // xorriso follows CL to the relocated folder and keeps the emptied rr_moved; we hide rr_moved.
+    var theirs = find.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+      .Select(l => l.Trim('\'').TrimStart('/'))
+      .Where(p => p.Length > 0 && p != "rr_moved")
+      .ToHashSet(StringComparer.Ordinal);
+    var reader = new IsoReader(new MemoryStream(File.ReadAllBytes(iso)));
+    var ours = reader.Entries.Select(e => e.Name.TrimEnd('/')).ToHashSet(StringComparer.Ordinal);
+
+    Assert.Multiple(() => {
+      Assert.That(ours, Is.EquivalentTo(theirs), "paths");
+      Assert.That(theirs, Does.Contain(IsoRelocatedEditTests.MovedChain + "/deep.txt"), "precondition: xorriso resolves the relocation");
+      foreach (var e in reader.Entries.Where(e => !e.IsDirectory))
+        Assert.That(reader.Extract(e), Is.EqualTo(File.ReadAllBytes(Path.Combine(outDir, e.Name.Replace('/', Path.DirectorySeparatorChar)))), e.Name);
+    });
+  }
+
   private static string Sha256(byte[] data) => Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(data));
 
   private static string Q(string path) => FsInteropToolbox.WinToWsl(path);
