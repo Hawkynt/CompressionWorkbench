@@ -251,16 +251,6 @@ internal static class BcacheFsAllocationBuilder {
     return null;
   }
 
-  /// <summary>Where an extent's data starts on the device.</summary>
-  internal static long ExtentDataSector(Key extent) {
-    if (extent.Type == KeyExtent && Footprint(extent) is { } footprint) return footprint.Sector;
-    for (var at = 0; at + 8 <= extent.Value.Length; at += 8) {
-      var word = BinaryPrimitives.ReadUInt64LittleEndian(extent.Value.AsSpan(at));
-      if (IsPointer(word)) return PointerSector(word);
-    }
-    throw new InvalidDataException("bcachefs extent without a pointer.");
-  }
-
   private static bool IsMovable(byte dataType) => dataType is DataBtree or DataUser;
 
   private static ulong FreespaceGenBits(Generation g) => (ulong)(byte)((g.Gen - g.Oldest) >> 4) << 56;

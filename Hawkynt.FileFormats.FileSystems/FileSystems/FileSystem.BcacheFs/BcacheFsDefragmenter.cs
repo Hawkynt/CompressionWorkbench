@@ -18,6 +18,8 @@ internal static class BcacheFsDefragmenter {
     ArgumentNullException.ThrowIfNull(options);
     if (!image.CanRead || !image.CanWrite || !image.CanSeek)
       throw new ArgumentException("bcachefs defragmentation needs a readable, writable, seekable stream.", nameof(image));
+    // A volume bcachefs format laid out is moved in its own buckets, blocks and node size.
+    using var units = BcacheFsInPlaceModifier.UseVolumeBuckets(image);
     if (BcacheFsInPlaceModifier.RequireWritableProfile(image).TryGetValue(BtreeReflink, out var reflinked) && reflinked.Count != 0)
       throw new NotSupportedException(
         "bcachefs: the volume holds reflinked (shared) data; defragmentation moves extents one file at a time and would unshare or orphan it.");

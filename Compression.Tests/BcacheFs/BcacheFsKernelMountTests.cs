@@ -505,6 +505,18 @@ public sealed class BcacheFsKernelMountTests {
     var again = ParseListing(BcacheFsKernel.Session(path, "set -e; cd /sysroot; seq 1 1000 > ours/after.txt; rm -f big.bin; sync\n" + ListingScript));
     BcacheFsKernel.AssertFsckClean(path);
     AssertSameTree(again, ReadOurselves(path));
+
+    // The kernel's own extents share buckets between files; defragmentation brings
+    // them into whole buckets of their own and packs them, in this volume's layout.
+    foreach (var (mode, zone) in new[] { (DefragMode.ConsolidateAtStart, MetadataZone.Unchanged), (DefragMode.ConsolidateAtEnd, MetadataZone.Back) }) {
+      var length = new FileInfo(path).Length;
+      using (var image = new FileStream(path, FileMode.Open, FileAccess.ReadWrite))
+        descriptor.Defragment(image, new DefragOptions { Mode = mode, MetadataZonePlacement = zone });
+      Assert.That(new FileInfo(path).Length, Is.EqualTo(length), $"{mode}/{zone} keeps the volume's size");
+      BcacheFsKernel.AssertFsckClean(path);
+      AssertSameTree(ParseListing(BcacheFsKernel.Session(path, ListingScript)), ReadOurselves(path));
+      AssertSameTree(again, ReadOurselves(path));
+    }
   }
 }
 
