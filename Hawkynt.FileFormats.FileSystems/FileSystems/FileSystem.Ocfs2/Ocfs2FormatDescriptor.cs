@@ -28,11 +28,11 @@ namespace FileSystem.Ocfs2;
 /// kernel read-write mount (see <c>Ocfs2KernelMountTests</c>).</para>
 ///
 /// <para><b>Editing</b> is in place or refused: Add/Replace/Remove work on regular
-/// files anywhere in a tree of inline and unindexed extent-backed directories (missing
+/// files anywhere in a tree of inline, extent-backed and indexed directories (missing
 /// directories are made; a full directory takes another block, a full inline one is
 /// expanded), on this package's volumes and on <c>mkfs.ocfs2</c>'s; defragmentation moves
 /// single-run files in place; shrink trims trailing free clusters in place.
-/// Anything else — an indexed directory, a file sharing extents — raises
+/// Anything else — an index deeper than its root, a file sharing extents — raises
 /// <see cref="NotSupportedException"/> and leaves the image as it was. Nothing is
 /// rebuilt, because a rebuild would draw a new UUID and reset every timestamp.
 /// DLM/heartbeat lockdown and multi-node cluster semantics are out of scope by
@@ -122,9 +122,9 @@ public sealed class Ocfs2FormatDescriptor
     "OCFS2 (Oracle Cluster Filesystem 2) — spec-correct reader that parses real "
     + "mkfs.ocfs2 volumes as well as our own; single-node (local) writer whose volumes "
     + "the Linux kernel mounts and fsck.ocfs2 passes, before and after a kernel "
-    + "read-write mount. In-place Add/Replace/Remove of files in inline and unindexed "
-    + "extent-backed directories (grown or expanded when full), in-place defragmentation and "
-    + "shrink; indexed directories and shared extents are refused rather than rebuilt. Single-node only — DLM/heartbeat lockdown and "
+    + "read-write mount. In-place Add/Replace/Remove of files in inline, extent-backed and "
+    + "indexed directories (grown, expanded and re-indexed as the kernel does), in-place "
+    + "defragmentation and shrink; shared extents are refused rather than rebuilt. Single-node only — DLM/heartbeat lockdown and "
     + "multi-node cluster semantics are out of scope.";
 
   // ── IArchiveFormatOperations (List / Extract) ─────────────────────────

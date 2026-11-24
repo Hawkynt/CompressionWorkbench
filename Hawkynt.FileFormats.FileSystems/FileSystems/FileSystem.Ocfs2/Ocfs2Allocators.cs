@@ -78,6 +78,9 @@ internal sealed class Ocfs2Allocators {
   /// </summary>
   public bool IndexedDirs { get; }
 
+  /// <summary>The four words the directory-index name hash starts from (<c>s_dx_seed</c>, then <c>s_uuid_hash</c>).</summary>
+  public uint[] DxSeed { get; }
+
   /// <summary>Block of the root directory's dinode.</summary>
   public long RootDirBlkno { get; }
 
@@ -111,6 +114,13 @@ internal sealed class Ocfs2Allocators {
 
     this.InlineData = (incompat & IncompatInlineData) != 0;
     this.IndexedDirs = (incompat & IncompatIndexedDirs) != 0;
+    // The directory-index hash seed: s_dx_seed[0..2], then s_uuid_hash as the fourth word.
+    this.DxSeed = [
+      BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(sb + 0xBC, 4)),
+      BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(sb + 0xC0, 4)),
+      BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(sb + 0xC4, 4)),
+      BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(sb + 0x44, 4)),
+    ];
     this._discontigGroups = (incompat & IncompatDiscontigBg) != 0;
     this.Generation = BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(0x60, 4));
     this.RootDirBlkno = (long)BinaryPrimitives.ReadUInt64LittleEndian(superblock.AsSpan(sb + 0x28, 8));
