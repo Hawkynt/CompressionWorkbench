@@ -228,6 +228,114 @@ public sealed class Ocfs2KernelMountTests {
     }
   }
 
+  // ── extent-backed directories ─────────────────────────────────────────
+
+  /// <summary>Files the kernel or the writer puts in one directory: enough names to need several blocks.</summary>
+  private static Dictionary<string, byte[]> ManyNames(string dir, int count, string stem = "file-with-a-longish-name-") {
+    var files = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+    for (var i = 0; i < count; ++i) files[$"{dir}/{stem}{i}.txt"] = Encoding.ASCII.GetBytes($"f{i}\n");
+    return files;
+  }
+
+  /// <summary>
+  /// Adds, replaces and removes in <paramref name="dir"/> (extent-backed), grows it by 200 names,
+  /// adds a nested path below it, and fills <paramref name="small"/> (inline) until it is expanded;
+  /// <paramref name="expected"/> follows every edit.
+  /// </summary>
+  private static void EditExtentDirectories(Stream s, string dir, string small, Dictionary<string, byte[]> expected) {
+    var d = new Ocfs2FormatDescriptor();
+    void Add(string name, byte[] data) {
+      d.Add(s, [ArchiveInputInfo.InMemory(name, data)]);
+      expected[name] = data;
+    }
+    Add($"{dir}/cwb-added.txt", "added by cwb\n"u8.ToArray());
+    Add($"{dir}/file-with-a-longish-name-7.txt", "replaced by cwb\n"u8.ToArray());
+    d.Remove(s, [$"{dir}/file-with-a-longish-name-0.txt", $"{dir}/file-with-a-longish-name-150.txt"]);
+    expected.Remove($"{dir}/file-with-a-longish-name-0.txt");
+    expected.Remove($"{dir}/file-with-a-longish-name-150.txt");
+    Add($"{dir}/sub/deeper/cwb.bin", Ocfs2LayoutTests.Pattern(20_000, 11));
+    for (var i = 0; i < 200; ++i) Add($"{dir}/grown-by-cwb-with-an-even-longer-name-{i}.txt", Encoding.ASCII.GetBytes($"g{i}\n"));
+    for (var i = 0; i < 120; ++i) Add($"{small}/expanded-by-cwb-{i}.txt", Encoding.ASCII.GetBytes($"e{i}\n"));
+  }
+
+  /// <summary>
+  /// Given a volume from this package's writer whose directory of 300 names is extent-backed,
+  /// when files are added, replaced and removed in it, it is grown by 200 more names and an inline
+  /// directory is filled past its inline area, then fsck.ocfs2 is clean and the kernel reads exactly
+  /// the edited tree — also after it writes into the volume.
+  /// </summary>
+  [Test]
+  public void ExtentDirectoryEdits_OnOurVolume_KernelReadsTheEditedTree() {
+    RequireKernel();
+    var expected = ManyNames("many", 300);
+    expected["small/seed.txt"] = "seed\n"u8.ToArray();
+    var w = new Ocfs2Writer();
+    w.SetMinimumSize(48L * 1024 * 1024);
+    foreach (var (name, data) in expected) w.AddFile(name, data);
+    var img = this.Save("extent-dirs.ocfs2", w.Build());
+
+    using (var s = File.Open(img, FileMode.Open, FileAccess.ReadWrite)) EditExtentDirectories(s, "many", "small", expected);
+
+    var view = this.Mount(img, readWrite: ["write /many/k.txt \"k\""]);
+    view.AssertClean();
+    AssertFiles(view, expected);
+  }
+
+  /// <summary>
+  /// Given an mkfs.ocfs2 volume without indexed directories where the kernel wrote 300 files into
+  /// one directory (so the kernel made it extent-backed), when the same edits are made in place,
+  /// then fsck.ocfs2 is clean and the kernel reads the edited tree, its own files included.
+  /// </summary>
+  [Test]
+  public void ExtentDirectoryEdits_OnAKernelWrittenDirectory_KernelReadsTheEditedTree() {
+    RequireKernel();
+    var img = this.MkfsVolume("noindexed.ocfs2", "64M", "--fs-features=noindexed-dirs");
+    var fill = this.Guestfish(img, [
+      "mount-vfs \"\" ocfs2 /dev/sda /",
+      "mkdir /kmany",
+      "mkdir /ksmall",
+      "write /ksmall/seed.txt \"seed\"",
+      "debug sh \"for i in $(seq 0 299); do echo f$i > /sysroot/kmany/file-with-a-longish-name-$i.txt; done\"",
+      "umount /",
+    ]);
+    Assert.That(fill.ExitCode, Is.Zero, fill.Output);
+    var expected = ManyNames("kmany", 300);
+    expected["ksmall/seed.txt"] = "seed"u8.ToArray();
+    var kernelView = this.Mount(img);
+    AssertFiles(kernelView, expected);
+
+    using (var s = File.Open(img, FileMode.Open, FileAccess.ReadWrite)) EditExtentDirectories(s, "kmany", "ksmall", expected);
+
+    var view = this.Mount(img, readWrite: ["write /kmany/k.txt \"k\""]);
+    view.AssertClean();
+    AssertFiles(view, expected);
+  }
+
+  /// <summary>
+  /// Given a default mkfs.ocfs2 volume (indexed directories) where the kernel wrote 300 files into
+  /// one directory, when a file is added or removed there, then the edit is refused — its blocks
+  /// end in trailers and the kernel indexed it — and the volume is unchanged.
+  /// </summary>
+  [Test]
+  public void ExtentDirectoryEdits_OnAnIndexedDirectory_AreRefused() {
+    RequireKernel();
+    var img = this.MkfsVolume("indexed.ocfs2", "64M");
+    var fill = this.Guestfish(img, [
+      "mount-vfs \"\" ocfs2 /dev/sda /",
+      "mkdir /kmany",
+      "debug sh \"for i in $(seq 0 299); do echo f$i > /sysroot/kmany/file-with-a-longish-name-$i.txt; done\"",
+      "umount /",
+    ]);
+    Assert.That(fill.ExitCode, Is.Zero, fill.Output);
+    var before = File.ReadAllBytes(img);
+    using (var s = File.Open(img, FileMode.Open, FileAccess.ReadWrite)) {
+      var d = new Ocfs2FormatDescriptor();
+      Assert.That(Assert.Throws<NotSupportedException>(() => d.Add(s, [ArchiveInputInfo.InMemory("kmany/x.txt", [1])]))!.Message, Does.Contain("index"));
+      Assert.Throws<NotSupportedException>(() => d.Remove(s, ["kmany/file-with-a-longish-name-1.txt"]));
+    }
+    Assert.That(File.ReadAllBytes(img), Is.EqualTo(before));
+  }
+
   // ── extent trees written by the kernel ────────────────────────────────
 
   /// <summary>
@@ -295,11 +403,11 @@ public sealed class Ocfs2KernelMountTests {
     }
   }
 
-  private string MkfsVolume(string name, string size) {
+  private string MkfsVolume(string name, string size, string extra = "") {
     var img = Path.Combine(this._tmpDir, name);
     var wsl = Unquoted(img);
     var mk = FsInteropToolbox.RunWsl(
-      $"truncate -s {size} {wsl} && mkfs.ocfs2 -q -M local -b 4096 -C 4096 -N 1 -L cwbmkfs --force {wsl} 2>&1");
+      $"truncate -s {size} {wsl} && mkfs.ocfs2 -q -M local -b 4096 -C 4096 -N 1 -L cwbmkfs {extra} --force {wsl} 2>&1");
     Assert.That(mk.ExitCode, Is.Zero, $"mkfs.ocfs2: {mk.StdOut}{mk.StdErr}");
     return img;
   }
