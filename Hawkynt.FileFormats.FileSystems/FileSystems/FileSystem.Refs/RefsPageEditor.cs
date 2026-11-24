@@ -191,7 +191,22 @@ internal static class RefsPageEditor {
     BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(state.NodeOffset + 0x08, 4), checked((uint)(newIndexStart - cursor)));
     BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(state.NodeOffset + 0x10, 4), checked((uint)(newIndexStart - state.NodeOffset)));
     BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(state.NodeOffset + 0x14, 4), checked((uint)rows.Count));
+    UpdateTableRowCount(page, state.Rows.Count, rows.Count);
     return page;
+  }
+
+  /// <summary>
+  /// A table whose root is a single leaf keeps its row count in the root page: the descriptor
+  /// at 0x54 (u16 0x28) holds the leaf-page count at 0x68 (0 while the root is the only leaf)
+  /// and the table's row count at 0x70 — measured on every table Windows wrote, and Windows
+  /// keeps it current on each insert and delete. It is only rewritten when it held the old
+  /// count, so a page of a larger tree is left alone.
+  /// </summary>
+  internal static void UpdateTableRowCount(Span<byte> page, int oldCount, int newCount) {
+    if (page.Length < 0x78 || BinaryPrimitives.ReadUInt16LittleEndian(page[0x54..]) != 0x28) return;
+    if (BinaryPrimitives.ReadUInt64LittleEndian(page[0x68..]) != 0) return;
+    if (BinaryPrimitives.ReadUInt64LittleEndian(page[0x70..]) != (ulong)oldCount) return;
+    BinaryPrimitives.WriteUInt64LittleEndian(page[0x70..], (ulong)newCount);
   }
 
   private static int FindRow(IReadOnlyList<LiveRow> rows, ReadOnlySpan<byte> key) {

@@ -258,6 +258,28 @@ public sealed class RefsWindowsOracleTests {
     }
   }
 
+  [Test, Category("ExternalFsInterop")]
+  public void GivenAVolumeWindowsFormatted_WhenDirectoryObjectRowsAreRead_ThenTheCounterEqualsTheHighestFileNumber([ValueSource(nameof(Volumes))] string volume) {
+    var oracle = Load(volume);
+    using var stream = File.OpenRead(ImagePath(oracle));
+    var metadata = RefsMetadataReader.Open(stream);
+    var directories = 0;
+    Assert.Multiple(() => {
+      foreach (var row in metadata.WalkRoot(0)) {
+        var oid = System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(row.Key.AsSpan(8));
+        if (oid < 0x600 || RefsDirectoryRows.ObjectRow(metadata, oid) is not { } objectRow) continue;
+        var reference = RefsPageReference.Parse(row.Value.AsSpan(0x20));
+        var highest = metadata.WalkTree(reference, virtualAddresses: true)
+          .Where(static r => r.Key.Length >= 16 && System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(r.Key) == 0x20)
+          .Select(static r => System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(8))).DefaultIfEmpty(0UL).Max();
+        var counter = System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(objectRow.Row.Value.AsSpan(objectRow.CounterOffset));
+        Assert.That(counter, Is.EqualTo(Math.Max(highest, 1UL)), $"directory 0x{oid:X} (an empty directory starts at 1)");
+        ++directories;
+      }
+    });
+    Assert.That(directories, Is.GreaterThanOrEqualTo(4), "the root and the test tree's directories carry a counter");
+  }
+
   private static readonly string[] Edits = ["none", "overwrite", "grow", "shrink", "rename", "rename-unicode", "remove", "add", "mkdir"];
 
   [Test, Category("ExternalFsInterop")]
@@ -307,7 +329,7 @@ public sealed class RefsWindowsOracleTests {
         stream.Position = 0;
         try {
           descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("new-folder", "new-folder", true)]);
-        } catch (NotSupportedException refused) when (oracle.RefsVersion != "3.7" || oracle.Variant == "integrity") {
+        } catch (NotSupportedException refused) when (oracle.RefsVersion != "3.7" && oracle.Variant == "cluster64k") {
           TestContext.Out.WriteLine($"{volume}: mkdir refused: {refused.Message}");
           stream.Position = 0;
           Assert.That(SHA256.HashData(stream), Is.EqualTo(before));
