@@ -26,6 +26,7 @@ namespace FileSystem.BcacheFs;
 public sealed class BcacheFsReader : IDisposable {
 
   private readonly Stream _stream;
+  private readonly IReadOnlyDictionary<byte, Stream> _devices = new Dictionary<byte, Stream>();
   private readonly bool _leaveOpen;
   private readonly List<Entry> _entries = [];
 
@@ -62,6 +63,9 @@ public sealed class BcacheFsReader : IDisposable {
   /// <param name="FileOffset">Which byte of the file it begins at.</param>
   public readonly record struct Extent(long FirstSector, int Sectors, long FileOffset) {
 
+    /// <summary>The member device the bytes are read from: the first one holding a copy.</summary>
+    public byte Device { get; init; }
+
     /// <summary>
     /// How the bytes are stored when they are not plain sectors: checksummed,
     /// compressed, or inline in the key. Null for plain unchecksummed sectors.
@@ -97,19 +101,30 @@ public sealed class BcacheFsReader : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="BcacheFsReader"/>.
   /// </summary>
-  public BcacheFsReader(Stream stream, bool leaveOpen = true) {
-    ArgumentNullException.ThrowIfNull(stream);
-    this._stream = stream;
+  public BcacheFsReader(Stream stream, bool leaveOpen = true) : this([stream], leaveOpen) { }
+
+  /// <summary>
+  /// Opens a volume spread over several member <paramref name="devices" />, in any order: each
+  /// says which member it is. A file's bytes are read from the first member holding a copy that
+  /// was supplied.
+  /// </summary>
+  public BcacheFsReader(IReadOnlyList<Stream> devices, bool leaveOpen = true) {
+    ArgumentNullException.ThrowIfNull(devices);
+    if (devices.Count == 0) throw new ArgumentException("At least one bcachefs member device is required.", nameof(devices));
+    this._stream = devices[0];
     this._leaveOpen = leaveOpen;
-    if (stream.CanSeek) stream.Position = 0;
+    foreach (var device in devices)
+      if (device.CanSeek) device.Position = 0;
 
     BcacheFsCoreVolume core;
     try {
-      core = BcacheFsCoreVolume.Open(stream);
+      core = BcacheFsCoreVolume.Open(devices);
     } catch (Exception e) when (e is InvalidDataException or EndOfStreamException or ArgumentException or NotSupportedException) {
       this.Status = "bcachefs: " + e.Message;
       return;
     }
+    this._devices = core.Devices;
+    if (core.Devices.TryGetValue(0, out var first)) this._stream = first;
 
     this.Label = core.Superblock.Label;
     if (!core.Recoverable) {
@@ -218,14 +233,14 @@ public sealed class BcacheFsReader : IDisposable {
         continue;
       }
 
-      if (!TryLocate(core, key, out var sector, out var stored, out var reason)) {
+      if (!TryLocate(core, key, out var sector, out var device, out var stored, out var reason)) {
         unreadable.TryAdd(key.Position.Inode, reason);
         continue;
       }
 
       // A key names the sector one past its end, so its start is that less its size.
       var start = (long)key.Position.Offset - key.Size;
-      AddExtent(key, new Extent(sector, (int)key.Size, start * SectorSize) { Stored = stored });
+      AddExtent(key, new Extent(sector, (int)key.Size, start * SectorSize) { Stored = stored, Device = device });
     }
 
     void AddExtent(BcacheFsRawKey key, Extent extent) {
@@ -317,10 +332,10 @@ public sealed class BcacheFsReader : IDisposable {
         var from = (int)Math.Min(body.Length, (long)cut * SectorSize);
         add(key, new Extent(0, sectors, at) { Stored = new BcacheFsStoredExtent(0, null, body[from..]) });
       } else {
-        if (!TryLocate(core, body, out var sector, out var stored, out reason)) return false;
+        if (!TryLocate(core, body, out var sector, out var device, out var stored, out reason)) return false;
         add(key, stored is { Crc: { } crc }
-          ? new Extent(sector, sectors, at) { Stored = stored with { Crc = crc with { Offset = crc.Offset + cut } } }
-          : new Extent(sector + cut, sectors, at));
+          ? new Extent(sector, sectors, at) { Stored = stored with { Crc = crc with { Offset = crc.Offset + cut } }, Device = device }
+          : new Extent(sector + cut, sectors, at) { Device = device });
       }
       covered = hi;
       if (covered >= wantEnd) break;
@@ -340,14 +355,16 @@ public sealed class BcacheFsReader : IDisposable {
   /// region it decodes from. A checksummed or compressed extent also yields how to
   /// verify and decode it.
   /// </summary>
-  private static bool TryLocate(BcacheFsCoreVolume core, BcacheFsRawKey key, out long sector,
+  private static bool TryLocate(BcacheFsCoreVolume core, BcacheFsRawKey key, out long sector, out byte device,
       out BcacheFsStoredExtent? stored, out string reason)
-    => TryLocate(core, key.Value, out sector, out stored, out reason);
+    => TryLocate(core, key.Value, out sector, out device, out stored, out reason);
 
-  private static bool TryLocate(BcacheFsCoreVolume core, byte[] value, out long sector,
+  private static bool TryLocate(BcacheFsCoreVolume core, byte[] value, out long sector, out byte device,
       out BcacheFsStoredExtent? stored, out string reason) {
     sector = -1;
+    device = 0;
     stored = null;
+    var missing = -1;
     BcacheFsExtentCrc? current = null;
     if (!BcacheFsExtentCodec.TryParseEntries(value, core.Superblock, out var entries, out reason))
       return false;
@@ -364,6 +381,13 @@ public sealed class BcacheFsReader : IDisposable {
         case BcacheFsExtentEntryType.Pointer: {
           var word = BinaryPrimitives.ReadUInt64LittleEndian(entry.RawBytes);
           if ((word & (1UL << 1)) != 0) break;                                // a cached copy is not the data
+          // A copy on a member that was not supplied cannot be read; another copy may be.
+          var member = (byte)((word >> 48) & 0xFF);
+          if (!core.Devices.ContainsKey(member)) {
+            missing = member;
+            break;
+          }
+          device = member;
           var region = PointerSector(word);
           if (current is { } encoded && (encoded.Compressed || encoded.ChecksumType != BcacheFsChecksumType.None))
             stored = new BcacheFsStoredExtent(region, encoded, null);
@@ -374,7 +398,7 @@ public sealed class BcacheFsReader : IDisposable {
       }
     }
 
-    reason = "extent carries no dirty pointer";
+    reason = missing >= 0 ? $"its data is on member device {missing}, which was not supplied" : "extent carries no dirty pointer";
     return false;
   }
 
@@ -475,17 +499,18 @@ public sealed class BcacheFsReader : IDisposable {
       if (want <= 0) continue;
 
       // Checksummed, compressed or inline: verified and decoded as a whole, then cut.
+      var device = this._devices.GetValueOrDefault(extent.Device, this._stream);
       if (extent.Stored is { } stored) {
-        var live = BcacheFsExtentData.ReadLive(this._stream, stored, extent.Sectors);
+        var live = BcacheFsExtentData.ReadLive(device, stored, extent.Sectors);
         output.Write(live, (int)skip, (int)want);
         written += want;
         continue;
       }
 
-      this._stream.Position = extent.FirstSector * SectorSize + skip;
+      device.Position = extent.FirstSector * SectorSize + skip;
       while (want > 0) {
         var chunk = (int)Math.Min(buffer.Length, want);
-        this._stream.ReadExactly(buffer, 0, chunk);
+        device.ReadExactly(buffer, 0, chunk);
         output.Write(buffer, 0, chunk);
         want -= chunk;
         written += chunk;
@@ -506,6 +531,9 @@ public sealed class BcacheFsReader : IDisposable {
   /// Releases resources held by this instance.
   /// </summary>
   public void Dispose() {
-    if (!this._leaveOpen) this._stream.Dispose();
+    if (this._leaveOpen) return;
+    this._stream.Dispose();
+    foreach (var device in this._devices.Values)
+      if (!ReferenceEquals(device, this._stream)) device.Dispose();
   }
 }

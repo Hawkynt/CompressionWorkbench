@@ -114,9 +114,16 @@ public sealed class BcacheFsKernelMountTests {
   private static (long Seconds, int Nanos) Ticks((long Seconds, int Nanos) time) => (time.Seconds, time.Nanos / 100 * 100);
 
   /// <summary>The same view of a volume, taken by this package's reader.</summary>
-  private static IReadOnlyDictionary<string, Node> ReadOurselves(string path) {
-    using var image = File.OpenRead(path);
-    using var reader = new BcacheFsReader(image);
+  private static IReadOnlyDictionary<string, Node> ReadOurselves(params string[] paths) {
+    var images = paths.Select(File.OpenRead).ToArray();
+    try {
+      return ReadOurselves(new BcacheFsReader(images));
+    } finally {
+      foreach (var image in images) image.Dispose();
+    }
+  }
+
+  private static IReadOnlyDictionary<string, Node> ReadOurselves(BcacheFsReader reader) {
     Assert.That(reader.Valid, Is.True, $"our reader refused the volume: {reader.Status}");
     var result = new Dictionary<string, Node>(StringComparer.Ordinal);
 
@@ -448,6 +455,67 @@ public sealed class BcacheFsKernelMountTests {
   }
 
   /// <summary>
+  /// A volume <c>bcachefs format</c> spread over several image files that the kernel mounted as
+  /// one and wrote into: after we add files spanning many buckets, replace one of the kernel's
+  /// and remove another through every member at once, fsck over all members is clean, the
+  /// kernel mounting them together reads what we read, and keeps writing.
+  /// </summary>
+  [TestCase("", 2, TestName = "GivenTwoMembersTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
+  [TestCase("--replicas=2", 2, TestName = "GivenTwoMirroredMembersTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
+  [TestCase("--replicas=2", 3, TestName = "GivenThreeMembersTwoCopiesTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
+  [Category("RoundTrip")]
+  public void MultiDeviceKernelRoundTrip(string formatOptions, int memberCount) {
+    BcacheFsKernel.Require();
+    var paths = Enumerable.Range(0, memberCount).Select(i => Path.Combine(this._tmpDir, $"member{i}.img")).ToArray();
+    var wsl = paths.Select(FsInteropToolbox.WinToWsl).ToArray();
+    var format = FsInteropToolbox.RunWsl(string.Join(" && ", wsl.Select(p => $"truncate -s 96M {p}"))
+      + $" && bcachefs format -q {formatOptions} {string.Join(" ", wsl)}");
+    Assert.That(format.ExitCode, Is.Zero, format.StdOut + format.StdErr);
+    BcacheFsKernel.Session(paths, """
+      set -e
+      cd /sysroot
+      mkdir -p kernel/deep
+      seq 1 60000 > kernel/deep/seq.txt
+      printf 'tiny' > kernel/tiny.txt
+      setfattr -n user.origin -v kernel kernel/tiny.txt
+      ln -s tiny.txt kernel/link
+      head -c 900000 /dev/urandom > big.bin
+      for i in 1 2 3 4 5 6; do head -c 70000 /dev/urandom > kernel/r$i.bin; done
+      sync
+      """);
+    BcacheFsKernel.AssertFsckClean(paths);
+
+    var added = Payload(1_200_000, 51);
+    var replacement = Payload(70_000, 52);
+    var descriptor = new BcacheFsFormatDescriptor();
+    var members = paths.Select(p => (Stream)new FileStream(p, FileMode.Open, FileAccess.ReadWrite)).ToArray();
+    try {
+      descriptor.AddToVolume(members, [
+        ArchiveInputInfo.InMemory("ours/added.bin", added, new ArchiveEntryMetadata(LastAccessTimeUtc: When,
+          LastWriteTimeUtc: When.AddHours(1), StatusChangeTimeUtc: When.AddHours(2), UnixUserId: 501, UnixGroupId: 20, UnixMode: 0x180)),
+        ArchiveInputInfo.InMemory("kernel/tiny.txt", replacement),
+      ]);
+      descriptor.RemoveFromVolume(members, ["kernel/deep/seq.txt", "kernel/r3.bin"]);
+    } finally {
+      foreach (var member in members) member.Dispose();
+    }
+    BcacheFsKernel.AssertFsckClean(paths);
+
+    var kernel = ParseListing(BcacheFsKernel.Session(paths, ListingScript));
+    AssertSameTree(kernel, ReadOurselves(paths));
+    Assert.Multiple(() => {
+      Assert.That(kernel.Keys, Does.Not.Contain("kernel/deep/seq.txt").And.Not.Contain("kernel/r3.bin"));
+      Assert.That(kernel["ours/added.bin"].Content, Is.EqualTo(Convert.ToHexStringLower(SHA256.HashData(added))));
+      Assert.That(kernel["ours/added.bin"].Mtime, Is.EqualTo(Split(When.AddHours(1))));
+      Assert.That(kernel["kernel/tiny.txt"].Content, Is.EqualTo(Convert.ToHexStringLower(SHA256.HashData(replacement))));
+    });
+
+    var again = ParseListing(BcacheFsKernel.Session(paths, "set -e; cd /sysroot; seq 1 1000 > ours/after.txt; rm -f big.bin; sync\n" + ListingScript));
+    BcacheFsKernel.AssertFsckClean(paths);
+    AssertSameTree(again, ReadOurselves(paths));
+  }
+
+  /// <summary>
   /// A volume <c>bcachefs format</c> laid out (its bucket size, 4 KiB blocks, its journal) that the
   /// kernel then wrote into: after we add files spanning several buckets, replace one of the
   /// kernel's and remove another, fsck is clean, the kernel reads what we read, and the kernel can
@@ -565,19 +633,33 @@ internal static class BcacheFsKernel {
   /// change what is being compared), runs <paramref name="script" /> in a shell at
   /// the mount point, unmounts, and returns what the script printed.
   /// </summary>
-  internal static string Session(string imagePath, string script, string options = "noatime") {
+  internal static string Session(string imagePath, string script, string options = "noatime")
+    => Session([imagePath], script, options);
+
+  /// <summary>
+  /// The same over a volume of several members: each image is one disk of the appliance, and
+  /// the kernel mounts them together (<c>/dev/sda:/dev/sdb:…</c>).
+  /// </summary>
+  internal static string Session(IReadOnlyList<string> imagePaths, string script, string options = "noatime") {
+    var imagePath = imagePaths[0];
     var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(script.Replace("\r\n", "\n")));
-    var commands =
-      "run\n" +
-      $"mount-options {options} /dev/sda /\n" +
-      $"debug sh \"echo {b64} | base64 -d > /tmp/s.sh; sh /tmp/s.sh; echo SCRIPT-EXIT=$?\"\n" +
-      "umount-all\n" +
-      "debug sh \"dmesg | grep -i bcachefs\"\n";
+    var members = string.Join(":", imagePaths.Select((_, i) => $"/dev/sd{(char)('a' + i)}"));
+    // guestfish takes one device to mount; several members are mounted by the kernel's own
+    // mount from inside the appliance.
+    var commands = imagePaths.Count == 1
+      ? "run\n" +
+        $"mount-options {options} {members} /\n" +
+        $"debug sh \"echo {b64} | base64 -d > /tmp/s.sh; sh /tmp/s.sh; echo SCRIPT-EXIT=$?\"\n" +
+        "umount-all\n" +
+        "debug sh \"dmesg | grep -i bcachefs\"\n"
+      : "run\n" +
+        $"debug sh \"modprobe bcachefs; if mount -t bcachefs -o {options} {members} /sysroot; then echo {b64} | base64 -d > /tmp/s.sh; sh /tmp/s.sh; echo SCRIPT-EXIT=$?; umount /sysroot; else echo MOUNT-REFUSED; fi\"\n" +
+        "debug sh \"dmesg | grep -i bcachefs\"\n";
     var commandFile = Path.Combine(Path.GetDirectoryName(imagePath)!, $"gf-{Guid.NewGuid():N}.txt");
     File.WriteAllText(commandFile, commands.Replace("\r\n", "\n"));
     try {
       var r = FsInteropToolbox.RunWsl(Env +
-        $"timeout 900 guestfish -a {FsInteropToolbox.WinToWsl(imagePath)} -f {FsInteropToolbox.WinToWsl(commandFile)} 2>&1");
+        $"timeout 900 guestfish {string.Join(" ", imagePaths.Select(p => "-a " + FsInteropToolbox.WinToWsl(p)))} -f {FsInteropToolbox.WinToWsl(commandFile)} 2>&1");
       var output = r.StdOut + "\n" + r.StdErr;
       TestContext.Out.WriteLine($"$ guestfish (kernel {_kernel}) exit {r.ExitCode}\n{output}");
       Assert.That(output, Does.Not.Contain("libguestfs: error"), $"the kernel refused the volume:\n{output}");
@@ -596,8 +678,9 @@ internal static class BcacheFsKernel {
   }
 
   /// <summary>Every checker walks the whole volume and finds nothing to repair.</summary>
-  internal static void AssertFsckClean(string imagePath) {
-    var wsl = FsInteropToolbox.WinToWsl(imagePath);
+  /// <summary>Every checker walks the volume on <paramref name="imagePaths" /> (all its members) and finds nothing to repair.</summary>
+  internal static void AssertFsckClean(params string[] imagePaths) {
+    var wsl = string.Join(" ", imagePaths.Select(FsInteropToolbox.WinToWsl));
     foreach (var checker in Checkers()) {
       var result = FsInteropToolbox.RunWsl($"{checker} fsck -n {wsl}");
       var output = result.StdOut + "\n" + result.StdErr;

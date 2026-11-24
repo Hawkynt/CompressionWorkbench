@@ -89,6 +89,7 @@ internal static class BcacheFsFormat {
   internal const uint FieldJournal = 0;
   internal const uint FieldMembersV1 = 1;
   internal const uint FieldReplicasV0 = 3;
+  internal const uint FieldReplicasV1 = 7;
   internal const uint FieldClean = 6;
   internal const uint FieldJournalV2 = 9;
   internal const uint FieldMembersV2 = 11;

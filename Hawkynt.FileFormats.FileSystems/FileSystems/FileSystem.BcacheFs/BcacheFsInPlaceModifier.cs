@@ -8,8 +8,9 @@ using static FileSystem.BcacheFs.BcacheFsFormat;
 namespace FileSystem.BcacheFs;
 
 /// <summary>
-/// Genuine in-place add/replace/remove for the single-device bcachefs profile
-/// emitted by <see cref="BcacheFsWriter"/>.
+/// Genuine in-place add/replace/remove for bcachefs volumes of metadata version 1.3 and 1.4:
+/// those <see cref="BcacheFsWriter"/> emits, those <c>bcachefs format</c> lays out, on one
+/// member device or several, with the volume's own metadata and data replicas.
 /// </summary>
 /// <remarks>
 /// <para>This is deliberately not an extract/re-create path. Unchanged file data
@@ -73,11 +74,14 @@ internal static class BcacheFsInPlaceModifier {
   private sealed class PendingPayload {
     internal required long Length { get; init; }
     internal required Func<Stream> Open { get; init; }
-    internal List<long> Buckets { get; } = [];
+
+    /// <summary>Per bucket-sized piece, the bucket holding each copy, by <see cref="BcacheFsBucketId" />.</summary>
+    internal List<long[]> Buckets { get; } = [];
   }
 
   private sealed class Model {
-    internal required BcacheFsVolume Volume { get; init; }
+    internal required BcacheFsDevices Devices { get; init; }
+    internal required ulong Magic { get; init; }
     internal required Dictionary<string, DirectoryState> Directories { get; init; }
     internal required Dictionary<string, FileState> Files { get; init; }
     internal required Dictionary<int, List<Key>> PreservedTrees { get; init; }
@@ -87,17 +91,23 @@ internal static class BcacheFsInPlaceModifier {
     internal required List<Key> Reflink { get; init; }
     internal required HashSet<long> OccupiedBuckets { get; init; }
     internal required Dictionary<long, BcacheFsMetadataCommit.BucketState> BucketStates { get; init; }
-    internal required List<(long Offset, long Length)> FreedRanges { get; init; }
+    internal required List<(byte Device, long Offset, long Length)> FreedRanges { get; init; }
     internal required ulong NextInode { get; set; }
   }
 
   internal static void Add(Stream image, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(image);
-    ArgumentNullException.ThrowIfNull(inputs);
-    EnsureWritable(image);
-    using var buckets = UseVolumeBuckets(image);
+    Add([image], inputs);
+  }
 
-    var model = ReadModel(image);
+  /// <summary>Adds or replaces files in a volume on the member devices <paramref name="devices" />, every one of them, in any order.</summary>
+  internal static void Add(IReadOnlyList<Stream> devices, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(devices);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var device in devices) EnsureWritable(device);
+    using var buckets = UseVolumeBuckets(devices);
+
+    var model = ReadModel(devices);
     foreach (var input in inputs) {
       var path = NormalizePath(input.ArchiveName);
       if (path.Length == 0) continue;
@@ -133,6 +143,7 @@ internal static class BcacheFsInPlaceModifier {
         continue;
       }
 
+
       model.Files[path] = new FileState {
         Path = path,
         Name = Leaf(path),
@@ -144,16 +155,22 @@ internal static class BcacheFsInPlaceModifier {
       };
     }
 
-    Commit(image, model);
+    Commit(model);
   }
 
   internal static void Remove(Stream image, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(image);
-    EnsureWritable(image);
-    using var buckets = UseVolumeBuckets(image);
+    Remove([image], entryNames);
+  }
+
+  /// <summary>Removes files and directories from a volume on the member devices <paramref name="devices" />.</summary>
+  internal static void Remove(IReadOnlyList<Stream> devices, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(devices);
+    foreach (var device in devices) EnsureWritable(device);
+    using var buckets = UseVolumeBuckets(devices);
     entryNames ??= [];
 
-    var model = ReadModel(image);
+    var model = ReadModel(devices);
     if (entryNames.Length == 0) return;
 
     var requested = new HashSet<string>(
@@ -186,7 +203,7 @@ internal static class BcacheFsInPlaceModifier {
       .ToList();
     foreach (var path in removeDirs) model.Directories.Remove(path);
 
-    Commit(image, model);
+    Commit(model);
   }
 
   /// <summary>
@@ -198,7 +215,7 @@ internal static class BcacheFsInPlaceModifier {
     ArgumentNullException.ThrowIfNull(image);
     EnsureWritable(image);
     using var buckets = UseVolumeBuckets(image);
-    Commit(image, ReadModel(image));
+    Commit(ReadModel([image]));
   }
 
   /// <summary>
@@ -240,7 +257,7 @@ internal static class BcacheFsInPlaceModifier {
   ///
   /// <para>What is refused, with the reason: a volume not cleanly shut down, of
   /// more than one member, newer than <see cref="MaxEditableVersion" />, with buckets
-  /// other than those <see cref="UseVolumeBuckets" /> put in effect, or holding keys
+  /// other than those <see cref="UseVolumeBuckets(IReadOnlyList{Stream})" /> put in effect, or holding keys
   /// in a tree it neither carries nor rebuilds.</para>
   /// </remarks>
 
@@ -250,43 +267,96 @@ internal static class BcacheFsInPlaceModifier {
   /// allocation keys and data in that volume's buckets, and its nodes in that volume's node size,
   /// several to a metadata bucket where a node is smaller than a bucket.
   /// </summary>
-  internal static IDisposable UseVolumeBuckets(Stream image) {
-    image.Position = 0;
-    var core = BcacheFsCoreVolume.Open(image);
-    image.Position = 0;
-    if (core.Members.Count != 1) return BcacheFsBucketGeometry.Use(WriterBucketSectors);   // refused by the profile check
+  internal static IDisposable UseVolumeBuckets(Stream image) => UseVolumeBuckets([image]);
+
+  /// <inheritdoc cref="UseVolumeBuckets(Stream)" />
+  /// <remarks>Every member has to have the same bucket size; a volume whose members differ is refused.</remarks>
+  internal static IDisposable UseVolumeBuckets(IReadOnlyList<Stream> devices) {
+    foreach (var device in devices) device.Position = 0;
+    var core = BcacheFsCoreVolume.Open(devices);
+    foreach (var device in devices) device.Position = 0;
     var bucket = core.Members[0].BucketSizeSectors;
+    if (core.Members.Any(m => m.BucketSizeSectors != bucket))
+      throw new NotSupportedException(
+        $"bcachefs: the members' buckets differ ({string.Join(", ", core.Members.Select(m => m.BucketSizeSectors))} sectors); "
+        + "an edit here works in one bucket size.");
     var node = core.Superblock.BtreeNodeSectors;
     var raw = core.Superblock.RawBytes;
     var timeBase = (Int128)BinaryPrimitives.ReadUInt64LittleEndian(raw.AsSpan(128))
       | ((Int128)BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(136)) << 64);
     var precision = BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(140));
-    return BcacheFsBucketGeometry.Use(bucket, core.Superblock.BlockSizeSectors, timeBase, precision, node);
+    var replicas = EffectiveReplicas(core, DataBtree);
+    return BcacheFsBucketGeometry.Use(bucket, core.Superblock.BlockSizeSectors, timeBase, precision, node, replicas);
+  }
+
+  /// <summary>
+  /// How many copies of <paramref name="dataType" /> a commit writes: what the volume asks for
+  /// (<c>metadata_replicas</c> or <c>data_replicas</c>), at most one per supplied member allowed
+  /// to hold that type.
+  /// </summary>
+  private static int EffectiveReplicas(BcacheFsCoreVolume core, byte dataType) {
+    var flags0 = core.Superblock.Flags.Length > 0 ? core.Superblock.Flags[0] : 0UL;
+    var wanted = Math.Max(1, (int)((flags0 >> (dataType == DataBtree ? 48 : 52)) & 0xF));
+    var allowed = core.Devices.Keys.Count(d => d < core.Members.Count && (core.Members[d].DataAllowed & (1 << dataType)) != 0);
+    return Math.Max(1, Math.Min(wanted, allowed));
+  }
+
+  /// <summary>The members, geometry and effective replicas a commit on <paramref name="core" /> writes with.</summary>
+  private static BcacheFsDevices DevicesOf(BcacheFsCoreVolume core) {
+    var devices = BcacheFsDevices.Of(core);
+    return new BcacheFsDevices {
+      Streams = devices.Streams,
+      Geometry = devices.Geometry,
+      DataAllowed = devices.DataAllowed,
+      MetadataReplicas = EffectiveReplicas(core, DataBtree),
+      DataReplicas = EffectiveReplicas(core, DataUser),
+    };
   }
 
   internal static Dictionary<int, List<Key>> RequireWritableProfile(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
-    image.Position = 0;
-    var core = BcacheFsCoreVolume.Open(image);
+    return RequireWritableProfile([image]);
+  }
+
+  /// <inheritdoc cref="RequireWritableProfile(Stream)" />
+  internal static Dictionary<int, List<Key>> RequireWritableProfile(IReadOnlyList<Stream> devices) {
+    ArgumentNullException.ThrowIfNull(devices);
+    foreach (var device in devices) device.Position = 0;
+    var core = BcacheFsCoreVolume.Open(devices);
     if (!core.Recoverable)
       throw new InvalidDataException("bcachefs: the volume could not be recovered: " + string.Join("; ", core.Diagnostics));
 
-    const string profile = "in-place edits are implemented for single-device volumes at metadata version 1.3 or 1.4";
+    const string profile = "in-place edits are implemented for volumes at metadata version 1.3 or 1.4, with every member device supplied";
     var version = core.Superblock.Version;
     if (version < BcacheFsFormat.Version || version > MaxEditableVersion)
       throw new NotSupportedException(
         $"bcachefs: the volume is metadata version {version >> 10}.{version & 0x3FF}; {profile}.");
     if (!core.Clean)
       throw new NotSupportedException($"bcachefs: the volume was not cleanly shut down; {profile}.");
-    if (core.Members.Count != 1)
-      throw new NotSupportedException($"bcachefs: the volume has {core.Members.Count} member devices; {profile}.");
-    if (core.Members[0].BucketSizeSectors != BucketSectors)
+    var missing = Enumerable.Range(0, core.Members.Count).Where(i => !core.Devices.ContainsKey((byte)i)).ToArray();
+    if (missing.Length != 0 || core.Devices.Count != core.Members.Count)
       throw new NotSupportedException(
-        $"bcachefs: the volume's buckets are {core.Members[0].BucketSizeSectors} sectors, not {BucketSectors}; {profile}.");
+        $"bcachefs: the volume has {core.Members.Count} member devices and {core.Devices.Count} were supplied"
+        + (missing.Length == 0 ? "" : $" (member {string.Join(", ", missing)} missing)") + $"; {profile}.");
+    for (var i = 0; i < core.Members.Count; ++i) {
+      var member = core.Members[i];
+      if (member.BucketSizeSectors != BucketSectors)
+        throw new NotSupportedException(
+          $"bcachefs: member {i}'s buckets are {member.BucketSizeSectors} sectors, not {BucketSectors}; {profile}.");
+      if (member.State != BcacheFsMemberState.ReadWrite)
+        throw new NotSupportedException($"bcachefs: member {i} is {member.State}, not read-write; {profile}.");
+      // BCH_MEMBER_DURABILITY is stored plus one; zero means the default, one copy.
+      var durability = member.Durability == 0 ? 1 : member.Durability - 1;
+      if (durability != 1)
+        throw new NotSupportedException($"bcachefs: member {i} counts as {durability} copies; {profile}.");
+    }
 
-    image.Position = 0;
-    var geometry = BcacheFsSuperblockEditor.ReadGeometry(image);
-    if (geometry.JournalBuckets.Count == 0)
+    var journaled = false;
+    foreach (var device in devices) {
+      device.Position = 0;
+      journaled |= BcacheFsSuperblockEditor.ReadGeometry(device).JournalBuckets.Count != 0;
+    }
+    if (!journaled)
       throw new InvalidDataException("bcachefs: the superblock names no journal buckets.");
 
     var trees = new Dictionary<int, List<Key>>();
@@ -305,16 +375,16 @@ internal static class BcacheFsInPlaceModifier {
           $"bcachefs: the {id} tree holds {keys.Count} keys, which an edit here neither carries nor rebuilds; {profile}.");
       trees[(int)id] = keys;
     }
-    image.Position = 0;
+    foreach (var device in devices) device.Position = 0;
     return trees;
   }
 
-  private static Model ReadModel(Stream image) {
-    var trees = RequireWritableProfile(image);
-    image.Position = 0;
-    var volume = BcacheFsVolume.Open(image);
-    if (!volume.Valid)
-      throw new InvalidDataException(volume.Status);
+  private static Model ReadModel(IReadOnlyList<Stream> streams) {
+    var trees = RequireWritableProfile(streams);
+    foreach (var stream in streams) stream.Position = 0;
+    var core = BcacheFsCoreVolume.Open(streams);
+    var devices = DevicesOf(core);
+    var magic = BinaryPrimitives.ReadUInt64LittleEndian(core.Superblock.RawBytes.AsSpan(40));
 
     List<Key> ReadTree(int btree) => trees.TryGetValue(btree, out var keys) ? [.. keys] : [];
 
@@ -422,16 +492,19 @@ internal static class BcacheFsInPlaceModifier {
     foreach (var file in files.Values)
       file.ExistingExtents.Sort((a, b) => Compare(a.Position, b.Position));
 
-    var totalBuckets = volume.DeviceSectors / BucketSectors;
+    // Allocation keys sit at (member, bucket); a bucket is named across members by BcacheFsBucketId.
+    long BucketsOf(ulong device) => device <= byte.MaxValue && devices.Geometry.TryGetValue((byte)device, out var g)
+      ? g.Buckets
+      : throw new InvalidDataException($"bcachefs: an allocation key names member {device}, which the volume does not have.");
     var generationByBucket = new Dictionary<long, byte>();
     foreach (var key in ReadTree(BtreeBucketGens)) {
-      if (key.Type != KeyBucketGens || key.Position.Inode != 0 || key.Value.Length != BucketGensNr)
-        throw new NotSupportedException(
-          "bcachefs in-place mutation requires canonical single-device bucket_gens keys.");
+      if (key.Type != KeyBucketGens || key.Value.Length != BucketGensNr)
+        throw new NotSupportedException("bcachefs in-place mutation requires canonical bucket_gens keys.");
+      var total = BucketsOf(key.Position.Inode);
       var first = checked((long)key.Position.Offset * BucketGensNr);
-      for (var i = 0; i < key.Value.Length && first + i < totalBuckets; ++i)
+      for (var i = 0; i < key.Value.Length && first + i < total; ++i)
         if (key.Value[i] != 0)
-          generationByBucket[first + i] = key.Value[i];
+          generationByBucket[BcacheFsBucketId.Of((byte)key.Position.Inode, first + i)] = key.Value[i];
     }
 
     var occupied = new HashSet<long>();
@@ -441,9 +514,9 @@ internal static class BcacheFsInPlaceModifier {
       throw new NotSupportedException("bcachefs in-place mutation requires alloc_v4 allocation keys.");
 
     foreach (var key in allocKeys) {
-      if (key.Position.Inode != 0 || key.Position.Offset >= (ulong)totalBuckets || key.Value.Length < 20)
-        throw new InvalidDataException("bcachefs: malformed alloc_v4 key in the single-device allocation tree.");
-      var bucket = (long)key.Position.Offset;
+      if (key.Position.Offset >= (ulong)BucketsOf(key.Position.Inode) || key.Value.Length < 20)
+        throw new InvalidDataException("bcachefs: malformed alloc_v4 key in the allocation tree.");
+      var bucket = BcacheFsBucketId.Of((byte)key.Position.Inode, (long)key.Position.Offset);
       var generation = key.Value[12];
       var oldestGeneration = key.Value[13];
       var dataType = key.Value[14];
@@ -466,10 +539,10 @@ internal static class BcacheFsInPlaceModifier {
     // describes the buckets the runs came from. The extent-to-bucket agreement
     // is therefore checked on what the commit writes, not on what it reads.
     foreach (var extent in extentKeys)
-      ValidateExtent(extent, volume.BucketSectorCount);
+      ValidateExtent(extent, devices);
     foreach (var key in reflink)
       if (BcacheFsAllocationBuilder.IndirectAsExtent(key) is { } extent)
-        ValidateExtent(extent, volume.BucketSectorCount);
+        ValidateExtent(extent, devices);
 
     var preserved = new Dictionary<int, List<Key>> {
       [BtreeSubvolumes] = ReadTree(BtreeSubvolumes),
@@ -479,7 +552,8 @@ internal static class BcacheFsInPlaceModifier {
 
     var maxInode = inodeKeys.Keys.DefaultIfEmpty(FirstDynamicInode - 1).Max();
     return new Model {
-      Volume = volume,
+      Devices = devices,
+      Magic = magic,
       Directories = directories,
       Files = files,
       PreservedTrees = preserved,
@@ -563,7 +637,9 @@ internal static class BcacheFsInPlaceModifier {
     ArgumentNullException.ThrowIfNull(image);
     EnsureWritable(image);
     using var buckets = UseVolumeBuckets(image);
-    var model = ReadModel(image);
+    var model = ReadModel([image]);
+    if (model.Devices.Streams.Count != 1)
+      throw new NotSupportedException("bcachefs: the volume has several members; bringing it into the writer's layout is implemented for one.");
     if (model.Reflink.Count != 0)
       throw new NotSupportedException("bcachefs: the volume holds reflinked (shared) data, which is not moved into the writer's layout.");
     var moving = NonCanonicalExtents(model.Files.Values.SelectMany(f => f.FinalExtents));
@@ -579,10 +655,10 @@ internal static class BcacheFsInPlaceModifier {
         if (moving.Contains(key.Position) && (key.Size > MaxCrc32ExtentSectors || key.Size > BucketSectors))
           throw new NotSupportedException(
             $"bcachefs: '{file.Path}' has a {key.Size}-sector extent, more than one crc32 extent or bucket holds; an edit here does not split it.");
-    if (moving.Count > FreeDataBuckets(model).Count)
+    var free = FreeDataBuckets(model)[0];
+    if (moving.Count > free.Count)
       throw new IOException("bcachefs: not enough free buckets to bring the volume into the writer's layout.");
 
-    var free = FreeDataBuckets(model);
     var buffer = new byte[BucketBytes];
 
     foreach (var file in model.Files.Values) {
@@ -613,12 +689,12 @@ internal static class BcacheFsInPlaceModifier {
       }
     }
 
-    Commit(image, model);
+    Commit(model);
   }
 
   /// <summary>
   /// Free buckets past the metadata reservation and before the tail superblock,
-  /// those still at generation zero first.
+  /// those still at generation zero first, per member (bucket numbers within it).
   /// </summary>
   /// <remarks>
   /// A 1.3 backpointer has no field for the generation of the bucket it points
@@ -626,15 +702,33 @@ internal static class BcacheFsInPlaceModifier {
   /// a bucket whose generation is not zero and rebuilds them; data laid into
   /// never-reused buckets leaves it nothing to rebuild.
   /// </remarks>
-  private static Queue<long> FreeDataBuckets(Model model) {
-    var firstDataBucket = (long)FirstMetadataBucket + MetadataBuckets;
-    var firstTailSbBucket = (model.Volume.DeviceSectors - SbSlotSectors) / BucketSectors;
-    var candidates = new List<long>();
-    for (var bucket = firstDataBucket; bucket < firstTailSbBucket; ++bucket)
-      if (!model.OccupiedBuckets.Contains(bucket)) candidates.Add(bucket);
-    return new Queue<long>(candidates
-      .OrderBy(b => model.BucketStates.GetValueOrDefault(b).Generation != 0 ? 1 : 0)
-      .ThenBy(b => b));
+  private static Dictionary<byte, Queue<long>> FreeDataBuckets(Model model) {
+    var result = new Dictionary<byte, Queue<long>>();
+    foreach (var (device, geometry) in model.Devices.Geometry) {
+      var firstDataBucket = (long)FirstMetadataBucket + MetadataBuckets;
+      var firstTailSbBucket = (geometry.DeviceSectors - SbSlotSectors) / BucketSectors;
+      var candidates = new List<long>();
+      if (model.Devices.Allows(device, DataUser))
+        for (var bucket = firstDataBucket; bucket < firstTailSbBucket; ++bucket)
+          if (!model.OccupiedBuckets.Contains(BcacheFsBucketId.Of(device, bucket))) candidates.Add(bucket);
+      result[device] = new Queue<long>(candidates
+        .OrderBy(b => model.BucketStates.GetValueOrDefault(BcacheFsBucketId.Of(device, b)).Generation != 0 ? 1 : 0)
+        .ThenBy(b => b));
+    }
+    return result;
+  }
+
+  /// <summary>
+  /// Takes one bucket on each of <paramref name="copies" /> different members from
+  /// <paramref name="free" />, the members with the most left first, and returns them by
+  /// <see cref="BcacheFsBucketId" />; null when fewer members than that have one.
+  /// </summary>
+  private static long[]? TakeCopies(Dictionary<byte, Queue<long>> free, int copies) {
+    var members = free.Where(f => f.Value.Count != 0)
+      .OrderByDescending(f => f.Value.Count).ThenBy(f => f.Key)
+      .Take(copies).ToArray();
+    if (members.Length < copies) return null;
+    return [.. members.OrderBy(f => f.Key).Select(f => BcacheFsBucketId.Of(f.Key, f.Value.Dequeue()))];
   }
 
   private static void EnsureDirectory(Model model, string path) {
@@ -655,45 +749,46 @@ internal static class BcacheFsInPlaceModifier {
     };
   }
 
-  private static void Commit(Stream image, Model model) {
+  private static void Commit(Model model) {
+    var devices = model.Devices;
     AssignNewDirentOffsets(model);
     AllocatePendingData(model);
-    WritePendingData(image, model);
+    WritePendingData(model);
 
     var trees = BuildLogicalTrees(model);
-    var userBuckets = trees[BtreeExtents]
+    var live = trees[BtreeExtents]
       .Concat(trees[BtreeReflink].Select(BcacheFsAllocationBuilder.IndirectAsExtent).OfType<Key>())
-      .Select(BcacheFsAllocationBuilder.Footprint)
-      .Where(f => f.HasValue)
-      .Select(f => f!.Value.Sector / BucketSectors)
-      .ToHashSet();
-    var geometry = BcacheFsSuperblockEditor.ReadGeometry(image);
+      .SelectMany(BcacheFsAllocationBuilder.Footprints)
+      .ToList();
+    var userBuckets = live.Select(f => BcacheFsBucketId.OfSector(f.Device, f.Sector)).ToHashSet();
 
     // All live source keys were materialized before this point, so the buckets
     // the new generation lands in can be rewritten without needing any old node.
-    var published = BcacheFsMetadataCommit.Publish(image, model.Volume.InternalMagic, geometry, trees,
-      model.BucketStates, shapes => ChooseMetadataBuckets(shapes, geometry, userBuckets, model.BucketStates));
-    BcacheFsSuperblockEditor.PublishClean(image, published);
+    var published = BcacheFsMetadataCommit.Publish(devices, model.Magic, trees,
+      model.BucketStates, shapes => ChooseMetadataBuckets(shapes, devices, userBuckets, model.BucketStates));
+    BcacheFsSuperblockEditor.PublishClean(devices, published);
 
     // Deleted/replaced user data becomes forensic free space only after the new
     // roots are live. New payload was deliberately allocated outside these runs;
     // the new metadata generation may have landed in a bucket they emptied, and a
     // surviving key may share a region with a removed one, so both are spared.
-    var spared = trees[BtreeExtents]
-      .Concat(trees[BtreeReflink].Select(BcacheFsAllocationBuilder.IndirectAsExtent).OfType<Key>())
-      .Select(BcacheFsAllocationBuilder.Footprint)
-      .Where(f => f.HasValue)
-      .Select(f => (Offset: f!.Value.Sector * SectorSize, Length: (long)f.Value.RegionSectors * SectorSize))
-      .Concat(published.MetadataBuckets.Select(b => (Offset: b * (long)BucketBytes, Length: (long)BucketBytes)))
+    var spared = live
+      .Select(f => (f.Device, Offset: f.Sector * SectorSize, Length: (long)f.RegionSectors * SectorSize))
+      .Concat(published.MetadataBuckets.Select(b =>
+        (Device: BcacheFsBucketId.Device(b), Offset: BcacheFsBucketId.Index(b) * BucketBytes, Length: (long)BucketBytes)))
       .ToList();
-    foreach (var (offset, length) in model.FreedRanges)
-      foreach (var (from, to) in Subtract(offset, offset + length, spared))
-        ZeroRange(image, from, to - from);
+    foreach (var (device, offset, length) in model.FreedRanges) {
+      var onDevice = spared.Where(s => s.Device == device).Select(s => (s.Offset, s.Length)).ToList();
+      foreach (var (from, to) in Subtract(offset, offset + length, onDevice))
+        ZeroRange(devices[device], from, to - from);
+    }
 
-    image.Flush();
+    devices.Flush();
+    if (devices.Streams.Count != 1) return;
 
     // Internal consistency witness available on every platform; external
     // bcachefs fsck tests remain the authority where the tool exists.
+    var image = devices[0];
     image.Position = 0;
     var mover = new BcacheFsBlockMover();
     mover.Init(image);
@@ -749,20 +844,19 @@ internal static class BcacheFsInPlaceModifier {
 
   private static void AllocatePendingData(Model model) {
     var free = FreeDataBuckets(model);
+    var copies = model.Devices.DataReplicas;
 
     foreach (var file in model.Files.Values.Where(f => f.Pending != null)) {
       var remaining = file.Pending!.Length;
       while (remaining > 0) {
-        if (free.Count == 0)
-          throw new IOException(
-            $"bcachefs: not enough free buckets for in-place write of '{file.Path}'.");
-        file.Pending.Buckets.Add(free.Dequeue());
+        file.Pending.Buckets.Add(TakeCopies(free, copies) ?? throw new IOException(
+          $"bcachefs: not enough free buckets on {copies} member(s) for in-place write of '{file.Path}'."));
         remaining -= Math.Min((long)BucketBytes, remaining);
       }
     }
   }
 
-  private static void WritePendingData(Stream image, Model model) {
+  private static void WritePendingData(Model model) {
     var buffer = new byte[BucketBytes];
     foreach (var file in model.Files.Values.Where(f => f.Pending != null)) {
       file.FinalExtents.Clear();
@@ -785,20 +879,26 @@ internal static class BcacheFsInPlaceModifier {
 
         var sectors = BcacheFsBucketGeometry.RoundUpSectors(got);
         Array.Clear(buffer, got, sectors * SectorSize - got);
-        var bucket = pending.Buckets[bucketIndex++];
-        var bucketSector = bucket * BucketSectors;
-        image.Position = bucketSector * SectorSize;
-        image.Write(buffer, 0, sectors * SectorSize);
+        // One bucket per copy, each on its own member; the bytes are the same in all.
+        var copies = pending.Buckets[bucketIndex++];
+        foreach (var copy in copies) {
+          var stream = model.Devices[BcacheFsBucketId.Device(copy)];
+          stream.Position = BcacheFsBucketId.Index(copy) * BucketBytes;
+          stream.Write(buffer, 0, sectors * SectorSize);
+        }
 
         // A bucket larger than a crc32 entry can describe (bcachefs format's 128 KiB
-        // default) holds its data as several back-to-back extents.
+        // default) holds its data as several back-to-back extents; each extent is the
+        // checksum entry and then one pointer per copy.
         for (var done = 0; done < sectors;) {
           var piece = Math.Min(MaxCrc32ExtentSectors, sectors - done);
           var checksum = DataChecksum(buffer.AsSpan(done * SectorSize, piece * SectorSize));
-          var value = new byte[16];
+          var value = new byte[8 + 8 * copies.Length];
           BinaryPrimitives.WriteUInt64LittleEndian(value, ExtentCrc32(piece, checksum));
-          BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8),
-            ExtentPointer(bucketSector + done, generation: model.BucketStates.GetValueOrDefault(bucket).Generation));
+          for (var c = 0; c < copies.Length; ++c)
+            BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8 + 8 * c),
+              ExtentPointer(BcacheFsBucketId.Index(copies[c]) * BucketSectors + done, BcacheFsBucketId.Device(copies[c]),
+                model.BucketStates.GetValueOrDefault(copies[c]).Generation));
           logicalSector += piece;
           done += piece;
           file.FinalExtents.Add(new Key(KeyExtent,
@@ -882,18 +982,49 @@ internal static class BcacheFsInPlaceModifier {
   /// </remarks>
   private static IReadOnlyDictionary<int, long[]> ChooseMetadataBuckets(
       IReadOnlyDictionary<int, IReadOnlyList<BcacheFsTreeNodeShape>> shapes,
-      BcacheFsAllocationBuilder.Geometry geometry,
+      BcacheFsDevices devices,
       IReadOnlySet<long> userBuckets,
       IReadOnlyDictionary<long, BcacheFsMetadataCommit.BucketState> states) {
     // Where a node is smaller than a bucket the nodes share buckets, every one of
-    // them metadata only.
+    // them metadata only. Each node has a copy on as many members as the volume
+    // keeps metadata replicas: a row of buckets, one per copy, holds one bucket's
+    // worth of nodes.
     var perBucket = BucketSectors / NodeSectors;
+    var copies = devices.MetadataReplicas;
     var nodeCount = shapes.Values.Sum(s => s.Count);
     var count = (nodeCount + perBucket - 1) / perBucket;
     if (count > MetadataBuckets)
       throw new NotSupportedException(
         $"bcachefs metadata needs {count} buckets; an in-place commit budgets {MetadataBuckets}.");
 
+    var free = new Dictionary<byte, Queue<long>>();
+    foreach (var (device, geometry) in devices.Geometry)
+      if (devices.Allows(device, DataBtree))
+        free[device] = new Queue<long>(MetadataCandidates(device, geometry, count, userBuckets, states));
+
+    var slots = new List<long>();
+    for (var row = 0; row < count; ++row) {
+      var buckets = TakeCopies(free, copies) ?? throw new NotSupportedException(
+        $"bcachefs metadata needs {count} free buckets on {copies} member(s); fewer are available.");
+      for (var k = 0; k < perBucket; ++k)
+        foreach (var bucket in buckets)
+          slots.Add(BcacheFsBucketId.Of(BcacheFsBucketId.Device(bucket), BcacheFsBucketId.Index(bucket) * perBucket + k));
+    }
+    var queue = new Queue<long>(slots);
+
+    var result = new Dictionary<int, long[]>();
+    foreach (var id in BcacheFsMetadataCommit.TreeOrder)
+      if (shapes.TryGetValue(id, out var treeShapes))
+        result[id] = [.. Enumerable.Range(0, treeShapes.Count * copies).Select(_ => queue.Dequeue())];
+    return result;
+  }
+
+  /// <summary>
+  /// A member's buckets a metadata generation may go into, best first: the reservation, then
+  /// buckets still at generation zero, never a superblock slot, the journal or file data.
+  /// </summary>
+  private static IEnumerable<long> MetadataCandidates(byte device, BcacheFsAllocationBuilder.Geometry geometry, int count,
+      IReadOnlySet<long> userBuckets, IReadOnlyDictionary<long, BcacheFsMetadataCommit.BucketState> states) {
     var lastSbBucket = (geometry.DeviceSectors - SbSlotSectors) / BucketSectors;
     // A volume bcachefs format laid out keeps its superblock slots and journal wherever it chose;
     // no node goes there.
@@ -908,26 +1039,15 @@ internal static class BcacheFsInPlaceModifier {
     // rebuilds when it upgrades the volume (see FreeDataBuckets).
     var candidates = new List<long>();
     for (var bucket = (long)FirstMetadataBucket; bucket < lastSbBucket; ++bucket) {
-      if (userBuckets.Contains(bucket) || fixedBuckets.Contains(bucket)) continue;
+      if (userBuckets.Contains(BcacheFsBucketId.Of(device, bucket)) || fixedBuckets.Contains(bucket)) continue;
       candidates.Add(bucket);
       if (!IsMetadataReservation(bucket) && candidates.Count >= count + MetadataBuckets) break;
     }
-    var chosen = candidates
+    return candidates
       .OrderBy(b => IsMetadataReservation(b) ? 0 : 1)
-      .ThenBy(b => states.GetValueOrDefault(b).Generation != 0 ? 1 : 0)
+      .ThenBy(b => states.GetValueOrDefault(BcacheFsBucketId.Of(device, b)).Generation != 0 ? 1 : 0)
       .ThenBy(b => b)
-      .Take(count)
-      .ToArray();
-    if (chosen.Length < count)
-      throw new NotSupportedException(
-        $"bcachefs metadata needs {count} free buckets; only {chosen.Length} are available.");
-    var free = new Queue<long>(chosen.SelectMany(b => Enumerable.Range(0, perBucket).Select(k => b * perBucket + k)));
-
-    var result = new Dictionary<int, long[]>();
-    foreach (var id in BcacheFsMetadataCommit.TreeOrder)
-      if (shapes.TryGetValue(id, out var treeShapes))
-        result[id] = [.. Enumerable.Range(0, treeShapes.Count).Select(_ => free.Dequeue())];
-    return result;
+      .Take(count);
   }
 
   private static Key PatchFileSize(Key inode, ulong size, ulong sectors) {
@@ -1112,20 +1232,17 @@ internal static class BcacheFsInPlaceModifier {
     }
   }
 
-  private static void ValidateExtent(Key extent, int bucketSectors) {
+  private static void ValidateExtent(Key extent, BcacheFsDevices devices) {
     if (extent.Type != KeyExtent) return;
-    if (BcacheFsAllocationBuilder.Footprint(extent) is not { } at)
+    var copies = BcacheFsAllocationBuilder.Footprints(extent);
+    if (copies.Count == 0)
       throw new InvalidDataException($"bcachefs extent at inode {extent.Position.Inode} carries no dirty pointer.");
-    if (extent.Size == 0 || at.Sector / bucketSectors != (at.Sector + Math.Max(at.RegionSectors, at.DiskSectors) - 1) / bucketSectors)
-      throw new NotSupportedException(
-        $"bcachefs extent at inode {extent.Position.Inode} crosses a bucket boundary, which no writer produces.");
-    for (var i = 0; i + 8 <= extent.Value.Length; i += 8) {
-      var word = BinaryPrimitives.ReadUInt64LittleEndian(extent.Value.AsSpan(i));
-      if (!IsPointer(word) || PointerSector(word) != at.Sector) continue;
-      if (((word >> 48) & 0xFF) != 0)
+    foreach (var at in copies) {
+      if (!devices.Streams.ContainsKey(at.Device))
+        throw new InvalidDataException($"bcachefs extent at inode {extent.Position.Inode} points at member {at.Device}, which was not supplied.");
+      if (extent.Size == 0 || at.Sector / BucketSectors != (at.Sector + Math.Max(at.RegionSectors, at.DiskSectors) - 1) / BucketSectors)
         throw new NotSupportedException(
-          "bcachefs in-place mutation currently supports the single-device pointer profile.");
-      return;
+          $"bcachefs extent at inode {extent.Position.Inode} crosses a bucket boundary, which no writer produces.");
     }
   }
 
@@ -1133,11 +1250,11 @@ internal static class BcacheFsInPlaceModifier {
   /// Records the device sectors a removed extent's data occupied: its live part,
   /// or a compressed region whole. Inline data and reservations occupy none.
   /// </summary>
-  private static void AddFreedRange(List<(long Offset, long Length)> ranges, Key extent) {
-    if (BcacheFsAllocationBuilder.Footprint(extent) is not { } at) return;
-    ranges.Add(at.Compressed
-      ? (at.Sector * SectorSize, (long)at.RegionSectors * SectorSize)
-      : ((at.Sector + at.RegionOffset) * SectorSize, (long)extent.Size * SectorSize));
+  private static void AddFreedRange(List<(byte Device, long Offset, long Length)> ranges, Key extent) {
+    foreach (var at in BcacheFsAllocationBuilder.Footprints(extent))
+      ranges.Add(at.Compressed
+        ? (at.Device, at.Sector * SectorSize, (long)at.RegionSectors * SectorSize)
+        : (at.Device, (at.Sector + at.RegionOffset) * SectorSize, (long)extent.Size * SectorSize));
   }
 
   /// <summary>The parts of [from, to) no spared range overlaps.</summary>
