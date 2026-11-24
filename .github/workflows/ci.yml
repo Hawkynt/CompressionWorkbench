@@ -489,7 +489,10 @@ jobs:
         run: |
           sudo apt-get install -y zlib1g-dev p7zip-full
           u="$RUNNER_TEMP/uif"; mkdir -p "$u/tool" "$u/img"
-          curl -fsSL -o "$u/uif2iso.zip" https://aluigi.altervista.org/mytoolz/uif2iso.zip
+          # The author's site answers 403 to downloads (since 2026-11-24); the archived copy is
+          # byte-identical (same SHA-256 as pinned below).
+          curl -fsSL -o "$u/uif2iso.zip" https://aluigi.altervista.org/mytoolz/uif2iso.zip \
+            || curl -fsSL -o "$u/uif2iso.zip" "https://web.archive.org/web/20241225074119id_/http://aluigi.altervista.org/mytoolz/uif2iso.zip"
           curl -fsSL -o "$u/quake.7z" "https://archive.org/download/QuakeShareware.7z/Quake%20Shareware.7z"
           curl -fsSL -o "$u/doom2.7z" "https://archive.org/download/Img2843/Doom%20II%20German.7z"
           printf '%s  %s\n' \
