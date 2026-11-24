@@ -49,6 +49,8 @@ internal sealed class Ocfs2Allocators {
   private const uint IncompatMetaEcc = 0x0800;
   /// <summary><c>OCFS2_FEATURE_INCOMPAT_DISCONTIG_BG</c>.</summary>
   private const uint IncompatDiscontigBg = 0x2000;
+  /// <summary><c>OCFS2_FEATURE_INCOMPAT_INDEXED_DIRS</c>: directory blocks end in a trailer and grown directories are indexed.</summary>
+  private const uint IncompatIndexedDirs = 0x0400;
   /// <summary><c>OCFS2_FEATURE_INCOMPAT_INLINE_DATA</c>.</summary>
   private const uint IncompatInlineData = 0x0040;
   /// <summary><c>OCFS2_JOURNAL_DIRTY_FL</c> in <c>id1.journal1.ij_flags</c>.</summary>
@@ -69,6 +71,12 @@ internal sealed class Ocfs2Allocators {
 
   /// <summary>Whether a regular file may keep its bytes in its dinode.</summary>
   public bool InlineData { get; }
+
+  /// <summary>
+  /// Whether directory blocks carry a <c>ocfs2_dir_block_trailer</c> and the kernel indexes the
+  /// directories it grows (<c>OCFS2_FEATURE_INCOMPAT_INDEXED_DIRS</c>).
+  /// </summary>
+  public bool IndexedDirs { get; }
 
   /// <summary>Block of the root directory's dinode.</summary>
   public long RootDirBlkno { get; }
@@ -102,6 +110,7 @@ internal sealed class Ocfs2Allocators {
       throw new NotSupportedException("OCFS2: only volumes with 4 KiB blocks and 4 KiB clusters are edited in place.");
 
     this.InlineData = (incompat & IncompatInlineData) != 0;
+    this.IndexedDirs = (incompat & IncompatIndexedDirs) != 0;
     this._discontigGroups = (incompat & IncompatDiscontigBg) != 0;
     this.Generation = BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(0x60, 4));
     this.RootDirBlkno = (long)BinaryPrimitives.ReadUInt64LittleEndian(superblock.AsSpan(sb + 0x28, 8));
