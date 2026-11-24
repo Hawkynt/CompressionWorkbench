@@ -100,6 +100,8 @@ internal sealed class RefsUpcaseTable {
   }
 
   private static bool TryReadScalarKey(ReadOnlySpan<byte> key, out ulong value) {
+    // Windows Server 2022/2025 volumes key the fragments with a bare u32.
+    if (key.Length == 4) { value = BinaryPrimitives.ReadUInt32LittleEndian(key); return true; }
     if (key.Length >= 8) {
       var first = BinaryPrimitives.ReadUInt64LittleEndian(key[..8]);
       if (AllZero(key[8..])) { value = first; return true; }

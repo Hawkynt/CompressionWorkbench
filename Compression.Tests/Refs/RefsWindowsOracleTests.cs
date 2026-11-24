@@ -237,6 +237,65 @@ public sealed class RefsWindowsOracleTests {
   }
 
   [Test, Category("ExternalFsInterop")]
+  public void GivenAVolumeWindowsFormatted_WhenAFileIsRenamedToANonAsciiName_ThenItIsFoundUnderThatName([ValueSource(nameof(Volumes))] string volume) {
+    var oracle = Load(volume);
+    var source = ImagePath(oracle);
+    var copy = Path.Combine(Path.GetTempPath(), "cwb_refs_uni_" + Guid.NewGuid().ToString("N")[..8] + ".refs");
+    File.Copy(source, copy);
+    try {
+      const string name = "Grüße-Ωμέγα-日本.txt";
+      var descriptor = new RefsFormatDescriptor();
+      using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) descriptor.Rename(stream, "rename-me.txt", name);
+      using var check = File.OpenRead(copy);
+      var listed = descriptor.List(check, null).Select(static e => e.Name).ToList();
+      Assert.Multiple(() => {
+        Assert.That(listed, Does.Contain(name));
+        Assert.That(listed, Does.Not.Contain("rename-me.txt"));
+        Assert.That(listed.Count(static n => !n.EndsWith('/')), Is.GreaterThanOrEqualTo(oracle.Files.Count));
+      });
+    } finally {
+      File.Delete(copy);
+    }
+  }
+
+  [Test, Category("ExternalFsInterop")]
+  public void GivenAVolumeWindowsFormatted_WhenANewFileIsAdded_ThenItIsReadBackAndTheRestIsIntact([ValueSource(nameof(Volumes))] string volume) {
+    var oracle = Load(volume);
+    var source = ImagePath(oracle);
+    var copy = Path.Combine(Path.GetTempPath(), "cwb_refs_add_" + Guid.NewGuid().ToString("N")[..8] + ".refs");
+    File.Copy(source, copy);
+    var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_add_x_" + Guid.NewGuid().ToString("N")[..8]);
+    try {
+      var added = new byte[30000];
+      new Random(34).NextBytes(added);
+      var descriptor = new RefsFormatDescriptor();
+      using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
+        var before = SHA256.HashData(stream);
+        stream.Position = 0;
+        try {
+          descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("added.bin", added)]);
+        } catch (NotSupportedException refused) when (oracle.Variant != "default") {
+          TestContext.Out.WriteLine($"{volume}: add refused: {refused.Message}");
+          stream.Position = 0;
+          Assert.That(SHA256.HashData(stream), Is.EqualTo(before));
+          return;
+        }
+      }
+      using (var stream = File.OpenRead(copy)) descriptor.Extract(stream, outDir, null, null);
+      Assert.Multiple(() => {
+        Assert.That(File.ReadAllBytes(Path.Combine(outDir, "added.bin")), Is.EqualTo(added));
+        foreach (var file in oracle.Files) {
+          var bytes = File.ReadAllBytes(Path.Combine(outDir, file.Path.Replace('/', Path.DirectorySeparatorChar)));
+          Assert.That(Convert.ToHexStringLower(SHA256.HashData(bytes)), Is.EqualTo(file.Sha256), file.Path);
+        }
+      });
+    } finally {
+      File.Delete(copy);
+      try { Directory.Delete(outDir, recursive: true); } catch { /* best effort */ }
+    }
+  }
+
+  [Test, Category("ExternalFsInterop")]
   public void GivenAVolumeWindowsFormatted_WhenAnEditIsAsked_ThenItIsRefusedAndTheImageIsUnchanged([ValueSource(nameof(Volumes))] string volume) {
     var oracle = Load(volume);
     var source = ImagePath(oracle);
@@ -246,7 +305,8 @@ public sealed class RefsWindowsOracleTests {
       var descriptor = new RefsFormatDescriptor();
       using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
         Assert.Multiple(() => {
-          Assert.Throws<NotSupportedException>(() => descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("not-there.bin", new byte[10])]), "creating files");
+          Assert.Throws<NotSupportedException>(() => descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("new-folder", "new-folder", true)]), "creating a directory");
+          Assert.Throws<NotSupportedException>(() => descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("new-a.bin", new byte[10]), Compression.Registry.ArchiveInputInfo.InMemory("new-b.bin", new byte[10])]), "two new files at once");
           Assert.Throws<NotSupportedException>(() => descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", new byte[70000]), Compression.Registry.ArchiveInputInfo.InMemory("small.txt", new byte[5])]), "two length changes at once");
           Assert.Throws<NotSupportedException>(() => descriptor.Defragment(stream));
         });
