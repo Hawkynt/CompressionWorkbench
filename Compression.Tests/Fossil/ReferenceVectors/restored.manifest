@@ -1,0 +1,9 @@
+D docs d-rwxrwxr-x
+D docs/deep d-rwxr-xr-x
+D empty-dir d-rwxr-xr-x
+F big.txt 300000 4d8dc77f9f5261a5bbeec0a0bc27aa7077228eb953213c37e416bc82688fe912 --rw-r--r--
+F docs/deep/leaf.dat 5000 26ab2636e614fd66219a12e5c6d78bb98b3eb956d7f56e1c6cbcb48c4cd2a884 --rw-r--r--
+F docs/notes.txt 6 444e0fffbd825e9610ff5b199485707a0c895339ae80c15cc8a8aee41b106fda --rw-------
+F docs/random.bin 70000 d2aea621a196760e98c235fe44a6e923ebd9db5c9de99298769eb5e063e6cd18 --rw-r--r--
+F empty 0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 --rw-r--r--
+F hello.txt 17 430feffeb6d54aec6fbe5a4127e94fbb77b312ab1d17322b3e9d213f7c483cd6 --rw-rw-r--
