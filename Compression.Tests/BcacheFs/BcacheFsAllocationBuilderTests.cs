@@ -12,7 +12,7 @@ namespace Compression.Tests.BcacheFs;
 [TestFixture]
 public sealed class BcacheFsAllocationBuilderTests {
 
-  private const long DeviceSectors = 512L * BucketSectors;
+  private static readonly long DeviceSectors = 512L * BucketSectors;
 
   private static BcacheFsAllocationBuilder.Geometry Geometry() => new(
     DeviceSectors,
@@ -73,7 +73,7 @@ public sealed class BcacheFsAllocationBuilderTests {
       return;
     }
     Assert.Multiple(() => {
-      Assert.That(fragmentation, Is.EqualTo(((ulong)sectors << 31) / BucketSectors));
+      Assert.That(fragmentation, Is.EqualTo(((ulong)sectors << 31) / (ulong)BucketSectors));
       var lru = result.Lru.Single();
       Assert.That(lru.Type, Is.EqualTo(KeySet));
       Assert.That(lru.Position, Is.EqualTo(new Bpos((LruFragmentationId << LruTimeBits) | fragmentation, 300, 0)));

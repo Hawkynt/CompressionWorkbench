@@ -163,8 +163,11 @@ public sealed class BcacheFsReferenceVectorTests {
     }
   }
 
+  /// <summary>
+  /// The v1.39 volume is newer than the metadata an edit here re-publishes (1.4), so every edit is
+  /// refused. (The 1.3 volume bcachefs format made is edited; see <see cref="BcacheFsForeignLayoutTests" />.)
+  /// </summary>
   [Test, Category("ErrorHandling")]
-  [TestCase(Formatted)]
   [TestCase(Populated)]
   public void GivenAVolumeTheToolsWrote_WhenEditedInPlace_ThenTheEditIsRefusedAndNothingIsWritten(string name) {
     var descriptor = new BcacheFsFormatDescriptor();

@@ -70,7 +70,7 @@ internal sealed class BcacheFsNodeBuilder {
   }
 
   /// <summary>How many sectors the node occupies, which its pointer records.</summary>
-  internal int Sectors => (this.Bytes + SectorSize - 1) / SectorSize;
+  internal int Sectors => BcacheFsBucketGeometry.RoundUpSectors(this.Bytes);
 
   /// <summary>
   /// Writes the node into <paramref name="destination" />, which must be at least a

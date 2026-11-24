@@ -114,7 +114,7 @@ internal static class BcacheFsAllocationBuilder {
     // that names it lives one level up — which is the level its backpointer gives.
     foreach (var node in nodes) {
       Mark(node.Sector, BucketSectors, DataBtree);
-      usage.BtreeSectors += BucketSectors;
+      usage.BtreeSectors += (ulong)BucketSectors;
       backpointers.Add(BackpointerKey(node.Sector, node.Btree, node.Level + 1, DataBtree, BucketSectors, node.MaxKey));
     }
 
@@ -155,7 +155,7 @@ internal static class BcacheFsAllocationBuilder {
 
         if (t != DataFree || gen.Gen != 0 || gen.Oldest != 0) {
           var fragmentation = IsMovable(t) && dirty[b] < BucketSectors
-            ? ((ulong)dirty[b] << 31) / BucketSectors
+            ? ((ulong)dirty[b] << 31) / (ulong)BucketSectors
             : 0;
           alloc.Add(AllocKey(b, t, dirty[b], gen, fragmentation));
           if (fragmentation != 0)

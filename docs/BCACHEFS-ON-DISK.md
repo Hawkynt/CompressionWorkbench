@@ -330,9 +330,32 @@ volume whose every tree it either carries or rebuilds:
 - rebuilt from what occupies the device: alloc, bucket_gens, freespace,
   need_discard, LRU, backpointers;
 - refused with the reason: a volume not cleanly shut down, of several members,
-  newer than **1.4**, with buckets other than 64 KiB or the journal elsewhere than
-  this writer puts it, with keys in any other tree (quotas, stripes,
-  logged ops …), or with an inode no directory reaches.
+  newer than **1.4**, with a b-tree node size other than its bucket size, with keys
+  in any other tree (quotas, stripes, logged ops …), or with an inode no directory
+  reaches.
+
+The volume's own layout is kept. Adds and removes work in whatever bucket size,
+block size and journal placement the superblock names — `bcachefs format`'s
+128 KiB default, `--bucket=32k` or `256k` with a matching `--btree_node_size`, its
+4 KiB block — and write in its units:
+
+- every node, data extent and the shutdown journal entry is a whole number of
+  blocks (the kernel rejects a node pointer whose `sectors_written` is not, and
+  so does our reader);
+- a bucket holds its data as back-to-back extents of at most 128 sectors, the most
+  a `bch_extent_crc32` entry's 7-bit size fields describe;
+- no node goes into a superblock slot or a journal bucket, wherever they lie;
+- inode times are stored as the superblock's precision from its time base —
+  nanoseconds from the instant `bcachefs format` ran, against this writer's 100 ns
+  from the epoch (a time not on that grid rounds down).
+
+Defragmentation and metadata relocation move things within this writer's layout
+(64 KiB buckets, the journal in buckets 33–48) and refuse any other with the volume
+unchanged. Proven by `BcacheFsForeignLayoutTests` (fsck after edits on default,
+32 KiB and 256 KiB volumes; the 1.3 reference volume read back) and the
+`…FormatVolumeTheKernelWroteInto_WhenWeEditInPlace…` kernel tests (Linux 6.8 wrote
+into the formatted volume, we edited it, fsck is clean, the kernel reads what we
+read and keeps writing).
 
 A file whose bytes are not touched keeps its inode and extents exactly: a sparse
 file's sector count is what its extents hold, not its length rounded up. The

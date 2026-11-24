@@ -479,7 +479,7 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(target);
     ArgumentNullException.ThrowIfNull(options);
-    if (options.UnitSize is not (0 or BcacheFsFormat.BucketBytes))
+    if (options.UnitSize != 0 && options.UnitSize != BcacheFsFormat.BucketBytes)
       throw new NotSupportedException(
         $"bcachefs bucket size is fixed at {BcacheFsFormat.BucketBytes} bytes in this profile.");
     if (options.MakeSparse || options.DeduplicateWithLinks)
