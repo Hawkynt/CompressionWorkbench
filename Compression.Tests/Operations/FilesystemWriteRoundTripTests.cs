@@ -352,10 +352,8 @@ public sealed class FilesystemWriteRoundTripTests {
 
   // QCOW2 edits support the plain profile. Qcow2EncryptionTests separately proves
   // encrypted create/read and rejection of maintenance with unchanged image bytes.
-  // bcachefs edits support unencrypted volumes; BcacheFsEncryptedWriterTests and
-  // BcacheFsEncryptionTests prove encrypted create/read and the refused edit.
   private static string? PasswordFor(string formatId)
-    => formatId is not ("Qcow2" or "BcacheFs") && (FormatRegistry.GetArchiveOps(formatId) as IFormatDescriptor)?.Capabilities
+    => formatId != "Qcow2" && (FormatRegistry.GetArchiveOps(formatId) as IFormatDescriptor)?.Capabilities
          .HasFlag(FormatCapabilities.SupportsPassword) == true
       ? TestPassword
       : null;

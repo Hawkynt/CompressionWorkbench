@@ -35,7 +35,8 @@ internal static class BcacheFsSuperblockComposer {
   /// wrapped), whether data MACs are the full 128 bits, the highest key version handed out,
   /// and the cipher the journal entry is written under.
   /// </summary>
-  internal sealed record Encryption(byte[] CryptField, bool WideMacs, ulong KeyVersion, BcacheFsCrypt Crypt);
+  internal sealed record Encryption(byte[] CryptField, bool WideMacs, ulong KeyVersion, BcacheFsCrypt? Crypt,
+    ulong JournalSequence = CleanJournalSeq);
 
   /// <summary>Builds a whole superblock; the caller stamps the slot offset and the checksum.</summary>
   internal static byte[] Build(Description description, IReadOnlyList<Root> roots,
@@ -49,7 +50,7 @@ internal static class BcacheFsSuperblockComposer {
     sections.AddRange([
       ReplicasV0Section(),
       JournalSection(description.JournalBuckets),
-      CleanSection(roots, usage, inodes, encryption?.KeyVersion ?? 0),
+      CleanSection(roots, usage, inodes, encryption?.KeyVersion ?? 0, encryption?.JournalSequence ?? CleanJournalSeq),
       ErrorsSection(),
     ]);
 
@@ -105,8 +106,8 @@ internal static class BcacheFsSuperblockComposer {
   /// <paramref name="roots" /> and carrying <paramref name="usage" />.
   /// </summary>
   internal static byte[] ReplaceClean(byte[] superblock, IReadOnlyList<Root> roots,
-      BcacheFsAllocationBuilder.Usage usage, ulong inodes) {
-    var clean = CleanSection(roots, usage, inodes, 0);
+      BcacheFsAllocationBuilder.Usage usage, ulong inodes, ulong keyVersion = 0, ulong journalSequence = CleanJournalSeq) {
+    var clean = CleanSection(roots, usage, inodes, keyVersion, journalSequence);
     var before = new List<byte[]>();
     var offset = SbFixedBytes;
     var u64s = (int)BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(124));
@@ -316,13 +317,13 @@ internal static class BcacheFsSuperblockComposer {
   }
 
   private static byte[] CleanSection(IReadOnlyList<Root> roots, BcacheFsAllocationBuilder.Usage usage, ulong inodes,
-      ulong keyVersion) {
+      ulong keyVersion, ulong journalSequence) {
     var entries = ShutdownEntries(roots, usage, inodes, keyVersion);
 
     // flags, the two retired clock fields, and the journal sequence come first.
     var payload = 16 + entries.Sum(e => e.Length);
     var section = Section(FieldClean, payload);
-    BinaryPrimitives.WriteUInt64LittleEndian(section.AsSpan(16), CleanJournalSeq);
+    BinaryPrimitives.WriteUInt64LittleEndian(section.AsSpan(16), journalSequence);
     var cursor = 24;
     foreach (var e in entries) {
       e.CopyTo(section, cursor);
@@ -349,26 +350,27 @@ internal static class BcacheFsSuperblockComposer {
   internal static byte[] JournalEntry(ulong superblockMagic, IReadOnlyList<Root> roots,
       BcacheFsAllocationBuilder.Usage usage, ulong inodes, Encryption? encryption = null) {
     var entries = ShutdownEntries(roots, usage, inodes, encryption?.KeyVersion ?? 0);
+    var sequence = encryption?.JournalSequence ?? CleanJournalSeq;
     var payload = entries.Sum(e => e.Length);
     const int header = 56;
     var jset = new byte[(header + payload + SectorSize - 1) / SectorSize * SectorSize];
     BinaryPrimitives.WriteUInt64LittleEndian(jset.AsSpan(16), superblockMagic ^ JsetMagic);
-    BinaryPrimitives.WriteUInt64LittleEndian(jset.AsSpan(24), CleanJournalSeq);
+    BinaryPrimitives.WriteUInt64LittleEndian(jset.AsSpan(24), sequence);
     BinaryPrimitives.WriteUInt32LittleEndian(jset.AsSpan(32), BcacheFsFormat.Version);
     BinaryPrimitives.WriteUInt32LittleEndian(jset.AsSpan(36), CsumTypeCrc32CNonzero);  // flags: checksum type, a flush
     BinaryPrimitives.WriteUInt32LittleEndian(jset.AsSpan(40), (uint)(payload / 8));
-    BinaryPrimitives.WriteUInt64LittleEndian(jset.AsSpan(48), CleanJournalSeq);         // last_seq
+    BinaryPrimitives.WriteUInt64LittleEndian(jset.AsSpan(48), sequence);       // last_seq
     var cursor = header;
     foreach (var e in entries) {
       e.CopyTo(jset, cursor);
       cursor += e.Length;
     }
-    if (encryption != null) {
+    if (encryption?.Crypt is { } journalCrypt) {
       // Enciphered from encrypted_start, then MAC'd as stored (BCACHEFS-ON-DISK.md, "Encryption").
       BinaryPrimitives.WriteUInt32LittleEndian(jset.AsSpan(36), (uint)BcacheFsChecksumType.ChaCha20Poly1305_128);
-      var nonce = BcacheFsNonce.ForJournal(CleanJournalSeq);
-      encryption.Crypt.Apply(nonce, jset.AsSpan(BcacheFsJournalFormat.EncryptedStart, header - BcacheFsJournalFormat.EncryptedStart + payload));
-      var mac = encryption.Crypt.Mac(BcacheFsChecksumType.ChaCha20Poly1305_128, nonce, jset.AsSpan(16, header - 16 + payload));
+      var nonce = BcacheFsNonce.ForJournal(sequence);
+      journalCrypt.Apply(nonce, jset.AsSpan(BcacheFsJournalFormat.EncryptedStart, header - BcacheFsJournalFormat.EncryptedStart + payload));
+      var mac = journalCrypt.Mac(BcacheFsChecksumType.ChaCha20Poly1305_128, nonce, jset.AsSpan(16, header - 16 + payload));
       BinaryPrimitives.WriteUInt64LittleEndian(jset, mac.Lo);
       BinaryPrimitives.WriteUInt64LittleEndian(jset.AsSpan(8), mac.Hi);
       return jset;

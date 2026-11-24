@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using static FileSystem.BcacheFs.BcacheFsFormat;
 
 namespace FileSystem.BcacheFs;
@@ -125,7 +126,8 @@ internal static class BcacheFsTreeLayout {
 
     var builder = new BcacheFsNodeBuilder {
       BtreeId = btree,
-      Seq = NextSequence(),
+      // An encrypted node's sequence is part of its nonce: random, so no rewrite under the same key repeats one.
+      Seq = crypt != null ? RandomSequence() : NextSequence(),
       SuperblockMagic = magic,
       Crypt = crypt,
       Level = level,
@@ -162,6 +164,9 @@ internal static class BcacheFsTreeLayout {
   }
 
   private static long _sequence = DateTime.UtcNow.Ticks;
+  private static ulong RandomSequence()
+    => BinaryPrimitives.ReadUInt64LittleEndian(System.Security.Cryptography.RandomNumberGenerator.GetBytes(8)) | 1;
+
   private static ulong NextSequence()
     => unchecked((ulong)Interlocked.Increment(ref _sequence) * 0x9E3779B97F4A7C15UL);
 

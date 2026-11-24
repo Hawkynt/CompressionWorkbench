@@ -36,7 +36,9 @@ internal static class BcacheFsMetadataRelocator {
 
     var logical = BcacheFsMetadataCommit.TreeOrder
       .Where(id => !BcacheFsMetadataCommit.DerivedTrees.Contains(id))
-      .ToDictionary(id => id, id => volume.Keys(id).Select(e => new Key(e.Type, e.Position, e.Size, e.Value)).ToList());
+      .ToDictionary(id => id, id => volume.Keys(id)
+        .Select(e => BcacheFsKeys.ApplyPendingMoves(image, new Key(e.Type, e.Position, e.Size, e.Value) { Version = e.Version }))
+        .ToList());
     var oldMetadata = BcacheFsMetadataCommit.TreeOrder.SelectMany(volume.NodeSectors)
       .Select(s => s / BucketSectors).ToHashSet();
     var userBuckets = logical[BtreeExtents]
@@ -51,8 +53,10 @@ internal static class BcacheFsMetadataRelocator {
     var published = BcacheFsMetadataCommit.Publish(image, volume.InternalMagic, geometry, logical, previous,
       shapes => AssignTargets(shapes,
         ChooseTargets(volume, oldMetadata, userBuckets, shapes.Values.Sum(s => s.Count), options, diagnostics),
-        options));
-    BcacheFsSuperblockEditor.PublishClean(image, published);
+        options), volume.Crypt);
+    BcacheFsSuperblockEditor.PublishClean(image, published, volume.Crypt,
+      BcacheFsInPlaceModifier.CurrentKeyVersion(image, logical[BtreeExtents]).KeyVersion);
+    BcacheFsKeys.ClearPendingMoves(image);
 
     // Once a new clean root set is durable, old metadata that is no longer part
     // of the generation is dead and may be wiped. Do this after publication so

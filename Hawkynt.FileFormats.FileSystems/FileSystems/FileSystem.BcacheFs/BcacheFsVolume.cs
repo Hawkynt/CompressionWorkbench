@@ -37,15 +37,36 @@ internal sealed class BcacheFsVolume {
   /// <summary>Where each b-tree's root node sits, by tree id.</summary>
   internal Dictionary<int, long> Roots { get; } = [];
 
-  /// <summary>One key read out of a node.</summary>
-  internal readonly record struct Entry(byte Type, Bpos Position, uint Size, byte[] Value);
+  /// <summary>One key read out of a node, with its version (an encrypted extent's nonce depends on it).</summary>
+  internal readonly record struct Entry(byte Type, Bpos Position, uint Size, byte[] Value) {
+    internal BcacheFsKeyVersion Version { get; init; }
+  }
+
+  /// <summary>The volume's encryption, unlocked through <see cref="BcacheFsKeys"/>; null for a plain volume.</summary>
+  internal BcacheFsCrypt? Crypt { get; private set; }
+
+  private int _blockBytes = SectorSize;
 
   /// <summary>Opens the volume at the front of <paramref name="image" />.</summary>
+  /// <exception cref="UnauthorizedAccessException">The volume's key is wrapped and its passphrase was not given.</exception>
   internal static BcacheFsVolume Open(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var volume = new BcacheFsVolume(image);
     volume.Read();
+    if (volume.Valid)
+      volume.Crypt = BcacheFsKeys.For(image);
     return volume;
+  }
+
+  /// <summary>
+  /// The node at <paramref name="sector"/>, a whole bucket of it, deciphered when the volume is
+  /// encrypted (bset headers stay as stored, keys and node header in the clear); null when it lies
+  /// outside the volume or fails its MAC.
+  /// </summary>
+  internal byte[]? ReadNode(long sector) {
+    var node = this.ReadAt(sector * SectorSize, this.BucketSectorCount * SectorSize);
+    if (node == null || this.Crypt is not { } crypt) return node;
+    return BcacheFsBtreeReader.TryDecryptNode(node, crypt, this._blockBytes, [], out _) ? node : null;
   }
 
   private void Read() {
@@ -71,6 +92,7 @@ internal sealed class BcacheFsVolume {
 
     this.InternalMagic = BinaryPrimitives.ReadUInt64LittleEndian(superblock.AsSpan(40));
     this.Label = Encoding.ASCII.GetString(superblock, 72, 32).TrimEnd('\0');
+    this._blockBytes = Math.Max(1, (int)BinaryPrimitives.ReadUInt16LittleEndian(superblock.AsSpan(120))) * SectorSize;
 
     var flags0 = BinaryPrimitives.ReadUInt64LittleEndian(superblock.AsSpan(144));
     var nodeSectors = (int)((flags0 >> 12) & 0xFFFF);
@@ -157,7 +179,7 @@ internal sealed class BcacheFsVolume {
       yield return at;
       if (depth > 8) continue;
 
-      var node = this.ReadAt(at * SectorSize, this.BucketSectorCount * SectorSize);
+      var node = this.ReadNode(at);
       if (node == null || ReadLevel(node) == 0) continue;
 
       foreach (var child in this.ChildSectors(node))
@@ -179,7 +201,7 @@ internal sealed class BcacheFsVolume {
   private IEnumerable<Entry> KeysOfNode(long sector, int depth) {
     if (depth > 8) yield break;
 
-    var node = this.ReadAt(sector * SectorSize, this.BucketSectorCount * SectorSize);
+    var node = this.ReadNode(sector);
     if (node == null || node.Length < BcacheFsNodeBuilder.KeysOffset) yield break;
 
     if (ReadLevel(node) == 0) {
@@ -250,11 +272,14 @@ internal sealed class BcacheFsVolume {
       if (keyFormat == KeyFormatCurrent) {
         var size = BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(offset + 16));
         var position = ReadBpos(node.AsSpan(offset + 20));
-        yield return new Entry(type, position, size, node[(offset + BkeyBytes)..(offset + bytes)]);
+        yield return new Entry(type, position, size, node[(offset + BkeyBytes)..(offset + bytes)]) {
+          Version = new BcacheFsKeyVersion(BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(offset + 4)),
+            BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(offset + 12))),
+        };
       } else if (format.KeyU64s > 0 && format.KeyU64s * 8 <= bytes) {
         var unpacked = Unpack(node.AsSpan(offset + 3, format.KeyU64s * 8 - 3), format);
         yield return new Entry(type, unpacked.Position, unpacked.Size,
-          node[(offset + format.KeyU64s * 8)..(offset + bytes)]);
+          node[(offset + format.KeyU64s * 8)..(offset + bytes)]) { Version = unpacked.Version };
       }
 
       offset += bytes;
@@ -269,7 +294,7 @@ internal sealed class BcacheFsVolume {
   /// word order — so the bytes are reversed before anything is read out of them, and
   /// what is left over at the bottom is padding.
   /// </remarks>
-  private static (Bpos Position, uint Size) Unpack(ReadOnlySpan<byte> packed, Format format) {
+  private static (Bpos Position, uint Size, BcacheFsKeyVersion Version) Unpack(ReadOnlySpan<byte> packed, Format format) {
     var reversed = new byte[packed.Length];
     for (var i = 0; i < packed.Length; ++i)
       reversed[i] = packed[packed.Length - 1 - i];
@@ -293,7 +318,9 @@ internal sealed class BcacheFsVolume {
     var offset = Next(format.Bits[1], format.Offsets[1]);
     var snapshot = Next(format.Bits[2], format.Offsets[2]);
     var size = Next(format.Bits[3], format.Offsets[3]);
-    return (new Bpos(inode, offset, (uint)snapshot), (uint)size);
+    var versionHi = Next(format.Bits[4], format.Offsets[4]);
+    var versionLo = Next(format.Bits[5], format.Offsets[5]);
+    return (new Bpos(inode, offset, (uint)snapshot), (uint)size, new BcacheFsKeyVersion(versionLo, (uint)versionHi));
   }
 
   private byte[]? ReadAt(long offset, int length) {

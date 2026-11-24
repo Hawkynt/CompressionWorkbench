@@ -173,25 +173,4 @@ public sealed class BcacheFsEncryptionTests {
     Assert.Throws<InvalidDataException>(() => damaged.Read(damaged.Entries.Single(e => e.Name == "bin/pattern.bin")));
   }
 
-  [Test, Category("Exception")]
-  public void GivenAnEncryptedVolume_WhenEditedInPlace_ThenItIsRefusedAndUnchanged() {
-    var descriptor = new BcacheFsFormatDescriptor();
-    using var stream = Image(Kernel);
-    var before = stream.ToArray();
-    Assert.Throws<NotSupportedException>(() =>
-      descriptor.Add(stream, [ArchiveInputInfo.InMemory("new.txt", "plain"u8.ToArray())]));
-    stream.Position = 0;
-    Assert.Throws<NotSupportedException>(() => descriptor.Remove(stream, ["tiny.txt"]));
-    Assert.That(stream.ToArray(), Is.EqualTo(before));
-  }
-
-  [Test, Category("Exception")]
-  public void GivenAnEncryptedVolume_WhenShrunk_ThenItIsRefusedRatherThanRewrittenUnencrypted() {
-    var descriptor = new BcacheFsFormatDescriptor();
-    using var stream = Image(Kernel);
-    var before = stream.ToArray();
-    using var output = new MemoryStream();
-    Assert.Throws<NotSupportedException>(() => descriptor.Shrink(stream, output));
-    Assert.That(stream.ToArray(), Is.EqualTo(before));
-  }
 }

@@ -558,7 +558,7 @@ internal static class BcacheFsBtreeReader {
   /// itself and enciphered keys. The nonce is the entry's byte offset, the bset's sequence and
   /// its journal sequence. A plain node is left alone; the offsets deciphered are recorded.
   /// </summary>
-  private static bool TryDecryptNode(byte[] node, BcacheFsCrypt crypt, int blockBytes, HashSet<int> decrypted, out string error) {
+  internal static bool TryDecryptNode(byte[] node, BcacheFsCrypt crypt, int blockBytes, HashSet<int> decrypted, out string error) {
     error = string.Empty;
     var firstType = (BcacheFsChecksumType)(BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(NodeHeaderBytes + 16)) & 0xF);
     if (!BcacheFsCrypt.IsMacType(firstType)) return true;

@@ -87,6 +87,40 @@ internal static class BcacheFsInPlaceModifier {
     internal required Dictionary<long, BcacheFsMetadataCommit.BucketState> BucketStates { get; init; }
     internal required List<(long Offset, long Length)> FreedRanges { get; init; }
     internal required ulong NextInode { get; set; }
+
+    /// <summary>The volume's encryption; null for a plain volume.</summary>
+    internal BcacheFsCrypt? Crypt => this.Volume.Crypt;
+
+    /// <summary>Whether data MACs are the full 128 bits (superblock flags[1] bit 9).</summary>
+    internal bool WideMacs { get; init; }
+
+    /// <summary>The highest key version handed out so far; a new encrypted extent takes the next.</summary>
+    internal ulong KeyVersion { get; set; }
+  }
+
+  /// <summary>
+  /// Writes <paramref name="region"/> (plain, whole sectors) as an encrypted extent: a fresh key
+  /// version from the volume's counter, enciphered under the extent nonce it makes, MAC'd as
+  /// stored, at <paramref name="firstSector"/>; returns the extent key.
+  /// </summary>
+  private static Key WriteEncryptedExtent(Stream image, Model model, Bpos position, long firstSector, byte generation,
+      Span<byte> region) {
+    var crypt = model.Crypt!;
+    var sectors = region.Length / SectorSize;
+    var type = model.WideMacs ? BcacheFsChecksumType.ChaCha20Poly1305_128 : BcacheFsChecksumType.ChaCha20Poly1305_80;
+    var version = new BcacheFsKeyVersion(++model.KeyVersion, 0);
+    var crc = new BcacheFsExtentCrc((uint)sectors, (uint)sectors, 0, 0, type, BcacheFsCompressionType.None, default);
+    var nonce = BcacheFsNonce.ForExtent(version, crc);
+    crypt.Apply(nonce, region);
+    var mac = crypt.Mac(type, nonce, region);
+    image.Position = firstSector * SectorSize;
+    image.Write(region);
+
+    var entryBytes = model.WideMacs ? 24 : 16;
+    var value = new byte[entryBytes + 8];
+    BcacheFsWriter.EncryptedExtentEntry(value, sectors, type, mac);
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(entryBytes), ExtentPointer(firstSector, generation: generation));
+    return new Key(KeyExtent, position, (uint)sectors, value) { Version = version };
   }
 
   internal static void Add(Stream image, IReadOnlyList<ArchiveInputInfo> inputs) {
@@ -271,7 +305,9 @@ internal static class BcacheFsInPlaceModifier {
         throw new InvalidDataException($"bcachefs: the {id} tree is incomplete: {string.Join("; ", tree.Diagnostics)}");
       var keys = tree.MaterializedLeafSlots
         .Where(k => !IsEmptySlot(k.RawType))
-        .Select(k => new Key(k.RawType, k.Position, k.Size, k.Value))
+        // The version travels with the key: an encrypted extent's nonce is made from it.
+        // Extents the block mover moved on an encrypted volume point where they now are.
+        .Select(k => BcacheFsKeys.ApplyPendingMoves(image, new Key(k.RawType, k.Position, k.Size, k.Value) { Version = k.Version }))
         .ToList();
       if (keys.Count == 0) continue;
       if (!CarriedTrees.Contains((int)id) && !RebuiltTrees.Contains((int)id))
@@ -447,7 +483,14 @@ internal static class BcacheFsInPlaceModifier {
     };
 
     var maxInode = inodeKeys.Keys.DefaultIfEmpty(FirstDynamicInode - 1).Max();
+
+    // The key-version counter continues past every version handed out: the clean section's
+    // key_version and any extent's, whichever is higher, so no nonce is ever used twice.
+    var (keyVersion, wideMacs) = CurrentKeyVersion(image, extentKeys);
+
     return new Model {
+      WideMacs = wideMacs,
+      KeyVersion = keyVersion,
       Volume = volume,
       Directories = directories,
       Files = files,
@@ -473,7 +516,7 @@ internal static class BcacheFsInPlaceModifier {
     image.Position = 0;
     var core = BcacheFsCoreVolume.OpenForEdit(image);
     if (!core.Recoverable || core.Overlay.KeyUpdates.Count != 0
-        || core.Journal.Sequences.Any(s => s.Sequence != CleanJournalSeq))
+        || core.Journal.Sequences.Any(s => s.Sequence != (core.Checkpoint?.JournalSequence ?? CleanJournalSeq)))
       return false;
     image.Position = 0;
     var plain = BcacheFsVolume.Open(image);
@@ -506,8 +549,7 @@ internal static class BcacheFsInPlaceModifier {
         || perBucket[x.At.Sector / BucketSectors] != 1
         || x.At.RegionOffset != 0
         || x.At.RegionSectors != x.Key.Size
-        || x.At.Compressed
-        || x.At.Encrypted)
+        || x.At.Compressed)
       .Select(x => x.Key.Position)
       .ToHashSet();
   }
@@ -530,9 +572,9 @@ internal static class BcacheFsInPlaceModifier {
     foreach (var file in model.Files.Values)
       foreach (var key in file.FinalExtents)
         if (moving.Contains(key.Position) && BcacheFsAllocationBuilder.Footprint(key) is { } coded
-            && (coded.Compressed || coded.Encrypted))
+            && (coded.Compressed || (coded.Encrypted && model.Crypt == null)))
           throw new NotSupportedException(
-            $"bcachefs: '{file.Path}' has a compressed or encrypted extent, which an edit here does not move.");
+            $"bcachefs: '{file.Path}' has a compressed extent, which an edit here does not move.");
     if (moving.Count > FreeDataBuckets(model).Count)
       throw new IOException("bcachefs: not enough free buckets to bring the volume into the writer's layout.");
 
@@ -544,13 +586,24 @@ internal static class BcacheFsInPlaceModifier {
         var key = file.FinalExtents[i];
         if (!moving.Contains(key.Position)) continue;
         var at = BcacheFsAllocationBuilder.Footprint(key)!.Value;
-        if (at.Compressed || at.Encrypted)
+        if (at.Compressed)
           throw new NotSupportedException(
-            $"bcachefs: '{file.Path}' has a compressed or encrypted extent, which an edit here does not move.");
+            $"bcachefs: '{file.Path}' has a compressed extent, which an edit here does not move.");
         if (free.Count == 0)
           throw new IOException("bcachefs: not enough free buckets to bring the volume into the writer's layout.");
 
         var bytes = (int)key.Size * SectorSize;
+        if (at.Encrypted) {
+          // The live part is deciphered (MAC checked) and written again as an extent of its own,
+          // under a fresh key version: a new nonce for new ciphertext.
+          var live = DecryptLive(image, model, key);
+          var target = free.Dequeue();
+          model.OccupiedBuckets.Add(target);
+          file.FinalExtents[i] = WriteEncryptedExtent(image, model, key.Position, target * BucketSectors,
+            model.BucketStates.GetValueOrDefault(target).Generation, live);
+          AddFreedRange(model.FreedRanges, key);
+          continue;
+        }
         image.Position = (at.Sector + at.RegionOffset) * SectorSize;
         image.ReadExactly(buffer, 0, bytes);
         var bucket = free.Dequeue();
@@ -568,6 +621,43 @@ internal static class BcacheFsInPlaceModifier {
     }
 
     Commit(image, model);
+  }
+
+  /// <summary>
+  /// The key-version counter as the volume leaves it - the clean section's key_version or the
+  /// highest extent version, whichever is higher, so no nonce is handed out twice - and whether
+  /// its data MACs are 128 bits wide.
+  /// </summary>
+  internal static (ulong KeyVersion, bool WideMacs) CurrentKeyVersion(Stream image, IEnumerable<Key> extents) {
+    image.Position = 0;
+    var superblock = BcacheFsDeviceSuperblocks.Read(image).Current
+      ?? throw new InvalidDataException("bcachefs: the superblock did not read back.");
+    image.Position = 0;
+    var keyVersion = extents.Select(k => k.Version.Lo).DefaultIfEmpty(0UL).Max();
+    foreach (var entry in BcacheFsCheckpoint.Read(superblock)?.Entries ?? [])
+      if (entry.Header.RawType == JsetUsage && entry.Header.BtreeId == FsUsageKeyVersion && entry.Payload.Length >= 8)
+        keyVersion = Math.Max(keyVersion, BinaryPrimitives.ReadUInt64LittleEndian(entry.Payload));
+    return (keyVersion, (superblock.Flags[1] & (1UL << 9)) != 0);
+  }
+
+  /// <summary>The live sectors of an encrypted extent, MAC checked and deciphered.</summary>
+  private static byte[] DecryptLive(Stream image, Model model, Key key) {
+    if (!BcacheFsExtentCodec.TryParseEntries(key.Value, out var entries, out var error))
+      throw new InvalidDataException("bcachefs: " + error);
+    BcacheFsExtentCrc? crc = null;
+    foreach (var entry in entries) {
+      if (entry.KnownType is BcacheFsExtentEntryType.Crc32 or BcacheFsExtentEntryType.Crc64 or BcacheFsExtentEntryType.Crc128) {
+        if (!BcacheFsExtentCodec.TryReadExtentCrc(entry, out crc, out error))
+          throw new InvalidDataException("bcachefs: " + error);
+        continue;
+      }
+      if (entry.KnownType != BcacheFsExtentEntryType.Pointer || crc == null) continue;
+      var word = BinaryPrimitives.ReadUInt64LittleEndian(entry.RawBytes);
+      if ((word & (1UL << 1)) != 0) continue;                          // a cached copy
+      var stored = new BcacheFsStoredExtent(PointerSector(word), crc, null) { Version = key.Version };
+      return BcacheFsExtentData.ReadLive(image, stored, (int)key.Size, model.Crypt);
+    }
+    throw new InvalidDataException($"bcachefs: encrypted extent at {key.Position.Inode}:{key.Position.Offset} has no pointer.");
   }
 
   /// <summary>
@@ -625,8 +715,9 @@ internal static class BcacheFsInPlaceModifier {
     // All live source keys were materialized before this point, so the buckets
     // the new generation lands in can be rewritten without needing any old node.
     var published = BcacheFsMetadataCommit.Publish(image, model.Volume.InternalMagic, geometry, trees,
-      model.BucketStates, shapes => ChooseMetadataBuckets(shapes, geometry, userBuckets, model.BucketStates));
-    BcacheFsSuperblockEditor.PublishClean(image, published);
+      model.BucketStates, shapes => ChooseMetadataBuckets(shapes, geometry, userBuckets, model.BucketStates), model.Crypt);
+    BcacheFsSuperblockEditor.PublishClean(image, published, model.Crypt, model.KeyVersion);
+    BcacheFsKeys.ClearPendingMoves(image);
 
     // Deleted/replaced user data becomes forensic free space only after the new
     // roots are live. New payload was deliberately allocated outside these runs;
@@ -729,6 +820,14 @@ internal static class BcacheFsInPlaceModifier {
         Array.Clear(buffer, got, sectors * SectorSize - got);
         var bucket = pending.Buckets[bucketIndex++];
         var firstSector = bucket * BucketSectors;
+        if (model.Crypt != null) {
+          file.FinalExtents.Add(WriteEncryptedExtent(image, model,
+            new Bpos(file.Inode, (ulong)(logicalSector + sectors), SnapshotIdMax), firstSector,
+            model.BucketStates.GetValueOrDefault(bucket).Generation, buffer.AsSpan(0, sectors * SectorSize)));
+          logicalSector += sectors;
+          remaining -= got;
+          continue;
+        }
         image.Position = firstSector * SectorSize;
         image.Write(buffer, 0, sectors * SectorSize);
 

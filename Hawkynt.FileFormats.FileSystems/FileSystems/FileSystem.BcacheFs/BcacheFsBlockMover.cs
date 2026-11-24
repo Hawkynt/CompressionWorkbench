@@ -44,6 +44,7 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
   private readonly List<Slot> _slots = [];
   private readonly List<long> _nodes = [];
   private int _nodeSectors = BucketSectors;
+  private bool _encrypted;
 
   /// <summary>Reads the extents b-tree so its pointers can be found again.</summary>
   public void Init(Stream image) {
@@ -55,14 +56,10 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
     if (!volume.Valid) return;
 
     this._nodeSectors = volume.BucketSectorCount;
-    var node = new byte[this._nodeSectors * SectorSize];
+    this._encrypted = volume.Crypt != null;
     foreach (var sector in volume.NodeSectors(BtreeExtents)) {
       var offset = sector * SectorSize;
-      if (offset + node.Length > image.Length) continue;
-
-      image.Position = offset;
-      image.ReadExactly(node);
-
+      if (volume.ReadNode(sector) is not { } node) continue;
       var found = false;
       foreach (var (fieldOffset, extentSector, sectors, position, _) in EnumeratePointers(node)) {
         this._slots.Add(new Slot {
@@ -224,6 +221,15 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
     ArgumentNullException.ThrowIfNull(image);
     if (this._nodes.Count == 0) return;
 
+    // An encrypted node is never patched in place (re-enciphering it under its own nonce would
+    // reuse the keystream): the moves wait in BcacheFsKeys until the metadata is re-published
+    // around them, which every caller of the mover does next.
+    if (this._encrypted) {
+      foreach (var slot in this._slots.Where(s => s.Sector != s.OriginalSector))
+        BcacheFsKeys.RecordMove(image, slot.ExtentPosition, slot.OriginalSector, slot.Sector);
+      return;
+    }
+
     var node = new byte[this._nodeSectors * SectorSize];
     foreach (var nodeOffset in this._nodes) {
       image.Position = nodeOffset;
@@ -307,13 +313,9 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
 
     // What the extents say, bucket by bucket.
     var claimed = new SortedDictionary<long, uint>();
-    var node = new byte[this._nodeSectors * SectorSize];
     foreach (var sector in volume.NodeSectors(BtreeExtents)) {
-      var nodeOffset = sector * SectorSize;
-      if (nodeOffset + node.Length > image.Length) continue;
+      if (volume.ReadNode(sector) is not { } node) continue;
 
-      image.Position = nodeOffset;
-      image.ReadExactly(node);
       foreach (var (_, extentSector, _, _, sectors) in EnumeratePointers(node)) {
         var bucket = extentSector / bucketSectors;
         claimed.TryGetValue(bucket, out var already);
@@ -365,14 +367,9 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
 
   /// <summary>Every key a tree's nodes hold, with the node each came from.</summary>
   private IEnumerable<(long NodeOffset, Key Key)> ReadKeys(Stream image, BcacheFsVolume volume, int btree) {
-    var node = new byte[this._nodeSectors * SectorSize];
     foreach (var sector in volume.NodeSectors(btree)) {
       var nodeOffset = sector * SectorSize;
-      if (nodeOffset + node.Length > image.Length) continue;
-
-      image.Position = nodeOffset;
-      image.ReadExactly(node);
-
+      if (volume.ReadNode(sector) is not { } node) continue;
       var offset = BcacheFsNodeBuilder.KeysOffset;
       var words = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(158));
       var end = offset + words * 8;

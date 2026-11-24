@@ -32,15 +32,11 @@ internal sealed class BcacheFsCoreVolume {
     => Open([device], passphrase);
 
   /// <summary>
-  /// Opens a volume to edit it in place; an encrypted one is refused before anything is read
-  /// past its superblock, since the editors write plain metadata.
+  /// Opens a volume to edit it in place. An encrypted one is unlocked with the key
+  /// <see cref="BcacheFsKeys"/> holds for the stream (or its key in the clear).
   /// </summary>
-  /// <exception cref="NotSupportedException">The volume is encrypted.</exception>
-  internal static BcacheFsCoreVolume OpenForEdit(Stream device) {
-    if (BcacheFsDeviceSuperblocks.Read(device).Current is { } superblock && BcacheFsCrypt.IsEncrypted(superblock))
-      throw new NotSupportedException("bcachefs: an encrypted volume is not edited in place here.");
-    return Open(device);
-  }
+  /// <exception cref="UnauthorizedAccessException">The volume's key is wrapped and its passphrase was not given.</exception>
+  internal static BcacheFsCoreVolume OpenForEdit(Stream device) => Open(device);
 
   /// <exception cref="UnauthorizedAccessException">The volume's key is wrapped and <paramref name="passphrase"/> is missing or wrong.</exception>
   internal static BcacheFsCoreVolume Open(IEnumerable<Stream> devices, string? passphrase = null) {
@@ -96,7 +92,9 @@ internal sealed class BcacheFsCoreVolume {
       diagnostics.AddRange(checkpoint.Diagnostics);
 
     // An encrypted volume's journal and b-tree nodes need its key from here on.
-    var crypt = BcacheFsCrypt.Unlock(global, passphrase);
+    var crypt = passphrase != null
+      ? BcacheFsCrypt.Unlock(global, passphrase)
+      : BcacheFsKeys.For(discovered.First(d => ReferenceEquals(d.Current, global)).Stream, global);
 
     var deviceLogs = new List<BcacheFsJournalDeviceLog>();
     // Clean mounts need not read the journal for correctness, but doing so here

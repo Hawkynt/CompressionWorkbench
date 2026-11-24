@@ -355,7 +355,31 @@ writes into it, and what it wrote reads back here. Under WSL the tools never get
 past the superblock of a passphrase volume of their own (they cannot open it
 through the kernel keyring), so the only passphrase-wrapped key they made is
 checked by unwrapping it (`bcachefs-tools-1.39-encrypted-key.img.gz`).
-In-place edits of an encrypted volume are refused.
+
+**Edits, defragmentation and shrinking of an encrypted volume** keep it
+encrypted and never encipher two different things under one nonce
+(`BcacheFsEncryptedEditTests` takes a census of every nonce after each step):
+
+- new and moved data become extents of fresh key versions, continuing the
+  counter past the clean section's `key_version` and every extent's version;
+  an extent moved out of a shared bucket is deciphered and enciphered again under
+  a new version, and an extent moved whole keeps its ciphertext and version;
+- every republished node gets a random sequence (its nonce), and every publish
+  writes the journal entry under a new sequence, one past every sequence the
+  volume has used (clean section and journal sets on disk); the clean section's
+  `journal_seq` names it;
+- the block mover never patches an encrypted node in place: its moves are
+  applied when the metadata is republished;
+- a shrink rebuilds the files into a smaller volume under the same master key,
+  crypt field and UUIDs (the same passphrase opens it), continuing both counters.
+
+A wrapped key needs its passphrase (`ArchiveMutationOptions.Password` for Add
+and Remove; defragmentation and shrinking take no password, so they work on
+key-in-the-clear volumes, or with the passphrase remembered for the stream).
+Checked: `bcachefs fsck -n` unlocks an edited passphrase volume and finds it
+clean; the 6.8 kernel writes into our key-in-the-clear volume, we edit,
+defragment and shrink it, and after each step fsck is clean and the kernel
+lists exactly the tree and bytes we read.
 
 ## What the kernel does to it
 

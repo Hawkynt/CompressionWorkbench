@@ -372,6 +372,25 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <summary>
+  /// Adds or replaces files in a volume that may be encrypted: <see cref="ArchiveMutationOptions.Password"/>
+  /// unwraps its key (a key stored in the clear needs none); new data is enciphered under fresh key versions.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, ArchiveMutationOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+    using (BcacheFsKeys.Remember(archive, options.Password))
+      this.Add(archive, inputs);
+  }
+
+  /// <summary>Removes entries from a volume that may be encrypted (see the Add overload for the password).</summary>
+  public void Remove(Stream archive, string[] entryNames, ArchiveMutationOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+    using (BcacheFsKeys.Remember(archive, options.Password))
+      this.Remove(archive, entryNames);
+  }
+
+  /// <summary>
   /// Entries the reader derives rather than reads: the volume's own description,
   /// and the carver's view of an image that cannot be walked as a filesystem.
   /// </summary>
@@ -387,10 +406,8 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public void Shrink(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
-    // A rebuild writes the files back unencrypted: an encrypted volume is refused, not decrypted.
     input.Position = 0;
-    if (BcacheFsDeviceSuperblocks.Read(input).Current is { } superblock && BcacheFsCrypt.IsEncrypted(superblock))
-      throw new NotSupportedException("bcachefs: an encrypted volume is not rebuilt here; the rebuild would store it unencrypted.");
+    var superblock = BcacheFsDeviceSuperblocks.Read(input).Current;
     input.Position = 0;
 
     // a file, not a MemoryStream: a rebuilt volume can outgrow what a byte[] holds
@@ -398,11 +415,19 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       Path.Combine(Path.GetTempPath(), "cwb_bch_shrink_" + Guid.NewGuid().ToString("N") + ".tmp"),
       FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024, FileOptions.DeleteOnClose);
     var useRebuilt = false;
-    try {
-      RebuildVerb.RebuildToStream(input, rebuilt, this, this, null, SyntheticNames);
-      useRebuilt = rebuilt.Length > 0 && rebuilt.Length < input.Length;
-    } catch {
-      useRebuilt = false;
+    if (superblock != null && BcacheFsCrypt.IsEncrypted(superblock)) {
+      // An encrypted volume is rebuilt encrypted under its own master key, crypt field and
+      // UUIDs (so the passphrase still opens it); one whose key is wrapped needs its passphrase
+      // remembered for the stream, as a shrink takes no password.
+      RebuildEncrypted(input, superblock, rebuilt);
+      useRebuilt = rebuilt.Length < input.Length;
+    } else {
+      try {
+        RebuildVerb.RebuildToStream(input, rebuilt, this, this, null, SyntheticNames);
+        useRebuilt = rebuilt.Length > 0 && rebuilt.Length < input.Length;
+      } catch {
+        useRebuilt = false;
+      }
     }
 
     input.Position = 0;
@@ -413,6 +438,48 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       rebuilt.CopyTo(output);
     } else
       input.CopyTo(output);
+  }
+
+  /// <summary>
+  /// Writes every file, link, directory and attribute of an encrypted volume into a fresh volume
+  /// of the smallest size, encrypted under the same master key and crypt field with the same
+  /// UUIDs and label; the reader verifies every MAC on the way.
+  /// </summary>
+  private static void RebuildEncrypted(Stream input, BcacheFsSuperblockRecord superblock, Stream output) {
+    var crypt = BcacheFsKeys.For(input, superblock)!;
+    input.Position = 0;
+    using var reader = new BcacheFsReader(input, leaveOpen: true);
+    if (!reader.Valid) throw new InvalidDataException(reader.Status);
+
+    var writer = new BcacheFsWriter();
+    writer.SetLabel(reader.Label);
+    writer.SetInternalUuid(new Guid(superblock.InternalUuidBytes));
+    writer.SetUserUuid(new Guid(superblock.UserUuidBytes));
+    writer.SetEncryptionKey(crypt.MasterKey.ToArray(), superblock.FieldsOf(BcacheFsSuperblockFieldType.Crypt).First().RawBytes,
+      (superblock.Flags[1] & (1UL << 9)) != 0,
+      // New extents continue the source's key-version counter: the same key must not meet the same nonce twice.
+      BcacheFsInPlaceModifier.CurrentKeyVersion(input, []).KeyVersion,
+      // And its journal sequences, the journal entry's nonce.
+      BcacheFsSuperblockEditor.NextJournalSequence(input, crypt));
+    var sizes = new List<long>();
+    foreach (var directory in reader.Directories.Where(d => d != "lost+found"))
+      writer.AddDirectory(directory);
+    foreach (var entry in reader.Entries) {
+      if (entry.LinkTarget is { } target) {
+        writer.AddSymlink(entry.Name, target);
+        continue;
+      }
+      var data = reader.Read(entry);
+      sizes.Add(data.LongLength);
+      writer.AddFile(entry.Name, data, entry.Metadata);
+    }
+    foreach (var (path, attributes) in reader.ExtendedAttributes)
+      foreach (var (name, value) in attributes)
+        writer.AddExtendedAttribute(path, name, value);
+    writer.SetImageSize(BcacheFsWriter.EstimateSize(sizes));
+    output.Position = 0;
+    output.SetLength(0);
+    writer.WriteTo(output);
   }
 
   /// <summary>

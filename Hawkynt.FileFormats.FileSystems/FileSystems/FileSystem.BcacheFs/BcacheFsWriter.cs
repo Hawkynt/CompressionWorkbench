@@ -92,6 +92,26 @@ public sealed class BcacheFsWriter {
     this._wideMacs = wideMacs;
   }
 
+  private byte[]? _masterKey;
+  private byte[]? _cryptField;
+  private ulong _keyVersionBase;
+  private ulong _journalSequence = CleanJournalSeq;
+
+  /// <summary>
+  /// Encrypts the volume under an existing master key and keeps the crypt field that wraps it
+  /// (so whatever passphrase opened the source opens this one); used to rebuild an encrypted
+  /// volume, together with its internal UUID, which the wrapping depends on.
+  /// </summary>
+  internal void SetEncryptionKey(byte[] masterKey, byte[] cryptField, bool wideMacs, ulong keyVersionBase,
+      ulong journalSequence) {
+    this._journalSequence = journalSequence;
+    this._keyVersionBase = keyVersionBase;
+    this._encrypted = true;
+    this._masterKey = masterKey;
+    this._cryptField = cryptField;
+    this._wideMacs = wideMacs;
+  }
+
   /// <summary>Sets the volume label; it is truncated into the superblock's 32-byte field.</summary>
   public void SetLabel(string label) {
     ArgumentNullException.ThrowIfNull(label);
@@ -203,7 +223,7 @@ public sealed class BcacheFsWriter {
     output.SetLength(this._imageSize);
 
     var crypt = this._encrypted
-      ? new BcacheFsCrypt(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))
+      ? new BcacheFsCrypt(this._masterKey ?? System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))
       : null;
 
     // The data goes down first, because an extent records a checksum of the bytes
@@ -220,7 +240,8 @@ public sealed class BcacheFsWriter {
       new Dictionary<long, BcacheFsMetadataCommit.BucketState>(), ReservedPlacement, crypt);
 
     var encryption = crypt == null ? null : new BcacheFsSuperblockComposer.Encryption(
-      BcacheFsCrypt.ComposeField(crypt.MasterKey, this._passphrase, magic), this._wideMacs, plan.KeyVersion, crypt);
+      this._cryptField ?? BcacheFsCrypt.ComposeField(crypt.MasterKey, this._passphrase, magic), this._wideMacs, plan.KeyVersion, crypt,
+      this._journalSequence);
     var superblock = BcacheFsSuperblockComposer.Build(
       new BcacheFsSuperblockComposer.Description(this._internalUuid, this._userUuid, this._memberUuid,
         this._label, deviceSectors, slots, journal),
@@ -359,7 +380,7 @@ public sealed class BcacheFsWriter {
     var xattrs = new List<Key>();
     var inodeOfPath = new Dictionary<string, ulong>(StringComparer.Ordinal) { [""] = RootInode };
     var files = new List<PlannedFile>();
-    var keyVersion = 0UL;
+    var keyVersion = this._keyVersionBase;
     var leaves = new List<(string Path, string Name, ulong Parent, Kind Kind, FilePayload Payload, ArchiveEntryMetadata? Metadata)>();
 
     ulong DirectoryInode(string path, ulong parent, string leaf) {
@@ -621,7 +642,7 @@ public sealed class BcacheFsWriter {
   /// Writes the checksum entry of an encrypted, uncompressed extent at the start of
   /// <paramref name="value"/>: sizes less one, offset and nonce zero, the MAC type and the MAC.
   /// </summary>
-  private static void EncryptedExtentEntry(Span<byte> value, int sectors, BcacheFsChecksumType type, BcacheFsChecksum mac) {
+  internal static void EncryptedExtentEntry(Span<byte> value, int sectors, BcacheFsChecksumType type, BcacheFsChecksum mac) {
     var size = (ulong)(sectors - 1);
     if (type == BcacheFsChecksumType.ChaCha20Poly1305_80) {
       // crc64: type bit 2; sizes at 3 and 12, offset 21, nonce 30, csum type 40, compression 44, MAC high 16 bits at 48.

@@ -76,7 +76,12 @@ internal static class BcacheFsSuperblockEditor {
   /// a clean shutdown leaves, and every superblock copy gets a clean section naming
   /// <paramref name="published" />'s roots and totals, and the next sequence number.
   /// </summary>
-  internal static void PublishClean(Stream image, BcacheFsMetadataCommit.Published published) {
+  /// <param name="image">The volume.</param>
+  /// <param name="published">The generation to name.</param>
+  /// <param name="crypt">An encrypted volume's key: the journal entry is then enciphered and MAC'd.</param>
+  /// <param name="keyVersion">The key-version counter the clean section and journal carry.</param>
+  internal static void PublishClean(Stream image, BcacheFsMetadataCommit.Published published,
+      BcacheFsCrypt? crypt = null, ulong keyVersion = 0) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(published);
     EnsureWritable(image);
@@ -84,10 +89,11 @@ internal static class BcacheFsSuperblockEditor {
     var primary = ReadSuperblock(image, PrimarySbSector);
     var seq = BinaryPrimitives.ReadUInt64LittleEndian(primary.AsSpan(112)) + 1;
     var magic = BinaryPrimitives.ReadUInt64LittleEndian(primary.AsSpan(40));
-    WriteJournal(image, ReadGeometry(image), magic, published);
+    var journalSequence = crypt == null ? CleanJournalSeq : NextJournalSequence(image, crypt);
+    WriteJournal(image, ReadGeometry(image), magic, published, crypt, keyVersion, journalSequence);
     foreach (var slot in SuperblockSlots(image)) {
       var sb = BcacheFsSuperblockComposer.ReplaceClean(ReadSuperblock(image, slot),
-        published.Roots, published.Usage, published.Inodes);
+        published.Roots, published.Usage, published.Inodes, keyVersion, journalSequence);
       BinaryPrimitives.WriteUInt64LittleEndian(sb.AsSpan(104), (ulong)slot);
       BinaryPrimitives.WriteUInt64LittleEndian(sb.AsSpan(112), seq);
       Stamp(sb);
@@ -98,13 +104,33 @@ internal static class BcacheFsSuperblockEditor {
   }
 
   /// <summary>Empties the journal and writes the one entry a clean shutdown leaves in its first bucket.</summary>
+  /// <summary>
+  /// The sequence the next journal entry of an encrypted volume takes: one past every sequence
+  /// the volume has used (its clean section's and every journal set still on disk). The
+  /// sequence is the journal entry's nonce, so an entry is never enciphered under one twice.
+  /// </summary>
+  internal static ulong NextJournalSequence(Stream image, BcacheFsCrypt crypt) {
+    image.Position = 0;
+    var record = BcacheFsDeviceSuperblocks.Read(image).Current
+      ?? throw new InvalidDataException("bcachefs: the superblock did not read back.");
+    var highest = BcacheFsCheckpoint.Read(record)?.JournalSequence ?? CleanJournalSeq;
+    foreach (var replica in BcacheFsJournalReader.ReadDevice(image, record, crypt).Replicas)
+      highest = Math.Max(highest, replica.Sequence);
+    image.Position = 0;
+    return checked(highest + 1);
+  }
+
   internal static void WriteJournal(Stream image, BcacheFsAllocationBuilder.Geometry geometry, ulong magic,
-      BcacheFsMetadataCommit.Published published) {
+      BcacheFsMetadataCommit.Published published, BcacheFsCrypt? crypt = null, ulong keyVersion = 0,
+      ulong journalSequence = CleanJournalSeq) {
     if (geometry.JournalBuckets.Count == 0)
       throw new InvalidDataException("bcachefs: the superblock names no journal buckets.");
     foreach (var (start, count) in geometry.JournalBuckets)
       BcacheFsMetadataCommit.ZeroRange(image, start * BucketBytes, count * BucketBytes);
-    var entry = BcacheFsSuperblockComposer.JournalEntry(magic, published.Roots, published.Usage, published.Inodes);
+    var entry = BcacheFsSuperblockComposer.JournalEntry(magic, published.Roots, published.Usage, published.Inodes,
+      crypt == null && keyVersion == 0 && journalSequence == CleanJournalSeq
+        ? null
+        : new BcacheFsSuperblockComposer.Encryption([], false, keyVersion, crypt, journalSequence));
     image.Position = geometry.JournalBuckets[0].Start * BucketBytes;
     image.Write(entry);
   }
