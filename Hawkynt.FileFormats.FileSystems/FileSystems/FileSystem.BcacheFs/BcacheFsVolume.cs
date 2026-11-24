@@ -34,6 +34,9 @@ internal sealed class BcacheFsVolume {
   internal long DeviceSectors { get; private set; }
   internal int BucketSectorCount { get; private set; } = BucketSectors;
 
+  /// <summary>Sectors per b-tree node (<c>btree_node_size</c>), at most a bucket.</summary>
+  internal int NodeSectorCount { get; private set; } = BucketSectors;
+
   /// <summary>Where each b-tree's root node sits, by tree id.</summary>
   internal Dictionary<int, long> Roots { get; } = [];
 
@@ -74,7 +77,7 @@ internal sealed class BcacheFsVolume {
 
     var flags0 = BinaryPrimitives.ReadUInt64LittleEndian(superblock.AsSpan(144));
     var nodeSectors = (int)((flags0 >> 12) & 0xFFFF);
-    if (nodeSectors > 0) this.BucketSectorCount = nodeSectors;
+    if (nodeSectors > 0) this.BucketSectorCount = this.NodeSectorCount = nodeSectors;
 
     foreach (var (type, offset, length) in EnumerateSections(superblock)) {
       switch (type) {
@@ -157,7 +160,7 @@ internal sealed class BcacheFsVolume {
       yield return at;
       if (depth > 8) continue;
 
-      var node = this.ReadAt(at * SectorSize, this.BucketSectorCount * SectorSize);
+      var node = this.ReadAt(at * SectorSize, this.NodeSectorCount * SectorSize);
       if (node == null || ReadLevel(node) == 0) continue;
 
       foreach (var child in this.ChildSectors(node))
@@ -179,7 +182,7 @@ internal sealed class BcacheFsVolume {
   private IEnumerable<Entry> KeysOfNode(long sector, int depth) {
     if (depth > 8) yield break;
 
-    var node = this.ReadAt(sector * SectorSize, this.BucketSectorCount * SectorSize);
+    var node = this.ReadAt(sector * SectorSize, this.NodeSectorCount * SectorSize);
     if (node == null || node.Length < BcacheFsNodeBuilder.KeysOffset) yield break;
 
     if (ReadLevel(node) == 0) {

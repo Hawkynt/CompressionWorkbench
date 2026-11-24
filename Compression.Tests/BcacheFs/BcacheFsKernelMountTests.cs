@@ -456,6 +456,7 @@ public sealed class BcacheFsKernelMountTests {
   [TestCase("", TestName = "GivenADefaultFormatVolumeTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
   [TestCase("--bucket=32k --btree_node_size=32k", TestName = "GivenA32KBucketVolumeTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
   [TestCase("--bucket=256k --btree_node_size=256k", TestName = "GivenA256KBucketVolumeTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
+  [TestCase("--bucket=256k --btree_node_size=64k", TestName = "GivenSmallerNodesThanBucketsTheKernelWroteInto_WhenWeEditInPlace_ThenFsckIsCleanAndTheKernelAgrees")]
   [Category("RoundTrip")]
   public void ForeignLayoutKernelRoundTrip(string formatOptions) {
     BcacheFsKernel.Require();

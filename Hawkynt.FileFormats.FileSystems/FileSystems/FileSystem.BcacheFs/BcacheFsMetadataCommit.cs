@@ -36,7 +36,11 @@ internal static class BcacheFsMetadataCommit {
   /// <summary>A bucket as it was before this commit: its generations and what it held.</summary>
   internal readonly record struct BucketState(byte Generation, byte OldestGeneration, byte DataType);
 
-  /// <summary>Chooses buckets for the nodes of each tree, in the order the shapes list them.</summary>
+  /// <summary>
+  /// Chooses node slots for the nodes of each tree, in the order the shapes list them: slot
+  /// <c>n</c> is the node at sector <c>n × NodeSectors</c>, the same number as its bucket
+  /// wherever a node fills a bucket.
+  /// </summary>
   internal delegate IReadOnlyDictionary<int, long[]> Placement(
     IReadOnlyDictionary<int, IReadOnlyList<BcacheFsTreeNodeShape>> shapes);
 
@@ -99,14 +103,14 @@ internal static class BcacheFsMetadataCommit {
           + string.Join(" | ", history));
 
       placement = place(shapes);
-      foreach (var buckets in placement.Values) offered.UnionWith(buckets);
+      foreach (var slots in placement.Values) offered.UnionWith(slots.Select(BucketOfSlot));
       var nodes = new List<BcacheFsAllocationBuilder.Node>();
       foreach (var (id, treeShapes) in shapes) {
         var buckets = placement[id];
         if (buckets.Length != treeShapes.Count)
           throw new InvalidOperationException($"bcachefs tree {id} was offered {buckets.Length} buckets for {treeShapes.Count} nodes.");
         for (var i = 0; i < treeShapes.Count; ++i)
-          nodes.Add(new(id, treeShapes[i].Level, treeShapes[i].MaxKey, buckets[i] * BucketSectors));
+          nodes.Add(new(id, treeShapes[i].Level, treeShapes[i].MaxKey, buckets[i] * NodeSectors));
       }
 
       // What every bucket will hold decides its generation: a bucket that held
@@ -143,7 +147,7 @@ internal static class BcacheFsMetadataCommit {
       shapes = next;
     }
 
-    var metadataBuckets = placement.Values.SelectMany(b => b).ToHashSet();
+    var metadataBuckets = placement.Values.SelectMany(b => b).Select(BucketOfSlot).ToHashSet();
     foreach (var bucket in metadataBuckets) ZeroRange(image, bucket * (long)BucketBytes, BucketBytes);
 
     byte GenerationOf(long bucket) => final.GetValueOrDefault(bucket).Generation;
@@ -159,6 +163,8 @@ internal static class BcacheFsMetadataCommit {
     var inodes = (ulong)trees[BtreeInodes].Count(k => k.Type == KeyInodeV3);
     return new Published(roots, derived.Usage, inodes, final, metadataBuckets);
   }
+
+  private static long BucketOfSlot(long slot) => slot * NodeSectors / BucketSectors;
 
   /// <summary>Stamps the generation of the bucket an extent's data sits in into its pointer.</summary>
   private static void StampGeneration(Key extent, IReadOnlyDictionary<long, BucketState> states) {

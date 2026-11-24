@@ -113,9 +113,9 @@ internal static class BcacheFsAllocationBuilder {
     // A node costs its whole node size whatever was written of it, and the pointer
     // that names it lives one level up — which is the level its backpointer gives.
     foreach (var node in nodes) {
-      Mark(node.Sector, BucketSectors, DataBtree);
-      usage.BtreeSectors += (ulong)BucketSectors;
-      backpointers.Add(BackpointerKey(node.Sector, node.Btree, node.Level + 1, DataBtree, BucketSectors, node.MaxKey));
+      Mark(node.Sector, NodeSectors, DataBtree);
+      usage.BtreeSectors += (ulong)NodeSectors;
+      backpointers.Add(BackpointerKey(node.Sector, node.Btree, node.Level + 1, DataBtree, NodeSectors, node.MaxKey));
     }
 
     // An extent costs what it occupies on the device: its own size, or for a
