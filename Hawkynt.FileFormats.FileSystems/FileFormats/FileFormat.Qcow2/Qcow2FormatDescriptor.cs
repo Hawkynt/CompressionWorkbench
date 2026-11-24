@@ -73,6 +73,41 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// Lists the entries in the supplied container.
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    var entries = ListActive(stream, password);
+    // Internal snapshots follow as whole guest disks of their own.
+    var snapshots = SnapshotEntries(stream);
+    if (snapshots.Count == 0) return entries;
+    stream.Position = 0;
+    var encrypted = Qcow2Structures.ReadHeader(stream).CryptMethod != Qcow2Structures.CryptNone;
+    foreach (var (name, snapshot) in snapshots)
+      entries.Add(new ArchiveEntryInfo(entries.Count, name, snapshot.Size, snapshot.Size, "QCOW2 snapshot", false, encrypted, null));
+    return entries;
+  }
+
+  /// <summary>Snapshot entries: <c>snapshots/&lt;name&gt;.raw</c>, the name made safe as a file name (the id where it is empty or repeated).</summary>
+  private static List<(string Entry, Qcow2Stream.Snapshot Snapshot)> SnapshotEntries(Stream stream) {
+    var result = new List<(string, Qcow2Stream.Snapshot)>();
+    IReadOnlyList<Qcow2Stream.Snapshot> snapshots;
+    try {
+      stream.Position = 0;
+      snapshots = Qcow2Stream.ListSnapshots(stream);
+    } catch (Exception e) when (e is InvalidDataException or IOException or NotSupportedException) {
+      return result;
+    }
+    var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var snapshot in snapshots) {
+      var invalid = Path.GetInvalidFileNameChars();
+      var safe = new string(snapshot.Name.Select(c => invalid.Contains(c) || c is '/' or '\\' ? '_' : c).ToArray());
+      if (safe.Length == 0 || !used.Add(safe)) {
+        safe = $"{safe}id-{snapshot.Id}";
+        used.Add(safe);
+      }
+      result.Add(($"snapshots/{safe}.raw", snapshot));
+    }
+    return result;
+  }
+
+  private static List<ArchiveEntryInfo> ListActive(Stream stream, string? password) {
     if (Qcow2Stream.TryOpen(stream, password) is { } qStream) {
       using (qStream) {
         qStream.Position = 0;
@@ -100,6 +135,24 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    var snapshots = SnapshotEntries(stream);
+    var wantActive = files is not { Length: > 0 } || files.Any(f => !snapshots.Any(s => MatchesFilter(s.Entry, [f])));
+    stream.Position = 0;
+    if (wantActive)
+      ExtractActive(stream, outputDir, password, files);
+    for (var index = 0; index < snapshots.Count; ++index) {
+      var name = snapshots[index].Entry;
+      if (files is { Length: > 0 } && !MatchesFilter(name, files)) continue;
+      stream.Position = 0;
+      using var guest = Qcow2Stream.OpenSnapshotAt(stream, index, password);
+      var target = Path.Combine(outputDir, name.Replace('/', Path.DirectorySeparatorChar));
+      Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+      using var output = File.Create(target);
+      guest.CopyTo(output);
+    }
+  }
+
+  private static void ExtractActive(Stream stream, string outputDir, string? password, string[]? files) {
     if (Qcow2Stream.TryOpen(stream, password) is { } qStream) {
       using (qStream) {
         qStream.Position = 0;
