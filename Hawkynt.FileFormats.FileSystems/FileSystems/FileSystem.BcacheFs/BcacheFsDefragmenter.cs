@@ -36,7 +36,7 @@ internal static class BcacheFsDefragmenter {
       BcacheFsMetadataRelocator.Relocate(image, options);
 
     image.Position = 0;
-    var core = BcacheFsCoreVolume.Open(image);
+    var core = BcacheFsCoreVolume.OpenForEdit(image);
     if (!core.Recoverable)
       throw new InvalidDataException("bcachefs volume is not recoverable before data defragmentation: "
         + string.Join("; ", core.Diagnostics));

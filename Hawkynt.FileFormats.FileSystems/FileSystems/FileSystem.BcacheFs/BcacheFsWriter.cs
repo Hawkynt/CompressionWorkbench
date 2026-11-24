@@ -73,6 +73,25 @@ public sealed class BcacheFsWriter {
   private Guid _userUuid = Guid.NewGuid();
   private readonly Guid _memberUuid = Guid.NewGuid();
 
+  private bool _encrypted;
+  private string? _passphrase;
+  private bool _wideMacs;
+
+  /// <summary>
+  /// Encrypts the volume as <c>bcachefs format --encrypted</c> does: a random 256-bit master
+  /// key, every b-tree node, the journal entry and every extent enciphered with ChaCha20 and
+  /// authenticated with Poly1305. With a <paramref name="passphrase"/> the key is wrapped by
+  /// its scrypt-derived key (N 2^14, r 8, p 16, as the tools choose); without one it is
+  /// stored in the clear (<c>--no_passphrase</c>), which still encrypts everything else.
+  /// </summary>
+  /// <param name="passphrase">The passphrase, or null to store the key unwrapped.</param>
+  /// <param name="wideMacs">Full 128-bit data MACs (<c>--wide_macs</c>) instead of 80-bit ones.</param>
+  public void SetEncryption(string? passphrase, bool wideMacs = false) {
+    this._encrypted = true;
+    this._passphrase = passphrase;
+    this._wideMacs = wideMacs;
+  }
+
   /// <summary>Sets the volume label; it is truncated into the superblock's 32-byte field.</summary>
   public void SetLabel(string label) {
     ArgumentNullException.ThrowIfNull(label);
@@ -183,9 +202,13 @@ public sealed class BcacheFsWriter {
     output.SetLength(0);
     output.SetLength(this._imageSize);
 
+    var crypt = this._encrypted
+      ? new BcacheFsCrypt(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))
+      : null;
+
     // The data goes down first, because an extent records a checksum of the bytes
     // it covers and those are not known until they have been read.
-    WriteFileData(output, plan);
+    WriteFileData(output, plan, crypt, this._wideMacs);
 
     var deviceSectors = this._imageSize / SectorSize;
     long[] slots = [PrimarySbSector, PrimarySbSector + SbSlotSectors, deviceSectors - SbSlotSectors];
@@ -194,12 +217,14 @@ public sealed class BcacheFsWriter {
     var magic = BinaryPrimitives.ReadUInt64LittleEndian(this._internalUuid.ToByteArray());
 
     var published = BcacheFsMetadataCommit.Publish(output, magic, geometry, plan.Trees,
-      new Dictionary<long, BcacheFsMetadataCommit.BucketState>(), ReservedPlacement);
+      new Dictionary<long, BcacheFsMetadataCommit.BucketState>(), ReservedPlacement, crypt);
 
+    var encryption = crypt == null ? null : new BcacheFsSuperblockComposer.Encryption(
+      BcacheFsCrypt.ComposeField(crypt.MasterKey, this._passphrase, magic), this._wideMacs, plan.KeyVersion, crypt);
     var superblock = BcacheFsSuperblockComposer.Build(
       new BcacheFsSuperblockComposer.Description(this._internalUuid, this._userUuid, this._memberUuid,
         this._label, deviceSectors, slots, journal),
-      published.Roots, published.Usage, published.Inodes);
+      published.Roots, published.Usage, published.Inodes, encryption);
     foreach (var slot in slots) {
       BinaryPrimitives.WriteUInt64LittleEndian(superblock.AsSpan(104), (ulong)slot);
       BcacheFsSuperblockComposer.StampChecksum(superblock);
@@ -209,7 +234,7 @@ public sealed class BcacheFsWriter {
 
     // The last journal entry a clean shutdown leaves: no keys, the same roots and totals.
     output.Position = JournalFirstBucket * (long)BucketBytes;
-    output.Write(BcacheFsSuperblockComposer.JournalEntry(magic, published.Roots, published.Usage, published.Inodes));
+    output.Write(BcacheFsSuperblockComposer.JournalEntry(magic, published.Roots, published.Usage, published.Inodes, encryption));
 
     // The layout is repeated on its own, in the sector before the first superblock.
     output.Position = LayoutSector * SectorSize;
@@ -247,6 +272,7 @@ public sealed class BcacheFsWriter {
     internal ArchiveEntryMetadata? Metadata { get; init; }
     internal long FirstSector { get; set; }
     internal List<byte[]> ExtentValues { get; } = [];
+    internal List<BcacheFsKeyVersion> ExtentVersions { get; } = [];
   }
 
   private sealed class PlannedDirectory {
@@ -258,6 +284,8 @@ public sealed class BcacheFsWriter {
   private sealed class Plan {
     internal required Dictionary<int, List<Key>> Trees { get; init; }
     internal required List<PlannedFile> Files { get; init; }
+    /// <summary>The highest key version handed to an encrypted extent; zero for a plain volume.</summary>
+    internal ulong KeyVersion { get; init; }
   }
 
   /// <summary>Where one file's extents fall: each one's first sector and length.</summary>
@@ -281,7 +309,7 @@ public sealed class BcacheFsWriter {
   /// included, so the bytes are hashed on their way to the volume rather than read
   /// back afterwards — a file that is streamed in is only ever read once.
   /// </remarks>
-  private static void WriteFileData(Stream output, Plan plan) {
+  private static void WriteFileData(Stream output, Plan plan, BcacheFsCrypt? crypt, bool wideMacs) {
     var buffer = new byte[MaxExtentSectors * SectorSize];
 
     foreach (var file in plan.Files) {
@@ -305,10 +333,18 @@ public sealed class BcacheFsWriter {
         // The tail of the last extent is padding, and the checksum covers it.
         var sectors = (got + SectorSize - 1) / SectorSize;
         Array.Clear(buffer, got, sectors * SectorSize - got);
-        output.Write(buffer, 0, sectors * SectorSize);
-
-        BinaryPrimitives.WriteUInt64LittleEndian(file.ExtentValues[next++],
-          ExtentCrc32(sectors, DataChecksum(buffer.AsSpan(0, sectors * SectorSize))));
+        var region = buffer.AsSpan(0, sectors * SectorSize);
+        if (crypt != null) {
+          // Enciphered under the extent's own nonce (its fresh key version), then MAC'd as stored.
+          var type = wideMacs ? BcacheFsChecksumType.ChaCha20Poly1305_128 : BcacheFsChecksumType.ChaCha20Poly1305_80;
+          var crc = new BcacheFsExtentCrc((uint)sectors, (uint)sectors, 0, 0, type, BcacheFsCompressionType.None, default);
+          var nonce = BcacheFsNonce.ForExtent(file.ExtentVersions[next], crc);
+          crypt.Apply(nonce, region);
+          EncryptedExtentEntry(file.ExtentValues[next++], sectors, type, crypt.Mac(type, nonce, region));
+        } else {
+          BinaryPrimitives.WriteUInt64LittleEndian(file.ExtentValues[next++], ExtentCrc32(sectors, DataChecksum(region)));
+        }
+        output.Write(region);
         remaining -= got;
       }
     }
@@ -323,6 +359,7 @@ public sealed class BcacheFsWriter {
     var xattrs = new List<Key>();
     var inodeOfPath = new Dictionary<string, ulong>(StringComparer.Ordinal) { [""] = RootInode };
     var files = new List<PlannedFile>();
+    var keyVersion = 0UL;
     var leaves = new List<(string Path, string Name, ulong Parent, Kind Kind, FilePayload Payload, ArchiveEntryMetadata? Metadata)>();
 
     ulong DirectoryInode(string path, ulong parent, string leaf) {
@@ -390,7 +427,13 @@ public sealed class BcacheFsWriter {
       foreach (var (placed, spanSectors) in ExtentSpans(file.Length)) {
         // The checksum is not known until the bytes are read; the key is, and the
         // layout has to count it now or the trees are sized for another volume.
-        var extent = ExtentKey(file, placed, spanSectors);
+        Key extent;
+        if (this._encrypted) {
+          var version = new BcacheFsKeyVersion(++keyVersion, 0);
+          extent = EncryptedExtentKey(file, placed, spanSectors, this._wideMacs, version);
+          file.ExtentVersions.Add(version);
+        } else
+          extent = ExtentKey(file, placed, spanSectors);
         extents.Add(extent);
         file.ExtentValues.Add(extent.Value);
       }
@@ -404,6 +447,7 @@ public sealed class BcacheFsWriter {
     }
 
     return new Plan {
+      KeyVersion = keyVersion,
       Files = files,
       Trees = new Dictionary<int, List<Key>> {
         [BtreeExtents] = extents,
@@ -556,6 +600,41 @@ public sealed class BcacheFsWriter {
     // An extent is keyed by where it ends, not where it starts.
     return new Key(KeyExtent, new Bpos(file.Inode, (ulong)(firstSector + sectors), SnapshotIdMax),
       (uint)sectors, value);
+  }
+
+  /// <summary>
+  /// An encrypted extent's key: a <c>crc64</c> entry (80-bit MAC) or <c>crc128</c> entry
+  /// (128-bit MAC) in front of the pointer, as the kernel picks the smallest entry its MAC
+  /// fits, and the fresh key version its nonce is made from. The MAC is filled in once the
+  /// data has been enciphered.
+  /// </summary>
+  private static Key EncryptedExtentKey(PlannedFile file, long firstSector, int sectors, bool wideMacs, BcacheFsKeyVersion version) {
+    var entryBytes = wideMacs ? 24 : 16;
+    var value = new byte[entryBytes + 8];
+    EncryptedExtentEntry(value, sectors, wideMacs ? BcacheFsChecksumType.ChaCha20Poly1305_128 : BcacheFsChecksumType.ChaCha20Poly1305_80, default);
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(entryBytes), ExtentPointer(file.FirstSector + firstSector));
+    return new Key(KeyExtent, new Bpos(file.Inode, (ulong)(firstSector + sectors), SnapshotIdMax),
+      (uint)sectors, value) { Version = version };
+  }
+
+  /// <summary>
+  /// Writes the checksum entry of an encrypted, uncompressed extent at the start of
+  /// <paramref name="value"/>: sizes less one, offset and nonce zero, the MAC type and the MAC.
+  /// </summary>
+  private static void EncryptedExtentEntry(Span<byte> value, int sectors, BcacheFsChecksumType type, BcacheFsChecksum mac) {
+    var size = (ulong)(sectors - 1);
+    if (type == BcacheFsChecksumType.ChaCha20Poly1305_80) {
+      // crc64: type bit 2; sizes at 3 and 12, offset 21, nonce 30, csum type 40, compression 44, MAC high 16 bits at 48.
+      var header = (1UL << 2) | (size << 3) | (size << 12) | ((ulong)type << 40) | ((mac.Hi & 0xFFFF) << 48);
+      BinaryPrimitives.WriteUInt64LittleEndian(value, header);
+      BinaryPrimitives.WriteUInt64LittleEndian(value[8..], mac.Lo);
+    } else {
+      // crc128: type bit 3; sizes at 4 and 17, offset 30, nonce 43, csum type 56, compression 60; the MAC after.
+      var header = (1UL << 3) | (size << 4) | (size << 17) | ((ulong)type << 56);
+      BinaryPrimitives.WriteUInt64LittleEndian(value, header);
+      BinaryPrimitives.WriteUInt64LittleEndian(value[8..], mac.Lo);
+      BinaryPrimitives.WriteUInt64LittleEndian(value[16..], mac.Hi);
+    }
   }
 
   private static Key SubvolumeKey() {

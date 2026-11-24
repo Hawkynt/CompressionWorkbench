@@ -57,13 +57,16 @@ internal static class BcacheFsMetadataCommit {
   /// generation.
   /// </param>
   /// <param name="previous">What each bucket held before, for generation bookkeeping.</param>
+  /// <param name="place">Chooses the buckets each tree's nodes go to.</param>
+  /// <param name="crypt">The volume's encryption, which every node is then written under.</param>
   internal static Published Publish(
       Stream image,
       ulong magic,
       BcacheFsAllocationBuilder.Geometry geometry,
       IReadOnlyDictionary<int, List<Key>> logical,
       IReadOnlyDictionary<long, BucketState> previous,
-      Placement place) {
+      Placement place,
+      BcacheFsCrypt? crypt = null) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(geometry);
     ArgumentNullException.ThrowIfNull(logical);
@@ -150,7 +153,7 @@ internal static class BcacheFsMetadataCommit {
     foreach (var id in TreeOrder) {
       if (!shapes.ContainsKey(id)) continue;
       using var buckets = ((IEnumerable<long>)placement[id]).GetEnumerator();
-      var written = BcacheFsTreeLayout.Write(image, magic, id, trees[id], buckets, GenerationOf);
+      var written = BcacheFsTreeLayout.Write(image, magic, id, trees[id], buckets, GenerationOf, crypt);
       roots.Add(new(id, written.Level, written.RootPointer));
     }
 

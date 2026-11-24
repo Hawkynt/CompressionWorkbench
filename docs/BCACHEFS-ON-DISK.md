@@ -223,7 +223,7 @@ cache with its terminating NUL, so the size is the target length plus one (read:
 - A stretch of a file no extent covers is a hole and reads as zeroes (the sparse
   file in the v1.39.6 reference volume).
 - Compressed extents are decoded and every checksummed extent is verified on
-  read; encrypted extents are refused per file (see below).
+  read; an encrypted volume is read with its key ("Encryption" below).
 
 ## Compressed and checksummed data
 
@@ -280,10 +280,82 @@ in whole words (the tail beyond the inode size is padding). The key covers
 reads as zeroes. `indirect_inline_data` (19) is the same thing in the reflink
 tree, reached only through a `reflink_p`, which this reader does not follow.
 
-**Encryption** needs the volume key (ChaCha20, MAC by Poly1305) and this
-repository has no implementation of either, so a file with an encrypted extent
-is listed but refused with that reason. An unknown compression or checksum type
-is refused the same way rather than guessed at.
+An unknown compression or checksum type is refused rather than guessed at.
+Encrypted extents are read with the volume's key (next section).
+
+## Encryption
+
+Read in v1.3.4 `checksum.[ch]`, `btree_io.[ch]`, `journal_io.c`,
+`bcachefs_format.h` and the tools' `crypto.c`; confirmed against volumes
+bcachefs-tools 1.3.x and v1.39.6 and the 6.8 kernel wrote
+(`Compression.Tests/BcacheFs/ReferenceVectors/README.md`,
+`BcacheFsEncryptionTests`): every MAC below is checked against what they stored,
+and every file decrypts to the bytes that went in.
+
+**The cipher.** ChaCha20 (RFC 8439) under a 256-bit master key, started from a
+16-byte block `d[0..3]` of little-endian words: `d[0]` is the block counter,
+`d[1..3]` the 96-bit nonce. Advancing a nonce by *n* bytes (a multiple of 64)
+adds *n*/64 to `d[0]`. **Checksum types 3 and 4** are Poly1305 MACs: the
+one-time key is the first 32 keystream bytes of the item's nonce with bit 31 of
+`d[3]` flipped (`BCH_NONCE_POLY`); the tag's first 10 bytes (type 3,
+`chacha20_poly1305_80`) or all 16 (type 4) are the checksum, low word first.
+Encrypt, then MAC: the MAC covers the stored ciphertext. Metadata always uses
+type 4; data uses type 3 unless the volume was formatted `--wide_macs`.
+
+**The key.** Superblock field 2 (`crypt`, 64 bytes): field header, `flags`
+(bits 0–3 the KDF type, 0 = scrypt), `kdf_flags` (log2 of scrypt N in bits
+0–15, r in 16–31, p in 32–47; the formatter writes 14, 3, 4), then the 40-byte
+`bch_encrypted_key`: a magic word and the 32-byte master key. The key is in the
+clear when the magic reads `"bch**key"` (`0x79656B2A2A686362`, formatted
+`--no_passphrase`); otherwise magic and key are ChaCha20-encrypted under the
+*user key*, scrypt of the passphrase bytes with the 7-byte salt `"bcache\0"`, from
+the nonce `{0, 0, m_lo, m_hi}` where `m` is the first word of the internal UUID
+(the same word the journal and b-tree magics are XORed from). A wrong passphrase
+shows as a magic that does not decrypt to `"bch**key"`.
+
+**B-tree nodes.** The bset headers (`seq`, `journal_seq`, `flags`, `version`,
+`u64s`) stay in the clear so a node can be walked without the key. The nonce of a
+bset is `{entry offset in bytes, seq lo, seq hi, journal_seq lo ^ 2<<28}`, the
+entry offset being 0 for the first bset and the byte offset of the
+`btree_node_entry` for an appended one. In the first bset the node header from
+`flags` to the bset (112 bytes: `flags`, `min_key`, `max_key`, the unused
+pointer, the key format) is enciphered from that nonce, then the keys from the
+nonce advanced by 128 bytes (112 rounded up to a ChaCha20 block). An appended
+bset enciphers its keys from its own nonce. The MAC of the first bset covers the
+node from its magic to its last key; that of an appended entry covers the entry
+after its checksum.
+
+**Journal sets.** Nonce `{0, seq lo, seq hi, 3<<28}`; everything from
+`encrypted_start` (byte 44: after csum, magic, seq, version, flags and u64s) to
+the end of the set is enciphered; the MAC covers the set after its checksum.
+
+**Extents.** The nonce is made from the key's version and the checksum entry:
+`{size << 22, version.lo lo, version.lo hi, (version.hi | compression << 24) ^
+1<<28}`, where compression and size (decoded sectors) are those of a compressed
+region and zero otherwise, advanced by the entry's `nonce` field in sectors
+(`nonce << 9` bytes). The whole encoded region is enciphered — compressed data
+and padding included — and its MAC covers it as stored. The writer gives every
+encrypted extent a fresh version from the volume's key-version counter (the
+`key_version` usage entry of the clean section), so no two share a nonce.
+Inline data lives in the b-tree and is protected with its node.
+
+The superblock, its sections (the clean section included) and the journal
+headers named above are never encrypted.
+
+**What the writer does with it.** `BcacheFsWriter.SetEncryption` adds the crypt
+field (after `members_v1`, as the formatter places it), sets the superblock's
+encryption type (`flags[1]` bits 10–13, 1) and, for `--wide_macs`, bit 9;
+nodes and the journal entry use type 4, data extents type 3 in a `crc64` entry
+or type 4 in a `crc128` entry; extents get versions 1…n and the clean section's
+`key_version` is n. Checked (`BcacheFsEncryptedWriterTests`): bcachefs-tools
+1.3.4 `fsck -n` unlocks our wrapped key from the passphrase on standard input
+and finds nothing to repair, `unlock` refuses a wrong passphrase, and the 6.8
+kernel mounts a key-in-the-clear volume of ours, shows the same tree and bytes,
+writes into it, and what it wrote reads back here. Under WSL the tools never get
+past the superblock of a passphrase volume of their own (they cannot open it
+through the kernel keyring), so the only passphrase-wrapped key they made is
+checked by unwrapping it (`bcachefs-tools-1.39-encrypted-key.img.gz`).
+In-place edits of an encrypted volume are refused.
 
 ## What the kernel does to it
 

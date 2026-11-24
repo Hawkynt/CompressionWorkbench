@@ -12,6 +12,8 @@ namespace FileSystem.BcacheFs;
 /// </summary>
 internal static class BcacheFsJournalFormat {
   internal const int SetHeaderBytes = 56;
+  /// <summary>Where an encrypted set's ciphertext begins: after csum, magic, seq, version, flags and u64s.</summary>
+  internal const int EncryptedStart = 44;
   internal const int EntryHeaderBytes = 8;
 
   internal static ulong ExpectedMagic(ulong filesystemMagic)

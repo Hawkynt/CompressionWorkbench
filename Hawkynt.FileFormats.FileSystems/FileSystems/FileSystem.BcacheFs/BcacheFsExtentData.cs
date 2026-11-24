@@ -18,6 +18,11 @@ namespace FileSystem.BcacheFs;
 /// </remarks>
 internal sealed record BcacheFsStoredExtent(long RegionSector, BcacheFsExtentCrc? Crc, byte[]? Inline) {
 
+  /// <summary>The extent key's version, which an encrypted region's nonce is made from.</summary>
+  internal BcacheFsKeyVersion Version { get; init; }
+
+  internal bool Encrypted => this.Crc is { } crc && BcacheFsCrypt.IsMacType(crc.ChecksumType);
+
   /// <summary>Sectors the extent occupies on the device; zero for inline data.</summary>
   internal int PhysicalSectors => this.Inline != null ? 0 : (int)(this.Crc?.CompressedSize ?? 0);
 
@@ -31,9 +36,12 @@ internal static class BcacheFsExtentData {
   /// Whether this reader can decode an extent described by <paramref name="crc" />,
   /// and if not, why.
   /// </summary>
-  internal static bool CanDecode(BcacheFsExtentCrc crc, out string reason) {
-    if (crc.ChecksumType is BcacheFsChecksumType.ChaCha20Poly1305_80 or BcacheFsChecksumType.ChaCha20Poly1305_128) {
-      reason = "extent is encrypted (ChaCha20/Poly1305) and this reader has no cipher or key support";
+  internal static bool CanDecode(BcacheFsExtentCrc crc, out string reason) => CanDecode(crc, keyAvailable: false, out reason);
+
+  /// <summary>As above; an encrypted extent decodes when the volume's key is at hand.</summary>
+  internal static bool CanDecode(BcacheFsExtentCrc crc, bool keyAvailable, out string reason) {
+    if (BcacheFsCrypt.IsMacType(crc.ChecksumType) && !keyAvailable) {
+      reason = "extent is encrypted (ChaCha20/Poly1305) and the volume was opened without its key";
       return false;
     }
     if (!Enum.IsDefined(crc.ChecksumType)) {
@@ -61,7 +69,14 @@ internal static class BcacheFsExtentData {
   /// checked against its checksum and decompressed.
   /// </summary>
   /// <exception cref="InvalidDataException">The checksum does not match or the data does not decode.</exception>
-  internal static byte[] ReadLive(Stream device, BcacheFsStoredExtent stored, int liveSectors) {
+  internal static byte[] ReadLive(Stream device, BcacheFsStoredExtent stored, int liveSectors)
+    => ReadLive(device, stored, liveSectors, null);
+
+  /// <summary>
+  /// As above; an encrypted region's MAC is checked and it is deciphered with
+  /// <paramref name="crypt" /> before it is decompressed.
+  /// </summary>
+  internal static byte[] ReadLive(Stream device, BcacheFsStoredExtent stored, int liveSectors, BcacheFsCrypt? crypt) {
     var live = new byte[(long)liveSectors * SectorSize];
     if (stored.Inline is { } inline) {
       inline.AsSpan(0, Math.Min(inline.Length, live.Length)).CopyTo(live);
@@ -77,12 +92,21 @@ internal static class BcacheFsExtentData {
     device.Position = stored.RegionSector * SectorSize;
     device.ReadExactly(region);
 
-    if (!BcacheFsChecksumCodec.TryCompute(crc.ChecksumType, region, out var computed))
+    BcacheFsChecksum computed;
+    BcacheFsNonce? nonce = null;
+    if (BcacheFsCrypt.IsMacType(crc.ChecksumType)) {
+      if (crypt == null)
+        throw new NotSupportedException("bcachefs: the extent is encrypted and the volume was opened without its key.");
+      nonce = BcacheFsNonce.ForExtent(stored.Version, crc);
+      computed = crypt.Mac(crc.ChecksumType, nonce.Value, region);
+    } else if (!BcacheFsChecksumCodec.TryCompute(crc.ChecksumType, region, out computed))
       throw new NotSupportedException($"bcachefs: checksum type {crc.ChecksumType} cannot be verified here.");
     if (computed != crc.Checksum)
       throw new InvalidDataException(
         $"bcachefs: {crc.ChecksumType} checksum mismatch in the extent at sector {stored.RegionSector}: "
         + $"stored {crc.Checksum}, computed {computed}.");
+    if (nonce is { } n)
+      crypt!.Apply(n, region);
 
     var decoded = crc.Compressed ? Decompress(crc, region) : region;
     decoded.AsSpan((int)crc.Offset * SectorSize, live.Length).CopyTo(live);

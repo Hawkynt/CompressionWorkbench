@@ -239,7 +239,7 @@ internal static class BcacheFsInPlaceModifier {
   internal static Dictionary<int, List<Key>> RequireWritableProfile(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
-    var core = BcacheFsCoreVolume.Open(image);
+    var core = BcacheFsCoreVolume.OpenForEdit(image);
     if (!core.Recoverable)
       throw new InvalidDataException("bcachefs: the volume could not be recovered: " + string.Join("; ", core.Diagnostics));
 
@@ -471,7 +471,7 @@ internal static class BcacheFsInPlaceModifier {
   internal static bool IsCanonical(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
-    var core = BcacheFsCoreVolume.Open(image);
+    var core = BcacheFsCoreVolume.OpenForEdit(image);
     if (!core.Recoverable || core.Overlay.KeyUpdates.Count != 0
         || core.Journal.Sequences.Any(s => s.Sequence != CleanJournalSeq))
       return false;

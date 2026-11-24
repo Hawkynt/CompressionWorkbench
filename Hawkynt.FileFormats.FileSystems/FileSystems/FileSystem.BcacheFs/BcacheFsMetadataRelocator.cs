@@ -63,7 +63,7 @@ internal static class BcacheFsMetadataRelocator {
     image.Flush();
 
     image.Position = 0;
-    var core = BcacheFsCoreVolume.Open(image);
+    var core = BcacheFsCoreVolume.OpenForEdit(image);
     if (!core.Recoverable)
       throw new InvalidDataException("bcachefs relocated metadata did not reopen as a recoverable volume: "
         + string.Join("; ", core.Diagnostics));
