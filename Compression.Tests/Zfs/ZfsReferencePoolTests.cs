@@ -257,14 +257,18 @@ public class ZfsReferencePoolTests {
   }
 
   [Test, Category("ErrorHandling")]
-  public void BigEndianPool_IsRefused() {
+  public void UberblocksWhoseMagicAloneIsSwapped_AreNotTakenForABigEndianPool() {
+    // Given: every uberblock of all four labels claims big-endian by its magic, but nothing else in it was swapped
     using var image = Copy("cwbenc");
     var bytes = image.GetBuffer();
-    // Byte-swap the magic of every uberblock in L0.
-    for (var at = 128 * 1024; at < 256 * 1024; at += 1024)
-      if (BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(at)) == ZfsConstants.UberblockMagic)
-        BinaryPrimitives.WriteUInt64BigEndian(bytes.AsSpan(at), ZfsConstants.UberblockMagic);
-    Assert.Throws<NotSupportedException>(() => _ = new ZfsReader(image));
+    var length = image.Length;
+    var labelSize = 256 * 1024L;
+    foreach (var label in new[] { 0L, labelSize, length - 2 * labelSize, length - labelSize })
+      for (var at = label + 128 * 1024; at < label + labelSize; at += 1024)
+        if (BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan((int)at)) == ZfsConstants.UberblockMagic)
+          BinaryPrimitives.WriteUInt64BigEndian(bytes.AsSpan((int)at), ZfsConstants.UberblockMagic);
+    // Then: their big-endian checksums do not hold, so no uberblock is valid
+    Assert.Throws<InvalidDataException>(() => _ = new ZfsReader(image));
   }
 
   /// <summary>Flips the first byte of the first copy of the file's first data block.</summary>

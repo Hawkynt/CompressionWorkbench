@@ -6,7 +6,8 @@ Run on Linux as a user that may sudo (owners are set with chown):
 <squashfs-src-root> holds squashfs1.3r3, squashfs2.2-r2, squashfs3.0 and squashfs3.4 from
 https://sourceforge.net/projects/squashfs/files/squashfs/, each with squashfs-tools built
 (see README.md), and squashfs-3.3-lzma (the sqlzma build: squashfs3.3 + LZMA SDK 4.57 + the
-sqlzma patches) with its tools built. Every image is checked by an unsquashfs and the oracle
+sqlzma patches) and squashfs-3.0-lzma-damn-small-variant (squashfs3.0 whose zlib calls are
+replaced by LZMA, magic "hsqt"), each with its tools built. Every image is checked by an unsquashfs and the oracle
 comes from its extraction (run as root, so owners and modes are kept): unsquashfs 4.x, except
 for the sqlzma images, which only the sqlzma unsquashfs reads. Naming images builds only those.
 """
@@ -56,8 +57,12 @@ tools = {
     "3.0": os.path.join(src, "squashfs3.0/squashfs-tools/mksquashfs"),
     "3.4": os.path.join(src, "squashfs3.4/squashfs-tools/mksquashfs"),
     "3.3-lzma": os.path.join(src, "squashfs-3.3-lzma/squashfs3.3/squashfs-tools/mksquashfs"),
+    "3.0-hsqt": os.path.join(src, "squashfs-3.0-lzma-damn-small-variant/mksquashfs-lzma"),
 }
-readers = {"3.3-lzma": os.path.join(src, "squashfs-3.3-lzma/squashfs3.3/squashfs-tools/unsquashfs")}
+readers = {
+    "3.3-lzma": lambda out, img: [os.path.join(src, "squashfs-3.3-lzma/squashfs3.3/squashfs-tools/unsquashfs"), "-d", out, img],
+    "3.0-hsqt": lambda out, img: [os.path.join(src, "squashfs-3.0-lzma-damn-small-variant/unsquashfs-lzma"), "-dest", out, img],
+}
 variants = [
     ("v1.0-le.sqfs", "1.3", ["-le"]),
     ("v1.0-be.sqfs", "1.3", ["-be"]),
@@ -72,6 +77,8 @@ variants = [
     ("v3.1-le-uncompressed.sqfs", "3.4", ["-le", "-noI", "-noD", "-noF"]),
     ("v3.1-lzma-le.sqfs", "3.3-lzma", ["-le"]),
     ("v3.1-lzma-be.sqfs", "3.3-lzma", ["-be"]),
+    ("v3.0-hsqt-le.sqfs", "3.0-hsqt", ["-le"]),
+    ("v3.0-hsqt-be.sqfs", "3.0-hsqt", ["-be"]),
 ]
 if len(sys.argv) > 3:
     variants = [v for v in variants if v[0] in sys.argv[3:]]
@@ -83,7 +90,7 @@ for name, tool, opts in variants:
     subprocess.run(["sudo", tools[tool], payload, img] + extra + opts, check=True, stdout=subprocess.DEVNULL)
     subprocess.run(["sudo", "chown", f"{os.getuid()}:{os.getgid()}", img], check=True)
     out = os.path.join(work, "x-" + name)
-    unsquash = [readers[tool], "-d", out, img] if tool in readers else ["unsquashfs", "-no-xattrs", "-q", "-d", out, img]
+    unsquash = readers[tool](out, img) if tool in readers else ["unsquashfs", "-no-xattrs", "-q", "-d", out, img]
     subprocess.run(["sudo"] + unsquash, check=True, stdout=subprocess.DEVNULL)
     entries = []
     for root, dirs, files in os.walk(out):

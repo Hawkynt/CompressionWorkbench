@@ -8,7 +8,7 @@ namespace FileSystem.Zfs;
 /// (<c>docs/ZFS-ON-DISK.md</c>, "System attributes").
 /// </summary>
 internal sealed class ZfsSystemAttributes {
-  private readonly Dictionary<int, (string Name, int Length)> _attributes = new();
+  private readonly Dictionary<int, (string Name, int Length, int Swap)> _attributes = new();
   private readonly Dictionary<int, ushort[]> _layouts = new();
 
   public ZfsSystemAttributes(ZfsObjectSet os, ulong masterObject) {
@@ -16,7 +16,7 @@ internal sealed class ZfsSystemAttributes {
       switch (entry.Name) {
         case "REGISTRY":
           foreach (var attribute in os.Zap(entry.Value, "SA registry"))
-            this._attributes[(int)(attribute.Value & 0xFFFF)] = (attribute.Name, (int)((attribute.Value >> 24) & 0xFFFF));
+            this._attributes[(int)(attribute.Value & 0xFFFF)] = (attribute.Name, (int)((attribute.Value >> 24) & 0xFFFF), (int)((attribute.Value >> 16) & 0xFF));
           break;
         case "LAYOUTS":
           foreach (var layout in os.Zap(entry.Value, "SA layouts"))
@@ -39,9 +39,21 @@ internal sealed class ZfsSystemAttributes {
   }
 
   /// <summary>Adds the attributes held in one SA container (a bonus buffer or a spill block) to <paramref name="into"/>.</summary>
+  /// <remarks>
+  /// A container a big-endian host wrote (its magic reads byte-swapped) has each attribute swapped
+  /// by the kind its registration names (64-, 32- or 16-bit words; bytes and ACLs stay as stored).
+  /// </remarks>
   public void Parse(ReadOnlySpan<byte> container, Dictionary<string, byte[]> into) {
-    foreach (var (name, (offset, length)) in this.Locate(container))
-      into[name] = container.Slice(offset, length).ToArray();
+    var swapped = container.Length >= 4 && BinaryPrimitives.ReadUInt32BigEndian(container) == ZfsConstants.SaMagic;
+    foreach (var (name, (offset, length)) in this.Locate(container)) {
+      var value = container.Slice(offset, length).ToArray();
+      if (swapped) {
+        var kind = this._attributes.Values.First(a => a.Name == name).Swap;
+        var width = kind switch { 0 => 8, 1 => 4, 2 => 2, _ => 1 };
+        for (var i = 0; width > 1 && i + width <= value.Length; i += width) value.AsSpan(i, width).Reverse();
+      }
+      into[name] = value;
+    }
   }
 
   /// <summary>Where each attribute of one SA container sits: its offset in the container and its length.</summary>
@@ -49,9 +61,11 @@ internal sealed class ZfsSystemAttributes {
     var into = new Dictionary<string, (int Offset, int Length)>(StringComparer.Ordinal);
     if (container.Length < 8) throw new InvalidDataException("ZFS: SA header truncated.");
     var magic = BinaryPrimitives.ReadUInt32LittleEndian(container);
-    if (magic != ZfsConstants.SaMagic)
+    var swapped = BinaryPrimitives.ReverseEndianness(magic) == ZfsConstants.SaMagic;
+    if (magic != ZfsConstants.SaMagic && !swapped)
       throw new InvalidDataException($"ZFS: SA magic 0x{magic:X} mismatch.");
-    var info = BinaryPrimitives.ReadUInt16LittleEndian(container[4..]);
+    ushort U16(ReadOnlySpan<byte> p) => swapped ? BinaryPrimitives.ReadUInt16BigEndian(p) : BinaryPrimitives.ReadUInt16LittleEndian(p);
+    var info = U16(container[4..]);
     var layoutNumber = info & 0x3FF;
     var headerSize = ((info >> 10) & 0x3F) * 8;
     if (!this._layouts.TryGetValue(layoutNumber, out var layout))
@@ -67,7 +81,7 @@ internal sealed class ZfsSystemAttributes {
         var lengthAt = 6 + 2 * lengthIndex++;
         if (lengthAt + 2 > headerSize)
           throw new InvalidDataException("ZFS: SA header lacks a variable-length entry.");
-        length = BinaryPrimitives.ReadUInt16LittleEndian(container[lengthAt..]);
+        length = U16(container[lengthAt..]);
       }
       if (at + length > container.Length)
         throw new InvalidDataException($"ZFS: SA attribute {attribute.Name} runs past its container.");

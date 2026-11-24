@@ -5558,7 +5558,7 @@ PZX ("Perfect ZX Tape") 1.0 reader and writer, from Patrik Rak's format specific
 
 ### Namespace `FileFormat.Qcow2`
 
-[`Qcow2Entry`](#qcow2entry) · [`Qcow2FormatDescriptor`](#qcow2formatdescriptor) · [`Qcow2LayoutMap`](#qcow2layoutmap) · [`Qcow2Reader`](#qcow2reader) · [`Qcow2Stream`](#qcow2stream) · [`Qcow2Writer`](#qcow2writer)
+[`Qcow2Entry`](#qcow2entry) · [`Qcow2FormatDescriptor`](#qcow2formatdescriptor) · [`Qcow2LayoutMap`](#qcow2layoutmap) · [`Qcow2Reader`](#qcow2reader) · [`Qcow2Stream`](#qcow2stream) · [`Qcow2Stream.Snapshot`](#qcow2streamsnapshot) · [`Qcow2Writer`](#qcow2writer)
 
 #### `Qcow2Entry`
 
@@ -5643,6 +5643,8 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `Position` | `override long Position { get; set; }` |  |
 | `Dispose` | `protected override void Dispose(bool disposing)` |  |
 | `Flush` | `override void Flush()` |  |
+| `ListSnapshots` | `static IReadOnlyList<Snapshot> ListSnapshots(Stream image)` | The image's internal snapshots, in table order (none for an image without any). |
+| `OpenSnapshot` | `static Qcow2Stream OpenSnapshot(Stream image, string nameOrId, string password = null, bool leaveOpen = true)` | Opens the guest disk as the internal snapshot `nameOrId` holds it, read-only: the snapshot's own L1 table, everything else (backing file, encryption, data file) the image's. |
 | `Open` | `static Qcow2Stream Open(Stream backing, bool leaveOpen = true)` | Opens a QCOW2 image as a virtual guest-disk stream, or explains why it cannot. |
 | `Open` | `static Qcow2Stream Open(Stream backing, string password, bool leaveOpen = true)` | Opens a QCOW2 image, unlocking an encrypted one (and encrypted backing images) with `password`. |
 | `Read` | `override int Read(Span<byte> buffer)` |  |
@@ -5653,6 +5655,19 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `TryOpen` | `static Qcow2Stream TryOpen(Stream backing, string password, bool leaveOpen = true)` | Attempts to open a supported QCOW2 image, unlocking an encrypted one with `password`. |
 | `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
 | `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `Qcow2Stream.Snapshot`
+
+An internal snapshot of an image: its name, id and the size it reads at - the image's current virtual size, past the snapshot's own tables zeros, as `qemu-img convert -l snapshot.name=` reads it.
+
+Implements `IEquatable<Snapshot>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Snapshot` | `Snapshot(string Name, string Id, long Size)` | An internal snapshot of an image: its name, id and the size it reads at - the image's current virtual size, past the snapshot's own tables zeros, as `qemu-img convert -l snapshot.name=` reads it. |
+| `Id` | `string Id { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
 
 #### `Qcow2Writer`
 
@@ -17881,7 +17896,7 @@ Implements `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Refused: replacing files in place. The offline editor's output was judged by Windows Server 2022 and 2025 and rejected; see `EditsWithheld`. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Replaces existing files in place: a same-length overwrite of any number of files (`RefsInPlaceOverwrite`) or one length-changing replacement (`RefsInPlaceResize`). Creating files is refused. |
 | `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` | Performs the analyze layout operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
@@ -17891,8 +17906,8 @@ Implements `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` | Opens a filesystem session over the image. |
 | `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` | Probes the image and reports the filesystem driver profile. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Refused: removing files in place; see `EditsWithheld`. |
-| `Rename` | `void Rename(Stream image, string sourcePath, string destinationPath)` | Refused: renaming files in place; see `EditsWithheld`. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files held in their directory row, in place (`RefsInPlaceRemove`). |
+| `Rename` | `void Rename(Stream image, string sourcePath, string destinationPath)` | Renames a file within its directory, in place (`RefsInPlaceRename`). |
 
 #### `RefsOfflineBlockCloner`
 
@@ -20030,7 +20045,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileSystem.Tux3`
 
-[`Tux3BlockRun`](#tux3blockrun) · [`Tux3Entry`](#tux3entry) · [`Tux3FormatDescriptor`](#tux3formatdescriptor) · [`Tux3JournalRecord`](#tux3journalrecord) · [`Tux3JournalRecordType`](#tux3journalrecordtype) · [`Tux3Reader`](#tux3reader)
+[`Tux3BlockRun`](#tux3blockrun) · [`Tux3Entry`](#tux3entry) · [`Tux3FormatDescriptor`](#tux3formatdescriptor) · [`Tux3JournalRecord`](#tux3journalrecord) · [`Tux3JournalRecordType`](#tux3journalrecordtype) · [`Tux3Node`](#tux3node) · [`Tux3Reader`](#tux3reader)
 
 #### `Tux3BlockRun`
 
@@ -20055,6 +20070,7 @@ Represents a tux 3 entry.
 | `Data` | `byte[] Data { get; init; }` | Gets or sets the data. |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Gets a value indicating whether is directory. |
 | `Name` | `string Name { get; init; }` | Gets or sets the name. |
+| `Node` | `Tux3Node Node { get; init; }` | The file, directory or symlink of a 2015-06-01 volume this entry names; null for synthetic entries. |
 | `Offset` | `long Offset { get; init; }` | Where the entry's bytes live in the image, for entries the reader leaves in place rather than copying. -1 when `Data` carries them. |
 | `Size` | `long Size { get; init; }` | Gets or sets the size. |
 
@@ -20127,6 +20143,28 @@ Native TUX3 journal record identifiers.
 | `Unify` | `69` |  |
 | `Delta` | `70` |  |
 
+#### `Tux3Node`
+
+One file, directory or symlink of a Tux3 volume (revision 2015-06-01).
+
+Implements `IEquatable<Tux3Node>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Tux3Node` | `Tux3Node(string Path, ulong Inum, int Mode, uint Uid, uint Gid, long Size, uint Links, long ModifiedNanoseconds, string LinkTarget)` | One file, directory or symlink of a Tux3 volume (revision 2015-06-01). |
+| `Gid` | `uint Gid { get; init; }` |  |
+| `Inum` | `ulong Inum { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; }` |  |
+| `IsFile` | `bool IsFile { get; }` |  |
+| `IsSymlink` | `bool IsSymlink { get; }` |  |
+| `LinkTarget` | `string LinkTarget { get; init; }` |  |
+| `Links` | `uint Links { get; init; }` |  |
+| `Mode` | `int Mode { get; init; }` |  |
+| `ModifiedNanoseconds` | `long ModifiedNanoseconds { get; init; }` |  |
+| `Path` | `string Path { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+| `Uid` | `uint Uid { get; init; }` |  |
+
 #### `Tux3Reader`
 
 Native metadata reader for the linux-tux3 research filesystem.
@@ -20138,6 +20176,7 @@ Implements `IDisposable`.
 | `Tux3Reader` | `Tux3Reader(Stream stream)` | Initializes a reader over a TUX3 image. |
 | `DiskSuperSize` | `const int DiskSuperSize` | Size in bytes of the packed current `struct disksuper`. |
 | `Legacy2012Magic` | `static readonly byte[] Legacy2012Magic` | Older 2012-12-20 userspace-tree disk-format magic. |
+| `Magic2015` | `static readonly byte[] Magic2015` | The 2015-06-01 disk-format magic the linux-tux3 user tools write (branch hirofumi-user). |
 | `Magic` | `static readonly byte[] Magic` | Current linux-tux3 disk-format magic (2014-05-06 revision). |
 | `SuperblockOffset` | `const int SuperblockOffset` | Fixed byte offset of `struct disksuper`. |
 | `AllocationMapValid` | `bool AllocationMapValid { get; }` | Gets whether the allocation bitmap plus applicable journal deltas were proven trustworthy. |

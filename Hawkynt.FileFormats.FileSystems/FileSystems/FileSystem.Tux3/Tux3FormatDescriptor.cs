@@ -37,7 +37,8 @@ public sealed class Tux3FormatDescriptor :
 
   /// <inheritdoc />
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
   /// <inheritdoc />
   public string DefaultExtension => ".tux3";
@@ -50,6 +51,7 @@ public sealed class Tux3FormatDescriptor :
 
   /// <inheritdoc />
   public IReadOnlyList<MagicSignature> MagicSignatures => [
+    new(Tux3Reader.Magic2015, Offset: Tux3Reader.SuperblockOffset, Confidence: 0.99),
     new(Tux3Reader.Magic, Offset: Tux3Reader.SuperblockOffset, Confidence: 0.99),
     new(Tux3Reader.Legacy2012Magic, Offset: Tux3Reader.SuperblockOffset, Confidence: 0.95),
   ];
@@ -65,14 +67,16 @@ public sealed class Tux3FormatDescriptor :
 
   /// <inheritdoc />
   public string Description =>
-    "TUX3 version-tree research filesystem — native big-endian superblock, allocation-tree and journal parsing; " +
-    "fail-closed in-volume free-space layout/wipe plus external-tail shrink; native mutation not yet implemented.";
+    "TUX3 version-tree research filesystem — 2015-06-01 volumes read whole (log replay, directories, files, symlinks); " +
+    "older revisions: superblock, allocation-tree and journal parsing; native mutation not implemented.";
 
   /// <inheritdoc />
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var reader = new Tux3Reader(stream);
     return reader.Entries.Select((entry, index) => new ArchiveEntryInfo(
-      index, entry.Name, entry.Size, entry.Size, "Stored", entry.IsDirectory, false, null)).ToList();
+      index, entry.Name, entry.Size, entry.Size, "Stored", entry.IsDirectory, false,
+      entry.Node is { } node ? DateTime.UnixEpoch.AddTicks(node.ModifiedNanoseconds / 100) : null,
+      IsSymlink: entry.Node?.IsSymlink ?? false, LinkTarget: entry.Node?.LinkTarget)).ToList();
   }
 
   /// <inheritdoc />

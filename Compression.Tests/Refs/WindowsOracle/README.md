@@ -37,5 +37,18 @@ itself. A same-length overwrite of a plain file changes only that file's data cl
 plus timestamps and a new checkpoint. The descriptor now makes exactly that data write and
 nothing else. Windows Server 2022 and 2025, at 4 KiB and 64 KiB clusters, mount the result
 read-only and read-write, hash the file as written, pass `refsutil salvage -QS` and log no ReFS
-error. On the integrity-stream volumes the overwrite is refused and the image is left unchanged,
-as are length changes, remove and rename.
+error. On the integrity-stream volumes the overwrite is refused and the image is left unchanged.
+
+Later runs (45433556177, 45441757023, 45447908924) judged the edits made in place the same way:
+
+| Edit | 3.7 4 KiB | 3.7 64 KiB | 3.7 integrity | 3.14 4 KiB | 3.14 64 KiB | 3.14 integrity |
+| --- | --- | --- | --- | --- | --- | --- |
+| Overwrite, same length | accepted | accepted | refused | accepted | accepted | refused |
+| Rename (also to a longer name) | accepted | accepted | accepted | accepted | accepted | accepted |
+| Remove | accepted | refused (compact allocator row) | refused | accepted | refused | refused |
+| Replace, longer | accepted | refused | refused | refused (own object) | refused | refused |
+| Replace, shorter | accepted | accepted | refused | refused (own object) | refused | refused |
+
+"Accepted" means Windows mounted the edited volume read-only and read-write, listed every file
+with the expected hash, passed `refsutil salvage -QS` and logged no ReFS warning or error.
+"Refused" means our editor declined before writing a byte.

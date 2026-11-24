@@ -44,13 +44,15 @@ internal sealed class ZfsPool : IDisposable {
   public XdrNvList Config { get; private set; } = null!;
   /// <summary>The highest transaction group among all valid uberblocks, readable or not.</summary>
   public ulong NewestUberblockTxg { get; private set; }
+  /// <summary>The active uberblock was written by a big-endian host (its blocks are byte-swapped as they are read).</summary>
+  public bool IsBigEndian { get; private set; }
 
   /// <summary>What reading has met so far: which block shapes, compressions and checksums.</summary>
   internal ZfsReadStatistics Statistics { get; } = new();
 
   private void Open() {
     var labels = new List<(int Device, XdrNvList Config, int Ashift)>();
-    var uberblocks = new List<(ulong Txg, ulong Timestamp, ulong Version, ZfsBlockPointer Root)>();
+    var uberblocks = new List<(ulong Txg, ulong Timestamp, ulong Version, ZfsBlockPointer Root, bool BigEndian)>();
 
     for (var d = 0; d < this._devices.Length; ++d) {
       var device = this._devices[d];
@@ -104,6 +106,7 @@ internal sealed class ZfsPool : IDisposable {
         if (mos.Type != ZfsConstants.OstMeta)
           throw new InvalidDataException($"ZFS: root object set has type {mos.Type}, not the MOS.");
         this.Mos = mos;
+        this.IsBigEndian = ub.BigEndian;
         this.MosRoot = ub.Root;
         this.Txg = ub.Txg;
         this.Version = ub.Version;
@@ -116,7 +119,7 @@ internal sealed class ZfsPool : IDisposable {
   }
 
   private static void ReadRing(ImageAccessor device, long labelAt, int ashift,
-      List<(ulong, ulong, ulong, ZfsBlockPointer)> uberblocks) {
+      List<(ulong, ulong, ulong, ZfsBlockPointer, bool)> uberblocks) {
     var slotShift = Math.Min(Math.Max(ashift, ZfsConstants.MinUberblockShift), ZfsConstants.MaxUberblockShift);
     var slotSize = 1 << slotShift;
     var ringAt = labelAt + ZfsConstants.UberblockRingOffset;
@@ -124,17 +127,18 @@ internal sealed class ZfsPool : IDisposable {
     for (var at = 0; at + slotSize <= ring.Length; at += slotSize) {
       var slot = ring.AsSpan(at, slotSize);
       var magic = BinaryPrimitives.ReadUInt64LittleEndian(slot);
-      if (magic != ZfsConstants.UberblockMagic) {
-        if (BinaryPrimitives.ReverseEndianness(magic) == ZfsConstants.UberblockMagic)
-          throw new NotSupportedException("ZFS: the pool was written big-endian; only little-endian pools are read.");
-        continue;
-      }
-      if (!ZfsChecksum.VerifyEmbedded(slot, ringAt + at)) continue;
+      var bigEndian = magic != ZfsConstants.UberblockMagic && BinaryPrimitives.ReverseEndianness(magic) == ZfsConstants.UberblockMagic;
+      if (magic != ZfsConstants.UberblockMagic && !bigEndian) continue;
+      if (!ZfsChecksum.VerifyEmbedded(slot, ringAt + at, bigEndian)) continue;
+      // a big-endian host wrote every field as its own 64-bit word: swap the five words and the root pointer
+      var ub = slot[..(0x28 + ZfsConstants.BlockPointerSize)].ToArray();
+      if (bigEndian) ZfsByteSwap.UInt64Array(ub);
       uberblocks.Add((
-        BinaryPrimitives.ReadUInt64LittleEndian(slot[0x10..]),
-        BinaryPrimitives.ReadUInt64LittleEndian(slot[0x20..]),
-        BinaryPrimitives.ReadUInt64LittleEndian(slot[0x08..]),
-        ZfsBlockPointer.Read(slot[0x28..])));
+        BinaryPrimitives.ReadUInt64LittleEndian(ub.AsSpan(0x10)),
+        BinaryPrimitives.ReadUInt64LittleEndian(ub.AsSpan(0x20)),
+        BinaryPrimitives.ReadUInt64LittleEndian(ub.AsSpan(0x08)),
+        ZfsBlockPointer.Read(ub.AsSpan(0x28)),
+        bigEndian));
     }
   }
 
@@ -171,7 +175,13 @@ internal sealed class ZfsPool : IDisposable {
         throw new NotSupportedException($"ZFS: embedded block type {bp.EmbeddedType} carries no data.");
       ++this.Statistics.EmbeddedBlocks;
       this.Statistics.Compressions.Add(bp.Compression);
-      return ZfsCompression.Decompress(bp.Compression, bp.EmbeddedPayload(), bp.LogicalSize);
+      var embedded = ZfsCompression.Decompress(bp.Compression, bp.EmbeddedPayload(), bp.LogicalSize);
+      if (!bp.IsLittleEndian) {
+        if (bp.IsEncrypted) throw new NotSupportedException("ZFS: natively encrypted big-endian blocks are not read.");
+        ++this.Statistics.ByteSwappedBlocks;
+        ZfsByteSwap.Block(bp.Type, bp.Level, embedded);
+      }
+      return embedded;
     }
     if (bp.IsHole) {
       ++this.Statistics.Holes;
@@ -179,8 +189,8 @@ internal sealed class ZfsPool : IDisposable {
     }
     if (bp.IsEncrypted && cryptoKey == null)
       throw new ZfsEncryptedException("ZFS: the block is encrypted (native encryption); no key is available.");
-    if (!bp.IsLittleEndian)
-      throw new NotSupportedException("ZFS: big-endian blocks are not read.");
+    if (!bp.IsLittleEndian && bp.IsEncrypted)
+      throw new NotSupportedException("ZFS: natively encrypted big-endian blocks are not read.");
 
     var key = (bp.Dvas[0].Vdev, bp.Dvas[0].Offset, bp.LogicalBirth);
     if (cache && this._cache.TryGetValue(key, out var cached)) return cached;
@@ -190,6 +200,11 @@ internal sealed class ZfsPool : IDisposable {
     this.Statistics.Checksums.Add(bp.Checksum);
     if (bp.IsEncrypted) physical = Unprotect(bp, physical, cryptoKey!);
     var logical = ZfsCompression.Decompress(bp.Compression, physical, bp.LogicalSize);
+    if (!bp.IsLittleEndian) {
+      // written by a big-endian host: brought into the order the rest of the reader parses
+      ++this.Statistics.ByteSwappedBlocks;
+      ZfsByteSwap.Block(bp.Type, bp.Level, logical);
+    }
     if (bp.IsEncrypted && bp.Level > 0) {
       // an indirect block carries SHA-512 over its children's MACs (either key version)
       var mac = ZfsCryptoBlocks.Mac(bp.Raw);
@@ -242,7 +257,7 @@ internal sealed class ZfsPool : IDisposable {
       try {
         var physical = this.ReadDva(dva, bp.PhysicalSize);
         // a protected block's checksum is two words; the other two are its MAC
-        switch (ZfsChecksum.Verify(bp.Checksum, physical, bp.StoredChecksum, bp.IsEncrypted && bp.Type != ZfsCryptoBlocks.TypeObjset)) {
+        switch (ZfsChecksum.Verify(bp.Checksum, physical, bp.StoredChecksum, bp.IsEncrypted && bp.Type != ZfsCryptoBlocks.TypeObjset, bigEndian: !bp.IsLittleEndian)) {
           case ZfsChecksumResult.Match:
             if (failure != null) ++this.Statistics.CopiesRecovered;
             return physical;
@@ -269,6 +284,9 @@ internal sealed class ZfsPool : IDisposable {
     // A gang header lists up to three children whose physical bytes, in order, are the block.
     ++this.Statistics.GangBlocks;
     var header = vdev.Read(dva.Offset, ZfsConstants.GangHeaderSize);
+    // a gang header is three block pointers and a zio_eck tail; a big-endian host wrote its magic swapped
+    if (BinaryPrimitives.ReadUInt64BigEndian(header.AsSpan(header.Length - 40)) == ZfsConstants.EmbeddedChecksumMagic)
+      ZfsByteSwap.UInt64Array(header);
     var data = new byte[physicalSize];
     var taken = 0;
     for (var i = 0; i < 3 && taken < physicalSize; ++i) {
@@ -308,6 +326,7 @@ internal sealed class ZfsReadStatistics {
   public int EmbeddedBlocks;
   public int Holes;
   public int CopiesRecovered;
+  public int ByteSwappedBlocks;
   public HashSet<byte> Compressions { get; } = [];
   public HashSet<byte> Checksums { get; } = [];
 }

@@ -17,8 +17,9 @@ public sealed record ZfsDataset(string Name, string Path, string Kind, string? R
 /// </summary>
 /// <remarks>
 /// Read-only by design. Natively encrypted datasets are read with their key material (every
-/// AES-GCM/CCM suite; passphrase, hex and raw keys), every MAC checked; without it, as big-endian
-/// pools, they are reported and refused rather than guessed at. Volumes (zvols) are listed as one
+/// AES-GCM/CCM suite; passphrase, hex and raw keys), every MAC checked; without it
+/// they are reported and refused rather than guessed at. Pools a big-endian host wrote are read
+/// with every block byte-swapped first (their encrypted datasets are refused). Volumes (zvols) are listed as one
 /// file each, at the dataset's path, holding the device's bytes; their snapshots sit beside them as
 /// <c>&lt;path&gt;@&lt;snapshot&gt;</c>. Checksums are verified for Fletcher-2,
 /// Fletcher-4, SHA-256 and SHA-512; the salted ones (Skein, Edon-R, BLAKE3) are read
@@ -45,7 +46,6 @@ public sealed class ZfsReader : IDisposable {
 
   /// <summary>Opens the pool spread over <paramref name="devices"/> (mirror, RAID-Z or striped vdevs).</summary>
   /// <exception cref="InvalidDataException">No label, uberblock or readable MOS was found.</exception>
-  /// <exception cref="NotSupportedException">The pool was written big-endian.</exception>
   public ZfsReader(IReadOnlyList<Stream> devices, bool leaveOpen = true) : this(devices, null, null, leaveOpen) { }
 
   /// <summary>

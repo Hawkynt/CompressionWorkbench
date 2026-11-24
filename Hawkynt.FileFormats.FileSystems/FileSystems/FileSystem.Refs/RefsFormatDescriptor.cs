@@ -35,12 +35,13 @@ public sealed class RefsFormatDescriptor :
   /// Gets the category.
   /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  // CanModify covers one edit only: a same-length overwrite of a plain extent-backed file,
-  // written over its own clusters as Windows does (RefsInPlaceOverwrite). Windows Server 2022
-  // (ReFS 3.7) and 2025 (ReFS 3.14), 4 KiB and 64 KiB clusters, mount the result read-only and
-  // read-write, hash every file as expected and log no ReFS error. Everything else the old
-  // offline editor did (resize, remove, rename, defragment) Windows rejected, so it is refused
-  // before a byte is touched. See tools/foreign-os-oracles and RefsWindowsOracleTests.
+  // CanModify covers the edits Windows Server 2022 (ReFS 3.7) and 2025 (ReFS 3.14) accept from
+  // this editor - each mounted read-only and read-write, every file hashed as expected, no ReFS
+  // event: same-length overwrite (RefsInPlaceOverwrite), rename within a directory
+  // (RefsInPlaceRename), remove (RefsInPlaceRemove) and length-changing replace
+  // (RefsInPlaceResize) of files held in their directory row, in the layouts those checks cover.
+  // Defragment and everything outside those layouts is refused before a byte is touched.
+  // See tools/foreign-os-oracles and RefsWindowsOracleTests.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
@@ -48,10 +49,10 @@ public sealed class RefsFormatDescriptor :
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
-  /// <summary>Why every in-place edit of a ReFS volume is refused.</summary>
+  /// <summary>Why an edit outside the Windows-checked set is refused.</summary>
   internal const string EditsWithheld =
-    "ReFS: only same-length overwrites of existing files are made in place. Windows Server 2022 and 2025 found the " +
-    "volumes the offline editor wrote for other edits corrupt or refused to mount them, so no edit is made; the image is unchanged.";
+    "ReFS: this edit is not made in place. Only overwrite, rename, remove and length-changing replace of files held in " +
+    "their directory row are, as Windows Server 2022 and 2025 accept them; the image is unchanged.";
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -89,7 +90,7 @@ public sealed class RefsFormatDescriptor :
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Microsoft ReFS 3.x volume image, read: namespace and allocation parsing checked file for file against volumes Windows Server 2022 (ReFS 3.7) and 2025 (ReFS 3.14) formatted. In place, an existing file can be overwritten with contents of the same length; other edits are refused.";
+  public string Description => "Microsoft ReFS 3.x volume image, read: namespace and allocation parsing checked file for file against volumes Windows Server 2022 (ReFS 3.7) and 2025 (ReFS 3.14) formatted. In place: overwrite, length-changing replace, rename and remove of files, as Windows accepts them; creating files and defragmenting are refused.";
 
   /// <summary>
   /// Probes the image and reports the filesystem driver profile.
@@ -274,38 +275,51 @@ public sealed class RefsFormatDescriptor :
   }
 
   /// <summary>
-  /// Refused: replacing files in place. The offline editor's output was judged by Windows
-  /// Server 2022 and 2025 and rejected; see <see cref="EditsWithheld"/>.
+  /// Replaces existing files in place: a same-length overwrite of any number of files
+  /// (<see cref="RefsInPlaceOverwrite"/>) or one length-changing replacement
+  /// (<see cref="RefsInPlaceResize"/>). Creating files is refused.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
-    // Only same-length overwrites of plain extent-backed files, written over the clusters the
-    // file owns (RefsInPlaceOverwrite). Every input is planned and read before any byte is
-    // written, so a refusal leaves the image unchanged.
+    // Every input is planned and read before any byte is written, so a refusal leaves the
+    // image unchanged.
     var metadata = RefsMetadataReader.Open(archive);
-    var planned = new List<(IReadOnlyList<ulong> Clusters, byte[] Data)>();
-    foreach (var input in inputs) {
-      if (input.IsDirectory) continue;
-      var data = input.ReadContent();
-      planned.Add((RefsInPlaceOverwrite.Plan(archive, metadata, input.ArchiveName, data.LongLength), data));
+    var files = inputs.Where(static i => !i.IsDirectory).ToList();
+    var sizes = new RefsNamespaceReader(metadata).ReadAll()
+      .Where(static f => !f.IsDirectory)
+      .GroupBy(static f => f.Path, StringComparer.OrdinalIgnoreCase)
+      .ToDictionary(static g => g.Key, static g => g.First().Size, StringComparer.OrdinalIgnoreCase);
+    var contents = files.Select(static i => i.ReadContent()).ToList();
+    var resizing = files.Select((input, i) =>
+      sizes.TryGetValue(input.ArchiveName.Replace('\\', '/').Trim('/'), out var size) && size != contents[i].LongLength).ToList();
+    if (resizing.Any(static r => r)) {
+      // A length change rewrites metadata, so it is made alone.
+      if (files.Count != 1)
+        throw new NotSupportedException("ReFS: a replacement that changes a file's length is made one file per call.");
+      var graph = new RefsMetadataGraph(archive, metadata);
+      var plan = RefsInPlaceResize.Prepare(archive, metadata, graph, files[0].ArchiveName, contents[0].LongLength);
+      RefsInPlaceResize.Apply(archive, metadata, graph, plan, contents[0]);
+      return;
     }
-    foreach (var (clusters, data) in planned)
-      RefsInPlaceOverwrite.Apply(archive, metadata.ClusterSize, clusters, data);
+    var planned = files.Select((input, i) => RefsInPlaceOverwrite.Plan(archive, metadata, input.ArchiveName, contents[i].LongLength)).ToList();
+    for (var i = 0; i < planned.Count; ++i)
+      RefsInPlaceOverwrite.Apply(archive, metadata.ClusterSize, planned[i], contents[i]);
   }
 
-  /// <summary>Refused: removing files in place; see <see cref="EditsWithheld"/>.</summary>
+  /// <summary>Removes files held in their directory row, in place (<see cref="RefsInPlaceRemove"/>).</summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
-    throw new NotSupportedException(EditsWithheld);
+    // One file per call keeps each removal a complete edit; a refusal leaves the image as the
+    // removals before it left it.
+    foreach (var name in entryNames.Where(static n => !string.IsNullOrWhiteSpace(n)))
+      RefsInPlaceRemove.Remove(archive, name);
   }
 
-  /// <summary>Refused: renaming files in place; see <see cref="EditsWithheld"/>.</summary>
-  public void Rename(Stream image, string sourcePath, string destinationPath) {
-    ArgumentNullException.ThrowIfNull(image);
-    throw new NotSupportedException(EditsWithheld);
-  }
+  /// <summary>Renames a file within its directory, in place (<see cref="RefsInPlaceRename"/>).</summary>
+  public void Rename(Stream image, string sourcePath, string destinationPath)
+    => RefsInPlaceRename.Rename(image, sourcePath, destinationPath);
 
   private static List<ArchiveEntryInfo> ListDiagnosticSurface(Stream stream) {
     var entries = new List<ArchiveEntryInfo>();

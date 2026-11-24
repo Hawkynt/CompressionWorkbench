@@ -1,0 +1,3 @@
+F hard-hello 16 700 2 69b24ff2ae55dabceecbf219469055a4b35eb05bd66a91aa8014085a2e431cdb
+F hello.txt 16 700 2 69b24ff2ae55dabceecbf219469055a4b35eb05bd66a91aa8014085a2e431cdb
+L sym-hello -> hello.txt
