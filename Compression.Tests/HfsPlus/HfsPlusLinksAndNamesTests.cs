@@ -300,21 +300,147 @@ public sealed class HfsPlusLinksAndNamesTests {
   }
 
   [Test, Category("ExceptionalCase")]
-  public void GivenAHardLinkInTheRoot_WhenRemovedInPlace_ThenItIsRefusedAndTheVolumeIsUnchanged() {
-    var image = HardLinkedVolume(Pattern(10, 9));
+  public void GivenAHardLinkWhoseNodeCountsNoNames_WhenRemovedInPlace_ThenItIsRefusedAndTheVolumeIsUnchanged() {
+    var image = HardLinkedVolume(Pattern(10, 9));   // the writer leaves iNode77's link count at 0
     using var ms = new MemoryStream();
     ms.Write(image);
-    Assert.Throws<NotSupportedException>(() => new HfsPlusFormatDescriptor().Remove(ms, ["link-one"]));
+    Assert.Catch(() => new HfsPlusFormatDescriptor().Remove(ms, ["link-one"]));
     Assert.That(ms.ToArray(), Is.EqualTo(image));
   }
 
   [Test, Category("ExceptionalCase")]
-  public void GivenAHardLinkInTheRoot_WhenReplacedInPlace_ThenItIsRefusedAndTheVolumeIsUnchanged() {
+  public void GivenAHardLinkToAMissingNode_WhenRemovedInPlace_ThenItIsRefusedAndTheVolumeIsUnchanged() {
     var image = HardLinkedVolume(Pattern(10, 10));
+    MakeHardLink(image, "plain.txt", 78);   // no iNode78
     using var ms = new MemoryStream();
     ms.Write(image);
-    Assert.Throws<NotSupportedException>(() => HfsPlusModifier.AddFile(ms, "link-one", [1, 2, 3]));
+    Assert.Catch(() => HfsPlusModifier.RemoveFile(ms, "plain.txt"));
     Assert.That(ms.ToArray(), Is.EqualTo(image));
+  }
+
+  /// <summary><see cref="HardLinkedVolume"/> with iNode77 counting its two names, as TN1150 has it.</summary>
+  private static byte[] CountedHardLinkedVolume(byte[] payload) {
+    var image = HardLinkedVolume(payload);
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(FileRecordOffset(image, "iNode77") + 44), 2);
+    return image;
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenTwoNamesOfOneNode_WhenOneIsRemoved_ThenTheOtherKeepsTheDataAndTheNodeCountsOneName() {
+    var payload = Pattern(9000, 11);
+    using var ms = new MemoryStream();
+    ms.Write(CountedHardLinkedVolume(payload));
+    Assert.That(HfsPlusModifier.RemoveFile(ms, "link-one"), Is.True);
+    var after = ms.ToArray();
+    var reader = new HfsPlusReader(new MemoryStream(after));
+    Assert.Multiple(() => {
+      Assert.That(reader.Entries.Any(e => e.FullPath == "link-one"), Is.False);
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FullPath == "dir/link-two")), Is.EqualTo(payload));
+      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(after.AsSpan(FileRecordOffset(after, "iNode77") + 44)), Is.EqualTo(1u));
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenTwoNamesOfOneNode_WhenBothAreRemoved_ThenTheNodeAndItsBlocksGoToo() {
+    var payload = Pattern(9000, 12);
+    var image = CountedHardLinkedVolume(payload);
+    using var ms = new MemoryStream();
+    ms.Write(image);
+    var freeBefore = BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(1024 + 48));
+    var filesBefore = BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(1024 + 32));
+    HfsPlusModifier.RemoveFile(ms, "dir/link-two");
+    HfsPlusModifier.RemoveFile(ms, "link-one");
+    var after = ms.ToArray();
+    var reader = new HfsPlusReader(new MemoryStream(after));
+    Assert.Multiple(() => {
+      Assert.That(reader.AllFiles.Any(e => e.Name == "iNode77"), Is.False);
+      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(after.AsSpan(1024 + 48)), Is.EqualTo(freeBefore + 3), "the node's three blocks are free again");
+      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(after.AsSpan(1024 + 32)), Is.EqualTo(filesBefore - 3), "two names and the node");
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenAHardLinkInTheRoot_WhenReplacedInPlace_ThenTheNameHoldsTheNewBytesAndTheOtherNameTheOld() {
+    var payload = Pattern(100, 13);
+    using var ms = new MemoryStream();
+    ms.Write(CountedHardLinkedVolume(payload));
+    HfsPlusModifier.AddFile(ms, "link-one", [1, 2, 3]);
+    var reader = new HfsPlusReader(new MemoryStream(ms.ToArray()));
+    Assert.Multiple(() => {
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FullPath == "link-one")), Is.EqualTo(new byte[] { 1, 2, 3 }));
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FullPath == "dir/link-two")), Is.EqualTo(payload));
+    });
+  }
+
+  // ── Hard links Apple wrote ─────────────────────────────────────────
+
+  /// <summary>The catalog record body (after the key) of the file named <paramref name="name"/>.</summary>
+  private static int Body(byte[] image, string name) => FileRecordOffset(image, name);
+
+  [Test, Category("HappyPath")]
+  public void GivenTheHdiutilHardLink_WhenItsFirstNameIsRemoved_ThenTheChainAndCountFollowAndTheOtherNameReadsTheData() {
+    var image = KeramicsVolume(this._tmp);
+    using var ms = new MemoryStream();
+    ms.Write(image);
+    // As macOS wrote it: iNode20 counts two names and its first link is file_hardlink1 (22),
+    // whose next link is testdir1/testfile1 (21), whose previous link is 22.
+    Assert.That(BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(Body(image, "iNode20") + 4)), Is.EqualTo(22u));
+    Assert.That(BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(Body(image, "testfile1") + 32)), Is.EqualTo(22u));
+    Assert.That(HfsPlusModifier.RemoveFile(ms, "file_hardlink1"), Is.True);
+    var after = ms.ToArray();
+    var reader = new HfsPlusReader(new MemoryStream(after));
+    Assert.Multiple(() => {
+      Assert.That(reader.Entries.Any(e => e.FullPath == "file_hardlink1"), Is.False);
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FullPath == "testdir1/testfile1")), Is.EqualTo(KeramicsTestFile));
+      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(after.AsSpan(Body(after, "iNode20") + 44)), Is.EqualTo(1u), "link count");
+      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(after.AsSpan(Body(after, "iNode20") + 4)), Is.EqualTo(21u), "first link");
+      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(after.AsSpan(Body(after, "testfile1") + 32)), Is.Zero, "previous link");
+      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(after.AsSpan(Body(after, "testfile1") + 36)), Is.Zero, "next link");
+    });
+  }
+
+  private static IEnumerable<TestCaseData> HdiutilLinkEdits() {
+    yield return new TestCaseData(new[] { "file_hardlink1" }, false).SetName("GivenTheHdiutilVolume_WhenTheFirstLinkIsRemoved_ThenFsckHfsplusAndLibfshfsAcceptIt");
+    yield return new TestCaseData(new[] { "testdir1/testfile1" }, false).SetName("GivenTheHdiutilVolume_WhenTheLastLinkIsRemoved_ThenFsckHfsplusAndLibfshfsAcceptIt");
+    yield return new TestCaseData(new[] { "file_hardlink1", "testdir1/testfile1" }, false).SetName("GivenTheHdiutilVolume_WhenBothLinksAreRemoved_ThenFsckHfsplusAndLibfshfsAcceptIt");
+    yield return new TestCaseData(new[] { "testdir1/testfile1" }, true).SetName("GivenTheHdiutilVolume_WhenALinkIsReplaced_ThenFsckHfsplusAndLibfshfsAcceptIt");
+  }
+
+  [TestCaseSource(nameof(HdiutilLinkEdits)), Category("ExternalFsInterop")]
+  public void HdiutilLinkEdited(string[] names, bool replace) {
+    HfsPlusOracles.RequireFsck();
+    var image = KeramicsVolume(this._tmp);
+    using var ms = new MemoryStream();
+    ms.Write(image);
+    foreach (var name in names) {
+      if (replace) HfsPlusModifier.AddFile(ms, name, "replaced\n"u8.ToArray());
+      else Assert.That(HfsPlusModifier.RemoveFile(ms, name), Is.True, name);
+    }
+    var after = ms.ToArray();
+    HfsPlusOracles.AssertFsckClean(after, this._tmp, string.Join(" and ", names) + (replace ? " replaced" : " removed"));
+
+    var listed = HfsPlusOracles.Libfshfs(after, this._tmp).ToDictionary(static e => e.Path, StringComparer.Ordinal);
+    var kept = new[] { "file_hardlink1", "testdir1/testfile1" }.Except(names).ToList();
+    Assert.Multiple(() => {
+      foreach (var name in names)
+        if (replace) Assert.That(listed[name].Sha256, Is.EqualTo(HfsPlusOracles.Sha256("replaced\n"u8.ToArray())), name);
+        else Assert.That(listed.ContainsKey(name), Is.False, name);
+      foreach (var name in kept)
+        Assert.That(listed[name].Sha256, Is.EqualTo(HfsPlusOracles.Sha256(KeramicsTestFile)), name);
+    });
+  }
+
+  [Test, Category("ExternalFsInterop")]
+  public void GivenARemovedLinkWhoseNodeStillCountsIt_WhenFsckHfsplusChecks_ThenItComplains() {
+    // The control: fsck.hfsplus does check the counts this editor keeps.
+    HfsPlusOracles.RequireFsck();
+    using var ms = new MemoryStream();
+    ms.Write(KeramicsVolume(this._tmp));
+    HfsPlusModifier.RemoveFile(ms, "file_hardlink1");
+    var after = ms.ToArray();
+    BinaryPrimitives.WriteUInt32BigEndian(after.AsSpan(Body(after, "iNode20") + 44), 2);
+    var (output, code) = HfsPlusOracles.Fsck(after, this._tmp);
+    Assert.That(code, Is.Not.Zero, output);
   }
 
   // ── Names ──────────────────────────────────────────────────────────

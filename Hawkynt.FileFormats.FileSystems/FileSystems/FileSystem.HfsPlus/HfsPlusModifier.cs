@@ -13,8 +13,10 @@ namespace FileSystem.HfsPlus;
 /// <remarks>
 /// <para>
 /// Each operation works on a copy and writes the volume back only when it succeeds, so whatever
-/// it refuses leaves the image byte-identical. Refused: a hard link or directory hard link (their
-/// link chains and counts are not maintained here), anything inside the metadata directories,
+/// it refuses leaves the image byte-identical. A file hard link's name is removed (or replaced) by
+/// taking it out of its indirect node's link count and link chain; the node goes with its last name.
+/// Refused: a directory hard link, a file hard link whose node is missing or counts no names,
+/// anything inside the metadata directories,
 /// a volume whose journal holds transactions not yet replayed, a special file continued in the
 /// extents overflow file, and a volume without the free space the edit needs.
 /// </para>
@@ -297,8 +299,9 @@ public static class HfsPlusModifier {
     var type = BinaryPrimitives.ReadUInt32BigEndian(body[48..]);
     var creator = BinaryPrimitives.ReadUInt32BigEndian(body[52..]);
     // TN1150 hard link ('hlnk'/'hfs+') and xnu directory hard link ('fdrp'/'MACS' with a link chain).
+    uint? orphanedInode = null;
     if (type == 0x686C6E6B && creator == 0x6866732B)
-      throw new NotSupportedException($"HFS+: '{shown}' is a hard link; removing it in place would leave its shared data's link count wrong.");
+      orphanedInode = UnlinkHardLink(volume, body, cnid, shown);
     if (type == 0x66647270 && creator == 0x4D414353 && (BinaryPrimitives.ReadUInt16BigEndian(body[2..]) & HasLinkChainMask) != 0)
       throw new NotSupportedException($"HFS+: '{shown}' is a directory hard link; removing it in place would leave its directory's link chain wrong.");
 
@@ -328,6 +331,80 @@ public static class HfsPlusModifier {
     AdjustFolder(volume, parent, valence: -1, folders: 0);
     var files = volume.ReadHeader(32);
     if (files > 0) volume.WriteHeader(32, files - 1);
+
+    // The last name of a hard-linked file is gone: its indirect node goes with it, data and all.
+    if (orphanedInode is { } inodeNumber) {
+      var metadata = MetadataFolder(volume);
+      var inode = FindChild(volume, metadata, $"iNode{inodeNumber}")
+        ?? throw new InvalidDataException($"HFS+: the indirect node of '{shown}' disappeared.");
+      DeleteFile(volume, metadata, inode.Index, wipe, $"iNode{inodeNumber}");
+    }
+  }
+
+  // ── Hard links ──────────────────────────────────────────────────────────
+
+  /// <summary>The CNID of the file metadata folder that holds the indirect nodes of file hard links.</summary>
+  private static uint MetadataFolder(HfsPlusVolumeEditor volume)
+    => FindChild(volume, RootFolderCnid, FileMetadataFolder) is { } folder && Type(folder.Record) == FolderRecord
+      ? Cnid(folder.Record)
+      : throw new InvalidDataException("HFS+: a hard link points into a volume without a file metadata folder.");
+
+  /// <summary>
+  /// Takes one name away from a file hard link before its link record is removed. The link record
+  /// (type 'hlnk', creator 'hfs+') names its indirect node <c>iNode&lt;n&gt;</c> in the file metadata
+  /// folder by bsdInfo.special (offset 44); the indirect node counts its names there too. Where the
+  /// link record carries kHFSHasLinkChainMask, the names of one node form a doubly linked chain —
+  /// previous link ID in bsdInfo.ownerID (offset 32), next in bsdInfo.groupID (offset 36) — whose
+  /// first member the indirect node names in reserved1 (offset 4); the neighbours are spliced
+  /// together and the first link moved on when it is this one. Returns the node number when this
+  /// was the node's last name, so the caller removes the node as well.
+  /// </summary>
+  private static uint? UnlinkHardLink(HfsPlusVolumeEditor volume, ReadOnlySpan<byte> link, uint cnid, string shown) {
+    var inodeNumber = BinaryPrimitives.ReadUInt32BigEndian(link[44..]);
+    var metadata = MetadataFolder(volume);
+    var inode = FindChild(volume, metadata, $"iNode{inodeNumber}")
+      ?? throw new InvalidDataException($"HFS+: '{shown}' is a hard link to iNode{inodeNumber}, which the volume does not hold; it is not removed.");
+    if (Type(inode.Record) != FileRecord)
+      throw new InvalidDataException($"HFS+: '{shown}' is a hard link to a node that is not a file; it is not removed.");
+
+    var inodeRecord = inode.Record.ToArray();
+    var inodeBody = inodeRecord.AsSpan(HfsPlusBTreeFile.DataOffset(inodeRecord));
+    var links = BinaryPrimitives.ReadUInt32BigEndian(inodeBody[44..]);
+    if (links == 0)
+      throw new InvalidDataException($"HFS+: the indirect node of '{shown}' counts no names; it is not removed.");
+
+    if ((BinaryPrimitives.ReadUInt16BigEndian(link[2..]) & HasLinkChainMask) != 0) {
+      var previous = BinaryPrimitives.ReadUInt32BigEndian(link[32..]);
+      var next = BinaryPrimitives.ReadUInt32BigEndian(link[36..]);
+      if (previous != 0) PatchFileRecord(volume, previous, 36, next, shown);
+      if (next != 0) PatchFileRecord(volume, next, 32, previous, shown);
+      if (BinaryPrimitives.ReadUInt32BigEndian(inodeBody[4..]) == cnid)
+        BinaryPrimitives.WriteUInt32BigEndian(inodeBody[4..], next);
+    }
+    BinaryPrimitives.WriteUInt32BigEndian(inodeBody[44..], links - 1);
+    BinaryPrimitives.WriteUInt32BigEndian(inodeBody[20..], HfsPlusVolumeEditor.HfsTimestamp(DateTime.UtcNow));  // attributeModDate
+    volume.Catalog.Replace(inode.Index, inodeRecord);
+    return links == 1 ? inodeNumber : null;
+  }
+
+  /// <summary>Writes <paramref name="value"/> at <paramref name="offset"/> of the file record of catalog node <paramref name="cnid"/>, found through its thread.</summary>
+  private static void PatchFileRecord(HfsPlusVolumeEditor volume, uint cnid, int offset, uint value, string shown) {
+    var thread = FindThread(volume, cnid);
+    if (thread < 0)
+      throw new InvalidDataException($"HFS+: the link chain of '{shown}' names node {cnid}, which has no thread record; it is not removed.");
+    var threadRecord = volume.Catalog.Records[thread];
+    var data = HfsPlusBTreeFile.DataOffset(threadRecord);
+    if (BinaryPrimitives.ReadInt16BigEndian(threadRecord.AsSpan(data)) != FileThreadRecord)
+      throw new InvalidDataException($"HFS+: the link chain of '{shown}' names node {cnid}, which is not a file; it is not removed.");
+    var parent = BinaryPrimitives.ReadUInt32BigEndian(threadRecord.AsSpan(data + 4));
+    var nameLength = BinaryPrimitives.ReadUInt16BigEndian(threadRecord.AsSpan(data + 8));
+    var name = Encoding.BigEndianUnicode.GetString(threadRecord, data + 10, nameLength * 2);
+    var at = volume.Catalog.Search(CatalogKey(parent, name));
+    if (at < 0 || Type(volume.Catalog.Records[at]) != FileRecord || Cnid(volume.Catalog.Records[at]) != cnid)
+      throw new InvalidDataException($"HFS+: the link chain of '{shown}' names node {cnid}, whose thread names no file; it is not removed.");
+    var record = volume.Catalog.Records[at].ToArray();
+    BinaryPrimitives.WriteUInt32BigEndian(record.AsSpan(HfsPlusBTreeFile.DataOffset(record) + offset), value);
+    volume.Catalog.Replace(at, record);
   }
 
   /// <summary>The extents an HFSPlusForkData holds itself.</summary>
