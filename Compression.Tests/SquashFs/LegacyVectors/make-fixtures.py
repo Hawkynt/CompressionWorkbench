@@ -2,11 +2,13 @@
 """Builds the SquashFS 1.x/2.x/3.x reference images and their oracle listing.
 
 Run on Linux as a user that may sudo (owners are set with chown):
-    python3 make-fixtures.py <workdir> <squashfs-src-root>
+    python3 make-fixtures.py <workdir> <squashfs-src-root> [image ...]
 <squashfs-src-root> holds squashfs1.3r3, squashfs2.2-r2, squashfs3.0 and squashfs3.4 from
 https://sourceforge.net/projects/squashfs/files/squashfs/, each with squashfs-tools built
-(see README.md). Every image is checked by unsquashfs 4.x and the oracle comes from its
-extraction (run as root, so owners and modes are kept).
+(see README.md), and squashfs-3.3-lzma (the sqlzma build: squashfs3.3 + LZMA SDK 4.57 + the
+sqlzma patches) with its tools built. Every image is checked by an unsquashfs and the oracle
+comes from its extraction (run as root, so owners and modes are kept): unsquashfs 4.x, except
+for the sqlzma images, which only the sqlzma unsquashfs reads. Naming images builds only those.
 """
 import gzip, hashlib, os, random, shutil, subprocess, sys
 
@@ -53,7 +55,9 @@ tools = {
     "2.2": os.path.join(src, "squashfs2.2-r2/squashfs-tools/mksquashfs"),
     "3.0": os.path.join(src, "squashfs3.0/squashfs-tools/mksquashfs"),
     "3.4": os.path.join(src, "squashfs3.4/squashfs-tools/mksquashfs"),
+    "3.3-lzma": os.path.join(src, "squashfs-3.3-lzma/squashfs3.3/squashfs-tools/mksquashfs"),
 }
+readers = {"3.3-lzma": os.path.join(src, "squashfs-3.3-lzma/squashfs3.3/squashfs-tools/unsquashfs")}
 variants = [
     ("v1.0-le.sqfs", "1.3", ["-le"]),
     ("v1.0-be.sqfs", "1.3", ["-be"]),
@@ -66,16 +70,21 @@ variants = [
     ("v3.1-be.sqfs", "3.4", ["-be"]),
     ("v3.1-le-check-nofrag.sqfs", "3.4", ["-le", "-check_data", "-no-fragments", "-b", "4096"]),
     ("v3.1-le-uncompressed.sqfs", "3.4", ["-le", "-noI", "-noD", "-noF"]),
+    ("v3.1-lzma-le.sqfs", "3.3-lzma", ["-le"]),
+    ("v3.1-lzma-be.sqfs", "3.3-lzma", ["-be"]),
 ]
+if len(sys.argv) > 3:
+    variants = [v for v in variants if v[0] in sys.argv[3:]]
 
 rows = ["# image\tpath\ttype\tsize\tmode\tuid\tgid\tmtime\tsha256-or-target"]
 for name, tool, opts in variants:
     img = os.path.join(work, name)
-    extra = ["-noappend"] + (["-no-progress"] if tool == "3.4" else [])
+    extra = ["-noappend"] + (["-no-progress"] if tool in ("3.4", "3.3-lzma") else [])
     subprocess.run(["sudo", tools[tool], payload, img] + extra + opts, check=True, stdout=subprocess.DEVNULL)
     subprocess.run(["sudo", "chown", f"{os.getuid()}:{os.getgid()}", img], check=True)
     out = os.path.join(work, "x-" + name)
-    subprocess.run(["sudo", "unsquashfs", "-no-xattrs", "-q", "-d", out, img], check=True, stdout=subprocess.DEVNULL)
+    unsquash = [readers[tool], "-d", out, img] if tool in readers else ["unsquashfs", "-no-xattrs", "-q", "-d", out, img]
+    subprocess.run(["sudo"] + unsquash, check=True, stdout=subprocess.DEVNULL)
     entries = []
     for root, dirs, files in os.walk(out):
         for n in dirs + files:
