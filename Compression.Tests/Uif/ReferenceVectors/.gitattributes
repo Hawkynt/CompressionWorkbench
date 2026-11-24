@@ -1,0 +1,4 @@
+# Fixture bytes are the test: never let a checkout rewrite line endings.
+*.uif -text
+*.sha256 text eol=lf
+*.sh text eol=lf
