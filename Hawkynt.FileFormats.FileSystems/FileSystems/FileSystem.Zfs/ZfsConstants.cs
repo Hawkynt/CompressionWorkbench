@@ -65,6 +65,12 @@ internal static class ZfsConstants {
   public const byte OtDirectoryContents = 20;
   public const byte OtMasterNode = 21;
   public const byte OtSa = 44;
+  /// <summary><c>DMU_OT_ZVOL</c>: the bytes of a volume.</summary>
+  public const byte OtZvol = 23;
+
+  // A volume's object set: object 1 holds the device's bytes, object 2 a ZAP with its "size".
+  public const ulong ZvolDataObject = 1;
+  public const ulong ZvolPropertiesObject = 2;
 
   // Object-set types.
   public const ulong OstMeta = 1;

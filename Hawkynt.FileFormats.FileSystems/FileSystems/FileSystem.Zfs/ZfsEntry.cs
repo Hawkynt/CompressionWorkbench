@@ -3,7 +3,8 @@ namespace FileSystem.Zfs;
 /// <summary>
 /// One name in the pool's namespace: a file, directory or symbolic link of a ZPL dataset.
 /// Child datasets appear under their dataset name, snapshots under
-/// <c>&lt;dataset&gt;/.zfs/snapshot/&lt;name&gt;</c>.
+/// <c>&lt;dataset&gt;/.zfs/snapshot/&lt;name&gt;</c>. A volume (zvol) is one file at its dataset's
+/// path holding the device's bytes, and its snapshots files named <c>&lt;volume&gt;@&lt;name&gt;</c>.
 /// </summary>
 public sealed class ZfsEntry {
   /// <summary>Path from the pool root, '/'-separated.</summary>
