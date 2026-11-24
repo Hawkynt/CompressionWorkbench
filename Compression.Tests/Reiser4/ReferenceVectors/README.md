@@ -26,7 +26,7 @@ modification time in 2001.
 | `tea-lexic` | `create=reg40,hash=tea_hash,fibration=lexic_fibre` | TEA-hashed long names, no fibres |
 | `fnv1-dot-o` | `create=reg40,hash=fnv1_hash,fibration=dot_o_fibre` | FNV-1 long names, `.o` fibre |
 | `deg-ext-3` | `create=reg40,hash=deg_hash,fibration=ext_3_fibre` | degenerate hash, three-letter extension fibres |
-| `rupasov` | `create=reg40,hash=rupasov_hash` | read only: `fsck.reiser4` disagrees with the kernel's Rupasov keys |
+| `rupasov` | `create=reg40,hash=rupasov_hash` | the kernel's Rupasov keys, which `fsck.reiser4` disagrees with |
 | `journal-replay` | `create=reg40` | a commit the kernel had not yet written back: block 19 names transaction 181, block 20 transaction 130 |
 
 `<name>.manifest` is what the kernel read back after unmounting and mounting again: one line per

@@ -170,6 +170,39 @@ public sealed class Reiser4KernelOracleTests {
     AssertKernelReads(path, expected, new HashSet<string>(StringComparer.Ordinal) { "many", "dir" });
   }
 
+  /// <summary>
+  /// Long names under the Rupasov hash, keyed the way the kernel keys them: hashed tails of 9 to 240
+  /// bytes, with bytes below <c>'0'</c> (negative digits) and powers of ten past 2^31. The kernel
+  /// finds an entry only through its key, so every lookup it makes proves one hash value.
+  /// fsck.reiser4 is not asked: it hashes these tails differently and rejects the kernel's own
+  /// entries on the same volume.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void GivenTheKernelsRupasovVolume_WhenAddingLongNames_ThenTheKernelResolvesEveryOne() {
+    Reiser4KernelOracle.Require();
+    var manifest = Reiser4KernelVolumeTests.Manifest("rupasov");
+    var expected = FromManifest(manifest);
+    using var image = new MemoryStream();
+    image.Write(Reiser4KernelVolumeTests.Image("rupasov"));
+    var names = new[] {
+      "fifteen-bytes-x" + "123456789", "fifteen-bytes-x" + "9876543210", "fifteen-bytes-x" + "99999999999",
+      "a-name-longer-than-twenty-three.txt", "--------------------------------", "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+      new string('L', 200) + ".tar.gz", new string('z', 255),
+    };
+    var inputs = new List<ArchiveInputInfo>();
+    var seed = 40;
+    foreach (var name in names)
+      foreach (var dir in new[] { "", "many/" }) {
+        var data = Random(100 + seed, ++seed);
+        inputs.Add(ArchiveInputInfo.InMemory(dir + name, data));
+        expected[dir + name] = new Expected("regular file", data.Length, Md5(data));
+      }
+    new Reiser4FormatDescriptor().Add(image, inputs);
+
+    var path = this.Save("rupasov-long-names.img", image.ToArray());
+    AssertKernelReads(path, expected, new HashSet<string>(StringComparer.Ordinal) { ".", "many" });
+  }
+
   [Test, Category("HappyPath")]
   public void GivenATallTree_WhenDefragmentingInPlace_ThenTheKernelReadsEveryFileFromItsNewBlocks() {
     Reiser4KernelOracle.Require();

@@ -123,24 +123,29 @@ public sealed class Reiser4FeatureExternalTests {
     });
   }
 
+  /// <summary>
+  /// Short names and long names whose hashed tail is short enough for reiser4progs and the kernel
+  /// to agree on the Rupasov hash. Longer tails are keyed as the kernel keys them and are proven by
+  /// the kernel oracle (<see cref="Reiser4KernelOracleTests" />), not by fsck, which disagrees.
+  /// </summary>
   [Test, Category("HappyPath")]
-  public void GivenTheRupasovHash_WhenAddingNames_ThenShortNamesAreAddedAndLongOnesRefusedWithTheImageUntouched() {
+  public void GivenTheRupasovHash_WhenAddingNamesBothImplementationsKeyAlike_ThenFsckCallsTheVolumeConsistent() {
     Reiser4Oracle.Require();
     var original = this.Mkfs("rupasov", "-o hash=rupasov_hash");
     using var image = new MemoryStream();
     image.Write(original);
-    var descriptor = new Reiser4FormatDescriptor();
-    descriptor.Add(image, [ArchiveInputInfo.InMemory("short-name.txt", Text(10, 1))]);
-    var afterShort = image.ToArray();
-    var error = Assert.Throws<NotSupportedException>(() => descriptor.Add(image,
-      [ArchiveInputInfo.InMemory("a-name-longer-than-twenty-three-characters.txt", Text(10, 2))]));
+    // 24 bytes: the hashed tail "123456789" keeps every power and product below 2^31
+    const string longName = "fifteen-bytes-x123456789";
+    new Reiser4FormatDescriptor().Add(image, [
+      ArchiveInputInfo.InMemory("short-name.txt", Text(10, 1)),
+      ArchiveInputInfo.InMemory(longName, Text(10, 2)),
+    ]);
     var path = this.Save("rupasov.img", image.ToArray());
-    Assert.Multiple(() => {
-      Assert.That(error!.Message, Does.Contain("Rupasov"));
-      Assert.That(image.ToArray(), Is.EqualTo(afterShort), "a refused edit leaves the image byte-identical");
-    });
     AssertFsckConsistent(path);
-    Assert.That(Cat(path, "short-name.txt"), Does.Contain(Encoding.ASCII.GetString(Text(10, 1))));
+    Assert.Multiple(() => {
+      Assert.That(Cat(path, "short-name.txt"), Does.Contain(Encoding.ASCII.GetString(Text(10, 1))));
+      Assert.That(Cat(path, longName), Does.Contain(Encoding.ASCII.GetString(Text(10, 2))));
+    });
   }
 
   [TestCaseSource(typeof(Reiser4KernelVolumeTests), nameof(Reiser4KernelVolumeTests.EditableVolumes)), Category("HappyPath")]
