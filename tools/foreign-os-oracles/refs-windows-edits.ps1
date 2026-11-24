@@ -21,6 +21,7 @@ $gen = Join-Path $WorkDir 'gen'
 Invoke-Probe @('gen', $gen)
 Invoke-Probe @('pattern', '30', '65536', (Join-Path $WorkDir 'replace-same.bin'))
 Invoke-Probe @('pattern', '31', '300000', (Join-Path $WorkDir 'replace-grow.bin'))
+Invoke-Probe @('pattern', '32', '20000', (Join-Path $WorkDir 'replace-shrink.bin'))
 
 function Mount-Rw([string] $Vhd) {
   $img = Mount-DiskImage -ImagePath $Vhd -PassThru
@@ -54,6 +55,7 @@ foreach ($name in $Variants) {
     'noop'         = { param($r) }
     'replace-same' = { param($r) Copy-Item (Join-Path $WorkDir 'replace-same.bin') (Join-Path $r 'replace-me.bin') -Force }
     'replace-grow' = { param($r) Copy-Item (Join-Path $WorkDir 'replace-grow.bin') (Join-Path $r 'replace-me.bin') -Force }
+    'replace-shrink' = { param($r) Copy-Item (Join-Path $WorkDir 'replace-shrink.bin') (Join-Path $r 'replace-me.bin') -Force }
     'remove'       = { param($r) Remove-Item (Join-Path $r 'remove-me.bin') -Force }
     'remove-small' = { param($r) Remove-Item (Join-Path $r 'many/f007.txt') -Force }
     'rename'       = { param($r) Rename-Item (Join-Path $r 'rename-me.txt') 'renamed.txt' }
