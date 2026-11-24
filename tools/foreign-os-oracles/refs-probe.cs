@@ -12,7 +12,7 @@
 //   refs-probe pattern <seed> <length> <out>   the bytes an edit writes, for Windows to write too
 //   refs-probe read <image.refs> <out.json>    what our reader lists and extracts (path, size, sha256)
 //   refs-probe mutate <image.refs> <op> <out.refs> <result.json>
-//        op: rename | rename-long | replace-same | replace-grow | remove | clone | defrag
+//        op: rename | rename-long | replace-same | replace-grow | remove | remove-small | clone | defrag
 //
 // Every result is JSON so the PowerShell side can compare it with Get-FileHash.
 
@@ -122,6 +122,10 @@ static int Mutate(string image, string op, string output, string resultPath) {
       case "rename-long":
         descriptor.Rename(stream, "small.txt", "a-much-longer-name-for-the-small-file.txt");
         expectation = new { renamed = new[] { "small.txt", "a-much-longer-name-for-the-small-file.txt" } };
+        break;
+      case "remove-small":
+        descriptor.Remove(stream, ["many/f007.txt"]);
+        expectation = new { removed = "many/f007.txt" };
         break;
       case "remove":
         descriptor.Remove(stream, ["remove-me.bin"]);
