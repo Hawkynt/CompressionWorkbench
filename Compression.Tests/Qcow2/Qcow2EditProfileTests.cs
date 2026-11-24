@@ -112,4 +112,103 @@ public sealed class Qcow2EditProfileTests {
       Directory.Delete(dir, true);
     }
   }
+
+  /// <summary>
+  /// Images with internal snapshots (plain and compressed) and images left dirty by lazy
+  /// refcounts (qemu-io's <c>abort</c> simulates the crash), with and without snapshots.
+  /// </summary>
+  private static IEnumerable<TestCaseData> SnapshotAndDirtyProfiles() {
+    const string snapshots =
+      "qemu-img snapshot -c s1 image.qcow2 && qemu-io -f qcow2 -c 'write -P 0x5a 0 65536' image.qcow2 && " +
+      "qemu-img snapshot -c s2 image.qcow2 && qemu-io -f qcow2 -c 'write -P 0x6b 32768 65536' image.qcow2";
+    yield return new TestCaseData("snapshots",
+      "qemu-img convert -f raw -O qcow2 -o cluster_size=4096 guest.raw image.qcow2 && " + snapshots,
+      new[] { "s1", "s2" }, false);
+    yield return new TestCaseData("snapshots-compressed",
+      "qemu-img convert -c -f raw -O qcow2 -o cluster_size=4096 guest.raw image.qcow2 && " + snapshots,
+      new[] { "s1", "s2" }, false);
+    yield return new TestCaseData("dirty",
+      "qemu-img create -q -f qcow2 -o lazy_refcounts=on,cluster_size=4096 image.qcow2 256K && qemu-io -f qcow2 -c 'write -P 0x11 0 20000' image.qcow2 && " +
+      "(qemu-io -f qcow2 -c 'write -P 0x21 4096 100000' -c 'write -P 0x22 200000 40000' -c abort image.qcow2; true)",
+      new string[0], true);
+    yield return new TestCaseData("dirty-snapshots",
+      "qemu-img convert -f raw -O qcow2 -o lazy_refcounts=on,cluster_size=4096 guest.raw image.qcow2 && " +
+      "qemu-img snapshot -c s1 image.qcow2 && " +
+      "(qemu-io -f qcow2 -c 'write -P 0x31 0 70000' -c abort image.qcow2; true)",
+      new[] { "s1" }, true);
+  }
+
+  private static bool IsDirty(string path) {
+    var header = new byte[80];
+    using (var file = File.OpenRead(path)) file.ReadExactly(header);
+    return (header[79] & 1) != 0;
+  }
+
+  /// <summary>
+  /// We edit the active image; qemu-img must find it consistent (the lazy refcounts of a dirty
+  /// one rebuilt, its dirty bit cleared) and read the edits, and every snapshot must hold exactly
+  /// what it held before: converted out, and applied with <c>qemu-img snapshot -a</c> to a copy.
+  /// </summary>
+  [TestCaseSource(nameof(SnapshotAndDirtyProfiles))]
+  [Category("ExternalInterop")]
+  public void Given_AQemuImageWithSnapshotsOrLazyRefcounts_When_WeEditIt_Then_QemuImgChecksItAndTheSnapshotsAreIntact(
+      string profile, string make, string[] snapshots, bool dirty) {
+    RequireQemu();
+    var dir = Directory.CreateTempSubdirectory("cwb-qcow2-snap-").FullName;
+    try {
+      File.WriteAllBytes(Path.Combine(dir, "guest.raw"), Guest());
+      var w = FsInteropToolbox.WinToWsl(dir);
+      var saved = string.Concat(snapshots.Select(s => $" && qemu-img convert -l snapshot.name={s} -O raw image.qcow2 {s}.before"));
+      var made = FsInteropToolbox.RunWsl($"cd {w} && {make}{saved}");
+      Assert.That(made.ExitCode, Is.Zero, $"precondition: qemu-img made the {profile} image\n{made.StdOut}{made.StdErr}");
+      var path = Path.Combine(dir, "image.qcow2");
+      Assert.That(IsDirty(path), Is.EqualTo(dirty), "precondition: the dirty bit");
+
+      byte[] before;
+      using (var file = File.OpenRead(path))
+      using (var reader = new Qcow2Reader(file))
+        before = reader.ExtractDisk();
+      File.WriteAllBytes(Path.Combine(dir, "expected.raw"), Edit(path, null, before));
+      Assert.That(IsDirty(path), Is.False, "an edit leaves the refcounts repaired and the dirty bit cleared");
+
+      var intact = string.Concat(snapshots.Select(s =>
+        $" && qemu-img convert -l snapshot.name={s} -O raw image.qcow2 {s}.after && cmp {s}.before {s}.after" +
+        $" && cp image.qcow2 applied-{s}.qcow2 && qemu-img snapshot -a {s} applied-{s}.qcow2" +
+        $" && qemu-img compare -f qcow2 -F raw applied-{s}.qcow2 {s}.before && qemu-img check -q applied-{s}.qcow2"));
+      var judged = FsInteropToolbox.RunWsl(
+        $"cd {w} && qemu-img check image.qcow2 && qemu-img compare -f qcow2 -F raw image.qcow2 expected.raw{intact}");
+      Assert.That(judged.ExitCode, Is.Zero, $"{profile}: qemu-img rejected our edit\n{judged.StdOut}{judged.StdErr}");
+    } finally {
+      Directory.Delete(dir, true);
+    }
+  }
+
+  [Test]
+  [Category("Exception")]
+  public void Given_AnImageMarkedCorrupt_When_OpenedForWriting_Then_ItStaysReadOnly() {
+    using var stream = new MemoryStream();
+    var writer = new Qcow2Writer();
+    writer.SetDiskImage(Guest());
+    writer.WriteTo(stream);
+    var image = stream.ToArray();
+    // A version 2 image has no feature bits; promote the header to version 3 with the corrupt bit.
+    using var v3 = new MemoryStream();
+    var qemuLike = Qcow2EditProfileTestsHelpers.WithCorruptBit(image);
+    v3.Write(qemuLike);
+    using var guest = Qcow2Stream.Open(v3);
+    Assert.That(guest.CanWrite, Is.False);
+  }
+}
+
+internal static class Qcow2EditProfileTestsHelpers {
+  /// <summary>Our version 2 image rewritten as version 3 (104-byte header) with incompatible bit 1 (corrupt) set.</summary>
+  internal static byte[] WithCorruptBit(byte[] image) {
+    var copy = (byte[])image.Clone();
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(copy.AsSpan(4), 3);
+    copy.AsSpan(72, 32).Clear();
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt64BigEndian(copy.AsSpan(72), 1UL << 1);
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(copy.AsSpan(96), 4);
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(copy.AsSpan(100), 104);
+    return copy;
+  }
 }
