@@ -326,6 +326,8 @@
     </EmbeddedResource>
     <!-- The QEMU harness that lets a Reiser4 kernel judge what the writer produces. -->
     <None Include="Reiser4\KernelOracle\*.sh" CopyToOutputDirectory="PreserveNewest" LinkBase="Reiser4\KernelOracle" />
+    <!-- kernel-run.sh sources ../../Support/cwb-rmtree.sh relative to itself, so it travels along. -->
+    <None Include="Support\cwb-rmtree.sh" CopyToOutputDirectory="PreserveNewest" LinkBase="Support" />
     <!-- Drives a NetBSD live image under qemu for the NetBSD-only file systems (CHFS, LFS). -->
     <None Include="Support\NetBsdGuest\netbsd-guest.py" CopyToOutputDirectory="PreserveNewest" />
     <!-- CHFS images NetBSD 11.1's makefs built; see Chfs/ReferenceVectors/README.md. -->

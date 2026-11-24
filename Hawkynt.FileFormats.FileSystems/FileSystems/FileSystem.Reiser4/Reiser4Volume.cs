@@ -163,7 +163,8 @@ internal sealed class Reiser4Object {
 /// </remarks>
 internal sealed class Reiser4Volume : IDisposable {
 
-  internal const int BlockSize = 4096;
+  /// <summary>The block size of a default <c>mkfs.reiser4</c> volume, and the only one a Reiser4 kernel on a 4 KiB-page machine mounts.</summary>
+  internal const int DefaultBlockSize = 4096;
   internal const long MasterOffset = 65536;
   internal const ulong RootLocality = 0x29;
   internal const ulong RootObjectId = 0x2a;
@@ -182,9 +183,11 @@ internal sealed class Reiser4Volume : IDisposable {
   internal bool Valid { get; }
   internal string Label { get; } = "";
   internal string UuidHex { get; } = "";
-  internal int VolumeBlockSize { get; } = BlockSize;
+  /// <summary>Where the fixed blocks sit for the block size the master superblock names.</summary>
+  internal Reiser4Layout Layout { get; } = Reiser4Layout.Default;
+  internal int BlockSize => this.Layout.BlockSize;
   internal long Length => this._image.Length;
-  internal ulong BlockCount => (ulong)(this._image.Length / BlockSize);
+  internal ulong BlockCount => (ulong)(this._image.Length / this.BlockSize);
 
   /// <summary>True when the whole tree was read and every object is one this profile carries.</summary>
   internal bool TreeValid { get; private set; }
@@ -212,12 +215,16 @@ internal sealed class Reiser4Volume : IDisposable {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     this._image = new ImageAccessor(stream, leaveOpen);
-    if (this._image.Length < MasterOffset + BlockSize) return;
-    var master = this._image.Read(MasterOffset, BlockSize);
+    if (this._image.Length < MasterOffset + 512) return;
+    var master = this._image.Read(MasterOffset, 512);
     if (!master.AsSpan(0, MasterMagic.Length).SequenceEqual(MasterMagic)) return;
     this.Valid = true;
     var blockSize = BinaryPrimitives.ReadUInt16LittleEndian(master.AsSpan(18, 2));
-    if (blockSize is >= 512 and <= 8192) this.VolumeBlockSize = blockSize;
+    if (!Reiser4Layout.IsSupported(blockSize)) {
+      this.Problem = $"block size {blockSize} is not one mkfs.reiser4 makes";
+      return;
+    }
+    this.Layout = new Reiser4Layout(blockSize);
     this.UuidHex = Convert.ToHexString(master.AsSpan(20, 16));
     var label = master.AsSpan(36, 16);
     var nul = label.IndexOf((byte)0);
@@ -233,7 +240,7 @@ internal sealed class Reiser4Volume : IDisposable {
   /// <summary>A block as the volume holds it once the journal is replayed.</summary>
   internal byte[] ReadBlock(ulong block) {
     if (this._replayed.TryGetValue(block, out var replayed)) return replayed.ToArray();
-    return this._image.Read(checked((long)block * BlockSize), BlockSize);
+    return this._image.Read(checked((long)block * this.BlockSize), this.BlockSize);
   }
 
   /// <summary>Bytes of an item body.</summary>
@@ -243,22 +250,21 @@ internal sealed class Reiser4Volume : IDisposable {
   internal void CopyBlocks(ulong start, ulong count, Stream destination, long byteLimit) {
     for (ulong i = 0; i < count && byteLimit > 0; ++i) {
       var block = start + i;
-      var take = (int)Math.Min(BlockSize, byteLimit);
+      var take = (int)Math.Min(this.BlockSize, byteLimit);
       if (this._replayed.TryGetValue(block, out var replayed)) destination.Write(replayed, 0, take);
-      else this._image.CopyTo(checked((long)block * BlockSize), destination, take);
+      else this._image.CopyTo(checked((long)block * this.BlockSize), destination, take);
       byteLimit -= take;
     }
   }
 
   private string? Load() {
-    if (this.VolumeBlockSize != BlockSize) return "only 4096-byte blocks are read natively";
-    if (this.BlockCount <= 25) return "the image is too small for a format40 volume";
-    var replay = Reiser4Journal.Read(block => this._image.Read(checked((long)block * BlockSize), BlockSize), this.BlockCount, out var journalProblem);
+    if (this.BlockCount <= this.Layout.FirstData) return "the image is too small for a format40 volume";
+    var replay = Reiser4Journal.Read(block => this._image.Read(checked((long)block * this.BlockSize), this.BlockSize), this.Layout, this.BlockCount, out var journalProblem);
     if (replay is null) return journalProblem;
     this._replayed = replay.Blocks.ToDictionary(static pair => pair.Key, static pair => pair.Value);
     this.ReplayedTransactions = replay.Transactions;
 
-    var format = this.ReadBlock(17);
+    var format = this.ReadBlock(this.Layout.Format);
     if (!format.AsSpan(52, FormatMagic.Length).SequenceEqual(FormatMagic)) return "the format40 superblock is missing";
     var flags = BinaryPrimitives.ReadUInt64LittleEndian(format.AsSpan(72));
     if ((flags & 1) == 0) return "the volume uses short keys";
@@ -276,7 +282,7 @@ internal sealed class Reiser4Volume : IDisposable {
   }
 
   private string? Walk(ulong block, int expectedLevel, HashSet<ulong> visited, List<Reiser4ItemRef> items) {
-    if (block < 23 || block >= this.BlockCount) return $"a tree pointer names block {block}, outside the volume";
+    if (block < this.Layout.Root || block >= this.BlockCount) return $"a tree pointer names block {block}, outside the volume";
     if (!visited.Add(block)) return $"node {block} is reached twice";
     if (visited.Count > 16_000_000) return "the tree is larger than this reader walks";
     var node = this.ReadBlock(block);
@@ -289,12 +295,12 @@ internal sealed class Reiser4Volume : IDisposable {
     if (level == 0 || expectedLevel != 0 && level != expectedLevel) return $"node {block} sits at the wrong tree level";
     var count = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(2));
     var bodiesEnd = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(6));
-    if (count == 0 || count > (BlockSize - this.NodeHeaderBytes) / ItemHeaderBytes ||
-        bodiesEnd < this.NodeHeaderBytes || bodiesEnd > BlockSize - count * ItemHeaderBytes)
+    if (count == 0 || count > (this.BlockSize - this.NodeHeaderBytes) / ItemHeaderBytes ||
+        bodiesEnd < this.NodeHeaderBytes || bodiesEnd > this.BlockSize - count * ItemHeaderBytes)
       return $"node {block} has a malformed header";
     var headers = new (Reiser4Key Key, ushort Offset, ushort Flags, ushort Plugin)[count];
     for (var i = 0; i < count; ++i) {
-      var at = BlockSize - (i + 1) * ItemHeaderBytes;
+      var at = this.BlockSize - (i + 1) * ItemHeaderBytes;
       headers[i] = (Reiser4Key.Read(node.AsSpan(at)), BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(at + 32)),
         BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(at + 34)), BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(at + 36)));
       if (headers[i].Offset < this.NodeHeaderBytes || headers[i].Offset > bodiesEnd) return $"node {block} has an item outside its body area";
@@ -416,9 +422,9 @@ internal sealed class Reiser4Volume : IDisposable {
       for (var at = 0; at < body.Length; at += 16) {
         var start = BinaryPrimitives.ReadUInt64LittleEndian(body.AsSpan(at));
         var width = BinaryPrimitives.ReadUInt64LittleEndian(body.AsSpan(at + 8));
-        if (width == 0 || start == 1 || start != 0 && (start < 25 || start >= this.BlockCount || width > this.BlockCount - start))
+        if (width == 0 || start == 1 || start != 0 && (start < this.Layout.FirstData || start >= this.BlockCount || width > this.BlockCount - start))
           return "an extent unit lies outside the volume or is unallocated";
-        expected = checked(expected + width * BlockSize);
+        expected = checked(expected + width * (ulong)this.BlockSize);
       }
     }
     return null;
@@ -549,7 +555,7 @@ internal sealed class Reiser4Volume : IDisposable {
       for (var at = 0; at < body.Length && written < size; at += 16) {
         var start = BinaryPrimitives.ReadUInt64LittleEndian(body.AsSpan(at));
         var width = BinaryPrimitives.ReadUInt64LittleEndian(body.AsSpan(at + 8));
-        var bytes = (long)Math.Min((ulong)(size - written), width * BlockSize);
+        var bytes = (long)Math.Min((ulong)(size - written), width * (ulong)this.BlockSize);
         if (start == 0) { Zeros(bytes); continue; }
         this.CopyBlocks(start, width, destination, bytes);
         written += bytes;
@@ -609,8 +615,8 @@ internal sealed class Reiser4Volume : IDisposable {
     var remaining = (long)file.Stat.Size;
     foreach (var (start, width) in this.ExtentUnits(file)) {
       if (remaining <= 0) yield break;
-      var bytes = (long)Math.Min((ulong)remaining, width * BlockSize);
-      if (start != 0) yield return ((long)start * BlockSize, bytes);
+      var bytes = (long)Math.Min((ulong)remaining, width * (ulong)this.BlockSize);
+      if (start != 0) yield return ((long)start * this.BlockSize, bytes);
       remaining -= bytes;
     }
   }

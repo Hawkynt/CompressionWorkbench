@@ -8,8 +8,8 @@ namespace FileSystem.Reiser4;
 /// and <c>fsck.reiser4</c> do before they read the tree.
 /// </summary>
 /// <remarks>
-/// <para>Block 19 (journal header) names the last committed transaction, block 20 (journal footer)
-/// the last one whose blocks were written back to their home locations. Every transaction between
+/// <para>The journal header (block 19 at 4 KiB, <see cref="Reiser4Layout.JournalHeader" /> in
+/// general) names the last committed transaction, the journal footer after it the last one whose blocks were written back to their home locations. Every transaction between
 /// the two, oldest first, is replayed: its head block (<c>"TxMagic4"</c>) links to the previous
 /// transaction and to a chain of wander records (<c>"LogMagc4"</c>), each listing
 /// <c>(original, wandered)</c> block pairs; replay copies each wandered block over its original.
@@ -17,9 +17,6 @@ namespace FileSystem.Reiser4;
 /// volume captured between a kernel commit and its write-back.</para>
 /// </remarks>
 internal static class Reiser4Journal {
-
-  internal const ulong HeaderBlock = 19;
-  internal const ulong FooterBlock = 20;
 
   private static readonly byte[] TxMagic = "TxMagic4"u8.ToArray();
   private static readonly byte[] RecordMagic = "LogMagc4"u8.ToArray();
@@ -31,10 +28,10 @@ internal static class Reiser4Journal {
   /// Replays every committed but unflushed transaction. Returns an empty replay when the journal
   /// has nothing pending, and <see langword="null" /> with a reason when the chain does not parse.
   /// </summary>
-  internal static Replay? Read(Func<ulong, byte[]> readRaw, ulong blockCount, out string? problem) {
+  internal static Replay? Read(Func<ulong, byte[]> readRaw, Reiser4Layout layout, ulong blockCount, out string? problem) {
     problem = null;
-    var header = readRaw(HeaderBlock);
-    var footer = readRaw(FooterBlock);
+    var header = readRaw(layout.JournalHeader);
+    var footer = readRaw(layout.JournalFooter);
     var lastCommitted = BinaryPrimitives.ReadUInt64LittleEndian(header);
     var lastFlushed = BinaryPrimitives.ReadUInt64LittleEndian(footer);
     var blocks = new Dictionary<ulong, byte[]>();

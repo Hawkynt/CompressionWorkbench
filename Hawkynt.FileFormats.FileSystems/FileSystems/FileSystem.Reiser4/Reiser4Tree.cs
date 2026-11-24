@@ -24,28 +24,30 @@ internal static class Reiser4Tree {
   internal const int ItemHeaderBytes = 38;
   internal const int NodeMagic = 0x52344653;
 
-  /// <summary>First data block: blocks 0..24 are the jump area, superblocks, journal, status, backup and the first two nodes.</summary>
-  internal const ulong FirstDataBlock = 25;
-
-  internal const ulong BlocksPerBitmap = (ulong)(Reiser4Volume.BlockSize - 4) * 8;
-
-  internal static bool IsBitmapBlock(ulong block) => block == 18 || block != 0 && block % BlocksPerBitmap == 0;
-
   private sealed record Item(Reiser4Key Key, ushort Plugin, byte[] Body);
 
   /// <summary>What a laid-out volume amounts to.</summary>
   internal sealed record Result(ulong Blocks, ushort Height, ulong ObjectCount, IReadOnlyList<ulong> NodeBlocks);
 
   /// <summary>Lays <paramref name="plan" /> out and writes the whole volume to <paramref name="output" />.</summary>
-  internal static Result Write(Reiser4Plan plan, Stream output) {
+  internal static Result Write(Reiser4Plan plan, Stream output) => WriteReserving(plan, output, plan.MinimumBlocks);
+
+  /// <param name="reserveFor">The volume length whose superblock copies are kept free while laying
+  /// out. Copies only ever get added as a volume grows, so when the layout outgrows it and a copy
+  /// for the final length lands among the blocks already handed out, the layout is redone for that
+  /// length before anything is written.</param>
+  private static Result WriteReserving(Reiser4Plan plan, Stream output, ulong reserveFor) {
     ArgumentNullException.ThrowIfNull(plan);
     ArgumentNullException.ThrowIfNull(output);
-    const int blockSize = Reiser4Volume.BlockSize;
+    var layout = plan.Layout;
+    var blockSize = layout.BlockSize;
     var headerBytes = plan.NodePlugin == 1 ? 32 : NodeHeaderBytes;
     var capacity = blockSize - headerBytes;
     var maxBody = capacity - ItemHeaderBytes;
 
-    var cursor = FirstDataBlock;
+    var reserved = layout.BackupCopies(reserveFor).ToHashSet();
+    var cursor = layout.FirstData;
+    bool IsBitmapBlock(ulong block) => layout.IsBitmapBlock(block) || reserved.Contains(block);
     ulong Allocate() {
       while (IsBitmapBlock(cursor)) ++cursor;
       return cursor++;
@@ -75,8 +77,8 @@ internal static class Reiser4Tree {
           var start = Allocate();
           ulong width = 1;
           while (done + width < unit.Width && !IsBitmapBlock(cursor)) { ++cursor; ++width; }
-          var byteOffset = (long)(done * blockSize);
-          var byteLength = Math.Min((long)(width * blockSize), payload.Size - byteOffset);
+          var byteOffset = (long)done * blockSize;
+          var byteLength = Math.Min((long)width * blockSize, payload.Size - byteOffset);
           if (byteLength > 0) payloads.Add((long)start * blockSize, Slice(payload, byteOffset, byteLength));
           if (units.Count > 0 && units[^1].Start != 0 && units[^1].Start + units[^1].Width == start)
             units[^1] = (units[^1].Start, units[^1].Width + width);
@@ -97,7 +99,7 @@ internal static class Reiser4Tree {
         }
         items.Add(new Item(Reiser4Key.Of(bodyKey.Locality, Reiser4Key.MinorBody, bodyKey.Ordering, bodyKey.ObjectId, logical),
           Reiser4ItemPlugin.Extent, body));
-        for (var i = 0; i < count; ++i) logical = checked(logical + units[first + i].Width * blockSize);
+        for (var i = 0; i < count; ++i) logical = checked(logical + units[first + i].Width * (ulong)blockSize);
       }
     }
 
@@ -113,7 +115,7 @@ internal static class Reiser4Tree {
     var firstLeaf = true;
     void FlushLeaves() {
       foreach (var group in Pack(pending, capacity)) {
-        var block = firstLeaf ? 24UL : Allocate();
+        var block = firstLeaf ? layout.FirstLeaf : Allocate();
         firstLeaf = false;
         nodes.Add(block, EncodeNode(group, plan, headerBytes, 1));
         twigItems.Add(new Item(group[0].Key, Reiser4ItemPlugin.NodePointer, PointerBody(block)));
@@ -133,7 +135,7 @@ internal static class Reiser4Tree {
     while (true) {
       var groups = Pack(parentItems, capacity).ToList();
       if (groups.Count == 1) {
-        nodes.Add(23, EncodeNode(groups[0], plan, headerBytes, (byte)level));
+        nodes.Add(layout.Root, EncodeNode(groups[0], plan, headerBytes, (byte)level));
         break;
       }
       parentItems = [];
@@ -148,13 +150,16 @@ internal static class Reiser4Tree {
     // ── Counters, bitmaps and the fixed blocks ──────────────────────────
     var used = cursor;
     var blocks = Math.Max(plan.MinimumBlocks, used + 1);
+    var copies = layout.BackupCopies(blocks);
+    if (copies.Any(c => c < used && !reserved.Contains(c))) return WriteReserving(plan, output, blocks);
+    var tailCopies = copies.Where(c => c >= used).ToList();
     var format = plan.Format.ToArray();
     var backup = plan.Backup.ToArray();
     var objects = (ulong)plan.Objects.Count;
-    var tailBitmaps = (blocks - 1) / BlocksPerBitmap - (used - 1) / BlocksPerBitmap;
+    var tailBitmaps = (blocks - 1) / layout.BlocksPerBitmap - (used - 1) / layout.BlocksPerBitmap;
     BinaryPrimitives.WriteUInt64LittleEndian(format.AsSpan(0), blocks);
-    BinaryPrimitives.WriteUInt64LittleEndian(format.AsSpan(8), blocks - used - tailBitmaps);
-    BinaryPrimitives.WriteUInt64LittleEndian(format.AsSpan(16), 23);
+    BinaryPrimitives.WriteUInt64LittleEndian(format.AsSpan(8), blocks - used - tailBitmaps - (ulong)tailCopies.Count);
+    BinaryPrimitives.WriteUInt64LittleEndian(format.AsSpan(16), layout.Root);
     BinaryPrimitives.WriteUInt64LittleEndian(format.AsSpan(24), plan.NextObjectId);
     BinaryPrimitives.WriteUInt64LittleEndian(format.AsSpan(32), objects);
     BinaryPrimitives.WriteUInt32LittleEndian(format.AsSpan(48), plan.MkfsId);
@@ -164,18 +169,15 @@ internal static class Reiser4Tree {
 
     var basePosition = output.Position;
     var zero = new byte[blockSize];
-    var bitmaps = BuildBitmaps(blocks, used);
-    for (var b = 0UL; b < FirstDataBlock; ++b) {
-      var bytes = b switch {
-        16 => plan.Master,
-        17 => format,
-        18 => bitmaps[0].Bytes,
-        21 => plan.Status,
-        22 => backup,
-        23 => nodes[23],
-        24 => nodes[24],
-        _ => zero,
-      };
+    var bitmaps = BuildBitmaps(layout, blocks, used, tailCopies);
+    for (var b = 0UL; b < layout.FirstData; ++b) {
+      var bytes = b == layout.Master ? plan.Master
+        : b == layout.Format ? format
+        : b == layout.FirstBitmap ? bitmaps[0].Bytes
+        : b == layout.Status ? plan.Status
+        : b == layout.Backup ? backup
+        : b == layout.Root || b == layout.FirstLeaf ? nodes[b]
+        : zero;
       output.Write(bytes, 0, blockSize);
     }
     output.SetLength(basePosition + checked((long)blocks * blockSize));
@@ -183,8 +185,12 @@ internal static class Reiser4Tree {
       output.Position = basePosition + (long)block * blockSize;
       output.Write(bytes);
     }
+    foreach (var copy in copies) {
+      output.Position = basePosition + checked((long)copy * blockSize);
+      output.Write(backup, 0, blockSize);
+    }
     foreach (var (block, node) in nodes) {
-      if (block is 23 or 24) continue;
+      if (block == layout.Root || block == layout.FirstLeaf) continue;
       output.Position = basePosition + checked((long)block * blockSize);
       output.Write(node);
     }
@@ -295,7 +301,7 @@ internal static class Reiser4Tree {
   }
 
   private static byte[] EncodeNode(IReadOnlyList<Item> items, Reiser4Plan plan, int headerBytes, byte level) {
-    const int blockSize = Reiser4Volume.BlockSize;
+    var blockSize = plan.Layout.BlockSize;
     var node = new byte[blockSize];
     var at = headerBytes;
     for (var i = 0; i < items.Count; ++i) {
@@ -320,20 +326,23 @@ internal static class Reiser4Tree {
 
   /// <summary>
   /// Every block-allocator bitmap. Bitmap <c>i</c> covers blocks <c>[i × BlocksPerBitmap, (i+1) ×
-  /// BlocksPerBitmap)</c>; the first lives at block 18 and the rest at the stride boundaries. Blocks
-  /// below <paramref name="used" />, every bitmap block and everything past the end of the volume
-  /// are marked allocated.
+  /// BlocksPerBitmap)</c>; the first follows the format superblock (block 18 at 4 KiB) and the rest
+  /// sit at the stride boundaries. Blocks below <paramref name="used" />, every bitmap block, the
+  /// superblock copies in <paramref name="alsoUsed" /> and everything past the end of the volume are
+  /// marked allocated.
   /// </summary>
-  internal static List<(ulong Block, byte[] Bytes)> BuildBitmaps(ulong blocks, ulong used) {
+  internal static List<(ulong Block, byte[] Bytes)> BuildBitmaps(Reiser4Layout layout, ulong blocks, ulong used, IReadOnlyCollection<ulong>? alsoUsed = null) {
     var result = new List<(ulong Block, byte[] Bytes)>();
-    var count = (blocks + BlocksPerBitmap - 1) / BlocksPerBitmap;
+    HashSet<ulong> extra = alsoUsed is null ? [] : [.. alsoUsed];
+    var perBitmap = layout.BlocksPerBitmap;
+    var count = (blocks + perBitmap - 1) / perBitmap;
     for (var i = 0UL; i < count; ++i) {
-      var block = i == 0 ? 18UL : i * BlocksPerBitmap;
-      var buffer = new byte[Reiser4Volume.BlockSize];
-      var baseBlock = i * BlocksPerBitmap;
-      for (var bit = 0UL; bit < BlocksPerBitmap; ++bit) {
+      var block = layout.BitmapBlock(i);
+      var buffer = new byte[layout.BlockSize];
+      var baseBlock = i * perBitmap;
+      for (var bit = 0UL; bit < perBitmap; ++bit) {
         var target = baseBlock + bit;
-        if (target >= used && target < blocks && !IsBitmapBlock(target)) continue;
+        if (target >= used && target < blocks && !layout.IsBitmapBlock(target) && !extra.Contains(target)) continue;
         buffer[4 + (int)(bit >> 3)] |= (byte)(1 << (int)(bit & 7));
       }
       BinaryPrimitives.WriteUInt32LittleEndian(buffer, Adler32.Compute(buffer.AsSpan(4)));

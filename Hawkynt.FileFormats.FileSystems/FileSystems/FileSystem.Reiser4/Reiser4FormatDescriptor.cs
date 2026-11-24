@@ -37,13 +37,17 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Knobs the writer honours. <c>VolumeLabel</c> is written into the master superblock label
   /// field (and the backup record); <c>ImageSize</c> drives <see cref="Reiser4Writer.BlockCount"/>
-  /// (4&#160;KB blocks, clamped to the writer minimum); <c>FileBody</c> picks how regular files are
-  /// stored (<see cref="Reiser4FileBody" />). The 4&#160;KB block size is fixed — the embedded
-  /// mkfs.reiser4 templates are byte-exact 4096-byte captures — so it is intentionally not exposed.
+  /// (clamped to the writer minimum); <c>BlockSize</c> picks one of the block sizes
+  /// <c>mkfs.reiser4 -b</c> makes (Auto is its 4&#160;KB default, the only size a Reiser4 kernel on a
+  /// 4&#160;KiB-page machine mounts); <c>FileBody</c> picks how regular files are stored
+  /// (<see cref="Reiser4FileBody" />).
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.VolumeLabel(maxChars: 16),
     FilesystemSchemaPresets.ImageSize(["16 MB", "32 MB", "64 MB", "128 MB"]),
+    FilesystemSchemaPresets.PowerOfTwoSize("BlockSize", "Block size", 512, 8192, "Auto",
+      "Filesystem block size. Auto is mkfs.reiser4's 4 KB default; a Reiser4 kernel mounts only volumes whose block size " +
+      "equals its page size, and reiser4progs checks every size."),
     new FormatOptionDescriptor("FileBody", "File body", FormatOptionKind.Enum, nameof(Reiser4FileBody.Extents),
       AllowedValues: Enum.GetNames<Reiser4FileBody>(),
       Description: "How regular files are stored: extents, tails, the kernel's smart policy (tails up to four blocks), " +
@@ -224,8 +228,8 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       }
 
     var sizeBytes = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
-    var requested = sizeBytes > 0 ? (ulong)Math.Max(1, sizeBytes / Reiser4Writer.BlockSize) : 0UL;
-    w.BlockCount = Math.Max(requested, Reiser4Writer.EstimateBlockCount(sizes));
+    var requested = sizeBytes > 0 ? (ulong)Math.Max(1, sizeBytes / w.VolumeBlockSize) : 0UL;
+    w.BlockCount = Math.Max(requested, Reiser4Writer.EstimateBlockCount(sizes, w.VolumeBlockSize));
     w.Write(output);
   }
 
@@ -237,6 +241,15 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       label = options.Password;
     if (!string.IsNullOrEmpty(label)) writer.Label = label;
     writer.FileBody = ParseFileBody(options?.GetOption("FileBody", ""));
+    writer.VolumeBlockSize = ParseBlockSize(options?.GetOption("BlockSize", ""));
+  }
+
+  private static int ParseBlockSize(string? value) {
+    var size = FilesystemSchemaPresets.ParseSize(value);
+    if (size == 0) return Reiser4Writer.BlockSize;
+    return Reiser4Layout.IsSupported(size)
+      ? size
+      : throw new NotSupportedException($"Reiser4: block size '{value}' is not one mkfs.reiser4 makes (512, 1024, 2048, 4096 or 8192).");
   }
 
   private static Reiser4FileBody ParseFileBody(string? value) {
@@ -300,9 +313,9 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       ApplyCreateOptions(writer, options);
       var requestedBytes = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
       var requestedBlocks = requestedBytes > 0
-        ? (ulong)Math.Max(1, requestedBytes / Reiser4Writer.BlockSize)
+        ? (ulong)Math.Max(1, requestedBytes / writer.VolumeBlockSize)
         : 0UL;
-      writer.BlockCount = Math.Max(requestedBlocks, Reiser4Writer.EstimateBlockCount(sizes));
+      writer.BlockCount = Math.Max(requestedBlocks, Reiser4Writer.EstimateBlockCount(sizes, writer.VolumeBlockSize));
       writer.Write(target);
     } finally {
       foreach (var path in staged) {
@@ -331,16 +344,77 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   /// <summary>Writes the edited plan of <paramref name="source" /> to <paramref name="target" /> and verifies it there.</summary>
-  private static void StageTo(Stream source, Stream target, Action<Reiser4Plan> edit, Func<Reiser4Plan, ulong>? minimumBlocks) {
+  private static void StageTo(Stream source, Stream target, Action<Reiser4Plan> edit, Func<Reiser4Plan, ulong>? minimumBlocks,
+      bool sparse = false, bool linkDuplicates = false) {
     source.Position = 0;
     using var volume = new Reiser4Volume(source);
-    var plan = Reiser4Plan.FromVolume(volume);
+    var plan = Reiser4Plan.FromVolume(volume, sparse);
+    var digests = sparse || linkDuplicates ? Digests(volume) : null;
+    if (linkDuplicates) plan.LinkDuplicates(digests!);
     edit(plan);
     if (minimumBlocks is not null) plan.MinimumBlocks = minimumBlocks(plan);
     target.Position = 0;
     target.SetLength(0);
     plan.Write(target);
     Verify(plan, target, volume);
+    if (digests is not null) VerifyContents(volume, digests, target);
+  }
+
+  /// <summary>The size and SHA-256 of every regular file's bytes (holes read as zeros), by stat key.</summary>
+  private static Dictionary<Reiser4Key, (ulong Size, byte[] Digest)> Digests(Reiser4Volume volume) {
+    var result = new Dictionary<Reiser4Key, (ulong, byte[])>();
+    foreach (var (key, obj) in volume.Objects) {
+      if (obj.Stat.Kind != Reiser4Stat.Regular) continue;
+      using var sink = new DigestSink();
+      volume.ExtractTo(obj, sink);
+      result[key] = (obj.Stat.Size, sink.Finish());
+    }
+    return result;
+  }
+
+  /// <summary>
+  /// A rebuild that changed how bytes are stored (holes, shared objects) must still give every
+  /// path the bytes it had: each regular file of the staged volume is read back and compared by
+  /// path with the source's digest.
+  /// </summary>
+  private static void VerifyContents(Reiser4Volume source, Dictionary<Reiser4Key, (ulong Size, byte[] Digest)> digests, Stream staged) {
+    var expected = new Dictionary<string, (ulong Size, byte[] Digest)>(StringComparer.Ordinal);
+    foreach (var (path, _, obj, _) in source.Paths)
+      if (digests.TryGetValue(obj.StatKey, out var digest)) expected[path] = digest;
+    staged.Position = 0;
+    using var rebuilt = new Reiser4Volume(staged);
+    var seen = 0;
+    foreach (var (path, _, obj, _) in rebuilt.Paths) {
+      if (obj.Stat.Kind != Reiser4Stat.Regular) continue;
+      using var sink = new DigestSink();
+      rebuilt.ExtractTo(obj, sink);
+      if (!expected.TryGetValue(path, out var want) || want.Size != obj.Stat.Size || !want.Digest.AsSpan().SequenceEqual(sink.Finish()))
+        throw new InvalidDataException($"Reiser4: '{path}' does not read back its bytes after the rebuild.");
+      ++seen;
+    }
+    if (seen != expected.Count) throw new InvalidDataException("Reiser4: the rebuild lost a regular file.");
+  }
+
+  /// <summary>A write-only stream that hashes what it is given.</summary>
+  private sealed class DigestSink : Stream {
+    private readonly System.Security.Cryptography.IncrementalHash _hash =
+      System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+    public byte[] Finish() => this._hash.GetHashAndReset();
+    public override bool CanRead => false;
+    public override bool CanSeek => false;
+    public override bool CanWrite => true;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override void Flush() { }
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => this._hash.AppendData(buffer, offset, count);
+    public override void Write(ReadOnlySpan<byte> buffer) => this._hash.AppendData(buffer);
+    protected override void Dispose(bool disposing) {
+      if (disposing) this._hash.Dispose();
+      base.Dispose(disposing);
+    }
   }
 
   /// <summary>
@@ -475,11 +549,27 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     else input.CopyTo(output);
   }
 
-  /// <summary>Rebuilds the volume while carrying existing metadata, at the requested image size or the smallest that holds it.</summary>
+  /// <summary>
+  /// Extent files can hold holes (units with start 0) and several names can share one stat key,
+  /// both of which <c>fsck.reiser4</c> and the kernel accept on volumes this writer rebuilds.
+  /// </summary>
+  public LayoutReclaim ReclaimSupport => LayoutReclaim.Sparse | LayoutReclaim.HardLinks;
+
+  /// <summary>
+  /// Rebuilds the volume while carrying existing metadata, at the requested image size or the
+  /// smallest that holds it. <see cref="LayoutRebuildOptions.MakeSparse" /> turns all-zero extent
+  /// blocks into holes; <see cref="LayoutRebuildOptions.DeduplicateWithLinks" /> makes identical
+  /// regular files hard links of one object. Either way every file is read back and compared
+  /// before the result is accepted.
+  /// </summary>
   public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
     ArgumentNullException.ThrowIfNull(options);
-    if (options.UnitSize is not (0 or Reiser4Writer.BlockSize) || options.MakeSparse || options.DeduplicateWithLinks)
-      throw new NotSupportedException("Reiser4: this writer uses 4096-byte blocks without sparse or shared-file transforms.");
+    ArgumentNullException.ThrowIfNull(source);
+    int blockSize;
+    source.Position = 0;
+    using (var probe = new Reiser4Volume(source)) blockSize = probe.BlockSize;
+    if (options.UnitSize != 0 && options.UnitSize != blockSize)
+      throw new NotSupportedException($"Reiser4: a rebuild keeps the volume's {blockSize}-byte blocks.");
     var imageSize = options.ImageSize;
     if (options.Parameters is not null)
       foreach (var pair in options.Parameters) {
@@ -487,8 +577,9 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
           throw new NotSupportedException($"Reiser4: unsupported rebuild parameter '{pair.Key}'.");
         imageSize = FilesystemSchemaPresets.ParseSize(pair.Value);
       }
-    var blocks = imageSize > 0 ? (ulong)(imageSize / Reiser4Writer.BlockSize) : Reiser4Writer.MinBlockCount;
-    StageTo(source, target, static _ => { }, _ => Math.Max(Reiser4Writer.MinBlockCount, blocks));
+    var blocks = imageSize > 0 ? (ulong)(imageSize / blockSize) : Reiser4Writer.MinBlockCount;
+    StageTo(source, target, static _ => { }, _ => Math.Max(Reiser4Writer.MinBlockCount, blocks),
+      sparse: options.MakeSparse, linkDuplicates: options.DeduplicateWithLinks);
   }
 
   private static string SafeMemberPath(string root, string name) {
@@ -622,7 +713,8 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
         if (runs.Count > 0) files.Add(runs);
       }
 
-      var metadataEnd = Math.Min(reader.Length, 25L * blockSize);
+      var layout = reader.Layout;
+      var metadataEnd = Math.Min(reader.Length, (long)layout.FirstData * blockSize);
       result.Add(new DefragBlockInfo(0, metadataEnd, DefragBlockKind.MetadataReserved,
         "Reserved blocks"));
 
@@ -631,11 +723,13 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
           result.Add(new DefragBlockInfo((long)node * blockSize, blockSize,
             DefragBlockKind.MetadataReserved, "Native tree node"));
 
-      for (var block = Reiser4Writer.BlocksPerBitmap;
+      for (var block = layout.BlocksPerBitmap;
            (long)block * blockSize + blockSize <= reader.Length;
-           block += Reiser4Writer.BlocksPerBitmap)
+           block += layout.BlocksPerBitmap)
         result.Add(new DefragBlockInfo((long)block * blockSize, blockSize,
           DefragBlockKind.MetadataReserved, "Block-allocator bitmap"));
+      foreach (var copy in layout.BackupCopies((ulong)(reader.Length / blockSize)))
+        result.Add(new DefragBlockInfo((long)copy * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Superblock copy"));
 
       // A map is read as a walk over the volume: each file keeps its own runs in
       // logical order, but the files themselves follow the bytes, not the tree.

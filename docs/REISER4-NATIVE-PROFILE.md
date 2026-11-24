@@ -25,7 +25,7 @@ basis and prime, the degenerate hash value, CRC-32C and Adler-32 — are copied 
 
 ## Fixed blocks
 
-Block size is 4096; the master superblock is block 16 and the format40 superblock block 17
+At the default block size of 4096 the master superblock is block 16 and the format40 superblock block 17
 (root block at byte 16, next object id at 24, file count at 32, mkfs id at 48, tree height at 68,
 tail policy at 70, flags at 72 — bit 0 set for large keys — and node plugin id at 84). Block 18 is
 the first allocator bitmap (a 4-byte Adler-32 of the rest, then one bit per block; further bitmaps
@@ -33,11 +33,38 @@ sit at multiples of 32 736 blocks), 19 and 20 the journal header and footer, 21 
 (`"ReiSeR4StATusBl"`, then a 64-bit status that is 0 for a consistent volume), 22 the backup of
 the master, the format fields and the root's plugin set.
 
-An edit carries blocks 16, 17, 21 and 22 of the source and patches only the counters (block and
-free-block counts, root, next object id, file count, height); the journal blocks are written blank
-because the rebuilt volume already holds the replayed state. A volume whose status is not 0 is
-refused, as is one with short keys (`mkfs.reiser4 -o key=key_short` crashes in 1.2.2, so no
-reference exists) or a block size other than 4096.
+### Other block sizes
+
+`mkfs.reiser4 -b` also makes 512-, 1024-, 2048- and 8192-byte blocks (16384 is rejected). The master
+superblock stays at byte 65536, so it is block M = 65536 / block size, and everything else follows it
+in the same order: format M+1, first bitmap M+2, journal M+3/M+4, status M+5, backup M+6, and on a
+fresh volume the root M+7 and the first leaf M+8. The master, format, status and backup records all
+end within their first 512 bytes and are the same at every size, except the block size field of the
+master (byte 18) and of the backup (byte 19, both 16-bit) and the counters. A bitmap covers
+`(block size − 4) × 8` blocks, nodes are one block, and extents and `bytes` count blocks of the
+volume's size. A Reiser4 kernel mounts only volumes whose block size is its page size, so on x86
+the kernel refuses all of these (`mount` fails with `EINVAL`); reiser4progs is the only oracle.
+
+### Superblock copies
+
+Besides the backup block, `mkfs.reiser4` puts copies of it into later bitmap regions, and
+`fsck.reiser4` reports a volume that lacks them ("Only 1 of 4 backup blocks are found"). The rule
+(from the reiser4progs sources, read as reference material): candidate block numbers start at 2 and
+grow as `n × 3 / 2` (integer division) while they are inside the volume; each candidate names the
+bitmap region it falls in, and the copy goes into the second block of that region (`index ×
+blocks-per-bitmap + 1`), no lower than the backup block, never twice, and not at all in a region one
+block long. Every copy is byte-identical to the backup block and marked used in the bitmap. At 4096
+bytes the first copy appears once a volume reaches 40 965 blocks (block 32 737); at 512 bytes at 5
+395 blocks. Measured placements, all matched by the rule: 512 B × 128 MiB → 4065, 8129, 16257,
+24385, 40641, 60961, 89409; 1024 B × 64 MiB → 8161, 16321, 24481, 40801, 57121; 4096 B × 1 GiB →
+32737, 65473, 130945, 196417.
+
+An edit carries the master, format, status and backup blocks of the source and patches only the
+counters (block and free-block counts, root, next object id, file count, height); the journal blocks
+are written blank because the rebuilt volume already holds the replayed state, and the copies are
+written for the rebuilt volume's length. A volume whose status is not 0 is refused, as is one with
+short keys (`mkfs.reiser4 -o key=key_short` crashes in 1.2.2, so no reference exists) or a block
+size `mkfs.reiser4` does not make.
 
 ## Plugin profile
 
@@ -164,6 +191,17 @@ the blocks each unit left are cleared and of the blocks it landed on set. Tree n
 compressed clusters do not move. A volume whose journal holds transactions, or a file whose extent
 covers blocks past its end, falls back to a staged rebuild at the same size.
 
+### Reclaiming space
+
+A rebuild (optimize, shrink, relayout) can be asked for two transforms. **Sparse** turns every
+extent block that is zero up to the file's size into a hole unit; neighbouring blocks of one kind
+merge, blocks past the end are dropped, and `bytes` counts only the blocks still allocated. Tails
+and compressed clusters are carried as they are. **Hard links** make every non-empty regular file
+whose bytes equal an earlier one's (ordinal order of first paths) another name of that object: the
+entries keep their keys and point at the first file's stat key, the duplicates go, and `nlink`
+follows the namespace. Either way every regular file of the staged volume is read back and compared
+by path with the source's SHA-256 before the result is accepted.
+
 ## Evidence
 
 | Volume | Checked by | Result |
@@ -176,6 +214,9 @@ covers blocks past its end, falls back to a staged rebuild at the same size.
 | a tall tree scattered and defragmented in place | `fsck.reiser4`; the kernel's manifest | consistent after both; no node moved; every file identical |
 | 3,004 files in 28 nested directories, empty and deep-empty directories, sizes 0/1/4095/4096/4097/2.2 MB, names of 23, 24, 100 and 255 characters | `fsck.reiser4 --check`; `debugfs -s`; `debugfs -i` + block copy for 316 files; `measurefs -S` | consistent; height 3, 38 twigs, 113 leaves, 3,040 objects; 0 byte mismatches |
 | 12,000 files with extents | `fsck`; `debugfs -s` | consistent; height 4 |
+| writer volumes with leading, inner, trailing and whole-file zero runs plus five identical files, rebuilt sparse, linked and both; the kernel's `reg40-node41` volume rebuilt with both | `fsck.reiser4 --check`; the kernel's manifest | consistent; every file's MD5 and size equal, the five copies one inode with `nlink` 5 |
+| empty volumes at 512/1024/2048/8192 (64 MiB), 512 (16 MiB) and 4096 (16 and 192 MiB) bytes per block, made by the writer with mkfs's UUID and mkfs id | byte comparison with `mkfs.reiser4 -b` | every block identical except the root's three timestamps, superblock copies included |
+| writer volumes at 512/1024/2048/8192 with every object kind under extents, tails and compressed bodies; `mkfs.reiser4 -b` volumes edited; writer volumes scattered and defragmented in place | `fsck.reiser4 --check`; `debugfs.reiser4 -k/-i` | consistent; plain files print their bytes, symlink targets and link counts resolve |
 | our volume after `fsck.reiser4 --build-fs` inserted lost+found | our reader; then add into lost+found and `fsck` | read completely; consistent, object ID and owner kept |
 
 Known disagreements between the two oracles, recorded rather than resolved: kernel-written Rupasov

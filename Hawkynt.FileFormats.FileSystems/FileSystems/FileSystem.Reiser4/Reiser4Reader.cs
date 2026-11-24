@@ -57,6 +57,9 @@ public sealed class Reiser4Reader : IDisposable {
 
   internal Reiser4Volume? Volume => this.NativeTreeValid ? this._volume : null;
 
+  /// <summary>Where the fixed blocks sit for this volume's block size.</summary>
+  internal Reiser4Layout Layout => Reiser4Layout.IsSupported(this.BlockSize) ? new Reiser4Layout(this.BlockSize) : Reiser4Layout.Default;
+
   internal readonly record struct NativeRun(ulong Start, ulong Width);
 
   /// <summary>What kind of object an entry names.</summary>
