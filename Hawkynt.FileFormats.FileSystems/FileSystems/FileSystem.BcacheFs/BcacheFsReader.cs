@@ -28,6 +28,13 @@ public sealed class BcacheFsReader : IDisposable {
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
   private readonly List<Entry> _entries = [];
+  private readonly BcacheFsCrypt? _crypt;
+
+  /// <summary>True when the volume is encrypted (and was unlocked, when <see cref="Valid"/>).</summary>
+  public bool Encrypted { get; }
+
+  /// <summary>True when the volume's key is wrapped by a passphrase that was not given or did not fit.</summary>
+  public bool NeedsPassphrase { get; }
 
   /// <summary>True when the volume's superblock and b-tree roots read as they should.</summary>
   public bool Valid { get; }
@@ -97,7 +104,14 @@ public sealed class BcacheFsReader : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="BcacheFsReader"/>.
   /// </summary>
-  public BcacheFsReader(Stream stream, bool leaveOpen = true) {
+  public BcacheFsReader(Stream stream, bool leaveOpen = true) : this(stream, null, leaveOpen) { }
+
+  /// <summary>
+  /// Initializes a new instance of <see cref="BcacheFsReader"/> for a volume that may be
+  /// encrypted: <paramref name="passphrase"/> unwraps its key when the key is wrapped (a volume
+  /// formatted without a passphrase needs none).
+  /// </summary>
+  public BcacheFsReader(Stream stream, string? passphrase, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     this._stream = stream;
     this._leaveOpen = leaveOpen;
@@ -105,12 +119,18 @@ public sealed class BcacheFsReader : IDisposable {
 
     BcacheFsCoreVolume core;
     try {
-      core = BcacheFsCoreVolume.Open(stream);
+      core = BcacheFsCoreVolume.Open(stream, passphrase);
+    } catch (UnauthorizedAccessException e) {
+      this.NeedsPassphrase = true;
+      this.Status = e.Message;
+      return;
     } catch (Exception e) when (e is InvalidDataException or EndOfStreamException or ArgumentException or NotSupportedException) {
       this.Status = "bcachefs: " + e.Message;
       return;
     }
 
+    this._crypt = core.Crypt;
+    this.Encrypted = core.Crypt != null;
     this.Label = core.Superblock.Label;
     if (!core.Recoverable) {
       this.Status = "bcachefs: " + string.Join("; ", core.Diagnostics.DefaultIfEmpty("the volume could not be recovered."));
@@ -357,7 +377,7 @@ public sealed class BcacheFsReader : IDisposable {
       switch (entry.KnownType) {
         case BcacheFsExtentEntryType.Crc32 or BcacheFsExtentEntryType.Crc64 or BcacheFsExtentEntryType.Crc128:
           if (!BcacheFsExtentCodec.TryReadExtentCrc(entry, out var crc, out reason)) return false;
-          if (!BcacheFsExtentData.CanDecode(crc!, out reason)) return false;
+          if (!BcacheFsExtentData.CanDecode(crc!, core.Crypt != null, out reason)) return false;
           current = crc;
           offset = crc!.Offset;
           break;
@@ -366,7 +386,7 @@ public sealed class BcacheFsReader : IDisposable {
           if ((word & (1UL << 1)) != 0) break;                                // a cached copy is not the data
           var region = PointerSector(word);
           if (current is { } encoded && (encoded.Compressed || encoded.ChecksumType != BcacheFsChecksumType.None))
-            stored = new BcacheFsStoredExtent(region, encoded, null);
+            stored = new BcacheFsStoredExtent(region, encoded, null) { Version = key.Version };
           sector = current?.Compressed == true ? region : region + offset;
           reason = string.Empty;
           return true;
@@ -476,7 +496,7 @@ public sealed class BcacheFsReader : IDisposable {
 
       // Checksummed, compressed or inline: verified and decoded as a whole, then cut.
       if (extent.Stored is { } stored) {
-        var live = BcacheFsExtentData.ReadLive(this._stream, stored, extent.Sectors);
+        var live = BcacheFsExtentData.ReadLive(this._stream, stored, extent.Sectors, this._crypt);
         output.Write(live, (int)skip, (int)want);
         written += want;
         continue;

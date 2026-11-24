@@ -44,6 +44,12 @@ internal sealed class BcacheFsNodeBuilder {
   /// <summary>The highest, inclusive.</summary>
   internal Bpos MaxKey { get; init; } = Bpos.Max;
 
+  /// <summary>
+  /// The volume's encryption, when it has one: the node is then enciphered and carries a
+  /// 128-bit Poly1305 MAC instead of a CRC.
+  /// </summary>
+  internal BcacheFsCrypt? Crypt { get; init; }
+
   /// <summary>The keys the node holds, in order, once it has been written.</summary>
   internal IReadOnlyList<Key> Keys => this._keys;
 
@@ -126,9 +132,22 @@ internal sealed class BcacheFsNodeBuilder {
     var bset = destination[HeaderBytes..];
     BinaryPrimitives.WriteUInt64LittleEndian(bset, this.Seq);
     BinaryPrimitives.WriteUInt64LittleEndian(bset[8..], 0);        // journal_seq
-    BinaryPrimitives.WriteUInt32LittleEndian(bset[16..], CsumTypeCrc32CNonzero);
+    BinaryPrimitives.WriteUInt32LittleEndian(bset[16..],
+      this.Crypt == null ? CsumTypeCrc32CNonzero : (uint)BcacheFsChecksumType.ChaCha20Poly1305_128);
     BinaryPrimitives.WriteUInt16LittleEndian(bset[20..], BcacheFsFormat.Version);
     BinaryPrimitives.WriteUInt16LittleEndian(bset[22..], (ushort)(keyBytes / 8));
+
+    if (this.Crypt is { } crypt) {
+      // The header from flags to the bset, then (a ChaCha20 block further on) the keys, are
+      // enciphered; the MAC then covers the node as stored (BCACHEFS-ON-DISK.md, "Encryption").
+      var nonce = BcacheFsNonce.ForBset(this.Seq, 0, 0);
+      crypt.Apply(nonce, destination[24..HeaderBytes]);
+      crypt.Apply(nonce.Add(128), destination[KeysOffset..(KeysOffset + keyBytes)]);
+      var mac = crypt.Mac(BcacheFsChecksumType.ChaCha20Poly1305_128, nonce, destination[16..(KeysOffset + keyBytes)]);
+      BinaryPrimitives.WriteUInt64LittleEndian(destination, mac.Lo);
+      BinaryPrimitives.WriteUInt64LittleEndian(destination[8..], mac.Hi);
+      return sectors;
+    }
 
     // The checksum covers everything after itself, up to the last word the node claims.
     var checksum = MetadataChecksum(destination[16..(KeysOffset + keyBytes)]);

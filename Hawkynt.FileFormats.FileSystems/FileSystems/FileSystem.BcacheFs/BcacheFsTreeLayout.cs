@@ -62,7 +62,8 @@ internal static class BcacheFsTreeLayout {
       int btree,
       IReadOnlyList<Key> keys,
       IEnumerator<long> targetBuckets,
-      Func<long, byte>? generationOf = null) {
+      Func<long, byte>? generationOf = null,
+      BcacheFsCrypt? crypt = null) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(keys);
     ArgumentNullException.ThrowIfNull(targetBuckets);
@@ -75,7 +76,7 @@ internal static class BcacheFsTreeLayout {
     for (var i = 0; i < leaves.Count; ++i) {
       var min = i == 0 ? Bpos.Min : Successor(leaves[i - 1][^1].Position);
       var max = i == leaves.Count - 1 ? Bpos.Max : leaves[i][^1].Position;
-      current.Add(WriteNode(image, magic, btree, 0, min, max, leaves[i], targetBuckets, written, generationOf));
+      current.Add(WriteNode(image, magic, btree, 0, min, max, leaves[i], targetBuckets, written, generationOf, crypt));
     }
 
     var level = 0;
@@ -95,7 +96,7 @@ internal static class BcacheFsTreeLayout {
         if (group.Count == 0) throw new NotSupportedException("bcachefs interior pointer does not fit in a node.");
         next.Add(WriteNode(image, magic, btree, level,
           group[0].MinKey, group[^1].MaxKey,
-          group.Select(n => n.Pointer).ToArray(), targetBuckets, written, generationOf));
+          group.Select(n => n.Pointer).ToArray(), targetBuckets, written, generationOf, crypt));
       }
       current = next;
     }
@@ -115,7 +116,8 @@ internal static class BcacheFsTreeLayout {
       IReadOnlyList<Key> keys,
       IEnumerator<long> targetBuckets,
       List<BcacheFsWrittenNode> written,
-      Func<long, byte>? generationOf) {
+      Func<long, byte>? generationOf,
+      BcacheFsCrypt? crypt) {
     if (!targetBuckets.MoveNext())
       throw new InvalidOperationException($"bcachefs placement ran out of target buckets while writing tree {btree}.");
     var bucket = targetBuckets.Current;
@@ -125,6 +127,7 @@ internal static class BcacheFsTreeLayout {
       BtreeId = btree,
       Seq = NextSequence(),
       SuperblockMagic = magic,
+      Crypt = crypt,
       Level = level,
       MinKey = min,
       MaxKey = max,

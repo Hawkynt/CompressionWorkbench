@@ -432,6 +432,12 @@ internal static class BcacheFsFormat {
   /// <param name="Value">The value's bytes, which are padded out to a whole number of words.</param>
   internal readonly record struct Key(byte Type, Bpos Position, uint Size, byte[] Value) {
 
+    /// <summary>
+    /// The key's version: zero, except for an encrypted extent, whose nonce it is part of and
+    /// which therefore gets a fresh one from the volume's key-version counter.
+    /// </summary>
+    internal BcacheFsKeyVersion Version { get; init; }
+
     /// <summary>How many 64-bit words the key and its value occupy together.</summary>
     internal int U64s => BkeyU64s + (this.Value.Length + 7) / 8;
 
@@ -445,7 +451,9 @@ internal static class BcacheFsFormat {
     destination[0] = (byte)key.U64s;
     destination[1] = KeyFormatCurrent;
     destination[2] = key.Type;
-    // bversion stays zero: nothing here is written twice.
+    // bversion: zero but for an encrypted extent.
+    BinaryPrimitives.WriteUInt64LittleEndian(destination[4..], key.Version.Lo);
+    BinaryPrimitives.WriteUInt32LittleEndian(destination[12..], key.Version.Hi);
     BinaryPrimitives.WriteUInt32LittleEndian(destination[16..], key.Size);
     WriteBpos(destination[20..], key.Position);
     key.Value.CopyTo(destination[BkeyBytes..]);

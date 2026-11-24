@@ -30,18 +30,28 @@ internal static class BcacheFsSuperblockComposer {
   /// <summary>A b-tree root as the clean section records it.</summary>
   internal readonly record struct Root(int Btree, int Level, Key Pointer);
 
+  /// <summary>
+  /// An encrypted volume's superblock parts: the crypt field (the master key, in the clear or
+  /// wrapped), whether data MACs are the full 128 bits, the highest key version handed out,
+  /// and the cipher the journal entry is written under.
+  /// </summary>
+  internal sealed record Encryption(byte[] CryptField, bool WideMacs, ulong KeyVersion, BcacheFsCrypt Crypt);
+
   /// <summary>Builds a whole superblock; the caller stamps the slot offset and the checksum.</summary>
   internal static byte[] Build(Description description, IReadOnlyList<Root> roots,
-      BcacheFsAllocationBuilder.Usage usage, ulong inodes) {
+      BcacheFsAllocationBuilder.Usage usage, ulong inodes, Encryption? encryption = null) {
     ArgumentNullException.ThrowIfNull(description);
     var sections = new List<byte[]> {
       MembersV2Section(description),
       MembersV1Section(description),
+    };
+    if (encryption != null) sections.Add(encryption.CryptField);
+    sections.AddRange([
       ReplicasV0Section(),
       JournalSection(description.JournalBuckets),
-      CleanSection(roots, usage, inodes),
+      CleanSection(roots, usage, inodes, encryption?.KeyVersion ?? 0),
       ErrorsSection(),
-    };
+    ]);
 
     var variable = sections.Sum(s => s.Length);
     var sb = new byte[SbFixedBytes + variable];
@@ -64,6 +74,12 @@ internal static class BcacheFsSuperblockComposer {
     BinaryPrimitives.WriteUInt32LittleEndian(span[140..], TimePrecisionNanoseconds);
 
     WriteFlags(span[144..208]);
+    if (encryption != null) {
+      // flags[1]: 128-bit MACs (bit 9), encryption type 1 (bits 10-13).
+      var flags1 = BinaryPrimitives.ReadUInt64LittleEndian(span[152..]);
+      flags1 |= (encryption.WideMacs ? 1UL << 9 : 0) | (1UL << 10);
+      BinaryPrimitives.WriteUInt64LittleEndian(span[152..], flags1);
+    }
     BinaryPrimitives.WriteUInt64LittleEndian(span[208..], Features);
     BinaryPrimitives.WriteUInt64LittleEndian(span[224..], CompatFeatures);
 
@@ -90,7 +106,7 @@ internal static class BcacheFsSuperblockComposer {
   /// </summary>
   internal static byte[] ReplaceClean(byte[] superblock, IReadOnlyList<Root> roots,
       BcacheFsAllocationBuilder.Usage usage, ulong inodes) {
-    var clean = CleanSection(roots, usage, inodes);
+    var clean = CleanSection(roots, usage, inodes, 0);
     var before = new List<byte[]>();
     var offset = SbFixedBytes;
     var u64s = (int)BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(124));
@@ -244,7 +260,8 @@ internal static class BcacheFsSuperblockComposer {
   /// The same list goes into the clean section and into the one journal entry the
   /// volume carries; a checker compares the two root by root, byte for byte.
   /// </remarks>
-  private static List<byte[]> ShutdownEntries(IReadOnlyList<Root> roots, BcacheFsAllocationBuilder.Usage usage, ulong inodes) {
+  private static List<byte[]> ShutdownEntries(IReadOnlyList<Root> roots, BcacheFsAllocationBuilder.Usage usage, ulong inodes,
+      ulong keyVersion) {
     var entries = new List<byte[]>();
 
     byte[] FsUsage(byte kind, byte level, ulong v) {
@@ -254,7 +271,7 @@ internal static class BcacheFsSuperblockComposer {
     }
 
     entries.Add(FsUsage(FsUsageInodes, 0, inodes));
-    entries.Add(FsUsage(FsUsageKeyVersion, 0, 0));
+    entries.Add(FsUsage(FsUsageKeyVersion, 0, keyVersion));
     for (byte replicas = 0; replicas < 4; ++replicas)
       entries.Add(FsUsage(FsUsageReserved, replicas, 0));
 
@@ -298,8 +315,9 @@ internal static class BcacheFsSuperblockComposer {
     return entries;
   }
 
-  private static byte[] CleanSection(IReadOnlyList<Root> roots, BcacheFsAllocationBuilder.Usage usage, ulong inodes) {
-    var entries = ShutdownEntries(roots, usage, inodes);
+  private static byte[] CleanSection(IReadOnlyList<Root> roots, BcacheFsAllocationBuilder.Usage usage, ulong inodes,
+      ulong keyVersion) {
+    var entries = ShutdownEntries(roots, usage, inodes, keyVersion);
 
     // flags, the two retired clock fields, and the journal sequence come first.
     var payload = 16 + entries.Sum(e => e.Length);
@@ -329,8 +347,8 @@ internal static class BcacheFsSuperblockComposer {
   /// The checksum covers everything from the magic on.</para>
   /// </remarks>
   internal static byte[] JournalEntry(ulong superblockMagic, IReadOnlyList<Root> roots,
-      BcacheFsAllocationBuilder.Usage usage, ulong inodes) {
-    var entries = ShutdownEntries(roots, usage, inodes);
+      BcacheFsAllocationBuilder.Usage usage, ulong inodes, Encryption? encryption = null) {
+    var entries = ShutdownEntries(roots, usage, inodes, encryption?.KeyVersion ?? 0);
     var payload = entries.Sum(e => e.Length);
     const int header = 56;
     var jset = new byte[BcacheFsBucketGeometry.RoundUpSectors(header + payload) * SectorSize];
@@ -344,6 +362,16 @@ internal static class BcacheFsSuperblockComposer {
     foreach (var e in entries) {
       e.CopyTo(jset, cursor);
       cursor += e.Length;
+    }
+    if (encryption != null) {
+      // Enciphered from encrypted_start, then MAC'd as stored (BCACHEFS-ON-DISK.md, "Encryption").
+      BinaryPrimitives.WriteUInt32LittleEndian(jset.AsSpan(36), (uint)BcacheFsChecksumType.ChaCha20Poly1305_128);
+      var nonce = BcacheFsNonce.ForJournal(CleanJournalSeq);
+      encryption.Crypt.Apply(nonce, jset.AsSpan(BcacheFsJournalFormat.EncryptedStart, header - BcacheFsJournalFormat.EncryptedStart + payload));
+      var mac = encryption.Crypt.Mac(BcacheFsChecksumType.ChaCha20Poly1305_128, nonce, jset.AsSpan(16, header - 16 + payload));
+      BinaryPrimitives.WriteUInt64LittleEndian(jset, mac.Lo);
+      BinaryPrimitives.WriteUInt64LittleEndian(jset.AsSpan(8), mac.Hi);
+      return jset;
     }
     BinaryPrimitives.WriteUInt64LittleEndian(jset, MetadataChecksum(jset.AsSpan(16, header - 16 + payload)));
     return jset;

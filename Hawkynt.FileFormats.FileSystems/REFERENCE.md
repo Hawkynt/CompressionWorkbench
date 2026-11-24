@@ -8309,11 +8309,14 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BcacheFsReader` | `BcacheFsReader(Stream stream, bool leaveOpen = true)` | Initializes a new instance of `BcacheFsReader`. |
+| `BcacheFsReader` | `BcacheFsReader(Stream stream, string passphrase, bool leaveOpen = true)` | Initializes a new instance of `BcacheFsReader` for a volume that may be encrypted: `passphrase` unwraps its key when the key is wrapped (a volume formatted without a passphrase needs none). |
 | `Directories` | `IReadOnlyList<string> Directories { get; }` | Directories the volume holds, by full path. |
+| `Encrypted` | `bool Encrypted { get; }` | True when the volume is encrypted (and was unlocked, when `Valid`). |
 | `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Every file and symbolic link the volume holds, by full path. |
 | `ExtendedAttributes` | `IReadOnlyDictionary<string, IReadOnlyDictionary<string, byte[]>> ExtendedAttributes { get; }` | Extended attributes, by the full path of the file, link or directory that carries them (the empty path is the root), each by its full name such as `user.comment`. Nodes without any are absent. |
 | `Label` | `string Label { get; }` | The label the superblock carries. |
 | `Length` | `long Length { get; }` | The volume's length in bytes. |
+| `NeedsPassphrase` | `bool NeedsPassphrase { get; }` | True when the volume's key is wrapped by a passphrase that was not given or did not fit. |
 | `Status` | `string Status { get; }` | Why the volume did not read, when it did not. |
 | `Valid` | `bool Valid { get; }` | True when the volume's superblock and b-tree roots read as they should. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
@@ -8366,6 +8369,7 @@ Writes a bcachefs volume: a superblock, the b-trees that describe the files, and
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream, ArchiveEntryMetadata metadata = null)` | Adds a file whose bytes are read as the volume is written. |
 | `AddSymlink` | `void AddSymlink(string name, string target)` | Adds a symbolic link pointing at `target`. |
 | `EstimateSize` | `static long EstimateSize(IEnumerable<long> fileSizes)` | The smallest volume that holds `fileSizes`: the superblock slots, the journal, the b-tree reservation, the file data, and the slot at the tail. |
+| `SetEncryption` | `void SetEncryption(string passphrase, bool wideMacs = false)` | Encrypts the volume as `bcachefs format --encrypted` does: a random 256-bit master key, every b-tree node, the journal entry and every extent enciphered with ChaCha20 and authenticated with Poly1305. With a `passphrase` the key is wrapped by its scrypt-derived key (N 2^14, r 8, p 16, as the tools choose); without one it is stored in the clear (`--no_passphrase`), which still encrypts everything else. |
 | `SetImageSize` | `void SetImageSize(long bytes)` | Sets the total volume size in bytes. |
 | `SetInternalUuid` | `void SetInternalUuid(Guid uuid)` | Overrides the internal UUID, which is also what the metadata magic is derived from. |
 | `SetLabel` | `void SetLabel(string label)` | Sets the volume label; it is truncated into the superblock's 32-byte field. |
