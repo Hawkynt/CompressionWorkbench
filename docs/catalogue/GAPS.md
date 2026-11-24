@@ -17,16 +17,16 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | Catalogue rows | 1029 |
 | … formats listed by at least one source | 586 |
 | … registry ids no source lists (OURS-ONLY) | 443 |
-| Source-listed rows mapped to something here | 415 / 586 (70.8 %) |
+| Source-listed rows mapped to something here | 416 / 586 (71.0 %) |
 | … of rows listed by ≥ 2 sources | 150 / 159 (94.3 %) |
 | … of rows listed by ≥ 3 sources | 76 / 77 (98.7 %) |
 | … of rows listed by ≥ 4 sources | 43 / 43 (100.0 %) |
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 161 | a source lists it; no descriptor or building block covers it |
+| `MISSING` | 160 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 30 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 56 | covered, but the reader handles only part of the format (see the table below) |
+| `PARTIAL` | 57 | covered, but the reader handles only part of the format (see the table below) |
 | `OK` | 339 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 443 | in our registry, listed by none of the eight sources |
 
@@ -43,7 +43,7 @@ read-only rows.
 | binwalk v3 | 79 | 56 | 70.9 | 51 |
 | Universal Extractor 2 | 124 | 104 | 83.9 | 74 |
 | PRONOM | 87 | 83 | 95.4 | 75 |
-| Wikipedia | 268 | 197 | 73.5 | 157 |
+| Wikipedia | 268 | 198 | 73.9 | 157 |
 | Wikipedia (de): list of compression programs | 124 | 78 | 62.9 | 48 |
 
 These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-20. The source inventories retain their original 2026-10-19 snapshot; the German list is revision 268525499 (2026-07-05). The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.
@@ -215,11 +215,11 @@ Every catalogued row where a source records write support (7-Zip, libarchive, an
 | MooseFS | `MooseFs` | mfschunkserver | Wikipedia |
 | Parchive (PAR/PAR2) | `Par2` | par2cmdline | Wikipedia |
 | Raw disk image | `PartitionedDisk` | dd | Wikipedia |
-| ReFS | `Refs` | format /fs:refs (Windows) | Wikipedia |
 | SQLite database | `Sqlite` | sqlite3 | UniExtract |
 | Tahoe-LAFS | `TahoeLafs` | tahoe create-node | Wikipedia |
 | Tux3 | `Tux3` | tux3 mkfs | Wikipedia |
 | UPX-packed executable | `Upx` | upx | UniExtract |
+| Venti (Plan 9) | `Venti` | venti fmtarenas (plan9port) | Wikipedia |
 | WOZ (Apple II) | `Woz` | Applesauce | PRONOM |
 | pcap | `Pcap` | tcpdump | PRONOM |
 
@@ -260,6 +260,7 @@ running real-world samples. The file named at the end of each row is where the l
 | HA | `Ha` | 1 | stored only; HSC and ASC throw (HaReader.cs) |
 | MS-DOS COMPRESS (KWAJ) | `Kwaj` | 1 | methods 2 (LZSS) and 3 (LZ+Huffman) throw (KwajStream.cs) |
 | RAR audio / VM filters | `Rar` | 1 | RAR3 filters matched to the six standard programs only; no general RarVM (Rar3Decoder.cs) |
+| ReFS | `Refs` | 1 | creating files and defragmenting refused; edits limited to overwrite, replace, rename and remove of files held in their directory row (RefsFormatDescriptor.cs) |
 | RPG Maker archives | `Rgss` | 1 | RGSSAD v1-3 only; MV/MZ asset encryption (.rpgmv*) has no descriptor |
 | Unity assets / bundles | `UnityBundle` | 1 | UnityFS bundles only; .unitypackage (tar.gz) and serialized-file internals are not handled |
 | Windows thumbnail cache | `ThumbsDb` | 1 | Thumbs.db only; thumbcache_*.db has no descriptor |
