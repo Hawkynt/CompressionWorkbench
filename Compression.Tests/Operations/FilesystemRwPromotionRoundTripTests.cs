@@ -98,21 +98,23 @@ public sealed class FilesystemRwPromotionRoundTripTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Refs_AdvertisesScopedOfflineMutationAndFailsClosedOnDiagnosticImage() {
+  public void Refs_IsReadOnlyAndRefusesEveryEditBeforeTouchingBytes() {
     Compression.Lib.FormatRegistration.EnsureInitialized();
     var ops = FormatRegistry.GetArchiveOps("Refs")!;
     var descriptor = FormatRegistry.All.Single(d => d.Id == "Refs");
-    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
-    Assert.That(ops, Is.InstanceOf<IArchiveModifiable>());
+    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
+      "Windows Server 2022/2025 rejected the offline editor's output; see RefsWindowsOracleTests.");
 
-    // A header-only diagnostic image has no live namespace. The modifier must
-    // reject it before touching bytes rather than treating FULL.refs as content.
     var imageBytes = BuildMinimalRefsHeader();
     using var image = new MemoryStream(imageBytes, writable: true);
     var before = image.ToArray();
-    Assert.Throws<InvalidDataException>(() =>
-      ((IArchiveModifiable)ops).Add(image, [ArchiveInputInfo.InMemory("A.TXT", [1, 2, 3])]));
-    Assert.That(image.ToArray(), Is.EqualTo(before));
+    var modifiable = (IArchiveModifiable)ops;
+    Assert.Multiple(() => {
+      Assert.Throws<NotSupportedException>(() => modifiable.Add(image, [ArchiveInputInfo.InMemory("A.TXT", [1, 2, 3])]));
+      Assert.Throws<NotSupportedException>(() => modifiable.Remove(image, ["A.TXT"]));
+      Assert.Throws<NotSupportedException>(() => ((FileSystem.Refs.RefsFormatDescriptor)descriptor).Defragment(image));
+      Assert.That(image.ToArray(), Is.EqualTo(before));
+    });
   }
 
   private static List<string> ListNames(IArchiveFormatOperations ops, MemoryStream image) {
