@@ -32,11 +32,8 @@ internal sealed class Qcow2Encryption : IDisposable {
     if (password is null)
       throw new UnauthorizedAccessException("QCOW2: the image is encrypted; a password is required.");
     var passphrase = Encoding.UTF8.GetBytes(password);
-    if (header.CryptMethod == Qcow2Structures.CryptAes) {
-      var key = new byte[16];
-      passphrase.AsSpan(0, Math.Min(16, passphrase.Length)).CopyTo(key);
-      return new Qcow2Encryption(Luks1SectorCipher.Create("aes", "cbc-plain64", key), hostSectorIv: false);
-    }
+    if (header.CryptMethod == Qcow2Structures.CryptAes)
+      return ForLegacyAes(password);
 
     var luks = ReadLuksHeader(image, header);
     var fdeOffset = header.FdeOffset;
@@ -79,6 +76,17 @@ internal sealed class Qcow2Encryption : IDisposable {
     if ((offset & (SectorSize - 1)) != 0)
       throw new InvalidOperationException("QCOW2: encrypted data is addressed in whole sectors.");
     return (ulong)(offset / SectorSize);
+  }
+
+  /// <summary>
+  /// The legacy AES cipher of <paramref name="password"/>: its UTF-8 bytes cut or zero-padded to 16
+  /// as the AES-128 key, CBC with the plain64 IV of the guest sector.
+  /// </summary>
+  internal static Qcow2Encryption ForLegacyAes(string password) {
+    var passphrase = Encoding.UTF8.GetBytes(password);
+    var key = new byte[16];
+    passphrase.AsSpan(0, Math.Min(16, passphrase.Length)).CopyTo(key);
+    return new Qcow2Encryption(Luks1SectorCipher.Create("aes", "cbc-plain64", key), hostSectorIv: false);
   }
 
   /// <summary>An encryptor for a new LUKS image, from the master key and header it was built with.</summary>
