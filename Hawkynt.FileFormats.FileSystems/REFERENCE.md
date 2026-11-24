@@ -6194,13 +6194,13 @@ Implements `IEquatable<FvHeader>`.
 
 ### Namespace `FileFormat.Uif`
 
-[`UifFormatDescriptor`](#uifformatdescriptor) · [`UifImage`](#uifimage) · [`UifImage.Block`](#uifimageblock)
+[`UifFormatDescriptor`](#uifformatdescriptor) · [`UifImage`](#uifimage) · [`UifImage.Block`](#uifimageblock) · [`UifImage.Part`](#uifimagepart) · [`UifImage.PartKind`](#uifimagepartkind) · [`UifImage.SourceKind`](#uifimagesourcekind) · [`UifWriter`](#uifwriter)
 
 #### `UifFormatDescriptor`
 
-MagicISO UIF (Universal Image Format) disc image. The `bbis` signature sits in the trailer, not at the start, so the image is found by its extension. Lists `metadata.ini` and `image.iso`. Read-only: no free tool writes UIF.
+MagicISO UIF (Universal Image Format) disc image. The `bbis` signature sits in the trailer, not at the start, so the image is found by its extension. An ISO image lists `metadata.ini` and `image.iso`; a mixed-mode image lists its raw image (.bin/.mdf/.img/.nrg) and the original descriptor (.cue/.mds/.ccd+.sub) under the names MagicISO stored. Password-protected images need the password. Creation writes a version-1 ISO image, optionally password-protected (WORM: no in-place edit).
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -6217,28 +6217,42 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes the one image file among the inputs (metadata.ini is skipped) as a version-1 ISO UIF. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `UifImage`
 
-A MagicISO UIF image. A 64-byte `bbis` trailer ends the file. It points at a `blhr` block table (zlib-compressed when flagged); each 24-byte entry places a run of sectors in the output and says how it is stored: copied, zero-filled or zlib-compressed. Layout in `docs/UIF-ON-DISK.md`. Only what real files proved is read. Version 1 and 2 images of type 8 (a plain ISO image) without encryption are read; LZMA-compressed version 3 images, mixed-mode images (type 9) and encrypted images are refused.
+A MagicISO UIF image. A 64-byte `bbis` trailer ends the file. It points at a `blhr` block table (zlib-compressed when flagged); each 24-byte entry places a run of sectors in the output and says how it is stored: copied, zero-filled or zlib-compressed. A mixed-mode image (type 9) follows the table with a `blms` track layout and a `blss` block holding the original cue/mds/ccd descriptor. A password-protected image puts a `bsdr` block (the DES-encrypted real trailer) in front of the table and DES-encrypts the table and every stored run. Layout in `docs/UIF-ON-DISK.md`. Only what real files proved is read: version 1 and 2, types 8 and 9, plain or password-protected. LZMA-compressed version 3/4 images and the two key-in-trailer encryptions are refused.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UifImage` | `UifImage()` |  |
 | `EntrySize` | `const int EntrySize` |  |
+| `MaxPasswordLength` | `const int MaxPasswordLength` | MagicISO takes at most 31 password characters. |
+| `PasswordBlockSize` | `const int PasswordBlockSize` | The `bsdr` block: signature, size, then the 64-byte encrypted trailer. |
 | `TrailerSize` | `const int TrailerSize` |  |
 | `Blocks` | `IReadOnlyList<Block> Blocks { get; }` |  |
+| `Descriptor` | `byte[] Descriptor { get; }` | The original descriptor bytes (type 9; for CloneCD both lengths, the .ccd and the .sub). |
 | `Hash` | `byte[] Hash { get; }` |  |
 | `ImageType` | `ushort ImageType { get; }` |  |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | True when the image is password-protected (a `bsdr` block). |
 | `LastDiff` | `uint LastDiff { get; }` |  |
 | `Length` | `ulong Length { get; }` | Bytes of the image: all sectors, less the unused tail of the last one when the trailer says so. |
+| `NeedsPassword` | `bool NeedsPassword { get; }` | True when the image is protected and no password was given: only the trailer is known. |
+| `Parts` | `IReadOnlyList<Part> Parts { get; }` |  |
 | `SectorSize` | `uint SectorSize { get; }` |  |
 | `Sectors` | `uint Sectors { get; }` |  |
+| `Source` | `SourceKind Source { get; }` |  |
+| `StoredDescriptorName` | `string StoredDescriptorName { get; }` |  |
+| `StoredImageName` | `string StoredImageName { get; }` | The original image and descriptor names MagicISO stored (type 9), or null. |
+| `TrackLayout` | `byte[] TrackLayout { get; }` | The decoded `blms` track layout (type 9). |
 | `Version` | `ushort Version { get; }` |  |
 | `CopyTo` | `void CopyTo(Stream file, Stream output)` | Writes the image: every block decoded into place, sectors no block covers left as zeros. |
-| `Read` | `static UifImage Read(Stream file)` |  |
+| `PartBytes` | `byte[] PartBytes(Part part)` | The bytes of a descriptor or subchannel part. |
+| `PasswordKey` | `static byte[] PasswordKey(string password)` | The 8-byte DES key of a password: its first 31 bytes, zero-padded to 32, summed as four little-endian 64-bit words. |
+| `Read` | `static UifImage Read(Stream file, string password = null)` |  |
 | `RenderMetadata` | `string RenderMetadata()` |  |
 
 #### `UifImage.Block`
@@ -6255,6 +6269,49 @@ Implements `IEquatable<Block>`.
 | `Sectors` | `uint Sectors { get; init; }` |  |
 | `StoredSize` | `uint StoredSize { get; init; }` |  |
 | `Type` | `uint Type { get; init; }` |  |
+
+#### `UifImage.Part`
+
+One file the image decodes to.
+
+Implements `IEquatable<Part>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Part` | `Part(string Name, long Size, PartKind Kind)` | One file the image decodes to. |
+| `Kind` | `PartKind Kind { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `UifImage.PartKind`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Image` | `0` |  |
+| `Descriptor` | `1` |  |
+| `Subchannel` | `2` |  |
+
+#### `UifImage.SourceKind`
+
+The image format a type-9 UIF was made from, as its `blss` block records it.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Iso` | `0` |  |
+| `Cue` | `1` |  |
+| `Mds` | `2` |  |
+| `Ccd` | `3` |  |
+| `Nrg` | `4` |  |
+
+#### `UifWriter`
+
+Writes a version-1, type-8 UIF (an ISO image) the way MagicISO 5.5 writes one: the image cut into 128-sector runs, all-zero sectors as zero-fill entries and everything else zlib-compressed, a zlib-compressed `blhr` table and a `bbis` trailer carrying the MD5 of everything before it. With a password the runs and the table are DES-encrypted and a `bsdr` block holds the encrypted trailer, as MagicISO's password protection does. uif2iso and MagicISO 5.5.281 both decode what this writes to the original image.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RunSectors` | `const int RunSectors` | MagicISO starts a new run at every 128th sector. |
+| `SectorSize` | `const int SectorSize` |  |
+| `Write` | `static void Write(Stream output, Stream image, long length, string password = null)` | Compresses `length` bytes of `image` into a UIF at `output`. |
 
 ### Namespace `FileFormat.Vdi`
 
@@ -7582,17 +7639,20 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `ApfsReader` | `ApfsReader(Stream main, Stream tier2, string password, bool leaveOpen = false)` | Opens a Fusion container from its main device and its tier-2 device. With `tier2` null, a main device opened from a file finds its tier-2 device beside it (`FindTier2Beside`). |
 | `ApfsReader` | `ApfsReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `ApfsReader`. |
 | `ApfsReader` | `ApfsReader(Stream stream, string password, bool leaveOpen = false)` | Opens a container, unlocking a software-encrypted volume with `password`. |
 | `SnapshotFolder` | `const string SnapshotFolder` | Folder under which every snapshot's tree is listed, one sub-folder per snapshot name. |
 | `BlockSize` | `uint BlockSize { get; }` | Container block size from the superblock. |
 | `Entries` | `IReadOnlyList<ApfsEntry> Entries { get; }` | Gets the entries. |
+| `HasTier2` | `bool HasTier2 { get; }` | True when a Fusion container's tier-2 device was attached and is read. |
 | `IsEncrypted` | `bool IsEncrypted { get; }` | True when the volume is software-encrypted (and was unlocked to be read). |
 | `IsFusion` | `bool IsFusion { get; }` | True for a Fusion container (NX_INCOMPAT_FUSION): a fast main device and a tier-2 device. |
 | `Snapshots` | `IReadOnlyList<ValueTuple<string, ulong>> Snapshots { get; }` | The volume's snapshots, oldest first: name and the transaction they were taken at. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `ExtractTo` | `void ExtractTo(ApfsEntry entry, Stream destination)` | Copies an entry's bytes into `destination` a block at a time. An APFS file may be far larger than the byte[] `Extract` returns could hold. |
 | `Extract` | `byte[] Extract(ApfsEntry entry)` | Extracts a file's bytes: its data stream's extents in logical order (gaps and sparse extents read as zeros), or, for a transparently compressed file, the decoded decmpfs content. |
+| `FindTier2Beside` | `static string FindTier2Beside(string mainPath, ReadOnlySpan<byte> nxsb)` | The file beside `mainPath` that is the tier-2 device of the Fusion container whose superblock is `nxsb`, or null. Looks at no more than 256 files and reads one block of each. |
 
 #### `ApfsStructuralValidator`
 
@@ -8887,7 +8947,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileSystem.Chfs`
 
-[`ChfsEntry`](#chfsentry) · [`ChfsFormatDescriptor`](#chfsformatdescriptor) · [`ChfsReader`](#chfsreader)
+[`ChfsEntry`](#chfsentry) · [`ChfsFormatDescriptor`](#chfsformatdescriptor) · [`ChfsGeometry`](#chfsgeometry) · [`ChfsReader`](#chfsreader) · [`ChfsWriteNode`](#chfswritenode) · [`ChfsWriter`](#chfswriter)
 
 #### `ChfsEntry`
 
@@ -8898,6 +8958,8 @@ Implements `IEquatable<ChfsEntry>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ChfsEntry` | `ChfsEntry(string Path, ulong Vno, uint Mode, uint Uid, uint Gid, uint MTime, byte[] Data)` | One vnode of a CHFS image, after replaying its nodes. |
+| `ATime` | `uint ATime { get; init; }` | Access time (UNIX seconds). |
+| `CTime` | `uint CTime { get; init; }` | Status-change time (UNIX seconds). |
 | `Data` | `byte[] Data { get; init; }` | Contents (files), target (symlinks) or device number (device nodes). |
 | `Gid` | `uint Gid { get; init; }` | The node's gid field. |
 | `IsDirectory` | `bool IsDirectory { get; }` |  |
@@ -8906,6 +8968,7 @@ Implements `IEquatable<ChfsEntry>`.
 | `MTime` | `uint MTime { get; init; }` | Modification time (UNIX seconds). |
 | `Mode` | `uint Mode { get; init; }` | Unix mode word. |
 | `Path` | `string Path { get; init; }` | Slash-separated path from the root (vnode 2). |
+| `Size` | `uint Size { get; init; }` | The size the vnode records (for a directory, whatever its writer put there). |
 | `Uid` | `uint Uid { get; init; }` | The node's uid field. |
 | `Vno` | `ulong Vno { get; init; }` | Vnode number. |
 
@@ -8913,7 +8976,7 @@ Implements `IEquatable<ChfsEntry>`.
 
 CHFS — NetBSD's Chip File System for raw NOR and NAND flash. An image starts with the erase-counter header magic "RDES" (`0x53454452`).
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8930,10 +8993,27 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files by laying the image out again with the same geometry. Everything the image holds is kept: names, contents, modes, owners, the three times, link targets, device numbers, directory sizes and each eraseblock's erase count. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a NAND image with `makefs`'s default geometry (2 KiB pages, 128 KiB eraseblocks, the geometry of NetBSD's `nandemulator(4)`): directories 0755 and files 0644 unless the input carries a Unix mode, owner and group from the input (root otherwise), and each input's modification time as its access, modification and change time. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files or whole directories by laying the image out again (see `Add`). |
+
+#### `ChfsGeometry`
+
+The flash an image is laid out for.
+
+Implements `IEquatable<ChfsGeometry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ChfsGeometry` | `ChfsGeometry(int PageSize, int EraseBlockSize, bool Nand)` | The flash an image is laid out for. |
+| `Default` | `static ChfsGeometry Default { get; }` | `makefs -t chfs`'s defaults, and the geometry of NetBSD's `nandemulator(4)`: NAND, 2 KiB pages, 128 KiB eraseblocks. |
+| `EraseBlockSize` | `int EraseBlockSize { get; init; }` | Eraseblock size. |
+| `Nand` | `bool Nand { get; init; }` | True for NAND eraseblock headers (with a serial), false for NOR. |
+| `PageSize` | `int PageSize { get; init; }` | Flash page size: the eraseblock header sits one page in, and nodes start two pages in. |
 
 #### `ChfsReader`
 
@@ -8951,8 +9031,39 @@ Reads CHFS (NetBSD's Chip File System for raw NOR/NAND flash) images as NetBSD's
 | `TypeVnode` | `const ushort TypeVnode` |  |
 | `Entries` | `IReadOnlyList<ChfsEntry> Entries { get; }` | Every vnode below the root, parents before children. |
 | `EraseBlockSize` | `int EraseBlockSize { get; }` | Eraseblock size, from the distance between erase-counter headers. |
+| `EraseCounts` | `IReadOnlyList<uint> EraseCounts { get; }` | Each eraseblock's erase count, in image order (0 for an erased block). |
 | `IsNand` | `bool IsNand { get; }` | True when the eraseblock headers are the 16-byte NAND form (with a serial). |
 | `PageSize` | `int PageSize { get; }` | Page size: where each eraseblock's second header starts. |
+
+#### `ChfsWriteNode`
+
+One vnode to write: a directory (with children), a regular file, a symbolic link or a device node.
+
+Implements `IEquatable<ChfsWriteNode>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ChfsWriteNode` | `ChfsWriteNode(string Name, uint Mode)` | One vnode to write: a directory (with children), a regular file, a symbolic link or a device node. |
+| `ATime` | `uint ATime { get; init; }` | Gets the access time (UNIX seconds). |
+| `CTime` | `uint CTime { get; init; }` | Gets the status-change time (UNIX seconds). |
+| `Children` | `IReadOnlyList<ChfsWriteNode> Children { get; init; }` | Gets a directory's entries; they are written sorted by name, as `makefs` does. |
+| `Data` | `byte[] Data { get; init; }` | Gets the file contents, the link target or a device node's device number. |
+| `DirectorySize` | `uint DirectorySize { get; init; }` | Gets the size a directory's vnode records (`makefs` copies the source directory's size; FFS reports 512). |
+| `Gid` | `uint Gid { get; init; }` | Gets the value stored in the vnode's gid field. |
+| `MTime` | `uint MTime { get; init; }` | Gets the modification time (UNIX seconds). |
+| `Mode` | `uint Mode { get; init; }` | The Unix mode word, file type included (0x4000 directory, 0x8000 file, 0xA000 symlink, …). |
+| `Name` | `string Name { get; init; }` | The name in its parent directory (1 to 255 UTF-8 bytes, no '/'); ignored for the root. |
+| `Uid` | `uint Uid { get; init; }` | Gets the value stored in the vnode's uid field. |
+
+#### `ChfsWriter`
+
+Writes CHFS images as NetBSD's `makefs -t chfs` lays them out (docs/CHFS-ON-DISK.md): every eraseblock opens with an erase-counter page and an eraseblock-header page, then each directory's entries in name order get a vnode node, a directory-entry node and (for anything but a directory) data nodes; subdirectories follow, depth first. A node that does not fit in the rest of an eraseblock starts the next one; gaps are 0xFF (erased flash).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultDataNodeSize` | `const int DefaultDataNodeSize` | The largest data node the writer emits by default: the kernel's 4 KiB block, which is how long the data nodes the kernel writes are. NetBSD 9.5 reads back files cut into smaller nodes wrongly (see docs/CHFS-ON-DISK.md); `makefs` cuts at the page size. |
+| `DefaultDirectorySize` | `const uint DefaultDirectorySize` | The directory size `makefs` records for a directory on FFS. |
+| `Write` | `static void Write(Stream output, ChfsWriteNode root, ChfsGeometry? geometry = null, IReadOnlyList<uint> eraseCounts = null, int dataNodeSize = 4096)` | Writes the image of the tree under `root`. |
 
 ### Namespace `FileSystem.Coherent`
 
@@ -11960,7 +12071,7 @@ Formats FLEX disks the way NEWDISK does and edits them the way the File Manageme
 
 ### Namespace `FileSystem.Fossil`
 
-[`FossilEntry`](#fossilentry) · [`FossilFormatDescriptor`](#fossilformatdescriptor) · [`FossilReader`](#fossilreader) · [`FossilSourceEntry`](#fossilsourceentry) · [`FossilWriteNode`](#fossilwritenode) · [`FossilWriter`](#fossilwriter)
+[`FossilEntry`](#fossilentry) · [`FossilFormatDescriptor`](#fossilformatdescriptor) · [`FossilReader`](#fossilreader) · [`FossilSourceEntry`](#fossilsourceentry) · [`FossilWriteNode`](#fossilwritenode) · [`FossilWriter`](#fossilwriter) · [`VentiArenaStore`](#ventiarenastore) · [`VentiClump`](#venticlump) · [`VentiFormatDescriptor`](#ventiformatdescriptor) · [`VentiType`](#ventitype)
 
 #### `FossilEntry`
 
@@ -12009,11 +12120,12 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 #### `FossilReader`
 
-Reads a Fossil volume (Plan 9's file server, as `flfmt` lays it out and the `fossil` server writes it): header at 128 KiB, superblock, label and data partitions; files are trees of local blocks addressed by their block number. Blocks already archived to Venti are refused — this reader has no Venti. See `docs/FOSSIL-ON-DISK.md`.
+Reads a Fossil volume (Plan 9's file server, as `flfmt` lays it out and the `fossil` server writes it): header at 128 KiB, superblock, label and data partitions; files are trees of local blocks addressed by their block number. Blocks already archived to Venti are read from a `VentiArenaStore` when one is given and refused otherwise. The same tree format is what `vac` stores in Venti, so a vac root score opens through `OpenVac`. See `docs/FOSSIL-ON-DISK.md`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FossilReader` | `FossilReader(Stream stream)` | Opens a Fossil volume; throws `InvalidDataException` for anything it cannot read faithfully. |
+| `FossilReader` | `FossilReader(Stream stream, VentiArenaStore venti)` | Opens a Fossil volume whose archived blocks are fetched from `venti`; without one they are refused. |
 | `DirMagic` | `const uint DirMagic` |  |
 | `EntrySize` | `const int EntrySize` |  |
 | `HeaderMagic` | `const uint HeaderMagic` |  |
@@ -12032,7 +12144,8 @@ Reads a Fossil volume (Plan 9's file server, as `flfmt` lays it out and the `fos
 | `Entries` | `IReadOnlyList<FossilEntry> Entries { get; }` | Every file and directory, parents first. |
 | `Epochs` | `ValueTuple<uint, uint> Epochs { get; }` | Superblock epochs. |
 | `Name` | `string Name { get; }` | Superblock name (the volume label). |
-| `Extract` | `byte[] Extract(FossilEntry entry)` | Reads a file's bytes; refuses blocks that are not local or lie outside the data partition. |
+| `Extract` | `byte[] Extract(FossilEntry entry)` | Reads a file's bytes; refuses blocks that are neither local nor in the given Venti, or lie outside the data partition. |
+| `OpenVac` | `static FossilReader OpenVac(VentiArenaStore venti, ReadOnlySpan<byte> rootScore)` | Opens the tree a vac root names (plan9port's `vac`, or a Fossil archive): the root block's score leads to three entries — the root directory's entry stream, its meta stream and the meta block naming the root (vac's `vacfsopenscore` and `_vacfileroot`). |
 
 #### `FossilSourceEntry`
 
@@ -12042,7 +12155,7 @@ Implements `IEquatable<FossilSourceEntry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FossilSourceEntry` | `FossilSourceEntry(uint Gen, ushort PSize, ushort DSize, byte Flags, byte Depth, long Size, uint Address, bool IsLocal, bool IsZero, uint Tag, uint Snap)` | A source ("stream") entry as stored in a directory block (40 bytes). |
+| `FossilSourceEntry` | `FossilSourceEntry(uint Gen, ushort PSize, ushort DSize, byte Flags, byte Depth, long Size, uint Address, bool IsLocal, bool IsZero, uint Tag, uint Snap, byte[] Score = null)` | A source ("stream") entry as stored in a directory block (40 bytes). |
 | `Address` | `uint Address { get; init; }` |  |
 | `DSize` | `ushort DSize { get; init; }` |  |
 | `Depth` | `byte Depth { get; init; }` |  |
@@ -12053,6 +12166,7 @@ Implements `IEquatable<FossilSourceEntry>`.
 | `IsLocal` | `bool IsLocal { get; init; }` |  |
 | `IsZero` | `bool IsZero { get; init; }` |  |
 | `PSize` | `ushort PSize { get; init; }` |  |
+| `Score` | `byte[] Score { get; init; }` |  |
 | `Size` | `long Size { get; init; }` |  |
 | `Snap` | `uint Snap { get; init; }` |  |
 | `Tag` | `uint Tag { get; init; }` |  |
@@ -12082,6 +12196,88 @@ Writes a Fossil volume as plan9port's `flfmt` formats it and its `fossil` server
 | --- | --- | --- |
 | `DefaultBlockSize` | `const int DefaultBlockSize` | The block size `flfmt` uses by default. |
 | `Write` | `static void Write(Stream output, IReadOnlyList<FossilWriteNode> active, int blockSize = 8192, uint time = 0, string label = "main")` | Writes a volume whose active tree holds `active`. |
+
+#### `VentiArenaStore`
+
+Reads blocks out of a Venti arena partition (as `fmtarenas` lays it out and the `venti` server fills it): the partition header at 256 KiB, the arena map, and in each arena a log of clumps (header + data, whack-compressed or plain) found by their SHA-1 score. The index sections are not needed: every arena's clump log is scanned once.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VentiArenaStore` | `VentiArenaStore(Stream stream)` | Opens an arena partition and indexes its clump logs. |
+| `ArenaHeadMagic` | `const uint ArenaHeadMagic` |  |
+| `ArenaMagic` | `const uint ArenaMagic` |  |
+| `ArenaPartMagic` | `const uint ArenaPartMagic` |  |
+| `ClumpSize` | `const int ClumpSize` |  |
+| `HeadSize` | `const int HeadSize` |  |
+| `MaxLump` | `const int MaxLump` |  |
+| `OldClumpMagic` | `const uint OldClumpMagic` |  |
+| `PartBlank` | `const int PartBlank` |  |
+| `ScoreSize` | `const int ScoreSize` |  |
+| `ZeroScore` | `static readonly byte[] ZeroScore` | SHA-1 of the empty block: Venti answers it without storing anything. |
+| `Arenas` | `IReadOnlyList<string> Arenas { get; }` | Arena names in partition order. |
+| `BlockSize` | `int BlockSize { get; }` | Partition block size. |
+| `Clumps` | `IReadOnlyList<VentiClump> Clumps { get; }` | Every clump, in log order. |
+| `Contains` | `bool Contains(ReadOnlySpan<byte> score)` | Whether a block with this score is stored (or is the empty block). |
+| `Find` | `VentiClump Find(ReadOnlySpan<byte> score)` | The clump that holds `score`, if any. |
+| `IsArenaPartition` | `static bool IsArenaPartition(ReadOnlySpan<byte> header)` | Whether `header` (the bytes from 256 KiB on) starts a Venti arena partition. |
+| `Read` | `byte[] Read(ReadOnlySpan<byte> score)` | The block a score names, as stored (Venti drops trailing zeros), checked against the score. |
+| `Read` | `byte[] Read(ReadOnlySpan<byte> score, int type, int size)` | The block a score names, zero-extended to `size` the way libventi does: data and directory blocks with zero bytes, pointer blocks with the empty block's score. |
+| `Unwhack` | `static int Unwhack(Span<byte> dst, ReadOnlySpan<byte> src)` | Venti's "whack" LZ77 decoder (unwhack.c): returns the bytes written to `dst`. |
+
+#### `VentiClump`
+
+One block stored in a Venti arena: where its clump lies and what it says about itself.
+
+Implements `IEquatable<VentiClump>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VentiClump` | `VentiClump(byte[] Score, int Type, long Offset, int StoredSize, int Size, bool Compressed, string Arena, uint Time)` | One block stored in a Venti arena: where its clump lies and what it says about itself. |
+| `Arena` | `string Arena { get; init; }` | Name of the arena holding it. |
+| `Compressed` | `bool Compressed { get; init; }` | The data is whack-compressed. |
+| `Offset` | `long Offset { get; init; }` | Byte offset of the clump's data in the partition. |
+| `Score` | `byte[] Score { get; init; }` | SHA-1 of the uncompressed block. |
+| `Size` | `int Size { get; init; }` | Bytes of the uncompressed block. |
+| `StoredSize` | `int StoredSize { get; init; }` | Bytes stored on disk. |
+| `Time` | `uint Time { get; init; }` | Clump write time (UNIX seconds). |
+| `Type` | `int Type { get; init; }` | Client block type (`VentiType`). |
+
+#### `VentiFormatDescriptor`
+
+Venti — Plan 9's archival block store (Quinlan and Dorward, 2002) — as an arena partition that plan9port's `fmtarenas` formats and its `venti` server fills. Header magic `0xa9e4a5e7` at 256 KiB.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VentiFormatDescriptor` | `VentiFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Trees` | `static List<ValueTuple<string, FossilReader>> Trees(VentiArenaStore store)` | Every vac tree in the partition, as (folder, reader); roots that are not vac trees are skipped. |
+
+#### `VentiType`
+
+Venti block types as clients name them (libventi): data and directory blocks with their pointer depth, and roots.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Data` | `const int Data` |  |
+| `Dir` | `const int Dir` |  |
+| `Root` | `const int Root` |  |
 
 ### Namespace `FileSystem.Gemdos`
 
@@ -17668,7 +17864,7 @@ Enumerates the active ReFS byte layout. Free space is fail-closed: a gap is free
 
 Microsoft ReFS (Resilient File System) volume descriptor. Read/list/extract follows metadata reachable from the active checkpoint. Offline layout writes are coordinated by the ReFS placement manager, which can relocate file data, live MSB+ metadata and checkpoint pages while preserving the format-fixed VBR/SUPB bootstrap anchors.
 
-Implements `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -17685,7 +17881,7 @@ Implements `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifi
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Offline-quiescent existing-file replacement for the proven regular-stream profile. A new name is rejected before mutation until ReFS file-identity/security/link fields are proven for every supported 3.x profile. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Refused: replacing files in place. The offline editor's output was judged by Windows Server 2022 and 2025 and rejected; see `EditsWithheld`. |
 | `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` | Performs the analyze layout operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
@@ -17695,8 +17891,8 @@ Implements `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifi
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` | Opens a filesystem session over the image. |
 | `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` | Probes the image and reports the filesystem driver profile. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes regular files or empty directories from an unmounted ReFS image. Namespace deletion is published through immutable B+ replacement pages and the alternate CHKP. |
-| `Rename` | `void Rename(Stream image, string sourcePath, string destinationPath)` | Renames an existing ReFS regular file within the same parent directory on an unmounted image, preserving its existing metadata and data allocation. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Refused: removing files in place; see `EditsWithheld`. |
+| `Rename` | `void Rename(Stream image, string sourcePath, string destinationPath)` | Refused: renaming files in place; see `EditsWithheld`. |
 
 #### `RefsOfflineBlockCloner`
 

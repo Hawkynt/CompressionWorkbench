@@ -8,7 +8,9 @@ The live image boots read-only (snapshot=on); <data.img> is attached as the seco
 monitor (option 3, then `consdev com0`), after which the boot prompt, the kernel console
 and a root shell are on the serial line. Each non-empty line of the command file runs in
 that shell and its output is printed. Memory is capped at 1 GiB; KVM is used when present.
-Environment: NB_TIMEOUT (seconds per command, default 600), NB_LOGIN (seconds to boot, 240).
+Environment: NB_TIMEOUT (seconds per command, default 600), NB_LOGIN (seconds to boot, 240),
+NB_MENU (the boot menu's "Drop to boot prompt" entry, default 3 as on the live images) and
+NB_SINGLE (boot single-user into a root shell, for install images that have no login).
 """
 import atexit, os, socket, subprocess, sys, time
 
@@ -61,14 +63,20 @@ def keys(text):
 
 time.sleep(2)
 keys(" ")             # stop the boot menu countdown
-keys("3\n")           # "Drop to boot prompt"
+keys(os.environ.get("NB_MENU", "3") + "\n")           # "Drop to boot prompt"
 time.sleep(2)
 keys("consdev com0\n")
 read_until(b"> ", 20)  # the boot prompt now answers on com0
-ser.sendall(b"boot\r")
-read_until(b"login:", int(os.environ.get("NB_LOGIN", "240")))
-ser.sendall(b"root\n")
-read_until(b"# ", 60)
+if os.environ.get("NB_SINGLE"):
+    ser.sendall(b"boot -s\r")
+    read_until(b"RETURN for /bin/sh:", int(os.environ.get("NB_LOGIN", "240")))
+    ser.sendall(b"\n")
+    read_until(b"# ", 60)
+else:
+    ser.sendall(b"boot\r")
+    read_until(b"login:", int(os.environ.get("NB_LOGIN", "240")))
+    ser.sendall(b"root\n")
+    read_until(b"# ", 60)
 ser.sendall(b"PS1='CWB''# '; export PS1\n")
 read_until(b"CWB# ", 30)
 for line in open(cmdfile):

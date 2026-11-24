@@ -16,6 +16,7 @@ public class SquashFsLegacyReferenceTests {
     "v1.0-le.sqfs", "v1.0-be.sqfs", "v1.0-le-check-uncompressed.sqfs",
     "v2.0-le.sqfs", "v2.1-le.sqfs", "v2.1-be.sqfs",
     "v3.0-le.sqfs", "v3.1-le.sqfs", "v3.1-be.sqfs", "v3.1-le-check-nofrag.sqfs", "v3.1-le-uncompressed.sqfs",
+    "v3.1-lzma-le.sqfs", "v3.1-lzma-be.sqfs",
   ];
 
   private sealed record Row(string Kind, long Size, int Mode, uint Uid, uint Gid, long MTime, string Tail);
@@ -60,8 +61,9 @@ public class SquashFsLegacyReferenceTests {
         Assert.That(e.IsSymlink, Is.EqualTo(row.Kind == "l"), e.FullPath);
         Assert.That(e.Permissions, Is.EqualTo(row.Mode), e.FullPath);
         Assert.That((e.Uid, e.Gid), Is.EqualTo((row.Uid, row.Gid)), e.FullPath);
-        // 1.x and 2.x symlink inodes carry no time; unsquashfs then stamps the extraction time.
-        if (row.Kind != "l" || image.StartsWith("v3", StringComparison.Ordinal))
+        // 1.x and 2.x symlink inodes carry no time, and the sqlzma unsquashfs (3.3) never sets a
+        // symlink's time; either way the oracle holds the time of the extraction.
+        if (row.Kind != "l" || image.StartsWith("v3", StringComparison.Ordinal) && !image.Contains("lzma", StringComparison.Ordinal))
           Assert.That(new DateTimeOffset(e.ModifiedTime).ToUnixTimeSeconds(), Is.EqualTo(row.MTime), e.FullPath);
         if (row.Kind == "l")
           Assert.That(e.SymlinkTarget, Is.EqualTo(row.Tail), e.FullPath);
@@ -136,12 +138,48 @@ public class SquashFsLegacyReferenceTests {
     Assert.Throws<InvalidDataException>(() => reader.Extract(lorem));
   }
 
+  [TestCase("v3.1-lzma-le.sqfs", "shsq")]
+  [TestCase("v3.1-lzma-be.sqfs", "qshs")]
+  public void GivenAnSqlzmaImage_WhenRead_ThenItsLzmaBlocksDecode(string image, string magic) {
+    var bytes = Load(image);
+    Assert.That(System.Text.Encoding.ASCII.GetString(bytes, 0, 4), Is.EqualTo(magic));
+    Assert.That(LzmaHeaders(bytes), Is.Not.Empty, "the image holds LZMA blocks, not only zlib ones");
+    using var reader = new SquashFsReader(new MemoryStream(bytes));
+    var lorem = reader.Entries.Single(e => e.FullPath == "docs/lorem.txt");
+    Assert.That(reader.Extract(lorem), Has.Length.EqualTo(lorem.Size));
+  }
+
+  /// <summary>Offsets of the sqlzma LZMA block headers: 0x5D, a 64 KiB-or-smaller power-of-two dictionary, a length up to 128 KiB.</summary>
+  private static List<int> LzmaHeaders(byte[] image) {
+    var found = new List<int>();
+    for (var i = 0x77; i + 13 <= image.Length; ++i)
+      if (image[i] == 0x5D && BitConverter.ToUInt32(image, i + 1) is var dict && dict != 0 && (dict & (dict - 1)) == 0 && dict <= 1u << 24
+          && BitConverter.ToUInt64(image, i + 5) is > 0 and <= 1u << 17)
+        found.Add(i);
+    return found;
+  }
+
   [Test]
-  public void GivenTheLzmaBuildMagic_WhenOpened_ThenItIsRefusedAsUnsupported() {
-    var bytes = Load("v3.1-le.sqfs");
-    "shsq"u8.CopyTo(bytes);
+  public void GivenLzmaBlocksUnderThePlainMagic_WhenOpened_ThenTheyAreRefusedAsAnUnknownLzmaBuild() {
+    var bytes = Load("v3.1-lzma-le.sqfs");
+    "hsqs"u8.CopyTo(bytes);
 
     Assert.Throws<NotSupportedException>(() => _ = new SquashFsReader(new MemoryStream(bytes)));
+  }
+
+  [Test]
+  public void GivenAnLzmaBlockDeclaringTooMuch_WhenRead_ThenItIsRefusedNotReturned() {
+    var damaged = Load("v3.1-lzma-le.sqfs");
+    var headers = LzmaHeaders(damaged);
+    Assert.That(headers, Is.Not.Empty);
+    foreach (var at in headers)
+      damaged[at + 8] = 0x7F; // the declared length now exceeds any block
+
+    Assert.That(() => {
+      using var reader = new SquashFsReader(new MemoryStream(damaged));
+      foreach (var e in reader.Entries.Where(static e => !e.IsDirectory && !e.IsSymlink))
+        _ = reader.Extract(e);
+    }, Throws.InstanceOf<InvalidDataException>());
   }
 
   [Test]

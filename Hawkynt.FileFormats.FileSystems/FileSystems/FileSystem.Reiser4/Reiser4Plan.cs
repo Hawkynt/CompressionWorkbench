@@ -277,7 +277,7 @@ internal sealed class Reiser4Plan {
   private static (ulong Ordering, ulong ObjectId, ulong Offset, bool Hashed) MakeKey(byte[] name, Reiser4HashId hash, Reiser4FibrationId fibration) {
     if (name.Length > Reiser4NameKeys.MaxInlineLength && !Reiser4NameKeys.CanHash(hash))
       throw new NotSupportedException(
-        $"Reiser4: names longer than {Reiser4NameKeys.MaxInlineLength} bytes cannot be added under the {hash} hash, which the kernel and reiser4progs compute differently.");
+        $"Reiser4: names longer than {Reiser4NameKeys.MaxInlineLength} bytes cannot be added under hash plugin {(ushort)hash}, which is unknown.");
     return Reiser4NameKeys.Make(name, hash, fibration);
   }
 

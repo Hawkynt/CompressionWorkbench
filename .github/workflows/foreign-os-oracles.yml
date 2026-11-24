@@ -1,0 +1,111 @@
+name: Foreign-OS oracles
+
+# Captures reference volumes that only another operating system can write, on GitHub-hosted
+# runners (Windows Server for ReFS, Apple hardware for macOS), and has that OS judge what our
+# editors write. Dispatch only: nothing here runs per pull request. The results are uploaded as
+# workflow artifacts; tests that use them gate on a local path and nothing captured is committed.
+#
+# The scripts live in tools/foreign-os-oracles/ and say what each records.
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Which captures to run (all, refs, refs-edits, fusion)
+        required: false
+        default: all
+  push:
+    branches: [chore/foreign-os-oracle-capture, chore/refs-windows-edit-capture]
+    paths:
+      - .github/workflows/foreign-os-oracles.yml
+      - tools/foreign-os-oracles/**
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  refs:
+    name: ReFS on ${{ matrix.runner }}
+    if: ${{ contains(fromJSON('["all","refs"]'), inputs.suite || (github.ref_name == 'chore/refs-windows-edit-capture' && 'refs-edits') || 'all') }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2022, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+      - name: Capture ReFS volumes and judge our edits
+        shell: pwsh
+        run: >-
+          ./tools/foreign-os-oracles/refs-capture.ps1
+          -OutDir "$env:RUNNER_TEMP/refs-out"
+          -Probe "$env:GITHUB_WORKSPACE/tools/foreign-os-oracles/refs-probe.cs"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: refs-${{ matrix.runner }}
+          path: ${{ runner.temp }}/refs-out
+          compression-level: 9
+
+  refs-edits:
+    name: ReFS edits on ${{ matrix.runner }}
+    if: ${{ contains(fromJSON('["all","refs-edits"]'), inputs.suite || (github.ref_name == 'chore/refs-windows-edit-capture' && 'refs-edits') || 'all') }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2022, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+      - name: Windows edits beside our edits
+        shell: pwsh
+        run: >-
+          ./tools/foreign-os-oracles/refs-windows-edits.ps1
+          -OutDir "$env:RUNNER_TEMP/refs-edits"
+          -Probe "$env:GITHUB_WORKSPACE/tools/foreign-os-oracles/refs-probe.cs"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: refs-edits-${{ matrix.runner }}
+          path: ${{ runner.temp }}/refs-edits
+          compression-level: 9
+
+  apfs-fusion:
+    name: APFS Fusion on ${{ matrix.runner }}
+    if: ${{ contains(fromJSON('["all","fusion"]'), inputs.suite || (github.ref_name == 'chore/refs-windows-edit-capture' && 'refs-edits') || 'all') }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture a Fusion container
+        run: bash tools/foreign-os-oracles/apfs-fusion-capture.sh "$RUNNER_TEMP/fusion-out"
+      - name: Capture a small Fusion container (fixture size)
+        env:
+          MAIN_MB: '128'
+          TIER2_MB: '256'
+          DATA_MB: '16'
+        run: bash tools/foreign-os-oracles/apfs-fusion-capture.sh "$RUNNER_TEMP/fusion-out/small"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: apfs-fusion-${{ matrix.runner }}
+          path: ${{ runner.temp }}/fusion-out
+          compression-level: 9

@@ -113,9 +113,9 @@ internal static class BcacheFsAllocationBuilder {
     // A node costs its whole node size whatever was written of it, and the pointer
     // that names it lives one level up — which is the level its backpointer gives.
     foreach (var node in nodes) {
-      Mark(node.Sector, BucketSectors, DataBtree);
-      usage.BtreeSectors += (ulong)BucketSectors;
-      backpointers.Add(BackpointerKey(node.Sector, node.Btree, node.Level + 1, DataBtree, BucketSectors, node.MaxKey));
+      Mark(node.Sector, NodeSectors, DataBtree);
+      usage.BtreeSectors += (ulong)NodeSectors;
+      backpointers.Add(BackpointerKey(node.Sector, node.Btree, node.Level + 1, DataBtree, NodeSectors, node.MaxKey));
     }
 
     // An extent costs what it occupies on the device: its own size, or for a
@@ -249,16 +249,6 @@ internal static class BcacheFsAllocationBuilder {
       }
     }
     return null;
-  }
-
-  /// <summary>Where an extent's data starts on the device.</summary>
-  internal static long ExtentDataSector(Key extent) {
-    if (extent.Type == KeyExtent && Footprint(extent) is { } footprint) return footprint.Sector;
-    for (var at = 0; at + 8 <= extent.Value.Length; at += 8) {
-      var word = BinaryPrimitives.ReadUInt64LittleEndian(extent.Value.AsSpan(at));
-      if (IsPointer(word)) return PointerSector(word);
-    }
-    throw new InvalidDataException("bcachefs extent without a pointer.");
   }
 
   private static bool IsMovable(byte dataType) => dataType is DataBtree or DataUser;

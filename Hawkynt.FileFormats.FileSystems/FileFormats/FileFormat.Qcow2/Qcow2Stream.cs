@@ -43,7 +43,11 @@ public sealed class Qcow2Stream : Stream {
     _parent = parent;
     _encryption = encryption;
     _dataFile = dataFile;
+    _refcountsTrusted = (header.IncompatibleFeatures & Qcow2Structures.IncompatibleDirty) == 0;
   }
+
+  /// <summary>False while the dirty bit says lazy refcounts may be stale; repaired before the first write.</summary>
+  private bool _refcountsTrusted;
 
   /// <summary>Where the guest clusters are: the external data file, or the image itself.</summary>
   private Stream Guest => _dataFile ?? _backing;
@@ -215,10 +219,12 @@ public sealed class Qcow2Stream : Stream {
   public override void Write(ReadOnlySpan<byte> buffer) {
     if (!CanWrite)
       throw new NotSupportedException(
-        "QCOW2 write access requires a flat image with 16-bit eager refcounts, no snapshots, no backing file, " +
-        "no incompatible or autoclear v3 features but an external data file, and the password of an encrypted one.");
+        "QCOW2 write access requires a writable image that is not marked corrupt, has no unknown " +
+        "incompatible or autoclear features, and, when encrypted, was opened with its password.");
     if (_position < 0 || _position > Length - buffer.Length)
       throw new EndOfStreamException("Write would extend beyond the fixed QCOW2 virtual disk size.");
+    if (!_refcountsTrusted)
+      RepairLazyRefcounts();
 
     var remaining = buffer.Length;
     var consumed = 0;
@@ -385,7 +391,7 @@ public sealed class Qcow2Stream : Stream {
   private void WriteExternalGuestRange(long guestClusterIndex, int inClusterOffset, ReadOnlySpan<byte> source) {
     var data = _dataFile!;
     var l2TableOffset = EnsureExclusiveL2Table(guestClusterIndex);
-    var l2EntryOffset = checked(l2TableOffset + (guestClusterIndex % _l2Entries) * 8L);
+    var l2EntryOffset = checked(l2TableOffset + (guestClusterIndex % _l2Entries) * (long)_header.L2EntrySize);
     var oldEntry = Qcow2Structures.ReadUInt64BigEndianAt(_backing, l2EntryOffset);
     if ((oldEntry & Qcow2Structures.CompressedFlag) != 0)
       throw new InvalidDataException("QCOW2: an image with an external data file cannot hold compressed clusters.");
@@ -396,8 +402,8 @@ public sealed class Qcow2Stream : Stream {
     if (hostOffset != 0 && hostOffset != guestCluster)
       throw new InvalidDataException(
         $"QCOW2: guest cluster at {guestCluster} maps to {hostOffset} in the external data file; the offsets must match.");
-    var zero = _header.Version >= 3 && (oldEntry & Qcow2Structures.ZeroFlag) != 0;
-    if ((hostOffset != 0 || this.MapsToDataFileStart(oldEntry)) && !zero) {
+    var zero = !_header.ExtendedL2 && _header.Version >= 3 && (oldEntry & Qcow2Structures.ZeroFlag) != 0;
+    if ((hostOffset != 0 || this.MapsToDataFileStart(oldEntry)) && !zero && _encryption == null && !_header.ExtendedL2) {
       data.Position = checked(guestCluster + inClusterOffset);
       data.Write(source);
       if ((oldEntry & Qcow2Structures.CopiedFlag) == 0)
@@ -405,12 +411,26 @@ public sealed class Qcow2Stream : Stream {
       return;
     }
 
-    var length = (int)Math.Min(_clusterSize, _header.VirtualSize - guestCluster);
-    var cluster = new byte[length];
+    // Anything else is rewritten as a whole cluster as the guest sees it (subclusters from the
+    // backing file, zeros, or deciphered bytes), patched, enciphered for its offset, and mapped
+    // to itself with every subcluster allocated.
+    var cluster = new byte[_clusterSize];
+    ReadGuestRange(guestClusterIndex, 0, cluster);
     source.CopyTo(cluster.AsSpan(inClusterOffset));
+    _encryption?.Encrypt(guestCluster, guestCluster, cluster);
+    var length = (int)Math.Min(_clusterSize, _header.VirtualSize - guestCluster);
+    if (_encryption != null)
+      length = (length + 511) & ~511;
     data.Position = guestCluster;
-    data.Write(cluster);
-    Qcow2Structures.WriteUInt64BigEndianAt(_backing, l2EntryOffset, (ulong)guestCluster | Qcow2Structures.CopiedFlag);
+    data.Write(cluster, 0, length);
+    this.WriteMapping(l2EntryOffset, guestCluster);
+  }
+
+  /// <summary>Maps an L2 entry to the whole host cluster at <paramref name="hostOffset"/>, every subcluster allocated.</summary>
+  private void WriteMapping(long l2EntryOffset, long hostOffset) {
+    Qcow2Structures.WriteUInt64BigEndianAt(_backing, l2EntryOffset, (ulong)hostOffset | Qcow2Structures.CopiedFlag);
+    if (_header.ExtendedL2)
+      Qcow2Structures.WriteUInt64BigEndianAt(_backing, l2EntryOffset + 8, 0xFFFF_FFFFUL);
   }
 
   private void WriteGuestRange(long guestClusterIndex, int inClusterOffset, ReadOnlySpan<byte> source) {
@@ -420,65 +440,52 @@ public sealed class Qcow2Stream : Stream {
     }
     var l2TableOffset = EnsureExclusiveL2Table(guestClusterIndex);
     var l2Index = checked((int)(guestClusterIndex % _l2Entries));
-    var l2EntryOffset = checked(l2TableOffset + l2Index * 8L);
+    var l2EntryOffset = checked(l2TableOffset + l2Index * (long)_header.L2EntrySize);
     var oldEntry = Qcow2Structures.ReadUInt64BigEndianAt(_backing, l2EntryOffset);
 
-    if ((oldEntry & Qcow2Structures.CompressedFlag) == 0) {
+    // A cluster this image alone owns is rewritten where it is; a shared, compressed or
+    // unallocated one is copied out to a fresh cluster (copy-on-write: a backing file and a
+    // snapshot's or a compressed neighbour's bytes are never touched).
+    var compressed = (oldEntry & Qcow2Structures.CompressedFlag) != 0;
+    long oldHostOffset = 0;
+    var exclusive = false;
+    if (!compressed) {
       ValidateStandardL2Entry(oldEntry);
-      var oldHostOffset = Qcow2Structures.ReadClusterOffset(oldEntry);
+      oldHostOffset = Qcow2Structures.ReadClusterOffset(oldEntry);
       if (oldHostOffset != 0) {
         var refcount = GetRefcount(oldHostOffset);
         if (refcount == 0)
           throw new InvalidDataException("QCOW2: allocated guest cluster has a zero refcount.");
-        if (refcount == 1 && _encryption != null) {
-          // Encrypted sectors are rewritten whole: the cluster as the guest sees it, patched,
-          // enciphered for the host offset it stays at.
-          var cluster = new byte[_clusterSize];
-          ReadGuestRange(guestClusterIndex, 0, cluster);
-          source.CopyTo(cluster.AsSpan(inClusterOffset));
-          _encryption.Encrypt(oldHostOffset, guestClusterIndex * _clusterSize, cluster);
-          _backing.Position = oldHostOffset;
-          _backing.Write(cluster);
-          Qcow2Structures.WriteUInt64BigEndianAt(_backing, l2EntryOffset, (ulong)oldHostOffset | Qcow2Structures.CopiedFlag);
-          return;
-        }
-        if (refcount == 1) {
-          if (_header.Version >= 3 && (oldEntry & Qcow2Structures.ZeroFlag) != 0) {
-            ZeroCluster(oldHostOffset);
-            Qcow2Structures.WriteUInt64BigEndianAt(
-              _backing,
-              l2EntryOffset,
-              (ulong)oldHostOffset | Qcow2Structures.CopiedFlag);
-          } else if ((oldEntry & Qcow2Structures.CopiedFlag) == 0) {
-            Qcow2Structures.WriteUInt64BigEndianAt(
-              _backing,
-              l2EntryOffset,
-              oldEntry | Qcow2Structures.CopiedFlag);
-          }
-          _backing.Position = checked(oldHostOffset + inClusterOffset);
-          _backing.Write(source);
-          return;
-        }
+        exclusive = refcount == 1;
       } else if ((oldEntry & Qcow2Structures.CopiedFlag) != 0) {
         throw new InvalidDataException("QCOW2: self-contained standard cluster has copied flag but zero host offset.");
       }
     }
 
-    var replacement = new byte[_clusterSize];
+    var zeroFlag = !_header.ExtendedL2 && _header.Version >= 3 && (oldEntry & Qcow2Structures.ZeroFlag) != 0;
+    if (exclusive && !zeroFlag && _encryption == null && !_header.ExtendedL2) {
+      if ((oldEntry & Qcow2Structures.CopiedFlag) == 0)
+        Qcow2Structures.WriteUInt64BigEndianAt(_backing, l2EntryOffset, oldEntry | Qcow2Structures.CopiedFlag);
+      _backing.Position = checked(oldHostOffset + inClusterOffset);
+      _backing.Write(source);
+      return;
+    }
+
+    // The whole cluster as the guest sees it (zeros, subclusters from the backing file,
+    // decompressed or deciphered bytes), patched, enciphered for where it lands.
+    var cluster = new byte[_clusterSize];
     if (inClusterOffset != 0 || source.Length != _clusterSize)
-      ReadGuestRange(guestClusterIndex, 0, replacement);
-    source.CopyTo(replacement.AsSpan(inClusterOffset));
+      ReadGuestRange(guestClusterIndex, 0, cluster);
+    source.CopyTo(cluster.AsSpan(inClusterOffset));
 
-    var newHostOffset = AllocateRefcountedCluster(clear: false);
-    _encryption?.Encrypt(newHostOffset, guestClusterIndex * _clusterSize, replacement);
-    _backing.Position = newHostOffset;
-    _backing.Write(replacement);
-    Qcow2Structures.WriteUInt64BigEndianAt(
-      _backing,
-      l2EntryOffset,
-      (ulong)newHostOffset | Qcow2Structures.CopiedFlag);
+    var target = exclusive ? oldHostOffset : AllocateRefcountedCluster(clear: false);
+    _encryption?.Encrypt(target, guestClusterIndex * _clusterSize, cluster);
+    _backing.Position = target;
+    _backing.Write(cluster);
+    this.WriteMapping(l2EntryOffset, target);
 
-    ReleaseEntryStorage(oldEntry);
+    if (!exclusive)
+      ReleaseEntryStorage(oldEntry);
   }
 
   private long EnsureExclusiveL2Table(long guestClusterIndex) {
@@ -572,9 +579,147 @@ public sealed class Qcow2Stream : Stream {
       throw new InvalidDataException("QCOW2: guest cluster is not cluster aligned.");
   }
 
-  private ushort GetRefcount(long hostOffset) {
-    if (_header.RefcountOrder != 4)
-      throw new NotSupportedException("QCOW2 mutation currently supports 16-bit refcounts only.");
+  /// <summary>
+  /// Brings the refcounts of an image left dirty by lazy refcounting back to what its tables
+  /// say, as <c>qemu-img check -r all</c> does, then clears the dirty bit: every host cluster is
+  /// counted once per L1 table (active and each snapshot's) that reaches it, plus the header,
+  /// L1 tables, snapshot table, refcount table and blocks and LUKS header; the copied flags of the
+  /// active tables are set where a count is one and cleared elsewhere.
+  /// </summary>
+  private void RepairLazyRefcounts() {
+    var counts = new Dictionary<long, ulong>();
+    void Count(long offset, long length) {
+      if (length <= 0) return;
+      for (var cluster = offset / _clusterSize; cluster <= (offset + length - 1) / _clusterSize; ++cluster)
+        counts[cluster] = counts.GetValueOrDefault(cluster) + 1;
+    }
+
+    Count(0, _clusterSize);
+    var l1Tables = new List<(long Offset, int Size)> { (_header.L1TableOffset, _header.L1Size) };
+    if (_header.SnapshotCount != 0) {
+      var (snapshots, tableBytes) = Qcow2Structures.ReadSnapshotTable(_backing, _header);
+      Count(_header.SnapshotsOffset, tableBytes);
+      l1Tables.AddRange(snapshots.Select(s => (s.L1TableOffset, s.L1Size)));
+    }
+    var l2 = new byte[_clusterSize];
+    foreach (var (l1Offset, l1Size) in l1Tables) {
+      Count(l1Offset, l1Size * 8L);
+      for (var i = 0; i < l1Size; ++i) {
+        var l2Offset = Qcow2Structures.ReadClusterOffset(Qcow2Structures.ReadUInt64BigEndianAt(_backing, l1Offset + i * 8L));
+        if (l2Offset == 0) continue;
+        Count(l2Offset, _clusterSize);
+        Qcow2Structures.ReadExactlyAt(_backing, l2Offset, l2);
+        for (var at = 0; at + _header.L2EntrySize <= l2.Length; at += _header.L2EntrySize) {
+          var entry = System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(l2.AsSpan(at));
+          if ((entry & Qcow2Structures.CompressedFlag) != 0) {
+            var (offset, length) = Qcow2Structures.DecodeCompressedRange(entry, _header.ClusterBits, _backing.Length);
+            Count(offset, length);
+          } else if (_dataFile == null && Qcow2Structures.ReadClusterOffset(entry) is var host and not 0) {
+            Count(host, _clusterSize);
+          }
+        }
+      }
+    }
+    Count(_header.RefcountTableOffset, (long)_header.RefcountTableClusters * _clusterSize);
+    var tableEntries = (long)_header.RefcountTableClusters * _clusterSize / 8;
+    var blocks = new List<(long Index, long Offset)>();
+    for (var i = 0L; i < tableEntries; ++i) {
+      var block = Qcow2Structures.ReadRefcountBlockOffset(Qcow2Structures.ReadUInt64BigEndianAt(_backing, _header.RefcountTableOffset + i * 8));
+      if (block == 0) continue;
+      Count(block, _clusterSize);
+      blocks.Add((i, block));
+    }
+    if (_header.CryptMethod == Qcow2Structures.CryptLuks)
+      Count(_header.FdeOffset, _header.FdeLength);
+
+    // Every entry of every existing block gets its true count (zero where nothing points);
+    // a counted cluster no block covers gets a new block (which counts itself).
+    var perBlock = _header.RefcountEntriesPerBlock;
+    var covered = new HashSet<long>();
+    foreach (var (index, block) in blocks) {
+      for (var e = 0L; e < perBlock; ++e) {
+        var cluster = index * perBlock + e;
+        var want = counts.GetValueOrDefault(cluster);
+        if (ReadRefcountEntry(block, e) != want)
+          WriteRefcountEntry(block, e, want);
+        covered.Add(cluster);
+      }
+    }
+    foreach (var (cluster, count) in counts)
+      if (!covered.Contains(cluster))
+        SetRefcount(cluster * _clusterSize, count);
+
+    // The active tables' copied flags follow the counts.
+    for (var i = 0; i < _header.L1Size; ++i) {
+      var l1EntryOffset = _header.L1TableOffset + i * 8L;
+      var l1Entry = Qcow2Structures.ReadUInt64BigEndianAt(_backing, l1EntryOffset);
+      var l2Offset = Qcow2Structures.ReadClusterOffset(l1Entry);
+      if (l2Offset == 0) continue;
+      var fixedL1 = counts.GetValueOrDefault(l2Offset / _clusterSize) == 1
+        ? l1Entry | Qcow2Structures.CopiedFlag : l1Entry & ~Qcow2Structures.CopiedFlag;
+      if (fixedL1 != l1Entry) Qcow2Structures.WriteUInt64BigEndianAt(_backing, l1EntryOffset, fixedL1);
+      if (_dataFile != null) continue;
+      for (var at = 0; at + _header.L2EntrySize <= _clusterSize; at += _header.L2EntrySize) {
+        var entry = Qcow2Structures.ReadUInt64BigEndianAt(_backing, l2Offset + at);
+        var host = Qcow2Structures.ReadClusterOffset(entry);
+        if ((entry & Qcow2Structures.CompressedFlag) != 0 || host == 0) continue;
+        var fixedL2 = counts.GetValueOrDefault(host / _clusterSize) == 1
+          ? entry | Qcow2Structures.CopiedFlag : entry & ~Qcow2Structures.CopiedFlag;
+        if (fixedL2 != entry) Qcow2Structures.WriteUInt64BigEndianAt(_backing, l2Offset + at, fixedL2);
+      }
+    }
+
+    var incompatible = Qcow2Structures.ReadUInt64BigEndianAt(_backing, 72);
+    Qcow2Structures.WriteUInt64BigEndianAt(_backing, 72, incompatible & ~Qcow2Structures.IncompatibleDirty);
+    _backing.Flush();
+    _refcountsTrusted = true;
+  }
+
+  /// <summary>
+  /// Reads entry <paramref name="index"/> of the refcount block at <paramref name="blockOffset"/>:
+  /// 2^refcount_order bits each, big-endian from 8 bits up, packed from the least significant
+  /// bit of each byte below that (as QEMU packs them).
+  /// </summary>
+  private ulong ReadRefcountEntry(long blockOffset, long index) {
+    var bits = _header.RefcountBits;
+    if (bits >= 8) {
+      Span<byte> buffer = stackalloc byte[8];
+      var bytes = bits / 8;
+      Qcow2Structures.ReadExactlyAt(_backing, checked(blockOffset + index * bytes), buffer[..bytes]);
+      ulong value = 0;
+      for (var i = 0; i < bytes; ++i) value = (value << 8) | buffer[i];
+      return value;
+    }
+    Span<byte> one = stackalloc byte[1];
+    var perByte = 8 / bits;
+    Qcow2Structures.ReadExactlyAt(_backing, checked(blockOffset + index / perByte), one);
+    return (ulong)((one[0] >> (int)(index % perByte * bits)) & ((1 << bits) - 1));
+  }
+
+  private void WriteRefcountEntry(long blockOffset, long index, ulong value) {
+    var bits = _header.RefcountBits;
+    if (bits < 64 && value >> bits != 0)
+      throw new NotSupportedException($"QCOW2: refcount {value} does not fit the image's {bits}-bit refcounts.");
+    if (bits >= 8) {
+      Span<byte> buffer = stackalloc byte[8];
+      var bytes = bits / 8;
+      for (var i = bytes - 1; i >= 0; --i, value >>= 8) buffer[i] = (byte)value;
+      _backing.Position = checked(blockOffset + index * bytes);
+      _backing.Write(buffer[..bytes]);
+      return;
+    }
+    Span<byte> one = stackalloc byte[1];
+    var perByte = 8 / bits;
+    var at = checked(blockOffset + index / perByte);
+    Qcow2Structures.ReadExactlyAt(_backing, at, one);
+    var shift = (int)(index % perByte * bits);
+    var mask = ((1 << bits) - 1) << shift;
+    one[0] = (byte)((one[0] & ~mask) | ((int)value << shift));
+    _backing.Position = at;
+    _backing.Write(one);
+  }
+
+  private ulong GetRefcount(long hostOffset) {
     if ((hostOffset & (_clusterSize - 1L)) != 0)
       throw new InvalidDataException("QCOW2: refcount requested for an unaligned host cluster.");
 
@@ -594,10 +739,10 @@ public sealed class Qcow2Stream : Stream {
     if ((blockOffset & (_clusterSize - 1L)) != 0)
       throw new InvalidDataException("QCOW2: refcount block is not cluster aligned.");
 
-    return Qcow2Structures.ReadUInt16BigEndianAt(_backing, checked(blockOffset + blockIndex * 2));
+    return ReadRefcountEntry(blockOffset, blockIndex);
   }
 
-  private void SetRefcount(long hostOffset, ushort value) {
+  private void SetRefcount(long hostOffset, ulong value) {
     if ((hostOffset & (_clusterSize - 1L)) != 0)
       throw new InvalidDataException("QCOW2: refcount update targets an unaligned host cluster.");
 
@@ -605,7 +750,7 @@ public sealed class Qcow2Stream : Stream {
     var tableIndex = hostClusterIndex / _header.RefcountEntriesPerBlock;
     var blockIndex = hostClusterIndex % _header.RefcountEntriesPerBlock;
     var blockOffset = EnsureRefcountBlock(tableIndex);
-    Qcow2Structures.WriteUInt16BigEndianAt(_backing, checked(blockOffset + blockIndex * 2), value);
+    WriteRefcountEntry(blockOffset, blockIndex, value);
   }
 
   private long EnsureRefcountBlock(long tableIndex) {
@@ -652,7 +797,7 @@ public sealed class Qcow2Stream : Stream {
     var current = GetRefcount(hostOffset);
     if (current == 0)
       throw new InvalidDataException("QCOW2: attempted to release a cluster with zero refcount.");
-    SetRefcount(hostOffset, checked((ushort)(current - 1)));
+    SetRefcount(hostOffset, current - 1);
   }
 
   private void ReleaseEntryStorage(ulong entry) {

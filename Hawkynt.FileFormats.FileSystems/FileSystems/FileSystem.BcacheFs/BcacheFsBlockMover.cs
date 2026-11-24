@@ -54,7 +54,7 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
     var volume = BcacheFsVolume.Open(image);
     if (!volume.Valid) return;
 
-    this._nodeSectors = volume.BucketSectorCount;
+    this._nodeSectors = volume.NodeSectorCount;
     var node = new byte[this._nodeSectors * SectorSize];
     foreach (var sector in volume.NodeSectors(BtreeExtents)) {
       var offset = sector * SectorSize;

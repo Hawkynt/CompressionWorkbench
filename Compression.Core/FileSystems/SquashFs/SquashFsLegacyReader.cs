@@ -1,11 +1,13 @@
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.Dictionary.Lzma;
 
 namespace FileSystem.SquashFs;
 
 /// <summary>
-/// Reads SquashFS 1.x, 2.x and 3.x images, little- or big-endian, with zlib compression: the
-/// layouts mksquashfs wrote before version 4 made the format little-endian only.
+/// Reads SquashFS 1.x, 2.x and 3.x images, little- or big-endian, with zlib compression, and the
+/// sqlzma build of 3.x that mixes zlib and LZMA blocks: the layouts mksquashfs wrote before
+/// version 4 made the format little-endian only.
 /// </summary>
 /// <remarks>
 /// <para>Converted from 7-Zip's <c>SquashfsHandler.cpp</c> (7-Zip 23.01, GNU LGPL 2.1 or later,
@@ -17,8 +19,12 @@ namespace FileSystem.SquashFs;
 /// CHECK flag is set; at most 8 KiB each), then the fragment index and the uid/gid arrays.
 /// Inodes and directories are addressed as (metadata block offset within the table, offset in
 /// the decoded block).</para>
-/// <para>The LZMA builds of the 3.x era (magic "shsq"/"qshs", or zlib method with LZMA data) are
-/// refused rather than guessed.</para>
+/// <para>The sqlzma build (squashfs 3.x patched with LZMA SDK 4.57, magic "shsq", or "qshs"
+/// big-endian) keeps the 3.x layout and compresses each block with zlib or LZMA, whichever came out
+/// smaller: an LZMA block starts with its properties byte 0x5D, then the dictionary size and the
+/// 64-bit uncompressed length, all little-endian (the LZMA SDK's ".lzma" header), and a block
+/// starting with anything else is zlib. That rule is 7-Zip's (same file). Other vendor LZMA builds
+/// that keep the "hsqs" magic are refused rather than guessed.</para>
 /// </remarks>
 internal sealed class SquashFsLegacyReader {
   private const uint MagicLe = 0x73717368;    // "hsqs"
@@ -38,6 +44,7 @@ internal sealed class SquashFsLegacyReader {
 
   private readonly Stream _stream;
   private readonly bool _be;
+  private readonly bool _mixedLzma;
   private readonly int _major;
   private readonly int _minor;
   private readonly int _flags;
@@ -73,7 +80,7 @@ internal sealed class SquashFsLegacyReader {
       return false;
     var magic = BinaryPrimitives.ReadUInt32LittleEndian(header);
     if (magic is MagicLzmaLe or MagicLzmaBe)
-      return true; // refused with a clear reason by the constructor
+      return true; // the sqlzma build: zlib and LZMA blocks
     if (magic == MagicBe)
       return true;
     return magic == MagicLe && BinaryPrimitives.ReadUInt16LittleEndian(header[0x1C..]) < 4;
@@ -90,8 +97,8 @@ internal sealed class SquashFsLegacyReader {
     switch (magic) {
       case MagicLe: break;
       case MagicBe: this._be = true; break;
-      case MagicLzmaLe or MagicLzmaBe:
-        throw new NotSupportedException("SquashFS 3.x LZMA build (\"shsq\"/\"qshs\" magic) is not supported.");
+      case MagicLzmaLe: this._mixedLzma = true; break;
+      case MagicLzmaBe: this._mixedLzma = this._be = true; break;
       default:
         throw new InvalidDataException($"Invalid SquashFS magic: 0x{magic:X8}");
     }
@@ -215,15 +222,34 @@ internal sealed class SquashFsLegacyReader {
   }
 
   /// <summary>
-  /// Decodes one zlib block (RFC 1950, Adler-32 checked). A block that is not zlib is the LZMA
-  /// build of the format and is refused.
+  /// Decodes one compressed block: zlib (RFC 1950, Adler-32 checked), or in an sqlzma image an
+  /// LZMA block when it starts with the properties byte 0x5D. A block that is neither belongs to
+  /// an LZMA build this reader does not know and is refused.
   /// </summary>
   private byte[] Inflate(byte[] raw, long maxOutput) {
+    const byte SqlzmaProperties = 0x5D;
+    if (this._mixedLzma && raw.Length > 0 && raw[0] == SqlzmaProperties)
+      return DecodeLzma(raw, maxOutput);
     if (raw.Length >= 2 && ((raw[0] & 0x0F) != 8 || ((raw[0] << 8) | raw[1]) % 31 != 0))
-      throw new NotSupportedException("SquashFS block is not zlib: the LZMA build of the 3.x format is not supported.");
+      throw new NotSupportedException("SquashFS block is neither zlib nor sqlzma LZMA: this LZMA build of the 3.x format is not supported.");
     var data = FileFormat.Zlib.ZlibStream.Decompress(raw);
     if (data.Length > maxOutput)
       throw new InvalidDataException("SquashFS block decodes to more than its maximum size.");
+    return data;
+  }
+
+  /// <summary>An sqlzma LZMA block: five properties bytes, the 64-bit uncompressed length, then the range-coded data.</summary>
+  private static byte[] DecodeLzma(byte[] raw, long maxOutput) {
+    const int HeaderLength = 13;
+    if (raw.Length < HeaderLength)
+      throw new InvalidDataException("SquashFS LZMA block is shorter than its header.");
+    var length = BinaryPrimitives.ReadUInt64LittleEndian(raw.AsSpan(5));
+    if (length > (ulong)maxOutput)
+      throw new InvalidDataException("SquashFS LZMA block declares more than its maximum size.");
+    using var input = new MemoryStream(raw, HeaderLength, raw.Length - HeaderLength, writable: false);
+    var data = new LzmaDecoder(input, raw[..5], (long)length).Decode();
+    if (data.Length != (int)length)
+      throw new InvalidDataException("SquashFS LZMA block decodes to fewer bytes than it declares.");
     return data;
   }
 

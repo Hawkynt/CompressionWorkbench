@@ -15,7 +15,8 @@ namespace FileSystem.Fossil;
 public sealed record FossilEntry(string Path, bool IsDirectory, long Size, uint Mode, string Uid, string Gid, uint MTime, FossilSourceEntry Source);
 
 /// <summary>A source ("stream") entry as stored in a directory block (40 bytes).</summary>
-public readonly record struct FossilSourceEntry(uint Gen, ushort PSize, ushort DSize, byte Flags, byte Depth, long Size, uint Address, bool IsLocal, bool IsZero, uint Tag, uint Snap) {
+/// <remarks><paramref name="Score" /> is the Venti score of the source's top block when it is not local, else <see langword="null" />.</remarks>
+public readonly record struct FossilSourceEntry(uint Gen, ushort PSize, ushort DSize, byte Flags, byte Depth, long Size, uint Address, bool IsLocal, bool IsZero, uint Tag, uint Snap, byte[]? Score = null) {
   /// <summary>Entry in use.</summary>
   public bool IsActive => (this.Flags & 0x01) != 0;
   /// <summary>Source holds entries (a directory stream).</summary>
@@ -26,8 +27,9 @@ public readonly record struct FossilSourceEntry(uint Gen, ushort PSize, ushort D
 /// Reads a Fossil volume (Plan 9's file server, as <c>flfmt</c> lays it out and the
 /// <c>fossil</c> server writes it): header at 128 KiB, superblock, label and data
 /// partitions; files are trees of local blocks addressed by their block number. Blocks
-/// already archived to Venti are refused — this reader has no Venti. See
-/// <c>docs/FOSSIL-ON-DISK.md</c>.
+/// already archived to Venti are read from a <see cref="VentiArenaStore" /> when one is given
+/// and refused otherwise. The same tree format is what <c>vac</c> stores in Venti, so a vac
+/// root score opens through <see cref="OpenVac" />. See <c>docs/FOSSIL-ON-DISK.md</c>.
 /// </summary>
 /// <remarks>
 /// Converted from plan9port's MIT-licensed fossil sources (<c>pack.c</c>, <c>vac.c</c>,
@@ -41,7 +43,8 @@ public sealed class FossilReader {
   /// <summary>SHA-1 of the empty string: Venti's score of a zero-length block.</summary>
   private static readonly byte[] ZeroScore = Convert.FromHexString("DA39A3EE5E6B4B0D3255BFEF95601890AFD80709");
 
-  private readonly Stream _stream;
+  private readonly Stream? _stream;
+  private readonly VentiArenaStore? _venti;
 
   /// <summary>Bytes per block.</summary>
   public int BlockSize { get; }
@@ -65,9 +68,16 @@ public sealed class FossilReader {
   public IReadOnlyList<FossilEntry> Entries { get; }
 
   /// <summary>Opens a Fossil volume; throws <see cref="InvalidDataException"/> for anything it cannot read faithfully.</summary>
-  public FossilReader(Stream stream) {
+  public FossilReader(Stream stream) : this(stream, null) { }
+
+  /// <summary>
+  /// Opens a Fossil volume whose archived blocks are fetched from <paramref name="venti" />;
+  /// without one they are refused.
+  /// </summary>
+  public FossilReader(Stream stream, VentiArenaStore? venti) {
     ArgumentNullException.ThrowIfNull(stream);
     this._stream = stream;
+    this._venti = venti;
     if (stream.Length < HeaderOffset + 512) throw new InvalidDataException("Image too short for a Fossil header at 128 KiB.");
     var h = this.Read(HeaderOffset, 512);
     if (U32(h, 0) != HeaderMagic) throw new InvalidDataException("Not a Fossil volume: header magic 0x3776ae89 missing at 128 KiB.");
@@ -98,7 +108,54 @@ public sealed class FossilReader {
     this.Entries = entries;
   }
 
-  /// <summary>Reads a file's bytes; refuses blocks that are not local or lie outside the data partition.</summary>
+  private FossilReader(VentiArenaStore venti, int blockSize, string name, List<FossilEntry> entries) {
+    this._venti = venti;
+    this.BlockSize = blockSize;
+    this.Name = name;
+    this.Entries = entries;
+  }
+
+  /// <summary>
+  /// Opens the tree a vac root names (plan9port's <c>vac</c>, or a Fossil archive): the root
+  /// block's score leads to three entries — the root directory's entry stream, its meta stream
+  /// and the meta block naming the root (vac's <c>vacfsopenscore</c> and <c>_vacfileroot</c>).
+  /// </summary>
+  /// <exception cref="InvalidDataException">The score is not a vac root or its tree does not read.</exception>
+  public static FossilReader OpenVac(VentiArenaStore venti, ReadOnlySpan<byte> rootScore) {
+    ArgumentNullException.ThrowIfNull(venti);
+    var clump = venti.Find(rootScore) ?? throw new InvalidDataException($"Venti holds no block {Convert.ToHexStringLower(rootScore)}.");
+    if (clump.Type != VentiType.Root) throw new InvalidDataException($"Venti block {Convert.ToHexStringLower(rootScore)} is not a root block.");
+    var root = venti.Read(rootScore, VentiType.Root, 300);
+    if ((U16(root, 0) & 0x7FFF) != 2) throw new InvalidDataException("Venti root block has an unknown version.");
+    var name = CString(root.AsSpan(2, 128));
+    var type = CString(root.AsSpan(130, 128));
+    if (type != "vac") throw new InvalidDataException($"Venti root block is of type '{type}', not a vac root.");
+    int blockSize = U16(root, 278);
+    if ((U16(root, 0) & 0x8000) != 0) blockSize = (blockSize >> 5) << (blockSize & 31);
+    if (blockSize < 256) throw new InvalidDataException("Venti root block names an invalid block size.");
+    var top = new FossilSourceEntry(0, (ushort)Math.Min(blockSize / EntrySize * EntrySize, 60000 / EntrySize * EntrySize), (ushort)Math.Min(blockSize, ushort.MaxValue),
+      0x03, 0, 3 * EntrySize, uint.MaxValue, false, false, 0, 0, root.AsSpan(258, ScoreSize).ToArray());
+    var reader = new FossilReader(venti, blockSize, name, []);
+    var entries = new List<FossilEntry>();
+    reader.WalkVacRoot(top, entries, redirected: false);
+    return new FossilReader(venti, blockSize, name, entries);
+  }
+
+  private void WalkVacRoot(FossilSourceEntry top, List<FossilEntry> entries, bool redirected) {
+    var dir = this.SourceEntry(top, 0);
+    var meta = this.SourceEntry(top, 2);
+    if (!meta.IsActive) {
+      // some vac roots (Fossil archives among them) add one more level of indirection
+      if (redirected || !dir.IsActive || !dir.IsDir) throw new InvalidDataException("Vac root holds no active root source.");
+      this.WalkVacRoot(dir, entries, redirected: true);
+      return;
+    }
+    var dirMeta = this.SourceEntry(top, 1);
+    if (!dir.IsActive || !dir.IsDir || !dirMeta.IsActive) throw new InvalidDataException("Vac root directory sources are inactive.");
+    this.Walk(dir, dirMeta, "", entries, 0);
+  }
+
+  /// <summary>Reads a file's bytes; refuses blocks that are neither local nor in the given Venti, or lie outside the data partition.</summary>
   public byte[] Extract(FossilEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -182,21 +239,31 @@ public sealed class FossilReader {
     var epb = (uint)(dir.DSize / EntrySize);
     if (epb == 0) throw new InvalidDataException("Fossil directory source has a data block smaller than one entry.");
     var block = this.SourceBlock(dir, index / epb);
-    return ParseEntry(block, (int)(index % epb));
+    return ParseEntry(block, (int)(index % epb), ventiOnly: this._stream == null);
   }
 
-  private static FossilSourceEntry ParseEntry(ReadOnlySpan<byte> b, int index) {
+  /// <param name="ventiOnly">The tree is read straight from Venti (a vac root): every entry names a score. vac
+  /// sets the local bit (0x20) on its entries as well; only inside a Fossil volume does it mean a block address.</param>
+  private static FossilSourceEntry ParseEntry(ReadOnlySpan<byte> b, int index, bool ventiOnly = false) {
     var p = b.Slice(index * EntrySize, EntrySize);
     var flags = p[8];
     var depth = (byte)((flags >> 2) & 7);
     var size = (long)U16(p, 14) << 32 | U32(p, 16);
-    var local = (flags & 0x20) != 0;
-    if (local) return new(U32(p, 0), U16(p, 4), U16(p, 6), (byte)(flags & ~0x1C), depth, size, U32(p, 36), true, false, U32(p, 32), U32(p, 28));
+    var local = !ventiOnly && (flags & 0x20) != 0;
+    int psize = U16(p, 4), dsize = U16(p, 6);
+    if ((flags & 0x40) != 0) {
+      // _VtEntryBig: sizes are (n >> 5) << (n & 31), as vac writes blocks of 64 KiB and more
+      psize = (psize >> 5) << (psize & 31);
+      dsize = (dsize >> 5) << (dsize & 31);
+      if (psize > ushort.MaxValue || dsize > ushort.MaxValue) throw new InvalidDataException("Fossil/vac entry block sizes above 64 KiB are not supported.");
+    }
+    if (local) return new(U32(p, 0), (ushort)psize, (ushort)dsize, (byte)(flags & ~0x5C), depth, size, U32(p, 36), true, false, U32(p, 32), U32(p, 28));
     var score = p.Slice(20, ScoreSize);
     var zero = score.SequenceEqual(ZeroScore) || score.IndexOfAnyExcept((byte)0) < 0;
     // A non-local score with 16 leading zeros is still a local block address (globalToLocal).
-    var addr = score[..16].IndexOfAnyExcept((byte)0) < 0 ? U32(score, 16) : uint.MaxValue;
-    return new(U32(p, 0), U16(p, 4), U16(p, 6), (byte)(flags & ~0x1C), depth, size, addr, addr != uint.MaxValue && !zero, zero, 0, 0);
+    var addr = !ventiOnly && score[..16].IndexOfAnyExcept((byte)0) < 0 ? U32(score, 16) : uint.MaxValue;
+    return new(U32(p, 0), (ushort)psize, (ushort)dsize, (byte)(flags & ~0x5C), depth, size, addr, addr != uint.MaxValue && !zero, zero, 0, 0,
+      addr == uint.MaxValue && !zero ? score.ToArray() : null);
   }
 
   /// <summary>All bytes of a source (its entry's size).</summary>
@@ -226,25 +293,41 @@ public sealed class FossilReader {
       index[levels++] = (int)(b % (uint)np);
     }
     if (e.IsZero) return new byte[e.DSize];
-    if (!e.IsLocal) throw new InvalidDataException("Fossil source lives on Venti; this reader has no Venti connection.");
-    var block = this.ReadBlock(e.Address);
+    var baseType = e.IsDir ? VentiType.Dir : VentiType.Data;
+    byte[] block;
+    if (e.IsLocal) block = this.ReadBlock(e.Address);
+    else if (e.Score != null) block = this.ReadVenti(e.Score, baseType + e.Depth, e.Depth > 0 ? e.PSize : e.DSize);
+    else throw new InvalidDataException("Fossil source has neither a local address nor a Venti score.");
     for (var level = e.Depth - 1; level >= 0; --level) {
       var score = block.AsSpan(index[level] * ScoreSize, ScoreSize);
+      var size = level == 0 ? e.DSize : e.PSize;
       if (score.SequenceEqual(ZeroScore) || score.IndexOfAnyExcept((byte)0) < 0)
-        return new byte[level == 0 ? e.DSize : e.PSize];
-      if (score[..16].IndexOfAnyExcept((byte)0) >= 0)
-        throw new InvalidDataException("Fossil pointer refers to a Venti block; this reader has no Venti connection.");
-      block = this.ReadBlock(U32(score, 16));
+        return new byte[size];
+      block = this._stream != null && score[..16].IndexOfAnyExcept((byte)0) < 0
+        ? this.ReadBlock(U32(score, 16))
+        : this.ReadVenti(score.ToArray(), baseType + level, size);
     }
     return block;
   }
 
+  private byte[] ReadVenti(byte[] score, int type, int size) {
+    if (this._venti == null)
+      throw new InvalidDataException("Fossil block lives on Venti; no Venti arena partition was given to read it from.");
+    try {
+      return this._venti.Read(score, type, size);
+    } catch (KeyNotFoundException e) {
+      throw new InvalidDataException(e.Message, e);
+    }
+  }
+
   private byte[] ReadBlock(uint addr) {
+    if (this._stream == null) throw new InvalidDataException($"Vac tree points at local Fossil block {addr}, which only a Fossil volume holds.");
     if (addr >= this.DataEnd - this.DataStart) throw new InvalidDataException($"Fossil block {addr} lies outside the data partition.");
     return this.Read(((long)this.DataStart + addr) * this.BlockSize, this.BlockSize);
   }
 
   private byte[] Read(long offset, int count) {
+    if (this._stream == null) throw new InvalidDataException("No Fossil volume to read from.");
     if (offset + count > this._stream.Length) throw new InvalidDataException($"Fossil read at {offset} lies past the end of the image.");
     var buf = new byte[count];
     this._stream.Position = offset;

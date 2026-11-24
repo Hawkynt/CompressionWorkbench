@@ -4,8 +4,9 @@ CHFS (Chip File System) is NetBSD's file system for raw NOR and NAND flash, from
 University of Szeged. This page is the specification `FileSystem.Chfs` is written from.
 
 **Sources (rung 1).** NetBSD's BSD-licensed `sys/ufs/chfs/media.h` and `ebh_media.h`, which
-the reader converts (notice: `THIRD-PARTY-NOTICE.Chfs.txt`), and `usr.sbin/makefs/chfs/`
-for how images are laid out. All integers are little-endian; every CRC is CRC-32 (IEEE)
+the reader converts, and `usr.sbin/makefs/chfs.c` and `usr.sbin/makefs/chfs/chfs_mkfs.c`,
+which the writer converts (notice: `THIRD-PARTY-NOTICE.Chfs.txt`). `sys/ufs/chfs/` and
+`sys/miscfs/specfs/spec_vnops.c` explain the kernel's behaviour below. All integers are little-endian; every CRC is CRC-32 (IEEE)
 with seed 0.
 
 ## Eraseblocks
@@ -51,28 +52,82 @@ can carry trailing bytes left over from earlier memory. In the NAND fixture, `em
 was stored as the 14-byte name `empty-dirempty`, with the name CRC covering all 14 bytes.
 That is the name the image holds, and the name the reader reports.
 
+## What the kernel writes
+
+Measured on NetBSD 9.5 after mounting an image, creating files and a directory, and
+unmounting. Each vnode numbers its own vnode and data nodes from 1. Data nodes are up to
+4 KiB long, the file system's block size. A vnode node with the new size follows the data.
+Padding nodes (type 4) fill the end of a page or an eraseblock. Name bytes past the name are
+zero. The kernel writes an erase-counter header on every eraseblock it has checked, so a free
+block can hold an erase-counter header and nothing else, not even an eraseblock header.
+
+## Data nodes shorter than 4 KiB
+
+`makefs` cuts file data into one node per page and writes every data node as version 0. NetBSD
+9.5 reads such files back wrongly when they need more than one node. The size is right, but
+every second 2 KiB of the file reads as zeros. On a 168,894-byte `jot 30000` file, 2 KiB chunks
+1, 3, 5 … 81 were wrong. Numbering the 2 KiB nodes 1, 2, 3 … does not help: every file of more than
+2 KiB still read back wrong. Nodes of 4 KiB, the size the kernel writes, numbered as the
+kernel numbers them, read back right. So the writer cuts data into 4 KiB nodes by default.
+The reader lays data nodes over each other in version order and then in image order, so it
+returns what `makefs` was given.
+
 ## What the implementation does with it
 
 * **Read:** every header, node, data and name CRC is checked, and a mismatch is refused.
-  It reads either media type and any geometry.
+  It reads either media type and any geometry, and free blocks that hold only an
+  erase-counter header.
 * **Refused, not replayed:** entries whose vnode number is 0. Only a mounted file system
   writes them, to remove a name.
-* **Read-only.** Nothing outside this package has been found to read a CHFS image back.
-  So no writer can be proven, and none is offered. The routes tried are listed below.
+* **Create:** `ChfsWriter` lays an image out as `makefs` does. Entries are sorted by name.
+  Each directory's entries get a vnode node, then a directory-entry node, then data nodes for
+  anything but a directory. Subdirectories follow, depth first. A node that does not fit the
+  rest of an eraseblock starts the next one. Gaps are 0xFF. There are three differences. Data
+  nodes are 4 KiB and numbered, as described above. Names are stored exactly. Owner and group go
+  in the fields the kernel reads.
+  Given the tree of a `makefs` image and page-sized data nodes, the writer reproduces that image
+  byte for byte, apart from the data-node versions and their node CRCs. This holds for both the
+  NAND and the NOR fixture.
+* **Modify:** add, replace and remove lay the whole image out again with the same geometry.
+  The relayout keeps names, contents, modes, owners, the three times, link targets, device
+  numbers, directory sizes and each eraseblock's erase count. Images with hard links are
+  refused, because a relayout would split them.
 
-## Routes tried for a CHFS reader to prove a writer against
+## Proof
 
-The only CHFS implementation is NetBSD's kernel. It reaches media only through `flash(4)`.
-On a machine qemu emulates, the only flash NetBSD attaches is `nandemulator(4)`.
+The only CHFS implementation is NetBSD's kernel, and it reaches media only through
+`flash(4)`. On a machine qemu emulates, the only flash NetBSD attaches is `nandemulator(4)`.
+That driver hard-codes 32 MiB of NAND with 2 KiB pages and 128 KiB eraseblocks ("hardcode
+these now, make it configurable later" in `sys/dev/nand/nandemulator.c`). That is also
+`makefs`'s default geometry.
+
+* **NetBSD 9.5 mounts it.** The test image is `NetBSD-9.5-amd64-bios-install.img.gz` from
+  cdn.netbsd.org, checked against its published SHA512. The test boots it single-user under
+  qemu, runs `modload nandemulator` and `modload chfs`, copies the image onto
+  `/dev/rflash0` and runs `mount_chfs /dev/flash0 /mnt`. The opt-in tests in
+  `ChfsNetBsdTests` (`CWB_NETBSD9_IMAGE`) then check two things. First, every entry of a
+  writer image lists with the type, permissions, owner, group, mtime and SHA-256 or link
+  target it was written with. Second, a `makefs` image after our add and remove lists every
+  entry, with the right content. While the image is mounted, the kernel writes a file, a
+  directory and a 300 KB copy. Our reader reads the unmounted flash back with those files
+  correct.
+* **NOR and other geometries** are proven only by matching `makefs` output byte for byte
+  (with page-sized data nodes, apart from data-node versions). No emulated NOR flash attaches
+  to NetBSD.
+
+## Why NetBSD 10 and 11 hang
+
+`chfs_mount` calls `VOP_OPEN` on the device vnode without locking it. NetBSD 10 changed
+`spec_open` so that it always unlocks the vnode, opens the device and locks it again. On a
+vnode nobody had locked, that leaves the vnode locked, and the
+`vn_lock` at the start of `chfs_mountfs` then waits on that lock forever. This is the
+`tstile` wait that was measured on 10.1 and 11.1: `mount_chfs` sits in state `D` with 0 CPU time,
+and anything that touches `/mnt` blocks behind it. NetBSD 9's `spec_open` unlocks only while
+loading a driver module, so the mount goes through.
 
 | Route | Result |
 | --- | --- |
-| NetBSD 11.1 amd64 live image (SHA512 checked), `modload nandemulator chfs`, a `makefs -t chfs` image copied onto `/dev/rflash0`, then `mount_chfs /dev/flash0 /mnt` | `mount_chfs` never returns, and the guest stops responding. The same happens on blank flash. |
-| NetBSD 10.1 amd64 live image (SHA512 checked, from archive.netbsd.org), same steps | The `makefs` image is on the flash: reading back `/dev/rflash0` shows its `RDES` header, and the rest of the flash reads 0xFF, erased. `mount_chfs` then sits in state `D` on wait channel `tstile` (blocked on a kernel lock) with 0 CPU time for at least 80 s. Anything that touches `/mnt` blocks behind it, and the guest stops responding soon after. |
-| Other `nandemulator` geometry | Not available. The driver hard-codes 32 MiB, 2 KiB pages, 64 pages per block and 64 spare bytes ("hardcode these now, make it configurable later" in `sys/dev/nand/nandemulator.c`). It takes no properties or sysctls. |
-| An erased device first | `flashctl /dev/flash0 erase 0 33554432` succeeds. The flash already reads 0xFF before that, so this changes nothing. |
-| NetBSD 9.4 | No amd64 live image is published for 9.4, so it was not tried. |
-| evbarm, or other emulated flash | Not tried. It would need an ARM machine that qemu emulates with NAND or NOR flash that NetBSD attaches to `flash(4)`, and no such pairing was found. |
-
-The reader stays proven against `makefs` output in both media types (fixtures and the
-opt-in live test). The writer waits for a kernel that mounts CHFS from emulated flash.
+| NetBSD 11.1 amd64 live image, `makefs` image on `/dev/rflash0`, `mount_chfs` | Never returns (the lock above). The same happens on blank flash. |
+| NetBSD 10.1 amd64 live image, same steps | `mount_chfs` waits on `tstile` with 0 CPU time; the guest stops responding soon after. |
+| NetBSD 9.5 amd64 BIOS install image, same steps | Mounts, reads, writes and unmounts (above). |
+| Other `nandemulator` geometry | Not available; the driver takes no properties or sysctls. |

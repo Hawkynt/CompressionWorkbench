@@ -20,7 +20,11 @@ public sealed class Reiser4KernelVolumeTests {
     "node41", "tea-lexic", "fnv1-dot-o", "deg-ext-3", "rupasov", "journal-replay",
   ];
 
-  /// <summary>Volumes populate.sh filled whose names the writer may key: every hash but Rupasov.</summary>
+  /// <summary>
+  /// Volumes populate.sh filled that fsck.reiser4 calls consistent and the writer edits in the shared
+  /// edit tests: every hash but Rupasov, whose long names fsck.reiser4 keys differently from the
+  /// kernel (the Rupasov volume has its own kernel-judged edit test).
+  /// </summary>
   internal static readonly string[] EditableVolumes = [.. Volumes.Where(static v => v is not ("rupasov" or "journal-replay"))];
 
   internal static byte[] Image(string name) {
@@ -169,6 +173,7 @@ public sealed class Reiser4KernelVolumeTests {
     using var reader = new Reiser4Reader(new MemoryStream(Image(volume)));
     var vol = reader.Volume!;
     var checkedNames = 0;
+    var hashedNames = 0;
     foreach (var directory in vol.Objects.Values.Where(static o => o.IsDirectory)) {
       var hash = (Reiser4HashId)vol.Plugin(directory, 4);
       var fibration = (Reiser4FibrationId)vol.Plugin(directory, 5);
@@ -178,8 +183,10 @@ public sealed class Reiser4KernelVolumeTests {
         Assert.That((ordering, objectId, offset), Is.EqualTo((entry.Ordering, entry.ObjectId, entry.Offset)),
           $"{volume}: {Reiser4Volume.DecodeName(entry.Name)} under {hash}/{fibration}");
         ++checkedNames;
+        if (entry.Hashed) ++hashedNames;
       }
     }
     Assert.That(checkedNames, Is.GreaterThan(300));
+    Assert.That(hashedNames, Is.GreaterThanOrEqualTo(3), "the 35-, 46- and 255-byte names are hashed");
   }
 }

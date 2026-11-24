@@ -174,9 +174,22 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <summary>
+  /// A password asks for an encrypted (FileVault) volume, which is not written: the only
+  /// structural checker outside macOS, apfsprogs' <c>apfsck</c>, stops at "Software encryption:
+  /// not supported", and apfs-fuse / libfsapfs only read. Refused rather than silently written
+  /// unencrypted.
+  /// </summary>
+  private static void RefuseEncryption(FormatCreateOptions? options) {
+    if (!string.IsNullOrEmpty(options?.Password))
+      throw new NotSupportedException(
+        "APFS: encrypted volumes are not created; no checker outside macOS validates them (apfsck: software encryption not supported).");
+  }
+
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    RefuseEncryption(options);
     var w = new ApfsWriter();
     var label = options?.GetOption("VolumeLabel", "") ?? "";
     if (!string.IsNullOrEmpty(label)) w.SetVolumeName(label);
@@ -210,6 +223,7 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(inputs);
     if (!output.CanSeek)
       throw new ArgumentException("APFS streaming creation requires a seekable output.", nameof(output));
+    RefuseEncryption(options);
 
     var w = new ApfsWriter();
     var label = options?.GetOption("VolumeLabel", "") ?? "";

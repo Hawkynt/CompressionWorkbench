@@ -86,13 +86,19 @@ public sealed class BcacheFsForeignLayoutTests {
     Assert.That(Read(image), Is.EquivalentTo(expected));
   }
 
-  [Test, Category("ErrorHandling")]
-  public void GivenTheVolumeBcachefsFormatMade_WhenDefragmented_ThenItIsRefusedAndUnchanged() {
+  [TestCase(DefragMode.ConsolidateAtStart, MetadataZone.Unchanged, TestName = "GivenTheVolumeBcachefsFormatMade_WhenConsolidatedAtStart_ThenEveryFileReadsBack")]
+  [TestCase(DefragMode.ConsolidateAtEnd, MetadataZone.Unchanged, TestName = "GivenTheVolumeBcachefsFormatMade_WhenConsolidatedAtEnd_ThenEveryFileReadsBack")]
+  [TestCase(DefragMode.ConsolidateAtStart, MetadataZone.Back, TestName = "GivenTheVolumeBcachefsFormatMade_WhenMetadataMovesToTheBack_ThenEveryFileReadsBack")]
+  [Category("HappyPath")]
+  public void DefragmentFormatted(DefragMode mode, MetadataZone zone) {
     using var image = Formatted();
-    var before = image.ToArray();
-    Assert.Throws<NotSupportedException>(() =>
-      new BcacheFsFormatDescriptor().Defragment(image, new DefragOptions { Mode = DefragMode.ConsolidateAtStart }));
-    Assert.That(image.ToArray().SequenceEqual(before), Is.True);
+    var expected = Edit(image);
+    var length = image.Length;
+    new BcacheFsFormatDescriptor().Defragment(image, new DefragOptions { Mode = mode, MetadataZonePlacement = zone });
+    Assert.Multiple(() => {
+      Assert.That(image.Length, Is.EqualTo(length), "defragmentation keeps the volume's size");
+      Assert.That(Read(image), Is.EquivalentTo(expected), "and every file's bytes");
+    });
   }
 
   [TestCase(1L, 0L, 100u, 1L, TestName = "GivenTheWritersUnits_WhenATimeIsEncoded_ThenOneUnitIsOneTick")]
@@ -135,16 +141,37 @@ public sealed class BcacheFsForeignLayoutTests {
       Assert.That(Read(image), Is.EquivalentTo(expected));
     }
     BcacheFsKernel.AssertFsckClean(path);
+
+    using (var image = new FileStream(path, FileMode.Open, FileAccess.ReadWrite)) {
+      new BcacheFsFormatDescriptor().Defragment(image, new DefragOptions { Mode = DefragMode.ConsolidateAtStart, MetadataZonePlacement = MetadataZone.BeforeContent });
+      Assert.That(Read(image), Is.EquivalentTo(expected));
+    }
+    BcacheFsKernel.AssertFsckClean(path);
   }
 
-  [Test, Category("ExternalFsInterop")]
-  public void GivenANodeSizeSmallerThanTheBucket_WhenEdited_ThenItIsRefusedAndUnchanged() {
+  /// <summary>
+  /// A node smaller than a bucket: the nodes of one commit share metadata buckets. Enough files
+  /// that the dirent and inode trees grow interior nodes, so several nodes land in one bucket.
+  /// </summary>
+  [TestCase("64M", "--bucket=256k --btree_node_size=64k", 40, TestName = "GivenNodesAQuarterOfTheBucket_WhenEdited_ThenFsckIsClean")]
+  [TestCase("256M", "--bucket=128k --btree_node_size=16k", 600, TestName = "GivenManyNodesPerBucket_WhenManyFilesAreAdded_ThenFsckIsClean")]
+  [Category("ExternalFsInterop")]
+  public void SmallNodes(string size, string options, int fileCount) {
     BcacheFsOracleGate.RequireBcachefsTools();
-    var path = this.Format("split.img", "64M", "--bucket=256k --btree_node_size=64k");
-    var before = File.ReadAllBytes(path);
-    using (var image = new FileStream(path, FileMode.Open, FileAccess.ReadWrite))
-      Assert.Throws<NotSupportedException>(() =>
-        new BcacheFsFormatDescriptor().Add(image, [ArchiveInputInfo.InMemory("x.txt", [1])]));
-    Assert.That(File.ReadAllBytes(path).SequenceEqual(before), Is.True);
+    var path = this.Format("small-nodes.img", size, options);
+    Dictionary<string, string> expected;
+    using (var image = new FileStream(path, FileMode.Open, FileAccess.ReadWrite)) {
+      expected = Edit(image);
+      var many = Enumerable.Range(0, fileCount)
+        .Select(i => (Name: $"many/dir{i % 7}/file-with-a-longish-name-{i:D4}.txt", Data: Encoding.ASCII.GetBytes($"file {i}\n")))
+        .ToArray();
+      new BcacheFsFormatDescriptor().Add(image, [.. many.Select(static f => ArchiveInputInfo.InMemory(f.Name, f.Data))]);
+      foreach (var (name, data) in many) expected[name] = Convert.ToHexStringLower(SHA256.HashData(data));
+      image.Position = 0;
+      new BcacheFsFormatDescriptor().Remove(image, [.. many.Where((_, i) => i % 5 == 0).Select(f => f.Name)]);
+      foreach (var (name, _) in many.Where((_, i) => i % 5 == 0)) expected.Remove(name);
+      Assert.That(Read(image), Is.EquivalentTo(expected));
+    }
+    BcacheFsKernel.AssertFsckClean(path);
   }
 }

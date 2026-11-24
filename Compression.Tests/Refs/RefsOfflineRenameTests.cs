@@ -23,7 +23,7 @@ public sealed class RefsOfflineRenameTests {
     var beforeProbe = new RefsImageProbe(image);
     var originalClusters = beforeProbe.ReadFiles(beforeProbe.ActiveCheckpoint())["alpha.bin"].Clusters;
 
-    new RefsFormatDescriptor().Rename(stream, "alpha.bin", "renamed.bin");
+    RefsOfflineModifier.Rename(stream, "alpha.bin", "renamed.bin");
 
     var after = RefsMetadataReader.Open(stream);
     var renamed = new RefsWritableNamespace(after).ResolveStorage("renamed.bin");
@@ -53,7 +53,7 @@ public sealed class RefsOfflineRenameTests {
     var original = image.ToArray();
     using var stream = new MemoryStream(image, writable: true);
 
-    Assert.Throws<IOException>(() => new RefsFormatDescriptor().Rename(stream, "alpha.bin", "other.bin"));
+    Assert.Throws<IOException>(() => RefsOfflineModifier.Rename(stream, "alpha.bin", "other.bin"));
     Assert.That(image, Is.EqualTo(original));
   }
 
@@ -66,7 +66,7 @@ public sealed class RefsOfflineRenameTests {
     var original = image.ToArray();
     using var stream = new MemoryStream(image, writable: true);
 
-    Assert.Throws<NotSupportedException>(() => new RefsFormatDescriptor().Rename(stream, "alpha.bin", "renamed.bin"));
+    Assert.Throws<NotSupportedException>(() => RefsOfflineModifier.Rename(stream, "alpha.bin", "renamed.bin"));
     Assert.That(image, Is.EqualTo(original));
   }
 
@@ -75,7 +75,7 @@ public sealed class RefsOfflineRenameTests {
     var image = new RefsSyntheticVolume().WithFile("alpha.bin", [1, 2, 3]).Build();
     using var stream = new MemoryStream(image, writable: true);
 
-    new RefsFormatDescriptor().Rename(stream, "alpha.bin", "ALPHA.bin");
+    RefsOfflineModifier.Rename(stream, "alpha.bin", "ALPHA.bin");
 
     var metadata = RefsMetadataReader.Open(stream);
     Assert.That(new RefsNamespaceReader(metadata).ReadAll().Single().Path, Is.EqualTo("ALPHA.bin"));
@@ -89,7 +89,7 @@ public sealed class RefsOfflineRenameTests {
     var original = image.ToArray();
     using var stream = new MemoryStream(image, writable: true);
 
-    Assert.Throws<NotSupportedException>(() => new RefsFormatDescriptor().Rename(stream, "folder", "renamed"));
+    Assert.Throws<NotSupportedException>(() => RefsOfflineModifier.Rename(stream, "folder", "renamed"));
     Assert.That(image, Is.EqualTo(original));
   }
 
@@ -99,7 +99,7 @@ public sealed class RefsOfflineRenameTests {
     var original = image.ToArray();
     using var stream = new MemoryStream(image, writable: true);
 
-    Assert.Throws<FileNotFoundException>(() => new RefsFormatDescriptor().Rename(stream, "missing.bin", "renamed.bin"));
+    Assert.Throws<FileNotFoundException>(() => RefsOfflineModifier.Rename(stream, "missing.bin", "renamed.bin"));
     Assert.That(image, Is.EqualTo(original));
   }
 
@@ -109,7 +109,7 @@ public sealed class RefsOfflineRenameTests {
     var original = image.ToArray();
     using var stream = new MemoryStream(image, writable: true);
 
-    Assert.Throws<NotSupportedException>(() => new RefsFormatDescriptor().Rename(stream, "alpha.bin", "sub/alpha.bin"));
+    Assert.Throws<NotSupportedException>(() => RefsOfflineModifier.Rename(stream, "alpha.bin", "sub/alpha.bin"));
     Assert.That(image, Is.EqualTo(original));
   }
 
@@ -132,7 +132,7 @@ public sealed class RefsOfflineRenameTests {
     var original = image.ToArray();
     using var stream = new MemoryStream(image, writable: true);
 
-    Assert.Throws<ArgumentException>(() => new RefsFormatDescriptor().Rename(stream, "alpha.bin", name));
+    Assert.Throws<ArgumentException>(() => RefsOfflineModifier.Rename(stream, "alpha.bin", name));
     Assert.That(image, Is.EqualTo(original));
   }
 
@@ -142,7 +142,7 @@ public sealed class RefsOfflineRenameTests {
     var image = new RefsSyntheticVolume().WithFile("alpha.bin", [4, 5, 6]).Build();
     using var stream = new MemoryStream(image, writable: true);
 
-    new RefsFormatDescriptor().Rename(stream, "alpha.bin", name);
+    RefsOfflineModifier.Rename(stream, "alpha.bin", name);
 
     var files = new RefsNamespaceReader(RefsMetadataReader.Open(stream)).ReadAll();
     Assert.That(files.Single().Path, Is.EqualTo(name));
@@ -155,7 +155,7 @@ public sealed class RefsOfflineRenameTests {
     var original = image.ToArray();
     using var stream = new MemoryStream(image, writable: true);
 
-    Assert.Throws<ArgumentException>(() => new RefsFormatDescriptor().Rename(stream, "alpha.bin", name));
+    Assert.Throws<ArgumentException>(() => RefsOfflineModifier.Rename(stream, "alpha.bin", name));
     Assert.That(image, Is.EqualTo(original));
   }
 
@@ -165,7 +165,7 @@ public sealed class RefsOfflineRenameTests {
     var original = image.ToArray();
     using var stream = new MemoryStream(image, writable: true);
 
-    new RefsFormatDescriptor().Rename(stream, "alpha.bin", "alpha.bin");
+    RefsOfflineModifier.Rename(stream, "alpha.bin", "alpha.bin");
 
     Assert.That(image, Is.EqualTo(original));
   }
@@ -175,6 +175,6 @@ public sealed class RefsOfflineRenameTests {
     var image = new RefsSyntheticVolume().WithFile("alpha.bin", [1]).Build();
     using var stream = new MemoryStream(image, writable: false);
 
-    Assert.Throws<ArgumentException>(() => new RefsFormatDescriptor().Rename(stream, "alpha.bin", "beta.bin"));
+    Assert.Throws<ArgumentException>(() => RefsOfflineModifier.Rename(stream, "alpha.bin", "beta.bin"));
   }
 }

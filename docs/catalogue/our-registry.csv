@@ -120,7 +120,7 @@ format,Cbz,CBZ,Archive,,.cbz,Y,Y,Y,Y
 format,Cdi,CDI,Archive,,.cdi,Y,Y,Y,Y
 format,CdXa,CD-ROM XA (RIFF CDXA),Archive,,,Y,Y,Y,Y
 format,CephFs,CephFS / RADOS pool export,Archive,Y,.rados;.ceph,Y,Y,Y,Y
-format,Chfs,CHFS (NetBSD Chip File System),Archive,Y,.chfs,Y,Y,,
+format,Chfs,CHFS (NetBSD Chip File System),Archive,Y,.chfs,Y,Y,Y,Y
 format,Chm,CHM,Archive,,.chm,Y,Y,Y,Y
 format,ChromiumPak,Chromium resource pack,Archive,,.pak,Y,Y,Y,Y
 format,ClickteamInstaller,Clickteam Install Creator,Archive,,,Y,Y,,
@@ -639,7 +639,7 @@ format,Udf,UDF,Archive,Y,.udf,Y,Y,Y,Y
 format,UefiFv,UEFI Firmware Volume,Archive,,.fv;.fd,Y,Y,Y,Y
 format,Ufs,UFS,Archive,Y,.ufs,Y,Y,Y,Y
 format,Uharc,UHARC,Archive,,.uha,Y,Y,Y,Y
-format,Uif,MagicISO UIF,Archive,,.uif,Y,Y,,
+format,Uif,MagicISO UIF,Archive,,.uif,Y,Y,Y,
 format,UImage,U-Boot uImage,Archive,,,Y,Y,Y,Y
 format,Ult,UltraTracker,Audio,,.ult,Y,Y,,
 format,Um3,Bruns UM3,Stream,,.um3,,Y,Y,

@@ -121,4 +121,17 @@ public sealed class ApfsEncryptionTests {
   [Test, Category("Exception")]
   public void GivenAPackedValueThatIsNotAKeyObject_WhenParsed_ThenItIsRejected() =>
     Assert.Throws<InvalidDataException>(() => ApfsEncryption.ParseWrappedKey([0x31, 0x00]));
+
+  /// <summary>
+  /// An encrypted volume is not written (apfsck cannot check one), and a password is not
+  /// silently dropped either: Create refuses and writes nothing.
+  /// </summary>
+  [Test, Category("Exception")]
+  public void GivenAPassword_WhenAVolumeIsCreated_ThenItIsRefusedAndNothingIsWritten() {
+    var descriptor = new ApfsFormatDescriptor();
+    using var output = new MemoryStream();
+    Assert.Throws<NotSupportedException>(() => descriptor.Create(output,
+      [ArchiveInputInfo.InMemory("a.txt", "secret"u8.ToArray())], new FormatCreateOptions { Password = "pw" }));
+    Assert.That(output.Length, Is.Zero);
+  }
 }

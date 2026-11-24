@@ -98,12 +98,50 @@ public class Qcow2QemuFeatureTests {
   }
 
   [Test]
-  public void Given_ImagesWithNewFeatures_When_OpenedForWriting_Then_TheStreamIsReadOnly() {
-    foreach (var image in new[] { "zstd.qcow2", "extl2.qcow2" }) {
-      using var stream = new MemoryStream();
-      stream.Write(Resource(image));
-      using var guest = Qcow2Stream.Open(stream);
-      Assert.That(guest.CanWrite, Is.False, image);
+  public void Given_ADirtyImage_When_Written_Then_ItsRefcountsAreRebuiltAndTheDirtyBitCleared() {
+    // Lazy refcounts may be stale while the dirty bit is set: the first write rebuilds them.
+    var image = Resource("zstd.qcow2");
+    image[79] |= 0x01;
+    using var stream = new MemoryStream();
+    stream.Write(image);
+    using (var guest = Qcow2Stream.Open(stream)) {
+      Assert.That(guest.CanWrite, Is.True);
+      guest.Position = 1000;
+      guest.Write("dirty no more"u8);
+    }
+    Assert.That(stream.ToArray()[79] & 1, Is.Zero);
+    stream.Position = 0;
+    using var reader = new Qcow2Reader(stream);
+    Assert.That(reader.ExtractDisk().AsSpan(1000, 13).SequenceEqual("dirty no more"u8), Is.True);
+  }
+
+  /// <summary>
+  /// The committed QEMU images, edited in place (zstd clusters copied out, extended-L2
+  /// subclusters filled in from the backing file, an overlay over a QCOW2 or raw backing file),
+  /// read back with the edits and the rest unchanged; backing files are never written.
+  /// qemu-img's verdict on such edits is <see cref="Qcow2EditProfileTests"/>.
+  /// </summary>
+  [TestCase("zstd.qcow2", new string[0])]
+  [TestCase("extl2.qcow2", new string[0])]
+  [TestCase("child.qcow2", new[] { "base.qcow2" })]
+  [TestCase("child-extl2.qcow2", new[] { "base.qcow2" })]
+  [TestCase("child-raw.qcow2", new[] { "base.raw" })]
+  [Category("RoundTrip")]
+  public void Given_AQemuImageWithNewFeatures_When_EditedInPlace_Then_TheGuestHasTheEditsAndBackingFilesAreUntouched(string image, string[] backing) {
+    var dir = Directory.CreateTempSubdirectory("cwb-qcow2-").FullName;
+    try {
+      foreach (var name in backing.Append(image))
+        File.WriteAllBytes(Path.Combine(dir, name), Resource(name));
+      var path = Path.Combine(dir, image);
+      var before = ReadGuest(image, backing);
+      var expected = Qcow2EditProfileTests.Edit(path, null, before);
+      using (var file = File.OpenRead(path))
+      using (var reader = new Qcow2Reader(file))
+        Assert.That(reader.ExtractDisk(), Is.EqualTo(expected));
+      foreach (var name in backing)
+        Assert.That(File.ReadAllBytes(Path.Combine(dir, name)), Is.EqualTo(Resource(name)), $"{name} is never written");
+    } finally {
+      Directory.Delete(dir, true);
     }
   }
 

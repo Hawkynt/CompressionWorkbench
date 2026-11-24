@@ -14,13 +14,11 @@ namespace FileSystem.Refs;
 /// can relocate file data, live MSB+ metadata and checkpoint pages while
 /// preserving the format-fixed VBR/SUPB bootstrap anchors.
 /// </summary>
-[FilesystemBlockMover(typeof(RefsBlockMover))]
 public sealed class RefsFormatDescriptor :
   IFormatDescriptor,
   IArchiveFormatOperations,
   IArchiveModifiable,
   IFilesystemExtentMap,
-  IArchiveDefragmentable,
   ILayoutOptimizable,
   IFilesystemDriverProvider,
   IFilesystemDriverReadinessProvider {
@@ -37,16 +35,23 @@ public sealed class RefsFormatDescriptor :
   /// Gets the category.
   /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  // CanModify covers the offline-quiescent image editor only. A mounted ReFS
-  // driver's transactional write path is a separate readiness tier and is not
-  // what this flag reports — see the ReFS limitation in
-  // Hawkynt.FileFormats.FileSystems/README.md.
+  // CanModify covers one edit only: a same-length overwrite of a plain extent-backed file,
+  // written over its own clusters as Windows does (RefsInPlaceOverwrite). Windows Server 2022
+  // (ReFS 3.7) and 2025 (ReFS 3.14), 4 KiB and 64 KiB clusters, mount the result read-only and
+  // read-write, hash every file as expected and log no ReFS error. Everything else the old
+  // offline editor did (resize, remove, rename, defragment) Windows rejected, so it is refused
+  // before a byte is touched. See tools/foreign-os-oracles and RefsWindowsOracleTests.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>Why every in-place edit of a ReFS volume is refused.</summary>
+  internal const string EditsWithheld =
+    "ReFS: only same-length overwrites of existing files are made in place. Windows Server 2022 and 2025 found the " +
+    "volumes the offline editor wrote for other edits corrupt or refused to mount them, so no edit is made; the image is unchanged.";
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -84,7 +89,7 @@ public sealed class RefsFormatDescriptor :
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Microsoft ReFS 3.x volume image with native read-only driver projection, namespace/allocation parsing, and offline-quiescent existing-file replace/remove plus metadata placement. Native mounted-driver transactions remain a separate readiness tier.";
+  public string Description => "Microsoft ReFS 3.x volume image, read: namespace and allocation parsing checked file for file against volumes Windows Server 2022 (ReFS 3.7) and 2025 (ReFS 3.14) formatted. In place, an existing file can be overwritten with contents of the same length; other edits are refused.";
 
   /// <summary>
   /// Probes the image and reports the filesystem driver profile.
@@ -124,7 +129,7 @@ public sealed class RefsFormatDescriptor :
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
-    new RefsPlacementManager(archive).Execute(options);
+    throw new NotSupportedException(EditsWithheld);
   }
 
   /// <summary>
@@ -151,12 +156,9 @@ public sealed class RefsFormatDescriptor :
         CurrentSlackBytes = slack,
         OptimalUnitSize = metadata.ClusterSize,
         OptimalSlackBytes = slack,
-        InPlaceChanges = [
-          "File extent placement / consolidation / interleave",
-          "Live ReFS MSB+ metadata-page placement",
-          "ReFS checkpoint placement through SUPB repointing",
-        ],
+        InPlaceChanges = [],
         Notes = [
+          EditsWithheld,
           $"Active graph contains {graph.Pages.Count:N0} live MSB+ page(s); {movableMetadata:N0} metadata/checkpoint region(s) are currently allocator-addressable and relocatable.",
           $"The winning SUPB is fixed at LCN 0x{bootstrap.WinningSuperblockLcn:X}; VBR and all three SUPB slots are format-fixed bootstrap anchors, not movable extents.",
           "ReFS cluster geometry is preserved; placement changes physical location while retaining the volume's allocation-unit size.",
@@ -205,6 +207,10 @@ public sealed class RefsFormatDescriptor :
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    // Files whose bytes this reader does not locate: refused by name once everything else is out,
+    // never written as empty or short files.
+    var unread = new List<string>();
+    var decoded = false;
     try {
       var metadata = RefsMetadataReader.Open(stream);
       var records = new RefsNamespaceReader(metadata).ReadAll();
@@ -213,6 +219,12 @@ public sealed class RefsFormatDescriptor :
           if (!MatchesRequested(record.Path, files)) continue;
           if (record.IsDirectory) {
             Directory.CreateDirectory(Path.Combine(outputDir, record.Path.Replace('/', Path.DirectorySeparatorChar)));
+            continue;
+          }
+          // A stream layout the namespace reader does not decode surfaces as "resident" without
+          // resident bytes of its size; it is refused, never written empty.
+          if (record.IsResident && (record.ResidentContent?.LongLength ?? (record.Size == 0 ? 0 : -1)) != record.Size) {
+            unread.Add(record.Path);
             continue;
           }
 
@@ -245,36 +257,55 @@ public sealed class RefsFormatDescriptor :
           if (remaining != 0)
             throw new InvalidDataException($"ReFS extents for '{record.Path}' do not cover its logical size.");
         }
-        return;
+        decoded = true;
       }
     } catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException or ArgumentException or OverflowException) {
       // Diagnostic fallback below remains useful for partially damaged images.
     }
 
-    ExtractDiagnosticSurface(stream, outputDir, files);
+    if (!decoded) {
+      ExtractDiagnosticSurface(stream, outputDir, files);
+      return;
+    }
+    if (unread.Count > 0)
+      throw new NotSupportedException(
+      $"ReFS: the data of {unread.Count} file(s) lies in a stream layout this reader does not decode; they were not extracted: " +
+      string.Join(", ", unread.Take(20)) + (unread.Count > 20 ? ", ..." : "."));
   }
 
   /// <summary>
-  /// Offline-quiescent existing-file replacement for the proven regular-stream profile.
-  /// A new name is rejected before mutation until ReFS file-identity/security/link fields
-  /// are proven for every supported 3.x profile.
+  /// Refused: replacing files in place. The offline editor's output was judged by Windows
+  /// Server 2022 and 2025 and rejected; see <see cref="EditsWithheld"/>.
   /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => RefsOfflineModifier.Add(archive, inputs);
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    // Only same-length overwrites of plain extent-backed files, written over the clusters the
+    // file owns (RefsInPlaceOverwrite). Every input is planned and read before any byte is
+    // written, so a refusal leaves the image unchanged.
+    var metadata = RefsMetadataReader.Open(archive);
+    var planned = new List<(IReadOnlyList<ulong> Clusters, byte[] Data)>();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var data = input.ReadContent();
+      planned.Add((RefsInPlaceOverwrite.Plan(archive, metadata, input.ArchiveName, data.LongLength), data));
+    }
+    foreach (var (clusters, data) in planned)
+      RefsInPlaceOverwrite.Apply(archive, metadata.ClusterSize, clusters, data);
+  }
 
-  /// <summary>
-  /// Removes regular files or empty directories from an unmounted ReFS image. Namespace
-  /// deletion is published through immutable B+ replacement pages and the alternate CHKP.
-  /// </summary>
-  public void Remove(Stream archive, string[] entryNames)
-    => RefsOfflineModifier.Remove(archive, entryNames);
+  /// <summary>Refused: removing files in place; see <see cref="EditsWithheld"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    throw new NotSupportedException(EditsWithheld);
+  }
 
-  /// <summary>
-  /// Renames an existing ReFS regular file within the same parent directory
-  /// on an unmounted image, preserving its existing metadata and data allocation.
-  /// </summary>
-  public void Rename(Stream image, string sourcePath, string destinationPath)
-    => RefsOfflineModifier.Rename(image, sourcePath, destinationPath);
+  /// <summary>Refused: renaming files in place; see <see cref="EditsWithheld"/>.</summary>
+  public void Rename(Stream image, string sourcePath, string destinationPath) {
+    ArgumentNullException.ThrowIfNull(image);
+    throw new NotSupportedException(EditsWithheld);
+  }
 
   private static List<ArchiveEntryInfo> ListDiagnosticSurface(Stream stream) {
     var entries = new List<ArchiveEntryInfo>();

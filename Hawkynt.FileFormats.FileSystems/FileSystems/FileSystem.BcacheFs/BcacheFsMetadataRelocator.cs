@@ -23,6 +23,7 @@ internal static class BcacheFsMetadataRelocator {
     if (!image.CanRead || !image.CanWrite || !image.CanSeek)
       throw new ArgumentException("bcachefs metadata relocation needs a readable, writable, seekable stream.", nameof(image));
 
+    using var units = BcacheFsInPlaceModifier.UseVolumeBuckets(image);
     if (BcacheFsInPlaceModifier.RequireWritableProfile(image).TryGetValue(BtreeReflink, out var reflinked) && reflinked.Count != 0)
       throw new NotSupportedException("bcachefs: the volume holds reflinked (shared) data, which metadata relocation does not keep clear of.");
     var volume = BcacheFsVolume.Open(image);
@@ -41,7 +42,9 @@ internal static class BcacheFsMetadataRelocator {
     var oldMetadata = BcacheFsMetadataCommit.TreeOrder.SelectMany(volume.NodeSectors)
       .Select(s => s / BucketSectors).ToHashSet();
     var userBuckets = logical[BtreeExtents]
-      .Select(e => BcacheFsAllocationBuilder.ExtentDataSector(e) / BucketSectors).ToHashSet();
+      .Select(BcacheFsAllocationBuilder.Footprint)
+      .Where(f => f.HasValue)   // inline data and reservations occupy no bucket
+      .Select(f => f!.Value.Sector / BucketSectors).ToHashSet();
     var previous = new Dictionary<long, BcacheFsMetadataCommit.BucketState>();
     foreach (var key in volume.Keys(BtreeAlloc))
       if (key.Type == KeyAllocV4 && key.Value.Length >= 20)
@@ -49,9 +52,20 @@ internal static class BcacheFsMetadataRelocator {
 
     var diagnostics = new List<string>();
     var geometry = BcacheFsSuperblockEditor.ReadGeometry(image);
+    // The superblock slots and the journal stay where the volume has them.
+    var fixedBuckets = new HashSet<long>();
+    foreach (var slot in geometry.SuperblockSectors.Prepend(0))
+      for (var sector = slot; sector < Math.Max(slot, PrimarySbSector) + SbSlotSectors; sector += BucketSectors)
+        fixedBuckets.Add(sector / BucketSectors);
+    foreach (var (start, count) in geometry.JournalBuckets)
+      for (var b = start; b < start + count; ++b) fixedBuckets.Add(b);
+    // Where a node is smaller than a bucket, each target bucket takes several nodes.
+    var perBucket = BucketSectors / NodeSectors;
     var published = BcacheFsMetadataCommit.Publish(image, volume.InternalMagic, geometry, logical, previous,
       shapes => AssignTargets(shapes,
-        ChooseTargets(volume, oldMetadata, userBuckets, shapes.Values.Sum(s => s.Count), options, diagnostics),
+        [.. ChooseTargets(volume, oldMetadata.Concat(fixedBuckets).ToHashSet(), userBuckets,
+            (shapes.Values.Sum(s => s.Count) + perBucket - 1) / perBucket, options, diagnostics)
+          .SelectMany(b => Enumerable.Range(0, perBucket).Select(k => b * perBucket + k))],
         options));
     BcacheFsSuperblockEditor.PublishClean(image, published);
 

@@ -570,6 +570,10 @@
       <LogicalName>SqxRecovery.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- keramics' HFS+ volume written on macOS (decmpfs files); see HfsPlus/ReferenceVectors/README.md. -->
+    <!-- What Windows hashed on the ReFS volumes it formatted; see Refs/WindowsOracle/README.md. -->
+    <EmbeddedResource Include="Refs\WindowsOracle\*.json">
+      <LogicalName>RefsWindowsOracle.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="HfsPlus\ReferenceVectors\*.gz">
       <LogicalName>HfsPlusVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
@@ -625,8 +629,8 @@
     <EmbeddedResource Include="Codecs\G722\ReferenceVectors\*.pcm;Codecs\G722\ReferenceVectors\*.g722">
       <LogicalName>G722Vectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
-    <!-- Fossil volume written by plan9port's fossil server; see Fossil/ReferenceVectors/README.md. -->
-    <EmbeddedResource Include="Fossil\ReferenceVectors\*.gz;Fossil\ReferenceVectors\*.manifest">
+    <!-- Fossil volumes and a Venti arena partition written by plan9port; see Fossil/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Fossil\ReferenceVectors\*.gz;Fossil\ReferenceVectors\*.manifest;Fossil\ReferenceVectors\*.score">
       <LogicalName>FossilVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- Zoo archives written by Zoo 2.10; see Zoo/ReferenceVectors/README.md. -->

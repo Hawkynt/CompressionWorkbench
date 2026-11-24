@@ -25,9 +25,9 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
 | `MISSING` | 161 | a source lists it; no descriptor or building block covers it |
-| `READ-ONLY-BUT-SOURCES-WRITE` | 31 | we only read it; a source or the format's own tool writes it |
+| `READ-ONLY-BUT-SOURCES-WRITE` | 30 | we only read it; a source or the format's own tool writes it |
 | `PARTIAL` | 56 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 338 | covered with no known gap against what the sources list |
+| `OK` | 339 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 443 | in our registry, listed by none of the eight sources |
 
 ### Per source
@@ -43,7 +43,7 @@ read-only rows.
 | binwalk v3 | 79 | 56 | 70.9 | 51 |
 | Universal Extractor 2 | 124 | 104 | 83.9 | 74 |
 | PRONOM | 87 | 83 | 95.4 | 75 |
-| Wikipedia | 268 | 197 | 73.5 | 156 |
+| Wikipedia | 268 | 197 | 73.5 | 157 |
 | Wikipedia (de): list of compression programs | 124 | 78 | 62.9 | 48 |
 
 These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-20. The source inventories retain their original 2026-10-19 snapshot; the German list is revision 268525499 (2026-07-05). The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.
@@ -241,11 +241,11 @@ running real-world samples. The file named at the end of each row is where the l
 | zoo | `Zoo` | 4 | LZH method (2) unsupported (ZooReader.cs) |
 | BCM | `Bcm` | 1 | BCM 2.x files (`BCM2`) refused: bcm 2.03 is exe-only; its framing, CRC-32C and libsais BWT are measured but its LZP and context-mixing model are not ([BCM2-ON-DISK.md](../BCM2-ON-DISK.md)); BCM 1.x reads and writes (BcmStream.cs) |
 | ALZip | `AlZip` | 3 | store and deflate only (AlZipReader.cs) |
-| APFS | `Apfs` | 3 | Fusion: only the main device is read, tier-2 blocks are refused; per-file-key encryption refused (ApfsReader.cs) |
+| APFS | `Apfs` | 3 | Fusion: tier-2 blocks held in the write-back cache are refused; per-file-key encryption refused; encrypted volumes are read with the password but not created or edited, as apfsck cannot check them (ApfsReader.cs) |
 | Compiled HTML Help (CHM) | `Chm` | 3 | content sections above 1 unsupported (ChmReader.cs) |
 | FreeArc | `FreeArc` | 3 | only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs) |
-| QCOW / QCOW2 | `Qcow2` | 3 | reads everything listed; in-place edits refused on images with backing files, zstd clusters, extended L2, refcount widths other than 16 bits, and encrypted images with an external data file (Qcow2Structures.cs) |
-| SquashFS | `SquashFs` | 3 | SquashFS v4 only; v1-v3 rejected (SquashFsSuperblock.cs) |
+| QCOW / QCOW2 | `Qcow2` | 3 | internal snapshots: only the active image is read or extracted (it is edited copy-on-write, the snapshots left intact); an image marked corrupt is not edited (Qcow2Structures.cs) |
+| SquashFS | `SquashFs` | 3 | v1-v3 and the sqlzma LZMA build are read only, never written; vendor LZMA builds with other layouts (e.g. the "hsqt" magic) are refused (SquashFsLegacyReader.cs) |
 | UDF | `Udf` | 3 | type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs) |
 | Windows PE | `Mz`, `PeResources` | 3 | archive view of resources/overlay, not a full PE section extractor |
 | SQX | `Sqx` | 1 | audio (5), text/PPMd (6) and ultra (7) methods, encryption and split volumes are refused (SqxReader.cs) |
