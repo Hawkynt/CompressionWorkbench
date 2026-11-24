@@ -84,12 +84,12 @@ internal static class Reiser4NameKeys {
 
   /// <summary>Whether <paramref name="hash" /> can key new long names this writer is asked to add.</summary>
   /// <remarks>
-  /// The Rupasov hash is computed differently by the kernel and by reiser4progs — a kernel-written
-  /// entry is reported by <c>fsck.reiser4</c> as carrying the wrong offset — so no long name keyed
-  /// with it can satisfy both. Existing entries are carried with their keys as found.
+  /// Every hash plugin can. The Rupasov hash is keyed the way the kernel keys it, which is what
+  /// mounts and resolves; <c>fsck.reiser4</c> evaluates its powers of ten unsigned and so disagrees
+  /// on long hashed tails (see <see cref="Rupasov" />).
   /// </remarks>
-  internal static bool CanHash(Reiser4HashId hash) => hash is Reiser4HashId.R5 or Reiser4HashId.Tea
-    or Reiser4HashId.Fnv1 or Reiser4HashId.Degenerate;
+  internal static bool CanHash(Reiser4HashId hash) => hash is Reiser4HashId.Rupasov or Reiser4HashId.R5
+    or Reiser4HashId.Tea or Reiser4HashId.Fnv1 or Reiser4HashId.Degenerate;
 
   /// <summary>The three words of the entry key for <paramref name="name" />, and whether it was hashed.</summary>
   internal static (ulong Ordering, ulong ObjectId, ulong Offset, bool Hashed) Make(
@@ -123,12 +123,41 @@ internal static class Reiser4NameKeys {
   }
 
   internal static ulong Hash(Reiser4HashId hash, ReadOnlySpan<byte> tail) => hash switch {
+    Reiser4HashId.Rupasov => Rupasov(tail),
     Reiser4HashId.R5 => R5(tail),
     Reiser4HashId.Tea => Tea(tail),
     Reiser4HashId.Fnv1 => Fnv1(tail),
     Reiser4HashId.Degenerate => 0xC0C0_C0C0_1010_1010UL,
     _ => throw new NotSupportedException($"Reiser4: names cannot be hashed with the {hash} hash."),
   };
+
+  /// <summary>
+  /// The Rupasov ("Yura") hash as the kernel evaluates it: the bytes, less 48, weighted as decimal
+  /// digits — byte <c>i</c> of <c>n</c> by <c>10^(n-1-i)</c> — plus every number from
+  /// <c>max(n, 40)</c> to 255, the sum shifted left by seven.
+  /// </summary>
+  /// <remarks>
+  /// Each power of ten is a 32-bit signed integer that wraps and is sign-extended into the 64-bit
+  /// sum, and the leading byte's product is itself formed in 32 bits before it is widened. That is
+  /// what the kernel keys entries with, checked on every long name of the kernel-written
+  /// <c>rupasov</c> reference volume. reiser4progs widens the same values unsigned instead, so the
+  /// two disagree as soon as a power of ten or the leading product reaches 2^31 — in practice on
+  /// every hashed tail longer than nine bytes.
+  /// </remarks>
+  internal static ulong Rupasov(ReadOnlySpan<byte> data) {
+    var n = data.Length;
+    if (n == 0) return 0;
+    var power = 1;
+    for (var k = 1; k < n; ++k) power = unchecked(power * 10);
+    var sum = (ulong)(long)unchecked((data[0] - 48) * power);
+    for (var i = 1; i < n; ++i) {
+      var weight = 1;
+      for (var k = i; k < n - 1; ++k) weight = unchecked(weight * 10);
+      sum = unchecked(sum + (ulong)(long)(data[i] - 48) * (ulong)(long)weight);
+    }
+    for (var i = Math.Max(n, 40); i < 256; ++i) sum += (ulong)i;
+    return sum << 7;
+  }
 
   private static ulong R5(ReadOnlySpan<byte> data) {
     ulong a = 0;

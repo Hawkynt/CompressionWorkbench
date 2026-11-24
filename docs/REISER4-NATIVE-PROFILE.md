@@ -73,7 +73,7 @@ the ordering's top seven bits:
 | `tea_hash` (2) | TEA in a Davies–Meyer construction evaluated in 64-bit arithmetic: 16-byte blocks of four little-endian 32-bit words get 6 rounds, the remainder padded with `len | len << 8 | …` gets 10; the result is the two halves xored |
 | `fnv1_hash` (3) | 64-bit FNV-1 |
 | `deg_hash` (4) | the constant `0xC0C0C0C010101010` |
-| `rupasov_hash` (0) | not computed: the kernel and reiser4progs disagree (fsck.reiser4 reports every kernel-keyed long name as carrying the wrong offset), so no long name keyed with it can satisfy both. Existing entries are carried; new names longer than 23 bytes are refused. |
+| `rupasov_hash` (0) | the bytes less 48, weighted as decimal digits (byte `i` of `n` by `10^(n-1-i)`), plus every number from `max(n, 40)` to 255, shifted left by 7. The kernel forms each power of ten as a wrapping 32-bit signed integer and sign-extends it (and the leading byte's 32-bit product) into the 64-bit sum; reiser4progs extends them unsigned, so the two disagree on hashed tails longer than about nine bytes. New names are keyed as the kernel keys them, since the kernel is what mounts and resolves them; fsck.reiser4 reports those entries as carrying the wrong offset, exactly as it reports the kernel's own. |
 
 The key of a new object's stat data is `(parent oid, type 1, ordering of its first name, oid, 0)`,
 as the kernel makes it; directory entries carry the target's full stat key. Existing entries and
@@ -170,7 +170,7 @@ covers blocks past its end, falls back to a staged rebuild at the same size.
 | --- | --- | --- |
 | 13 kernel-written reference volumes: default (lzo1, conv, 64K), gzip1+force+8K, zstd1+latt+16K, lzo1+none+4K, reg40 smart, reg40 tails, reg40+extents+node41, node41, tea+lexic, fnv1+dot_o, deg+ext_3, rupasov, journal replay | our reader against the kernel's read-back manifest | every path, type, mode, owner, mtime, link count, size, device, symlink target and file MD5 equal |
 | the same, edited (add a long-named file under each body, a symlink, a hard link; remove two names) | `fsck.reiser4 --check`; the kernel's manifest | consistent; carried objects identical, new ones read back byte for byte, including clusters we compressed with lzo1, gzip1 and zstd1 |
-| names in every reference directory | re-keyed with the volume's hash and fibration | identical to the kernel's keys (all but Rupasov) |
+| names in every reference directory | re-keyed with the volume's hash and fibration | identical to the kernel's keys, Rupasov included |
 | every `mkfs.reiser4 -o` profile (hashes, fibrations, formattings, create, compression, mode, cluster, node41) edited under each body | `fsck.reiser4 --check`; `debugfs.reiser4 -i/-k` | consistent; names resolve; plain bodies read back; root plugin set unchanged |
 | writer volumes with every object kind and body | `fsck.reiser4`; the kernel's manifest | consistent; identical |
 | a tall tree scattered and defragmented in place | `fsck.reiser4`; the kernel's manifest | consistent after both; no node moved; every file identical |
@@ -178,8 +178,10 @@ covers blocks past its end, falls back to a staged rebuild at the same size.
 | 12,000 files with extents | `fsck`; `debugfs -s` | consistent; height 4 |
 | our volume after `fsck.reiser4 --build-fs` inserted lost+found | our reader; then add into lost+found and `fsck` | read completely; consistent, object ID and owner kept |
 
-Known disagreements between the two oracles, recorded rather than resolved: kernel-written Rupasov
-long names fail `fsck.reiser4`; a tails-formatted file the kernel left with a trailing hole is
+Known disagreements between the two oracles, recorded rather than resolved: Rupasov-keyed long
+names, the kernel's and ours alike, fail `fsck.reiser4`, which widens the hash's powers of ten
+unsigned (reiser4progs master still does; the kernel's keys are the ones written, because the kernel
+is what mounts the volume); a tails-formatted file the kernel left with a trailing hole is
 reported by `fsck.reiser4` as having the wrong size. `debugfs.reiser4` keys lookups below the root with its own default profile rather than the root's plugin set, so in a non-default profile it finds hashed or fibred names in subdirectories — the kernel's as well as ours — only when given the volume's profile with `-o`.
 
 `Reiser4KernelVolumeTests` runs without any tool. `Reiser4ProfileExternalTests`,
