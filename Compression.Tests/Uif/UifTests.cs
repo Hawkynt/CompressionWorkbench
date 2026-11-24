@@ -434,16 +434,21 @@ public class UifReferenceVectorTests {
 /// on archive.org ("Quake Shareware" and "Doom II German") from <c>CWB_UIF_DIR</c>. Our writer: uif2iso
 /// (plain and password-protected) and miso (plain; it opens no protected image) decode what it writes to
 /// the original ISO. uif2iso comes from <c>CWB_UIF2ISO</c>, miso from <c>CWB_MISO</c> (a WSL command line,
-/// e.g. <c>env WINEPREFIX=/path wine '/path/miso.exe'</c>); skipped when unset unless <c>CWB_REQUIRE_UIF=1</c>.
+/// e.g. <c>env WINEPREFIX=/path wine '/path/miso.exe'</c>); skipped when unset unless <c>CWB_REQUIRE_UIF=1</c> (uif2iso and the
+/// samples) or <c>CWB_REQUIRE_MISO=1</c> (miso).
 /// </summary>
 [TestFixture]
 [Category("ExternalInterop")]
 public class UifExternalConformanceTests {
-  private static string Require(string variable) {
+  /// <summary>
+  /// The oracle named by <paramref name="variable"/>; <paramref name="gate"/> turns a missing one into a
+  /// failure. MagicISO is proprietary and never on CI, so it has its own gate (<c>CWB_REQUIRE_MISO</c>).
+  /// </summary>
+  private static string Require(string variable, string gate = "CWB_REQUIRE_UIF") {
     var value = Environment.GetEnvironmentVariable(variable);
     if (!string.IsNullOrEmpty(value) && FsInteropToolbox.WslAvailable) return value;
     var hint = $"UIF oracle not configured: set {variable}.";
-    if (Environment.GetEnvironmentVariable("CWB_REQUIRE_UIF") == "1") Assert.Fail(hint);
+    if (Environment.GetEnvironmentVariable(gate) == "1") Assert.Fail(hint);
     Assert.Ignore(hint);
     return "";
   }
@@ -501,7 +506,7 @@ public class UifExternalConformanceTests {
 
   [Test]
   public void GivenOurUif_WhenMagicIsoConvertsIt_ThenItIsTheOriginalIso() {
-    var miso = Require("CWB_MISO");
+    var miso = Require("CWB_MISO", "CWB_REQUIRE_MISO");
     var tmp = TempDir();
     try {
       var iso = UifTests.Pattern(150 * 2048 + 700, 22);
