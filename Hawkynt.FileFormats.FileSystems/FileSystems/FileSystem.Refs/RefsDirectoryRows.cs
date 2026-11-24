@@ -19,15 +19,25 @@ internal static class RefsDirectoryRows {
 
   /// <summary>
   /// The directory's object-table row (root 0, key [u64 0, oid u64]) and where in its value the
-  /// last file number handed out sits: +0xC8 on ReFS 3.7 (248-byte value), +0x48 on ReFS 3.14
-  /// (80-byte value) — measured equal to the directory header's counter and to the highest
+  /// last file number handed out sits. The value starts [u64 2, u32 0x18, u32 0x30, u32 trailer
+  /// offset, u32 trailer length]; a directory's trailer is that 8-byte counter, at +0xC8 on
+  /// ReFS 3.7 (208-byte value) and +0x50 on ReFS 3.14 (88-byte value, right behind the page
+  /// reference) — measured equal to the directory header's counter and to the highest
   /// file-number row on Windows-formatted volumes.
   /// </summary>
   public static (RefsBTreeRow Row, int CounterOffset)? ObjectRow(RefsMetadataReader metadata, ulong oid) {
     var row = metadata.WalkRoot(0).FirstOrDefault(r => r.Key.Length >= 16 && BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(8)) == oid);
     if (row is null) return null;
-    var offset = metadata.Header.MinorVersion >= 14 ? 0x48 : 0xC8;
-    return row.Value.Length >= offset + 8 ? (row, offset) : null;
+    var offset = CounterOffset(row.Value);
+    return offset is { } o && o >= 0x20 + (int)metadata.PageReferenceSize ? (row, o) : null;
+  }
+
+  /// <summary>The counter's offset in an object-table row value, or null when the value carries no 8-byte trailer.</summary>
+  public static int? CounterOffset(byte[] objectValue) {
+    if (objectValue.Length < 0x18) return null;
+    var offset = (int)BinaryPrimitives.ReadUInt32LittleEndian(objectValue.AsSpan(0x10));
+    var length = BinaryPrimitives.ReadUInt32LittleEndian(objectValue.AsSpan(0x14));
+    return length == 8 && offset + 8 <= objectValue.Length ? offset : null;
   }
 
   public static ulong FileNumber(byte[] nameRowValue)
