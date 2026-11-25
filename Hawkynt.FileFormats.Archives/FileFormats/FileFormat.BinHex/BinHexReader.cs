@@ -59,17 +59,22 @@ public sealed class BinHexReader {
     throw new InvalidDataException("BinHex end marker ':' not found.");
   }
 
+  /// <summary>
+  /// The 6-bit value of an encoded character, or 0xFF (rejected by the callers) for anything
+  /// outside the 7-bit alphabet, including the non-ASCII characters a text reader can produce.
+  /// </summary>
+  private static byte Sextet(char c) => c < BinHexConstants.DecodeTable.Length ? BinHexConstants.DecodeTable[c] : (byte)0xFF;
+
   private static byte[] DecodeBase64(string encoded) {
-    var decode = BinHexConstants.DecodeTable;
     var result = new List<byte>(encoded.Length * 3 / 4);
     var i = 0;
     var len = encoded.Length;
 
     while (i + 4 <= len) {
-      var a = decode[encoded[i++]];
-      var b = decode[encoded[i++]];
-      var c = decode[encoded[i++]];
-      var d = decode[encoded[i++]];
+      var a = Sextet(encoded[i++]);
+      var b = Sextet(encoded[i++]);
+      var c = Sextet(encoded[i++]);
+      var d = Sextet(encoded[i++]);
 
       if (a == 0xFF || b == 0xFF || c == 0xFF || d == 0xFF)
         throw new InvalidDataException("Invalid character in BinHex data.");
@@ -82,16 +87,16 @@ public sealed class BinHexReader {
 
     var remaining = len - i;
     if (remaining == 2) {
-      var a = decode[encoded[i++]];
-      var b = decode[encoded[i]];
+      var a = Sextet(encoded[i++]);
+      var b = Sextet(encoded[i]);
       if (a == 0xFF || b == 0xFF)
         throw new InvalidDataException("Invalid character in BinHex data.");
       var bits = (a << 6) | b;
       result.Add((byte)(bits >> 4));
     } else if (remaining == 3) {
-      var a = decode[encoded[i++]];
-      var b = decode[encoded[i++]];
-      var c = decode[encoded[i]];
+      var a = Sextet(encoded[i++]);
+      var b = Sextet(encoded[i++]);
+      var c = Sextet(encoded[i]);
       if (a == 0xFF || b == 0xFF || c == 0xFF)
         throw new InvalidDataException("Invalid character in BinHex data.");
       var bits = (a << 12) | (b << 6) | c;
