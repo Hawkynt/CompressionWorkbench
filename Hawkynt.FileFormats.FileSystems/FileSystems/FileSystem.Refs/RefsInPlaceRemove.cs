@@ -13,8 +13,10 @@ namespace FileSystem.Refs;
 /// Refused before the first write: directories, files with their own object (kind 2), sparse
 /// runs, extent entries of an unknown shape (integrity-stream entries, with their checksums,
 /// go with the row), clusters another stream shares, clusters the allocator does not show as
-/// allocated, directories deeper than a root over leaves, and a removal that would empty a leaf
-/// of a larger directory (merging pages is not made).
+/// allocated, directories deeper than a root over leaves, and a removal that would empty the last
+/// leaf of a larger directory, two of its leaves, or leave one leaf under its root. A leaf the
+/// removal empties otherwise leaves the tree (<see cref="RefsDirectoryTree.DropLeaf"/>) and its
+/// page's clusters are released, as Windows Server 2022 does.
 /// </remarks>
 internal static class RefsInPlaceRemove {
   private const ulong RootDirectoryOid = 0x600;
@@ -50,11 +52,11 @@ internal static class RefsInPlaceRemove {
     // The file-number row (type 0x20) goes with the name row.
     var idRow = RefsDirectoryRows.FindIdRow(rows, RefsDirectoryRows.FileNumber(target.Value), Encoding.Unicode.GetString(target.Key, 4, target.Key.Length - 4))
       ?? throw new NotSupportedException($"ReFS: the file-number row of '{normalized}' was not found; it is not removed.");
-    if (target.PhysicalPageLcn == idRow.PhysicalPageLcn) tree.RequireNotEmptied(target.PhysicalPageLcn, 2);
-    else {
-      tree.RequireNotEmptied(target.PhysicalPageLcn, 1);
-      tree.RequireNotEmptied(idRow.PhysicalPageLcn, 1);
-    }
+    // A leaf the removal empties leaves the tree and its page is released.
+    var emptied = target.PhysicalPageLcn == idRow.PhysicalPageLcn
+      ? (tree.Empties(target.PhysicalPageLcn, 2) ? [target.PhysicalPageLcn] : new List<ulong>())
+      : new[] { target.PhysicalPageLcn, idRow.PhysicalPageLcn }.Where(leaf => tree.Empties(leaf, 1)).ToList();
+    if (emptied.Count > 1) throw new NotSupportedException("ReFS: the removal would empty two pages of the directory; it is not made in place.");
 
     var clusters = new List<ulong>();
     foreach (var extent in file.Extents)
@@ -67,6 +69,11 @@ internal static class RefsInPlaceRemove {
     var graph = new RefsMetadataGraph(image, metadata);
     if (!RefsPageEditor.CanReplaceValue(graph, target, target.Value.Length))
       throw new NotSupportedException("ReFS: the directory page is not one this editor rewrites.");
+    if (emptied.Count == 1) {
+      var slots = graph.GetPageSlots(emptied[0]);
+      if (RefsAllocatorWriter.WindowsMedium(metadata, graph, slots) is not { } pageAllocator || !pageAllocator.AreAllocated(slots, expectedAllocated: true))
+        throw new NotSupportedException("ReFS: the Medium Allocator does not hold the emptied directory page the way Windows-formatted volumes do; it is not removed.");
+    }
     if (clusters.Count > 0) {
       // The Medium Allocator of a Windows-formatted volume, keyed by physical LCN.
       var allocator = RefsAllocatorWriter.WindowsMedium(metadata, graph, clusters)
@@ -87,6 +94,20 @@ internal static class RefsInPlaceRemove {
     RefsPageEditor.DeleteRow(after, row);
     RefsPageEditor.DeleteRow(after, currentIdRow);
     currentTree.AdjustRowCount(after, -2);
-    after.RefreshChecksumPaths([row.PhysicalPageLcn, currentIdRow.PhysicalPageLcn, currentTree.RootPage]);
+    after.RefreshChecksumPaths(new[] { row.PhysicalPageLcn, currentIdRow.PhysicalPageLcn, currentTree.RootPage }.Except(emptied));
+    if (emptied.Count == 0) return;
+
+    // The root is repacked without the emptied leaf's row, so the remaining references move:
+    // the page is released and the checksums refreshed through graphs built afresh.
+    RefsDirectoryTree.DropLeaf(current, after, currentTree.RootPage, emptied[0]);
+    var dropped = RefsMetadataReader.Open(image);
+    var droppedGraph = new RefsMetadataGraph(image, dropped);
+    droppedGraph.RefreshChecksumPaths([currentTree.RootPage]);
+    var leafSlots = after.GetPageSlots(emptied[0]);
+    var released = RefsMetadataReader.Open(image);
+    var releasedGraph = new RefsMetadataGraph(image, released);
+    var leafAllocator = RefsAllocatorWriter.WindowsMedium(released, releasedGraph, leafSlots)
+      ?? throw new InvalidDataException("ReFS: the emptied directory page's allocator row went away.");
+    leafAllocator.SetAllocated(leafSlots, allocated: false);
   }
 }

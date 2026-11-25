@@ -56,6 +56,7 @@ Later runs (45433556177, 45441757023, 45447908924, 45479960118, 45485070018, 454
 | In a directory over several pages: grow a file | accepted | accepted | accepted | refused (file kept in its row) | refused (file kept in its row) | accepted |
 | In a directory over several pages: add 24 files until a page splits | accepted | accepted | accepted | accepted | accepted (no split needed in a 64 KiB page) | accepted |
 | In a one-page directory (`dir1/`): add 120 files, growing it a level | accepted | accepted | accepted | accepted | accepted | accepted |
+| In a directory over several pages: remove the three files of one leaf (`f002`–`f004`; on the 4 KiB 3.7 volume this empties a leaf, which leaves the tree) | accepted (run 45656657878) | accepted | accepted | accepted | accepted | accepted |
 
 "Accepted" means Windows mounted the edited volume read-only and read-write, listed every file
 with the expected hash, passed `refsutil salvage -QS` and logged no ReFS warning or error.

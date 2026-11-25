@@ -15,8 +15,9 @@ namespace FileSystem.Refs;
 /// </list>
 /// A row goes to the first leaf whose separator is not below its key. Leaves are edited in
 /// place; a full leaf below the root is split, and a full one-page directory grows a level
-/// (<see cref="PlanSplit"/>). Refused: a root without room for another leaf, and emptying a
-/// leaf (its separator would have to go).
+/// (<see cref="PlanSplit"/>); a leaf a removal empties leaves the tree (<see cref="DropLeaf"/>).
+/// Refused: a root without room for another leaf, emptying the last leaf, and leaving one leaf
+/// under the root.
 /// </summary>
 internal sealed class RefsDirectoryTree {
   private readonly List<(byte[] Separator, ulong Leaf)> _children;
@@ -97,6 +98,40 @@ internal sealed class RefsDirectoryTree {
   public void RequireNotEmptied(ulong leaf, int removed) {
     if (!this.IsSingleLeaf && this.RowsIn(leaf) <= removed)
       throw new NotSupportedException("ReFS: the edit would empty a page of the directory; merging pages is not made in place.");
+  }
+
+  /// <summary>
+  /// Whether deleting <paramref name="removed"/> rows leaves <paramref name="leaf"/> empty, so the
+  /// leaf has to leave the tree (<see cref="DropLeaf"/>). Refused: emptying the last leaf (its
+  /// empty separator would have to move) and leaving a single leaf under the root.
+  /// </summary>
+  public bool Empties(ulong leaf, int removed) {
+    if (this.IsSingleLeaf || this.RowsIn(leaf) > removed) return false;
+    if (this._children[^1].Leaf == leaf)
+      throw new NotSupportedException("ReFS: the edit would empty the directory's last page; it is not made in place.");
+    if (this._children.Count <= 2)
+      throw new NotSupportedException("ReFS: the edit would leave one page under the directory's root; it is not made in place.");
+    return true;
+  }
+
+  /// <summary>
+  /// Takes an emptied leaf out of the tree as Windows Server 2022 does when the last rows of a
+  /// leaf go (measured by removing the three files of one leaf of a 17-leaf directory): the
+  /// leaf's inner row leaves the root, the neighbours and their separators stay as they are (keys
+  /// that would have gone to the leaf go to the next one, whose separator is above them), and the
+  /// root's leaf count (0x68) goes down by one; the row count (0x70) is kept. The leaf page's
+  /// clusters are the caller's to release.
+  /// </summary>
+  public static void DropLeaf(RefsMetadataReader metadata, RefsMetadataGraph graph, ulong rootPage, ulong leaf) {
+    var page = graph.ReadPage(rootPage);
+    var inner = RefsPageEditor.ReadRows(page, allowInner: true).Rows.ToList();
+    var at = inner.FindIndex(r => r.Value.Length >= 8 && metadata.TranslateVirtualLcn(BinaryPrimitives.ReadUInt64LittleEndian(r.Value)) == leaf);
+    if (at < 0 || at == inner.Count - 1)
+      throw new InvalidOperationException("ReFS: the emptied directory page is not an inner row of its root.");
+    inner.RemoveAt(at);
+    var root = RefsPageEditor.PackRows(page, inner, allowInner: true);
+    BinaryPrimitives.WriteUInt64LittleEndian(root.AsSpan(0x68), BinaryPrimitives.ReadUInt64LittleEndian(root.AsSpan(0x68)) - 1);
+    graph.WritePage(rootPage, root);
   }
 
   /// <summary>
