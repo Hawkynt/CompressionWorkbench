@@ -211,27 +211,4 @@ public class DarEncryptionOracleTests {
     Assert.That(extract.ExitCode, Is.Zero, $"dar -x failed on our archive:\n{extract.StdOut}\n{extract.StdErr}");
     AssertSameTree(src, outDir);
   }
-
-  [Test]
-  public void GivenDarArchiveEncryptedForAGnuPgRecipient_WhenListed_ThenItFallsBackAndNamesTheReason() {
-    var home = $"/tmp/cwb-dar-gpg-{Guid.NewGuid():N}";
-    try {
-      var keygen = FsInteropToolbox.RunWsl($"mkdir -m 700 {home} && GNUPGHOME={home} gpg --batch --pinentry-mode loopback --passphrase '' --quick-gen-key 'cwb test <cwb@example.invalid>' default default never");
-      if (keygen.ExitCode != 0)
-        Assert.Ignore($"gpg could not make a key: {keygen.StdErr}");
-      var src = this.Source();
-      var basePath = Path.Combine(this._tmp, "gpg");
-      var create = FsInteropToolbox.RunWsl($"GNUPGHOME={home} {DarBinary} -Q -c {FsInteropToolbox.WinToWsl(basePath)} -K 'gnupg::cwb@example.invalid' -R {FsInteropToolbox.WinToWsl(src)}");
-      Assert.That(create.ExitCode, Is.Zero, $"dar -c -K gnupg failed:\n{create.StdOut}\n{create.StdErr}");
-      using var fs = File.OpenRead(basePath + ".1.dar");
-      var entries = new DarFormatDescriptor().List(fs, Password);
-      Assert.That(entries.Select(e => e.Name), Is.EqualTo(new[] { "FULL.dar", "metadata.ini" }));
-      var outDir = Path.Combine(this._tmp, "meta");
-      fs.Position = 0;
-      new DarFormatDescriptor().Extract(fs, outDir, Password, ["metadata.ini"]);
-      Assert.That(File.ReadAllText(Path.Combine(outDir, "metadata.ini")), Does.Contain("GnuPG"));
-    } finally {
-      FsInteropToolbox.RunWsl(FsInteropToolbox.RemoveScratch(home, null));
-    }
-  }
 }

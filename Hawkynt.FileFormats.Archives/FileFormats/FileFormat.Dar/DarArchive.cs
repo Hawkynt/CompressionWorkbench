@@ -140,12 +140,12 @@ public sealed class DarArchive {
 
   /// <summary>Reads the archive-level stream (slice headers and trailers already removed).</summary>
   /// <param name="archive">The archive level.</param>
-  /// <param name="password">The password of an encrypted archive (dar's <c>-K</c>); ignored otherwise.</param>
+  /// <param name="password">The password of an encrypted archive (dar's <c>-K</c>); for one encrypted to GnuPG recipients the path of an exported secret key, optionally followed by <c>|</c> and its passphrase; ignored otherwise.</param>
   /// <param name="clearBlockSize">Clear bytes per encrypted block (dar's <c>-#</c>), which the archive does not record.</param>
   /// <exception cref="InvalidDataException">The structures contradict the format.</exception>
   /// <exception cref="ArchivePasswordException">The archive is encrypted and the password is missing, or it does not decrypt the archive.</exception>
   /// <exception cref="NotSupportedException">The archive uses a feature this reader refuses
-  /// (GnuPG encryption, a newer or older format, an unknown compression).</exception>
+  /// (a newer or older format, an unknown compression).</exception>
   public static DarArchive Read(Stream archive, string? password = null, int clearBlockSize = DarCrypto.DefaultClearBlockSize) {
     var length = archive.Length;
     var trailerAt = (long)DarPrimitives.ReadTerminator(archive, length, out var term2Start);
@@ -159,22 +159,30 @@ public sealed class DarArchive {
     if (!trailer.IsEncrypted)
       return ReadLevel(archive, trailerAt, trailer);
 
-    if (string.IsNullOrEmpty(password))
-      throw new ArchivePasswordException($"The DAR archive is encrypted ({DarCrypto.CipherName(trailer.Cipher)}); a password is needed.", false);
     var start = (long)trailer.InitialOffset;
     if ((trailer.Flags & FlagInitialOffset) == 0 || start <= 0 || start >= trailerAt)
       throw new InvalidDataException("The DAR version trailer of an encrypted archive records no plausible initial offset.");
-    var secret = Encoding.UTF8.GetBytes(password);
-    if (trailer.Cipher == 's')
-      return ReadClearLevel(new DarUnscramblingStream(archive, start, trailerAt, secret), trailer, 0);
-
-    var kdf = trailer.Kdf ?? throw new NotSupportedException("The DAR archive is encrypted without recorded key-derivation parameters (a format before 10).");
-    var cipher = DarCrypto.OpenCipher(trailer.Cipher, DarCrypto.DeriveKey(secret, trailer.Cipher, kdf));
+    byte[] key;
+    if (trailer.HasCryptedKey) {
+      // GnuPG recipients (section 12): the key is the literal data of the OpenPGP message
+      key = DarGnuPg.OpenKey(trailer.CryptedKey!, trailer.Cipher, password);
+    } else {
+      if (string.IsNullOrEmpty(password))
+        throw new ArchivePasswordException($"The DAR archive is encrypted ({DarCrypto.CipherName(trailer.Cipher)}); a password is needed.", false);
+      var secret = Encoding.UTF8.GetBytes(password);
+      if (trailer.Cipher == 's')
+        return ReadClearLevel(new DarUnscramblingStream(archive, start, trailerAt, secret), trailer, 0);
+      var kdf = trailer.Kdf ?? throw new NotSupportedException("The DAR archive is encrypted without recorded key-derivation parameters (a format before 10).");
+      key = DarCrypto.DeriveKey(secret, trailer.Cipher, kdf);
+    }
+    var cipher = DarCrypto.OpenCipher(trailer.Cipher, key);
     // dar does not record -# (section 12): try the size asked for, then every size the zone allows.
     ArchivePasswordException? first = null;
     foreach (var size in ClearBlockSizes(archive, start, trailerAt, cipher, clearBlockSize)) {
       try {
-        return ReadClearLevel(new DarDecryptingStream(archive, start, trailerAt, cipher, size), trailer, size);
+        var read = ReadClearLevel(new DarDecryptingStream(archive, start, trailerAt, cipher, size), trailer, size);
+        read.ArchiveKey = trailer.HasCryptedKey ? key : null;
+        return read;
       } catch (ArchivePasswordException e) {
         first ??= e;
       } catch (InvalidDataException e) {
@@ -247,6 +255,9 @@ public sealed class DarArchive {
   /// <summary>Clear bytes per encrypted block (dar's <c>-#</c>) the archive was found to use; 0 unless block-encrypted.</summary>
   internal int ClearBlockSize { get; private set; }
 
+  /// <summary>The cipher key of an archive encrypted for GnuPG recipients, opened from its OpenPGP message; null otherwise.</summary>
+  internal byte[]? ArchiveKey { get; private set; }
+
   private static DarArchive ReadLevel(Stream archive, long trailerAt, DarVersionHeader trailer) {
     var catalogueAt = (long)DarPrimitives.ReadTerminator(archive, trailerAt, out var term1Start);
     if (catalogueAt >= term1Start || term1Start - catalogueAt > MaxCatalogue)
@@ -268,8 +279,8 @@ public sealed class DarArchive {
   private static void Refuse(DarVersionHeader v) {
     if (v.Major < 8 || (v.Major, v.Minor).CompareTo(NewestFormat) > 0)
       throw new NotSupportedException($"DAR archive format {v.Major}.{v.Minor} is outside the supported range 8.0 to {NewestFormat.Major}.{NewestFormat.Minor}.");
-    if (v.HasCryptedKey)
-      throw new NotSupportedException("The DAR archive is encrypted for GnuPG recipients; only password encryption is read.");
+    if (v.HasCryptedKey && (!v.IsEncrypted || v.Cipher == 's' || v.CryptedKey is null))
+      throw new NotSupportedException("The DAR archive carries a GnuPG-encrypted key without a block cipher to use it with.");
     if (v.IsEncrypted && !DarCrypto.IsKnownCipher(v.Cipher))
       throw new NotSupportedException($"The DAR archive is encrypted with an unknown or unrecorded cipher {DarCrypto.CipherName(v.Cipher)}.");
     if ((v.Flags & ~KnownFlags) != 0)

@@ -133,7 +133,11 @@ internal static partial class DarEditor {
       FixedBlockSize = true,
       Encryption = trailer.IsEncrypted
         ? new DarWriter.Encryption(trailer.Cipher, password!, trailer.Kdf?.Hash ?? 'a', trailer.Kdf?.Iterations ?? 10000,
-            source.ClearBlockSize > 0 ? source.ClearBlockSize : DarCrypto.DefaultClearBlockSize)
+            source.ClearBlockSize > 0 ? source.ClearBlockSize : DarCrypto.DefaultClearBlockSize) {
+            // GnuPG recipients: the same key under the same OpenPGP message, so they still open it
+            Key = source.ArchiveKey,
+            CryptedKey = source.ArchiveKey is null ? null : trailer.CryptedKey,
+          }
         : null,
     };
     return (items, settings);

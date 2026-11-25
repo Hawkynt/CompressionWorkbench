@@ -90,7 +90,16 @@ internal static class DarWriter {
   /// block (dar's <c>-#</c>).
   /// </summary>
   public sealed record Encryption(char Cipher, string Password, char KdfHash = 'a', ulong Iterations = 10000,
-      int ClearBlockSize = DarCrypto.DefaultClearBlockSize);
+      int ClearBlockSize = DarCrypto.DefaultClearBlockSize) {
+    /// <summary>
+    /// For GnuPG recipients (section 12): the cipher key as it is, and <see cref="CryptedKey"/>,
+    /// the OpenPGP message carrying it; <see cref="Password"/> is then not used.
+    /// </summary>
+    public byte[]? Key { get; init; }
+
+    /// <summary>The OpenPGP message the header records under flag 0x04.</summary>
+    public byte[]? CryptedKey { get; init; }
+  }
 
   /// <summary>Compression letters this writer produces, by method name.</summary>
   public static char AlgorithmFor(string? method) => (method ?? "stored").Trim().ToLowerInvariant() switch {
@@ -132,12 +141,19 @@ internal static class DarWriter {
     byte[]? scramble = null;
     if (settings.Encryption is { } encryption) {
       var password = Encoding.UTF8.GetBytes(encryption.Password);
-      if (password.Length == 0)
+      if (password.Length == 0 && encryption.CryptedKey is null)
         throw new ArgumentException("DAR encryption needs a non-empty password.");
       if (encryption.ClearBlockSize < 1)
         throw new ArgumentOutOfRangeException(nameof(settings), "The DAR encryption block size must be positive.");
       headerFlags |= DarArchive.FlagScrambled;
-      if (encryption.Cipher == 's')
+      if (encryption is { CryptedKey: { } crypted, Key: { } raw }) {
+        // GnuPG recipients: the random key as it is, no key derivation (section 12)
+        if (encryption.Cipher == 's' || raw.Length != DarCrypto.KeyLength(encryption.Cipher))
+          throw new ArgumentException($"A GnuPG-encrypted DAR archive needs a block cipher and a {DarCrypto.KeyLength(encryption.Cipher)}-byte key.");
+        cipher = DarCrypto.OpenCipher(encryption.Cipher, raw);
+        headerFlags |= DarArchive.FlagCryptedKey;
+        header = header with { CryptedKey = crypted };
+      } else if (encryption.Cipher == 's')
         scramble = password;
       else {
         var (kdf, key) = DarCrypto.NewKey(password, encryption.Cipher, encryption.KdfHash, encryption.Iterations);
