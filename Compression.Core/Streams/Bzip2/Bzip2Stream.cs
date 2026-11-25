@@ -63,14 +63,19 @@ public sealed class Bzip2Stream : CompressionStream {
     }
 
     if (!this._headerRead) {
-      ReadHeader();
+      this.TryReadHeader(required: true);
       this._headerRead = true;
     }
 
-    if (this._decompressor == null || this._decompressor.IsFinished)
-      return 0;
+    while (this._decompressor != null) {
+      var read = this._decompressor.IsFinished ? 0 : this._decompressor.Read(buffer, offset, count);
+      // A .bz2 file may hold several streams back to back (`cat a.bz2 b.bz2`, pbzip2, lbzip2);
+      // bzip2 -d decodes them all, and ignores anything after the last that is not a stream.
+      if (read > 0 || this._nsisVariant || !this.TryReadHeader(required: false))
+        return read;
+    }
 
-    return this._decompressor.Read(buffer, offset, count);
+    return 0;
   }
 
   /// <inheritdoc />
@@ -110,11 +115,32 @@ public sealed class Bzip2Stream : CompressionStream {
     this._compressor = new Bzip2Compressor(this._bitWriter, this._blockSize100k);
   }
 
-  private void ReadHeader() {
+  /// <summary>
+  /// Reads a "BZh1".."BZh9" stream header and starts decoding that stream.
+  /// </summary>
+  /// <param name="required">
+  /// True for the first stream, whose header must be valid. False for a following stream: anything
+  /// that is not a header then ends the file (bzip2 warns about such trailing garbage and ignores it).
+  /// </param>
+  /// <returns>True when a stream was started; false (only when not required) when none follows.</returns>
+  private bool TryReadHeader(bool required) {
+    var start = !required && InnerStream.CanSeek ? InnerStream.Position : -1;
     var b1 = InnerStream.ReadByte();
     var b2 = InnerStream.ReadByte();
     var version = InnerStream.ReadByte();
     var level = InnerStream.ReadByte();
+
+    if (!required) {
+      if (b1 != 'B' || b2 != 'Z' || version != Bzip2Constants.VersionByte || level < '1' || level > '9') {
+        this._decompressor = null;
+        // Leave whatever follows (a container's next record, say) where it was.
+        if (start >= 0)
+          InnerStream.Position = start;
+        return false;
+      }
+      this._decompressor = new Bzip2Decompressor(new BitBuffer<MsbBitOrder>(InnerStream));
+      return true;
+    }
 
     if (b1 < 0 || b2 < 0 || version < 0 || level < 0)
       throw new InvalidDataException("Truncated bzip2 header.");
@@ -128,7 +154,7 @@ public sealed class Bzip2Stream : CompressionStream {
     if (level < '1' || level > '9')
       throw new InvalidDataException($"Invalid bzip2 block size: {(char)level}");
 
-    var bits = new BitBuffer<MsbBitOrder>(InnerStream);
-    this._decompressor = new Bzip2Decompressor(bits);
+    this._decompressor = new Bzip2Decompressor(new BitBuffer<MsbBitOrder>(InnerStream));
+    return true;
   }
 }
