@@ -75,11 +75,14 @@ public sealed class CafReader {
         case "desc":
           if (body.Length < 32)
             throw new InvalidDataException("CAF 'desc' chunk shorter than 32 bytes.");
-          sampleRate = checked((int)BinaryPrimitives.ReadDoubleBigEndian(body));
+          var rate = BinaryPrimitives.ReadDoubleBigEndian(body);
+          if (!double.IsFinite(rate) || rate < 1 || rate > int.MaxValue)
+            throw new InvalidDataException($"CAF sample rate {rate} is outside 1..{int.MaxValue}.");
+          sampleRate = (int)rate;
           formatId = Encoding.ASCII.GetString(body.Slice(8, 4));
           formatFlags = BinaryPrimitives.ReadUInt32BigEndian(body[12..]);
-          channels = checked((int)BinaryPrimitives.ReadUInt32BigEndian(body[24..]));
-          bitsPerChannel = checked((int)BinaryPrimitives.ReadUInt32BigEndian(body[28..]));
+          channels = ReadCount(body[24..], "channel count");
+          bitsPerChannel = ReadCount(body[28..], "bits per channel");
           descParsed = true;
           break;
         case "data":
@@ -115,6 +118,11 @@ public sealed class CafReader {
     var littleEndian = (formatFlags & FlagIsLittleEndian) != 0;
     var payload = rawData ?? [];
 
+    // Every format here spends at least one byte per channel on a frame, so a frame wider than
+    // the data is a corrupt count; trusting it would size per-channel work from the header alone.
+    if (payload.Length > 0 && channels > payload.Length)
+      throw new InvalidDataException($"CAF declares {channels} channels, more than its {payload.Length} bytes of audio data can hold.");
+
     switch (formatId) {
       case "ulaw":
         return new ParsedCaf(channels, sampleRate, 16, formatFlags, false, "lpcm",
@@ -142,7 +150,10 @@ public sealed class CafReader {
     IReadOnlyList<(string Type, byte[] Data)> other,
     uint? channelMask,
     long? validFrames) {
-    var packetBytes = checked(Ima4PacketBytesPerChannel * channels);
+    if (payload.IsEmpty)
+      return new ParsedCaf(channels, sampleRate, 16, formatFlags, false, "lpcm", [], other, channelMask, validFrames ?? 0);
+
+    var packetBytes = (long)Ima4PacketBytesPerChannel * channels;
     if (payload.Length % packetBytes != 0)
       throw new InvalidDataException("CAF ima4 payload does not contain whole interleaved channel packets.");
 
@@ -152,10 +163,13 @@ public sealed class CafReader {
     if (validFrames is { } count) {
       if (count > availableFrames)
         throw new InvalidDataException($"CAF pakt declares {count} valid frames but ima4 payload contains only {availableFrames}.");
-      frameCount = checked((int)count);
+      frameCount = (int)count;
     }
 
-    var pcm = new byte[checked(frameCount * channels * 2)];
+    var pcmLength = (long)frameCount * channels * 2;
+    if (pcmLength > Array.MaxLength)
+      throw new NotSupportedException($"CAF ima4 audio decodes to {pcmLength} bytes, more than one buffer can hold.");
+    var pcm = new byte[pcmLength];
     var offset = 0;
     for (var frame = 0; frame < frameCount; ++frame)
       for (var channel = 0; channel < channels; ++channel) {
@@ -165,6 +179,12 @@ public sealed class CafReader {
 
     return new ParsedCaf(channels, sampleRate, 16, formatFlags, false, "lpcm",
       pcm, other, channelMask, validFrames ?? (long)(payload.Length / packetBytes) * Ima4FramesPerPacket);
+  }
+
+  /// <summary>A big-endian unsigned 32-bit 'desc' count, refused when it does not fit an <see cref="int"/>.</summary>
+  private static int ReadCount(ReadOnlySpan<byte> field, string what) {
+    var value = BinaryPrimitives.ReadUInt32BigEndian(field);
+    return value <= int.MaxValue ? (int)value : throw new InvalidDataException($"CAF {what} {value} is out of range.");
   }
 
   private static byte[] ShortsToLePcm(ReadOnlySpan<short> samples) {

@@ -208,4 +208,77 @@ public class CafTests {
       Assert.That(r, Is.EqualTo((short)(-i * 7)));
     }
   }
+
+  // ── malformed 'desc' values are refused, not overflowed ──────────────────
+
+  // Offsets of the 'desc' fields: 8-byte file header + 12-byte chunk header, then the body.
+  private const int DescBody = 20;
+
+  private static byte[] PatchDesc(byte[] caf, int fieldOffset, uint value) {
+    BinaryPrimitives.WriteUInt32BigEndian(caf.AsSpan(DescBody + fieldOffset), value);
+    return caf;
+  }
+
+  [Category("Exception")]
+  [TestCase(3e9)]
+  [TestCase(double.NaN)]
+  [TestCase(double.PositiveInfinity)]
+  [TestCase(double.NegativeInfinity)]
+  [TestCase(-44100.0)]
+  public void Given_SampleRateOutsideInt_When_Read_Then_InvalidData(double rate) {
+    var caf = MakeStereoCaf();
+    BinaryPrimitives.WriteDoubleBigEndian(caf.AsSpan(DescBody), rate);
+    Assert.Throws<InvalidDataException>(() => new CafReader().Read(caf));
+  }
+
+  [Category("Boundary")]
+  [Test]
+  public void Given_SampleRateAtIntMax_When_Read_Then_Accepted() {
+    var caf = MakeStereoCaf();
+    BinaryPrimitives.WriteDoubleBigEndian(caf.AsSpan(DescBody), int.MaxValue);
+    Assert.That(new CafReader().Read(caf).SampleRate, Is.EqualTo(int.MaxValue));
+  }
+
+  [Category("Exception")]
+  [TestCase(0x80000000u)]
+  [TestCase(0xFFFFFFFFu)]
+  public void Given_ChannelCountBeyondInt_When_Read_Then_InvalidData(uint channels)
+    => Assert.Throws<InvalidDataException>(() => new CafReader().Read(PatchDesc(MakeStereoCaf(), 24, channels)));
+
+  [Category("Exception")]
+  [TestCase(0x80000000u)]
+  [TestCase(0xFFFFFFFFu)]
+  public void Given_BitsPerChannelBeyondInt_When_Read_Then_InvalidData(uint bits)
+    => Assert.Throws<InvalidDataException>(() => new CafReader().Read(PatchDesc(MakeStereoCaf(), 28, bits)));
+
+  [Category("Exception")]
+  [Test]
+  public void Given_MoreChannelsThanDataBytes_When_Read_Then_InvalidData() {
+    // 40 bytes of samples cannot hold even one frame of 41 channels.
+    Assert.Throws<InvalidDataException>(() => new CafReader().Read(PatchDesc(MakeStereoCaf(), 24, 41)));
+  }
+
+  [Category("Boundary")]
+  [Test]
+  public void Given_OneFrameExactlyFillingTheData_When_Read_Then_Accepted() {
+    // 8-bit samples: 40 channels x 1 byte is exactly the 40 data bytes.
+    var caf = BuildCaf(sampleRate: 8000, channels: 40, bitsPerChannel: 8, formatFlags: 0, interleaved: new byte[40]);
+    Assert.That(new CafReader().Read(caf).NumChannels, Is.EqualTo(40));
+  }
+
+  [Category("Exception")]
+  [Test]
+  public void Given_Ima4WithHugeChannelCount_When_Read_Then_InvalidDataNotOverflow() {
+    var caf = BuildCompandedCaf("ima4", 8000, 1, new byte[34]);
+    PatchDesc(caf, 24, int.MaxValue);
+    Assert.Throws<InvalidDataException>(() => new CafReader().Read(caf));
+  }
+
+  [Category("EdgeCase")]
+  [Test]
+  public void Given_Ima4WithNoPacketsAndHugeChannelCount_When_Read_Then_NoAudioAndNoAllocation() {
+    var caf = BuildCompandedCaf("ima4", 8000, 1, []);
+    PatchDesc(caf, 24, int.MaxValue);
+    Assert.That(new CafReader().Read(caf).InterleavedPcm, Is.Empty);
+  }
 }
