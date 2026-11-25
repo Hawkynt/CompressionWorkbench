@@ -61,6 +61,8 @@ public static class RefsVolumeFormatter {
     var identity = new Identity(random, options.Created ?? DateTime.UtcNow);
     var volume = new VolumeBuilder(identity, options.Label);
     volume.Build();
+    // A target that held anything starts again from zeros.
+    target.SetLength(0);
     target.SetLength(options.Bytes);
     volume.WriteTo(target);
     target.Flush();
@@ -114,7 +116,7 @@ public static class RefsVolumeFormatter {
 
   private sealed class VolumeBuilder(Identity identity, string label) {
     private readonly Dictionary<ulong, Page> _pages = [];
-    private readonly byte[] _volume = new byte[Geometry];
+    private readonly List<(long Offset, byte[] Bytes)> _writes = [];
 
     private static ulong ToVirtual(ulong physical) {
       foreach (var (container, start, _) in Containers)
@@ -325,7 +327,10 @@ public static class RefsVolumeFormatter {
       this.WriteSuperblocks();
       this.WriteBoot();
       target.Position = 0;
-      target.Write(this._volume);
+      foreach (var (offset, bytes) in this._writes) {
+        target.Position = offset;
+        target.Write(bytes);
+      }
     }
 
     /// <summary>A page reference to <paramref name="page"/>: its four addresses, CRC64 descriptor and digest (0x30 bytes).</summary>
@@ -402,7 +407,7 @@ public static class RefsVolumeFormatter {
       return bytes;
     }
 
-    private void Place(Page page) => page.Bytes.CopyTo(this._volume, (long)page.Physical * ClusterSize);
+    private void Place(Page page) => this._writes.Add(((long)page.Physical * ClusterSize, page.Bytes));
 
     /// <summary>Clusters every structure takes, by physical LCN.</summary>
     private HashSet<ulong> Used() {
@@ -510,7 +515,7 @@ public static class RefsVolumeFormatter {
         W32(block, 0xF0, 1);
         W32(block, 0xF4, i == 0 ? 0xEu : 0xDu);
         W64(block, 0x80, FoldQwords(block));
-        block.CopyTo(this._volume, (long)LogControlLcns[i] * ClusterSize);
+        this._writes.Add(((long)LogControlLcns[i] * ClusterSize, block));
       }
     }
 
@@ -552,7 +557,7 @@ public static class RefsVolumeFormatter {
         bytes[0xF3] = 8;
         W32(bytes, 0xF4, 4);
         RefsChecksum.RefreshSelfChecksum(bytes, ClusterSize, 0xD0, 0x68);
-        bytes.CopyTo(this._volume, (long)CheckpointLcns[c] * ClusterSize);
+        this._writes.Add(((long)CheckpointLcns[c] * ClusterSize, bytes));
       }
     }
 
@@ -576,7 +581,7 @@ public static class RefsVolumeFormatter {
         bytes[0xF3] = 8;
         W32(bytes, 0xF4, 4);
         RefsChecksum.RefreshSelfChecksum(bytes, ClusterSize, 0xD0, 0x68);
-        bytes.CopyTo(this._volume, (long)lcn * ClusterSize);
+        this._writes.Add(((long)lcn * ClusterSize, bytes));
       }
     }
 
@@ -594,8 +599,8 @@ public static class RefsVolumeFormatter {
       W64(vbr, 0x38, identity.Serial);
       W64(vbr, 0x40, ClustersPerContainer * ClusterSize);
       W16(vbr, 0x16, RefsVolumeHeader.ComputeVbrChecksum(vbr));
-      vbr.CopyTo(this._volume, 0);
-      vbr.CopyTo(this._volume, Geometry - 512);
+      this._writes.Add((0, vbr));
+      this._writes.Add((Geometry - 512, vbr));
     }
   }
 

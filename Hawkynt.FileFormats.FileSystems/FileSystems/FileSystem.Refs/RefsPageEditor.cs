@@ -89,13 +89,14 @@ internal static class RefsPageEditor {
       ReadOnlySpan<byte> key,
       ReadOnlySpan<byte> value,
       ushort flags = 0,
-      ushort reserved = 0) {
+      ushort reserved = 0,
+      bool keyInValue = false) {
     var state = ReadLeaf(graph, physicalPageLcn);
     if ((uint)sortedIndex > (uint)state.Rows.Count)
       throw new ArgumentOutOfRangeException(nameof(sortedIndex));
 
     var rows = state.Rows.ToList();
-    rows.Insert(sortedIndex, new LiveRow(0xFFFF0000U, flags, reserved, key.ToArray(), value.ToArray()));
+    rows.Insert(sortedIndex, new LiveRow(0xFFFF0000U, flags, reserved, key.ToArray(), value.ToArray(), keyInValue));
     graph.WritePage(physicalPageLcn, Repack(state, rows, dryRun: false));
     return physicalPageLcn;
   }

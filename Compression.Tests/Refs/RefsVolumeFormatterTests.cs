@@ -69,6 +69,112 @@ public sealed class RefsVolumeFormatterTests {
   }
 
   [Test]
+  public void GivenAFreshVolume_WhenDirectoriesAreCreated_ThenTheObjectTableRecordsTheHighestNumber() {
+    using var stream = Fresh();
+    var descriptor = new RefsFormatDescriptor();
+    Assert.That(HighestObject(stream), Is.EqualTo(0x701UL), "fresh: System Volume Information");
+    descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("one", "one", true)]);
+    descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("two", "two", true)]);
+    descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("one/inner", "one/inner", true)]);
+    stream.Position = 0;
+    var metadata = RefsMetadataReader.Open(stream);
+    var objects = metadata.WalkRoot(0).Select(static r => BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(8))).ToList();
+    var graph = new RefsMetadataGraph(stream, metadata);
+    var objectTable = graph.ReadPage(graph.Pages.Single(static p => p.TableId == 2).PhysicalHead);
+    var objectCopy = graph.ReadPage(graph.Pages.Single(static p => p.TableId == 4).PhysicalHead);
+    var links = RefsPageEditor.ReadRows(graph.ReadPage(graph.Pages.Single(static p => p.TableId == 3).PhysicalHead)).Rows
+      .Select(static r => (Parent: BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(8)), Child: BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(24)))).ToList();
+    Assert.Multiple(() => {
+      Assert.That(objects, Does.Contain(0x702UL).And.Contain(0x703UL).And.Contain(0x704UL));
+      Assert.That(HighestObject(stream), Is.EqualTo(0x704UL));
+      Assert.That(links, Is.EqualTo(new[] { (0x600UL, 0x520UL), (0x600UL, 0x701UL), (0x600UL, 0x702UL), (0x600UL, 0x703UL), (0x702UL, 0x704UL) }), "parent-child rows, sorted");
+      Assert.That(objectCopy.AsSpan(0x50).SequenceEqual(objectTable.AsSpan(0x50)), Is.True, "the object table's copy follows it");
+      Assert.That(graph.FindStaleReferences(), Is.Empty);
+    });
+
+    static ulong HighestObject(MemoryStream volume) {
+      volume.Position = 0;
+      var metadata = RefsMetadataReader.Open(volume);
+      var page = new RefsMetadataGraph(volume, metadata).ReadPage(metadata.WalkRoot(0).First().PhysicalPageLcn);
+      return BinaryPrimitives.ReadUInt64LittleEndian(page.AsSpan(0x88));
+    }
+  }
+
+  [Test]
+  public void GivenAFreshVolume_WhenFilesAreAdded_ThenTheyAreReadBack() {
+    using var stream = Fresh();
+    var descriptor = new RefsFormatDescriptor();
+    var files = new Dictionary<string, byte[]> {
+      ["one.txt"] = "hello ReFS"u8.ToArray(),
+      ["big.bin"] = Enumerable.Range(0, 70000).Select(static i => (byte)(i * 7)).ToArray(),
+      ["sub/inner.bin"] = Enumerable.Range(0, 5000).Select(static i => (byte)(i ^ 0x5A)).ToArray(),
+    };
+    descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("sub", "sub", true)]);
+    foreach (var (name, data) in files) descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory(name, data)]);
+    stream.Position = 0;
+    var metadata = RefsMetadataReader.Open(stream);
+    Assert.That(new RefsMetadataGraph(stream, metadata).FindStaleReferences(), Is.Empty);
+    var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_fresh_" + Guid.NewGuid().ToString("N")[..8]);
+    try {
+      stream.Position = 0;
+      descriptor.Extract(stream, outDir, null, null);
+      Assert.Multiple(() => {
+        foreach (var (name, data) in files)
+          Assert.That(File.ReadAllBytes(Path.Combine(outDir, name.Replace('/', Path.DirectorySeparatorChar))), Is.EqualTo(data), name);
+      });
+    } finally {
+      try { Directory.Delete(outDir, recursive: true); } catch { /* best effort */ }
+    }
+  }
+
+  [Test]
+  public void GivenFilesInNestedDirectories_WhenCreated_ThenEveryFileAndDirectoryIsReadBack() {
+    var files = new Dictionary<string, byte[]> {
+      ["top.txt"] = "top"u8.ToArray(),
+      ["a/b/c/deep.bin"] = Enumerable.Range(0, 9000).Select(static i => (byte)(i * 3)).ToArray(),
+      ["a/side.bin"] = Enumerable.Range(0, 4096).Select(static i => (byte)i).ToArray(),
+    };
+    using var stream = new MemoryStream();
+    var descriptor = new RefsFormatDescriptor();
+    descriptor.Create(stream,
+      [.. files.Select(static f => Compression.Registry.ArchiveInputInfo.InMemory(f.Key, f.Value)),
+       new Compression.Registry.ArchiveInputInfo("empty", "empty", true)],
+      new Compression.Registry.FormatCreateOptions());
+    stream.Position = 0;
+    var entries = new RefsNamespaceReader(RefsMetadataReader.Open(stream)).ReadAll();
+    Assert.That(entries.Where(static e => e.IsDirectory).Select(static e => e.Path),
+      Is.SupersetOf(new[] { "a", "a/b", "a/b/c", "empty" }));
+    var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_create_" + Guid.NewGuid().ToString("N")[..8]);
+    try {
+      stream.Position = 0;
+      descriptor.Extract(stream, outDir, null, null);
+      Assert.Multiple(() => {
+        foreach (var (name, data) in files)
+          Assert.That(File.ReadAllBytes(Path.Combine(outDir, name.Replace('/', Path.DirectorySeparatorChar))), Is.EqualTo(data), name);
+      });
+    } finally {
+      try { Directory.Delete(outDir, recursive: true); } catch { /* best effort */ }
+    }
+  }
+
+  [Test]
+  public void GivenAnEmptyFile_WhenCreated_ThenItIsRefused() {
+    using var stream = new MemoryStream();
+    Assert.Throws<NotSupportedException>(() => new RefsFormatDescriptor().Create(stream,
+      [Compression.Registry.ArchiveInputInfo.InMemory("zero.bin", Array.Empty<byte>())],
+      new Compression.Registry.FormatCreateOptions()));
+    Assert.That(stream.Length, Is.Zero, "nothing is written");
+  }
+
+  [Test]
+  public void GivenTwoInputsWithOneName_WhenCreated_ThenItIsRefused() {
+    using var stream = new MemoryStream();
+    Assert.Throws<ArgumentException>(() => new RefsFormatDescriptor().Create(stream,
+      [Compression.Registry.ArchiveInputInfo.InMemory("x.bin", [1]), Compression.Registry.ArchiveInputInfo.InMemory("X.BIN", [2])],
+      new Compression.Registry.FormatCreateOptions()));
+  }
+
+  [Test]
   public void GivenTheSameSeed_WhenFormattedTwice_ThenTheVolumesAreIdentical() {
     using var a = Fresh(seed: 3);
     using var b = Fresh(seed: 3);

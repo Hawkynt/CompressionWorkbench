@@ -121,6 +121,11 @@ internal sealed class RefsAllocatorWriter {
       out physicalStartLcn);
   }
 
+  /// <summary>Whether <paramref name="physicalLcn"/> lies in a bitmap row this writer rewrites (not a compact or all-free row).</summary>
+  public bool InBitmapRow(ulong physicalLcn)
+    => this.TryToAllocatorLcn(physicalLcn, out var allocatorLcn) && this.Find(allocatorLcn) is { } state
+       && BinaryPrimitives.ReadUInt16LittleEndian(state.Row.Value.AsSpan(0x12, 2)) == PartialFlag;
+
   public bool TryFindFreeRun(int clusterCount, out ulong physicalStartLcn)
     => this.TryFindFreeRun(clusterCount, physicalPredicate: null, out physicalStartLcn);
 
