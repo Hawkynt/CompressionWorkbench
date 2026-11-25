@@ -161,6 +161,57 @@ public class DarEncryptionOracleTests {
     AssertSameTree(src, outDir);
   }
 
+  // ── a crypto block size other than dar's default (-#, not recorded in the archive) ─────────
+
+  [TestCase("aes256", 1000, "")]
+  [TestCase("aes256", 65536, "-zgzip")]
+  [TestCase("blowfish", 4000, "-at")]
+  [TestCase("twofish256", 333, "-s 20k")]
+  [TestCase("camellia256", 16, "")]
+  public void GivenDarArchiveWithAnotherCryptoBlockSize_WhenWeReadAndEditIt_ThenTheSizeIsInferredAndDarRestoresTheEdit(string cipher, int blockSize, string options) {
+    var src = this.Source();
+    var basePath = Path.Combine(this._tmp, "theirs");
+    var key = $"-K '{cipher}:{Password}' -# {blockSize}";
+    var create = Dar($"-c {FsInteropToolbox.WinToWsl(basePath)} {key} {options} -R {FsInteropToolbox.WinToWsl(src)}");
+    Assert.That(create.ExitCode, Is.Zero, $"dar -c failed:\n{create.StdOut}\n{create.StdErr}");
+    var first = basePath + ".1.dar";
+    var outDir = Path.Combine(this._tmp, "ours-out");
+    using (var fs = File.OpenRead(first))
+      new DarFormatDescriptor().Extract(fs, outDir, Password, null);
+    AssertSameTree(src, outDir);
+
+    var added = "added under -#\n"u8.ToArray();
+    using (var fs = new FileStream(first, FileMode.Open, FileAccess.ReadWrite))
+      new DarFormatDescriptor().Add(fs, [ArchiveInputInfo.InMemory("added.txt", added)], new ArchiveMutationOptions { Password = Password });
+    File.WriteAllBytes(Path.Combine(src, "added.txt"), added);
+    var darBase = FsInteropToolbox.WinToWsl(basePath);
+    var test = Dar($"-t {darBase} {key}");
+    Assert.That(test.ExitCode, Is.Zero, $"dar -t -# {blockSize} refused the edited archive:\n{test.StdOut}\n{test.StdErr}");
+    var restored = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(restored);
+    var extract = Dar($"-O -x {darBase} {key} -R {FsInteropToolbox.WinToWsl(restored)}");
+    Assert.That(extract.ExitCode, Is.Zero, $"dar -x failed on the edited archive:\n{extract.StdOut}\n{extract.StdErr}");
+    AssertSameTree(src, restored);
+  }
+
+  [TestCase('a', 4096)]
+  [TestCase('b', 777)]
+  public void GivenOurArchiveWithAnotherCryptoBlockSize_WhenDarReadsItWithThatSize_ThenItIsByteIdentical(char cipher, int blockSize) {
+    var src = this.Source();
+    var basePath = Path.Combine(this._tmp, "ours");
+    using (var fs = File.Create(basePath + ".1.dar"))
+      DarWriter.Write(fs, DarEncryptionTests.Items(), new DarWriter.Settings('z', TapeMarks: true) { Encryption = new DarWriter.Encryption(cipher, Password, ClearBlockSize: blockSize) });
+    var darBase = FsInteropToolbox.WinToWsl(basePath);
+    var key = $"-K '{DarName(cipher)}:{Password}' -# {blockSize}";
+    var test = Dar($"-t {darBase} {key}");
+    Assert.That(test.ExitCode, Is.Zero, $"dar -t -# {blockSize} refused our archive:\n{test.StdOut}\n{test.StdErr}");
+    var outDir = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(outDir);
+    var extract = Dar($"-O -x {darBase} {key} -R {FsInteropToolbox.WinToWsl(outDir)}");
+    Assert.That(extract.ExitCode, Is.Zero, $"dar -x failed on our archive:\n{extract.StdOut}\n{extract.StdErr}");
+    AssertSameTree(src, outDir);
+  }
+
   [Test]
   public void GivenDarArchiveEncryptedForAGnuPgRecipient_WhenListed_ThenItFallsBackAndNamesTheReason() {
     var home = $"/tmp/cwb-dar-gpg-{Guid.NewGuid():N}";

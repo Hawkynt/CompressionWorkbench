@@ -132,7 +132,8 @@ internal static partial class DarEditor {
       RootInode = source.RootInode,
       FixedBlockSize = true,
       Encryption = trailer.IsEncrypted
-        ? new DarWriter.Encryption(trailer.Cipher, password!, trailer.Kdf?.Hash ?? 'a', trailer.Kdf?.Iterations ?? 10000)
+        ? new DarWriter.Encryption(trailer.Cipher, password!, trailer.Kdf?.Hash ?? 'a', trailer.Kdf?.Iterations ?? 10000,
+            source.ClearBlockSize > 0 ? source.ClearBlockSize : DarCrypto.DefaultClearBlockSize)
         : null,
     };
     return (items, settings);
