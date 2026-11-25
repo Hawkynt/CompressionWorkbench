@@ -39,7 +39,7 @@ nothing else. Windows Server 2022 and 2025, at 4 KiB and 64 KiB clusters, mount 
 read-only and read-write, hash the file as written, pass `refsutil salvage -QS` and log no ReFS
 error. On the integrity-stream volumes the overwrite is refused and the image is left unchanged.
 
-Later runs (45433556177, 45441757023, 45447908924, 45479960118, 45485070018, 45495972996, 45498729400, 45506225287, 45515811153, 45521857931, 45528834750, 45537592424) judged the edits made in place the same way:
+Later runs (45433556177, 45441757023, 45447908924, 45479960118, 45485070018, 45495972996, 45498729400, 45506225287, 45515811153, 45521857931, 45528834750, 45537592424, 45542700359) judged the edits made in place the same way:
 
 | Edit | 3.7 4 KiB | 3.7 64 KiB | 3.7 integrity | 3.14 4 KiB | 3.14 64 KiB | 3.14 integrity |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -55,6 +55,7 @@ Later runs (45433556177, 45441757023, 45447908924, 45479960118, 45485070018, 454
 | In a directory over several pages (`many/`): add a file, create a directory, rename, remove | accepted | accepted | accepted | accepted | accepted | accepted |
 | In a directory over several pages: grow a file | accepted | accepted | accepted | refused (file kept in its row) | refused (file kept in its row) | accepted |
 | In a directory over several pages: add 24 files until a page splits | accepted | accepted | accepted | accepted | accepted (no split needed in a 64 KiB page) | accepted |
+| In a one-page directory (`dir1/`): add 120 files, growing it a level | accepted | accepted | accepted | accepted | accepted | accepted |
 
 "Accepted" means Windows mounted the edited volume read-only and read-write, listed every file
 with the expected hash, passed `refsutil salvage -QS` and logged no ReFS warning or error.

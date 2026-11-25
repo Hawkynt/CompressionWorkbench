@@ -418,6 +418,55 @@ public sealed class RefsWindowsOracleTests {
     }
   }
 
+  [Test, Category("ExternalFsInterop")]
+  public void GivenAOnePageDirectory_WhenFilesAreAddedUntilItGrowsALevel_ThenEveryFileIsReadBack([ValueSource(nameof(Volumes))] string volume) {
+    var oracle = Load(volume);
+    var copy = Path.Combine(Path.GetTempPath(), "cwb_refs_grow_" + Guid.NewGuid().ToString("N")[..8] + ".refs");
+    File.Copy(ImagePath(oracle), copy);
+    try {
+      var descriptor = new RefsFormatDescriptor();
+      var expected = oracle.Files.ToDictionary(static f => f.Path, static f => f.Sha256);
+      bool OnePage() {
+        using var s = File.OpenRead(copy);
+        var md = RefsMetadataReader.Open(s);
+        return RefsDirectoryTree.Open(md, RefsInPlaceRename.ResolveDirectory(md, "dir1").Root).IsSingleLeaf;
+      }
+      Assert.That(OnePage(), Is.True, "dir1 starts as one page");
+      var added = 0;
+      for (; added < 400 && OnePage(); ++added) {
+        var name = $"dir1/grow-{added:D3}.bin";
+        var data = Pattern(3000 + added);
+        using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite))
+          descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory(name, data)]);
+        expected[name] = Convert.ToHexStringLower(SHA256.HashData(data));
+      }
+      Assert.That(OnePage(), Is.False, $"dir1 grew a level after {added} files");
+      using var check = File.OpenRead(copy);
+      var metadata = RefsMetadataReader.Open(check);
+      Assert.That(new RefsMetadataGraph(check, metadata).FindStaleReferences(), Is.Empty);
+      var reference = RefsInPlaceRename.ResolveDirectory(metadata, "dir1").Root;
+      var tree = RefsDirectoryTree.Open(metadata, reference);
+      var root = metadata.TryReadReferencedPage(reference, virtualAddresses: true)!;
+      Assert.Multiple(() => {
+        Assert.That(System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(root.AsSpan(0x70)), Is.EqualTo((ulong)tree.Rows.Count), "row count");
+        Assert.That(System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(root.AsSpan(0x68)), Is.EqualTo((ulong)tree.Leaves.Count()), "leaf count");
+      });
+      var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_grow_x_" + Guid.NewGuid().ToString("N")[..8]);
+      try {
+        check.Position = 0;
+        descriptor.Extract(check, outDir, null, null);
+        Assert.Multiple(() => {
+          foreach (var (path, sha) in expected)
+            Assert.That(Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Path.Combine(outDir, path.Replace('/', Path.DirectorySeparatorChar))))), Is.EqualTo(sha), path);
+        });
+      } finally {
+        try { Directory.Delete(outDir, recursive: true); } catch { /* best effort */ }
+      }
+    } finally {
+      File.Delete(copy);
+    }
+  }
+
   /// <summary>Enough 5 KB files sorting into one leaf of "many" to split it on every volume kind.</summary>
   private const int SplitFiles = 24;
 
