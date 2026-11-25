@@ -368,6 +368,66 @@ public sealed class RefsWindowsOracleTests {
   }
 
   [Test, Category("ExternalFsInterop")]
+  public void GivenADirectoryOverSeveralPages_WhenEveryFileOfALeafIsRemoved_ThenTheLeafLeavesTheTree([ValueSource(nameof(Volumes))] string volume) {
+    var oracle = Load(volume);
+    var copy = Path.Combine(Path.GetTempPath(), "cwb_refs_drop_" + Guid.NewGuid().ToString("N")[..8] + ".refs");
+    File.Copy(ImagePath(oracle), copy);
+    try {
+      var descriptor = new RefsFormatDescriptor();
+      var expected = oracle.Files.ToDictionary(static f => f.Path, static f => f.Sha256);
+      List<string> names;
+      ulong leaf, leavesBefore;
+      IReadOnlyList<ulong> slots;
+      using (var s = File.OpenRead(copy)) {
+        var md = RefsMetadataReader.Open(s);
+        var tree = RefsDirectoryTree.Open(md, RefsInPlaceRename.ResolveDirectory(md, "many").Root);
+        // The smallest leaf, not the last, holding only the name rows of files.
+        (leaf, names) = tree.Leaves.SkipLast(1)
+          .Select(l => (Leaf: l, Rows: tree.Rows.Where(r => r.PhysicalPageLcn == l).ToList()))
+          .Where(static c => c.Rows.All(static r => r.Key.Length > 4 && System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(r.Key) == 0x00010030))
+          .OrderBy(static c => c.Rows.Count)
+          .Select(static c => (c.Leaf, c.Rows.Select(static r => "many/" + System.Text.Encoding.Unicode.GetString(r.Key, 4, r.Key.Length - 4)).ToList()))
+          .First();
+        leavesBefore = System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(md.TryReadReferencedPage(RefsInPlaceRename.ResolveDirectory(md, "many").Root, virtualAddresses: true)!.AsSpan(0x68));
+        slots = new RefsMetadataGraph(s, md).GetPageSlots(leaf).ToList();
+      }
+      foreach (var name in names) {
+        using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite))
+          descriptor.Remove(stream, [name]);
+        expected.Remove(name);
+      }
+      using var check = File.OpenRead(copy);
+      var metadata = RefsMetadataReader.Open(check);
+      var graph = new RefsMetadataGraph(check, metadata);
+      var after = RefsDirectoryTree.Open(metadata, RefsInPlaceRename.ResolveDirectory(metadata, "many").Root);
+      var root = metadata.TryReadReferencedPage(RefsInPlaceRename.ResolveDirectory(metadata, "many").Root, virtualAddresses: true)!;
+
+      Assert.Multiple(() => {
+        Assert.That(after.Leaves, Does.Not.Contain(leaf), "the emptied leaf");
+        Assert.That(System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(root.AsSpan(0x68)), Is.EqualTo(leavesBefore - 1).And.EqualTo((ulong)after.Leaves.Count()), "the root's leaf count");
+        Assert.That(System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(root.AsSpan(0x70)), Is.EqualTo((ulong)after.Rows.Count), "the root's row count");
+        Assert.That(graph.FindStaleReferences(), Is.Empty);
+        Assert.That(new RefsAllocatorWriter(metadata, graph, RefsAllocatorTier.Medium, physicalAddressing: true).AreAllocated(slots, expectedAllocated: false), Is.True, "the emptied page is released");
+      });
+      var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_drop_x_" + Guid.NewGuid().ToString("N")[..8]);
+      try {
+        check.Position = 0;
+        descriptor.Extract(check, outDir, null, null);
+        var files = new RefsNamespaceReader(metadata).ReadAll();
+        Assert.That(files.Where(static f => !f.IsDirectory && !f.Path.StartsWith("System Volume Information/", StringComparison.Ordinal)).Select(static f => f.Path).Order().ToList(), Is.EqualTo(expected.Keys.Order().ToList()), "the files listed");
+        Assert.Multiple(() => {
+          foreach (var (path, sha) in expected)
+            Assert.That(Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Path.Combine(outDir, path.Replace('/', Path.DirectorySeparatorChar))))), Is.EqualTo(sha), path);
+        });
+      } finally {
+        try { Directory.Delete(outDir, recursive: true); } catch { /* best effort */ }
+      }
+    } finally {
+      File.Delete(copy);
+    }
+  }
+
+  [Test, Category("ExternalFsInterop")]
   public void GivenADirectoryOverSeveralPages_WhenFilesAreAddedUntilALeafSplits_ThenEveryFileIsReadBack([ValueSource(nameof(Volumes))] string volume) {
     var oracle = Load(volume);
     var copy = Path.Combine(Path.GetTempPath(), "cwb_refs_split_" + Guid.NewGuid().ToString("N")[..8] + ".refs");
