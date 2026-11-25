@@ -630,7 +630,7 @@ format,Tta,True Audio (TTA),Audio,,.tta,Y,Y,Y,
 format,Ttc,TTC (TrueType collection),Archive,,.ttc,Y,Y,Y,
 format,Ttf,TTF (TrueType font — glyphs),Archive,,.ttf,Y,Y,,
 format,Tux2,TUX2,Archive,Y,.tux2,Y,Y,Y,Y
-format,Tux3,TUX3,Archive,Y,.tux3,Y,Y,,
+format,Tux3,TUX3,Archive,Y,.tux3,Y,Y,Y,
 format,Txw,TXW (Yamaha TX16W),Audio,,.txw,Y,Y,Y,
 format,U8,Nintendo U8,Archive,,.u8;.arc,Y,Y,Y,Y
 format,Ubifs,UBIFS,Archive,Y,.ubifs;.ubi;.img,Y,Y,Y,Y
@@ -658,6 +658,7 @@ format,Vag,Sony VAG (PS1/PS2 SPU-ADPCM),Audio,,.vag,Y,Y,Y,
 format,Vdfs,VDFS,Archive,Y,.vdf,Y,Y,Y,Y
 format,Vdi,VDI,Archive,,.vdi,Y,Y,Y,Y
 format,Veeam,Veeam Backup & Replication,Archive,,.vbk;.vib;.vrb,Y,Y,,
+format,Venti,Venti arena partition (Plan 9),Archive,Y,.arenas,Y,Y,,
 format,VeraCrypt,VeraCrypt / TrueCrypt,Archive,,.hc;.tc,Y,Y,Y,
 format,Vgm,Video Game Music Log,Audio,,.vgm;.vgz,Y,Y,,
 format,Vhd,VHD,Archive,,.vhd,Y,Y,Y,Y

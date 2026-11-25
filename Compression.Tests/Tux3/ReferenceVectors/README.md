@@ -16,6 +16,7 @@ gzipped (`gzip -9 -n`) only to keep the repository small. Nothing in this reposi
 | `cli.img.gz` | `tux3 mkfs`, then `tux3 write` (one run each) stored `big.bin`, `text.txt`, `hello.txt`, `empty`, `f4096` and `f4097` in the root |
 | `links.img.gz` | `tux3 mkfs`, `tux3 write hello.txt`, `tux3 link hello.txt hard-hello`, `tux3 symlink hello.txt sym-hello` |
 | `*-unified.img.gz` | each of the above after `tux3 unify` folded its log into the trees |
+| `kernel.img.gz` | 64 MiB: `tux3 mkfs`, then the linux-tux3 kernel (`docs/TUX3-ON-DISK.md`, "Kernel oracle") filled it through its own write path (`kernel-populate.sh`, recipe `kernel-gen.sh`); `kernel.manifest` is what the kernel read back after remounting, one line per object: `path\|type\|mode\|uid\|gid\|size\|nlink\|mtime\|major:minor\|md5-or-link-target` (captured 2026-11-25) |
 
 The tools of this branch are not dependable writers, and the volumes keep to what they store
 reliably: `tux3fuse` aborts on writes of 4 KiB and more, so the tree holds small files; `tux3 write`

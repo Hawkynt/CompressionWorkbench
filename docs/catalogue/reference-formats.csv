@@ -485,7 +485,7 @@ RFS (RTEMS),,filesystem,,,,,,,Y,,1,,,,,,MISSING,,refused: images only come from 
 SkyFS,skyos,filesystem,,,,,,,Y,,1,,,,,,MISSING,,"refused: SkyOS was discontinued in 2008; no specification, tool or image"
 Amiga SFS,sfs,filesystem,,,,,,,Y,,1,,Sfs,Y,Y,Y,OK,,
 Newton Soup,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,"refused: soups are Newton object-store entries inside the device's flash store and backups; no public layout specification, tool or image of the store"
-Tux3,,filesystem,,,,,,,Y,,1,https://github.com/OGAWAHirofumi/linux-tux3,Tux3,Y,,,READ-ONLY-BUT-SOURCES-WRITE,tux3 mkfs,"2015-06-01 volumes read whole (log replay, directories, files, hard links, symlinks), checked against what the linux-tux3 user tools wrote and tux3fuse reads back; not written: the tools' own writers are too unstable to serve as a writer oracle (tux3fuse aborts on 4 KiB writes)"
+Tux3,,filesystem,,,,,,,Y,,1,https://github.com/OGAWAHirofumi/linux-tux3,Tux3,Y,Y,,OK,tux3 mkfs,"2015-06-01 volumes read whole (log replay, directories, files, hard links, symlinks, devices) and created; checked against what the linux-tux3 kernel (built from source) and user tools wrote, and the kernel mounts and reads back every volume the writer makes"
 "VxFS (Veritas, incl. cluster CFS)",cfs,filesystem,,,,,,,Y,,1,,VxFs,Y,Y,Y,OK,,
 XFS,xfs;sgi,filesystem,,,,,,,Y,,1,,Xfs,Y,Y,,OK,,
 zFS (z/OS),,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
@@ -493,7 +493,7 @@ ZFS,zfs,filesystem,,,,,,,Y,,1,,Zfs,Y,Y,Y,OK,,"writes and edits version 28 and 50
 bcachefs,,filesystem,,,,,,,Y,,1,,BcacheFs,Y,Y,Y,OK,,"encrypted volumes (ChaCha20/Poly1305, scrypt-wrapped master key) read and written: volumes the 6.8 kernel wrote decrypt file for file and a key bcachefs-tools wrapped unwraps, ours pass bcachefs fsck unlocked from the passphrase and the kernel mounts them; in-place edits of encrypted volumes are refused (BcacheFsCoreVolume.cs)"
 NOVA,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,refused: persistent-memory file system with only an out-of-tree kernel module; no userspace tool and no image
 3FS (Fire-Flyer),deepseek,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
-CHFS (NetBSD),netbsd,filesystem,,,,,,,Y,,1,https://github.com/NetBSD/src/blob/trunk/sys/ufs/chfs/media.h,Chfs,Y,Y,Y,OK,makefs -t chfs,"NetBSD 9.5 kernel mounts written and modified NAND images on nandemulator and lists every entry; writer writes 4 KiB numbered data nodes as the kernel does (files in makefs 2 KiB nodes read back half zeroed) and with page-sized nodes matches makefs byte for byte apart from data-node versions; NOR rests on that comparison; 10.x/11.x mount_chfs deadlocks"
+CHFS (NetBSD),netbsd,filesystem,,,,,,,Y,,1,https://github.com/NetBSD/src/blob/trunk/sys/ufs/chfs/media.h,Chfs,Y,Y,Y,OK,makefs -t chfs,NetBSD 9.5 kernel mounts written and modified NAND images on nandemulator and lists every entry; writer writes 4 KiB numbered data nodes as the kernel does (files in makefs 2 KiB nodes read back half zeroed) and with page-sized nodes matches makefs byte for byte apart from data-node versions; NOR rests on that comparison; 10.x/11.x mount_chfs deadlocks
 exFAT,exfat;fat64;img,filesystem,,,,,,fmt/1609,Y,,2,https://learn.microsoft.com/windows/win32/fileio/exfat-specification,ExFat,Y,Y,Y,OK,,
 ExtremeFFS,,filesystem,,,,,,,Y,,1,,,,,,MISSING,,
 F2FS,f2fs,filesystem,,,,,,,Y,,1,,F2fs,Y,Y,Y,OK,,

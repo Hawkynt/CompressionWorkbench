@@ -9,6 +9,9 @@ public sealed record Tux3Node(string Path, ulong Inum, int Mode, uint Uid, uint 
   public bool IsDirectory => (this.Mode & 0xF000) == 0x4000;
   public bool IsSymlink => (this.Mode & 0xF000) == 0xA000;
   public bool IsFile => (this.Mode & 0xF000) == 0x8000;
+
+  /// <summary>The device number of a character or block device, as <c>major &lt;&lt; 20 | minor</c>; 0 otherwise.</summary>
+  public ulong Device { get; init; }
 }
 
 /// <summary>
@@ -274,11 +277,11 @@ internal sealed class Tux3FileTree {
     }
   }
 
-  private sealed record Attrs(ulong Inum, int Mode, uint Uid, uint Gid, long Size, uint Links, long Mtime, ulong DataRoot);
+  private sealed record Attrs(ulong Inum, int Mode, uint Uid, uint Gid, long Size, uint Links, long Mtime, ulong DataRoot, ulong Generic);
 
   private Attrs Inode(ulong inum, string what) {
     if (!this._inodes.TryGetValue(inum, out var raw)) throw new InvalidDataException($"Tux3: {what} (inode {inum}) has no attributes.");
-    int mode = -1; uint uid = 0, gid = 0, links = 0; long size = 0, ctime = 0, mtime = long.MinValue; ulong root = 0;
+    int mode = -1; uint uid = 0, gid = 0, links = 0; long size = 0, ctime = 0, mtime = long.MinValue; ulong root = 0, generic = 0;
     bool hasLinks = false, hasTimes = false;
     var p = raw.AsSpan();
     var at = 0;
@@ -300,6 +303,7 @@ internal sealed class Tux3FileTree {
           case 2: links = BinaryPrimitives.ReadUInt32BigEndian(v); hasLinks = true; break;
           case 3: mtime = BinaryPrimitives.ReadInt64BigEndian(v); break;
           case 4: root = BinaryPrimitives.ReadUInt64BigEndian(v); break;
+          case 9: generic = BinaryPrimitives.ReadUInt64BigEndian(v); break;
         }
       at += length;
     }
@@ -308,7 +312,7 @@ internal sealed class Tux3FileTree {
     if (!hasLinks) links = (mode & 0xF000) == 0x4000 ? 2u : 1u;
     if (mtime == long.MinValue) mtime = ctime;
     if (size < 0) throw new InvalidDataException($"Tux3: inode {inum} has a negative size.");
-    return new(inum, mode, uid, gid, size, links, mtime, root);
+    return new(inum, mode, uid, gid, size, links, mtime, root, generic);
   }
 
   // ── data ─────────────────────────────────────────────────────────────
@@ -379,7 +383,9 @@ internal sealed class Tux3FileTree {
           var a = this.Inode(inum, path);
           string? target = null;
           if ((a.Mode & 0xF000) == 0xA000) target = Encoding.UTF8.GetString(this.Data(a.DataRoot, a.Size));
-          this.Nodes.Add(new Tux3Node(path, inum, a.Mode, a.Uid, a.Gid, (a.Mode & 0xF000) == 0x4000 ? 0 : a.Size, a.Links, a.Mtime, target));
+          // A device number is kept as the kernel encodes it: major << 8 | minor, the minor's upper bits from bit 20.
+          var device = (a.Mode & 0xF000) is 0x2000 or 0x6000 ? ((a.Generic >> 8) & 0xFFF) << 20 | (a.Generic & 0xFF) | ((a.Generic >> 12) & 0xFFF00) : 0;
+          this.Nodes.Add(new Tux3Node(path, inum, a.Mode, a.Uid, a.Gid, (a.Mode & 0xF000) == 0x4000 ? 0 : a.Size, a.Links, a.Mtime, target) { Device = device });
           if ((a.Mode & 0xF000) == 0x4000) this.Walk(a, path, depth + 1);
         }
         at += recLen;
