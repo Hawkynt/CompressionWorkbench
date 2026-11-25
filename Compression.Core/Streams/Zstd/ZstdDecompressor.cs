@@ -43,14 +43,9 @@ internal sealed class ZstdDecompressor {
     this._repeatOffsets = [1, 4, 8];
     this._outputBuffer = [];
 
-    // Read frame magic
-    Span<byte> magicBuf = stackalloc byte[4];
-    ReadExact(magicBuf);
-    var magic = BinaryPrimitives.ReadUInt32LittleEndian(magicBuf);
-    if (magic != ZstdConstants.FrameMagic)
-      throw new InvalidDataException($"Invalid Zstandard frame magic: 0x{magic:X8}");
-
-    this.BeginFrame(dictionary);
+    // A file may open with skippable frames, and may hold nothing else.
+    if (!this.TryEnterFrame(beforeFirstFrame: true))
+      this._finished = true;
   }
 
   /// <summary>
@@ -145,19 +140,79 @@ internal sealed class ZstdDecompressor {
   /// Consumes a following frame magic when one is present, resetting per-frame state.
   /// Returns false at end of input, or when the next bytes are not a frame magic.
   /// </summary>
-  private bool TryStartNextFrame() {
-    Span<byte> magicBuf = stackalloc byte[4];
-    var read = 0;
-    while (read < 4) {
-      var n = this._input.Read(magicBuf[read..]);
-      if (n <= 0) return false;
-      read += n;
-    }
-    if (BinaryPrimitives.ReadUInt32LittleEndian(magicBuf) != ZstdConstants.FrameMagic)
-      return false;
+  private bool TryStartNextFrame() => this.TryEnterFrame(beforeFirstFrame: false);
 
-    this.BeginFrame(this._dictionary);
-    return true;
+  /// <summary>
+  /// Reads frame magics, skipping every skippable frame, until a Zstandard frame begins.
+  /// </summary>
+  /// <remarks>
+  /// RFC 8878 §3.1.2: a skippable frame is the magic <c>0x184D2A5?</c> (any low nibble), a
+  /// little-endian 32-bit size and that many bytes of user data. It may appear wherever a
+  /// Zstandard frame may, and decoders skip it.
+  /// </remarks>
+  /// <param name="beforeFirstFrame">
+  /// True while no frame has been entered yet: an unknown or truncated magic, or input with no
+  /// frame of any kind, is then an error. Later, the end of input or data that is not a frame
+  /// ends decoding.
+  /// </param>
+  /// <returns>True when a Zstandard frame was entered; false at the end of the frames.</returns>
+  private bool TryEnterFrame(bool beforeFirstFrame) {
+    Span<byte> magicBuf = stackalloc byte[4];
+    var skippedAny = false;
+    while (true) {
+      var read = 0;
+      while (read < 4) {
+        var n = this._input.Read(magicBuf[read..]);
+        if (n <= 0) break;
+        read += n;
+      }
+
+      if (read < 4) {
+        if (beforeFirstFrame && (read > 0 || !skippedAny))
+          throw new InvalidDataException("Unexpected end of Zstandard stream.");
+        return false;
+      }
+
+      var magic = BinaryPrimitives.ReadUInt32LittleEndian(magicBuf);
+      if ((magic & ZstdConstants.SkippableFrameMagicMask) == ZstdConstants.SkippableFrameMagicBase) {
+        ReadExact(magicBuf);
+        this.SkipExact(BinaryPrimitives.ReadUInt32LittleEndian(magicBuf));
+        skippedAny = true;
+        continue;
+      }
+
+      if (magic == ZstdConstants.FrameMagic) {
+        this.BeginFrame(this._dictionary);
+        return true;
+      }
+
+      if (beforeFirstFrame)
+        throw new InvalidDataException($"Invalid Zstandard frame magic: 0x{magic:X8}");
+      return false;
+    }
+  }
+
+  /// <summary>Consumes exactly <paramref name="count"/> input bytes (a skippable frame's user data).</summary>
+  private void SkipExact(uint count) {
+    long remaining = count;
+    if (this._input.CanSeek) {
+      if (this._input.Length - this._input.Position < remaining)
+        throw new InvalidDataException("Truncated Zstandard skippable frame.");
+      this._input.Seek(remaining, SeekOrigin.Current);
+      return;
+    }
+
+    var scratch = ArrayPool<byte>.Shared.Rent(8192);
+    try {
+      while (remaining > 0) {
+        var n = this._input.Read(scratch, 0, (int)Math.Min(scratch.Length, remaining));
+        if (n <= 0)
+          throw new InvalidDataException("Truncated Zstandard skippable frame.");
+        remaining -= n;
+      }
+    } finally {
+      ArrayPool<byte>.Shared.Return(scratch);
+    }
   }
 
   /// <summary>

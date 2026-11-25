@@ -118,6 +118,39 @@ rar's choice of `R` from a percentage could not be pinned: 129 sectors gave 7 at
 10%, and 391 sectors gave 12 at 3%. `Rar4Writer` uses `ceil(N × percent / 100)`. rar repairs
 from any `R`, as the round trip above shows.
 
+## Recovery records in volume sets
+
+With `-v` and `-rr`, rar puts a record in **every** volume. Each record protects only its own
+volume, bytes `[0, P)` with `P` the offset of that volume's record header, and follows the
+single-archive rules above. Measured on 250 000 stored bytes, `-v100k -rr5%`. rar 7.12 (`-ma5`)
+wrote volumes of 102 400, 102 400 and 65 132 bytes. rar 6.24 (`-ma4`) wrote 102 400, 102 400 and
+60 453 bytes.
+
+- **Order in a volume.** File parts come first, then (RAR 5 only) a `QO` quick-open block, then
+  the record, then the end-of-archive header. The main header has the "recovery record" flag in
+  every volume: RAR 5 archive flags `9`/`0xB`, RAR 4 `MHD_PROTECT` beside the volume flags.
+- **Sizing.** The record counts against the volume size, so rar cuts the file part short enough
+  for record and end header to fit. Volumes that are not last are zero-padded to exactly the
+  volume size (15 bytes after the RAR 5 end header here, 18 after the RAR 4 end block). The
+  parameters match the single-archive formulas for each volume's own `P`. For example, part 1 has
+  `P` = 95 002, so `ND` = 93, `S` = 1022, `NR` = 4 and the data is 7 352 bytes.
+- **RAR 4 end block.** The end block's CRC-32 covers the record as well, since the record sits
+  before it.
+- **Repair.** `rar r name.part2.rar` repairs one volume into `fixed.name.part2.rar`. rar 6.24
+  rebuilds the volume byte for byte. rar 7.12 rebuilds every protected byte and the record, but
+  writes the end header with end flags 0 and drops the padding. `rar t` accepts the set with that
+  volume in place all the same.
+
+`RarWriter` and `Rar4Writer` write the same layout. They reserve room for the record when they
+cut a file part, and leave out rar's `QO` block and padding. Proof in
+`Compression.Tests/Rar/RarVolumeRecoveryRecordTests.cs`:
+
+- `rar t` (7.12, 6.24) passes our sets, and rar 7.12 reports the recovery record.
+- `rar r` rebuilds a damaged middle volume of ours: rar 6.24 byte for byte, rar 7.12 every
+  protected byte. `rar t` passes the set with the rebuilt volume in place.
+- `RarRecovery.Repair` rebuilds a damaged middle volume of rar's (`-rr5%`, `-rr20%`, `-ma4`)
+  byte for byte.
+
 ## RAR 5 recovery volumes (`.rev`)
 
 rar names them `name.partN.rev`, numbered from 1, with the volumes' digit width.
@@ -184,5 +217,3 @@ end block's data CRC fails. A rebuilt last volume is cut at its end block.
 - **Damage outside the protected range.** This covers the record's own header and the
   end-of-archive header. For RAR 4 it also covers the record's data, whose CRC-32 must hold
   before it is trusted.
-- **Writing a record into a volume set.** `RarWriter` and `Rar4Writer` refuse it. Each rar
-  volume carries its own record, and repair works on such volumes one file at a time.

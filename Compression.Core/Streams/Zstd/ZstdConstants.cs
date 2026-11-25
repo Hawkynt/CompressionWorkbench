@@ -10,6 +10,9 @@ internal static class ZstdConstants {
   /// <summary>Base magic for skippable frames (add 0..15).</summary>
   public const uint SkippableFrameMagicBase = 0x184D2A50;
 
+  /// <summary>Mask that clears the free low nibble of a skippable-frame magic.</summary>
+  public const uint SkippableFrameMagicMask = 0xFFFFFFF0;
+
   /// <summary>Block type: raw (uncompressed) data.</summary>
   public const byte BlockTypeRaw = 0;
 

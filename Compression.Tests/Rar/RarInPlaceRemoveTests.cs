@@ -210,5 +210,65 @@ public class RarInPlaceRemoveTests {
     Assert.That(all["b.txt"], Is.EqualTo(bNew), "same-name update must replace content");
   }
 
+  // ── Which entries a name selects: the full path, or a folder with its contents ──
+
+  private static byte[] BuildTree(bool solid) {
+    var ms = new MemoryStream();
+    using (var w = new RarWriter(ms, leaveOpen: true, method: solid ? RarConstants.MethodNormal : RarConstants.MethodStore, solid: solid)) {
+      w.AddFile("a.txt", Enc("top a"));
+      w.AddDirectory("sub");
+      w.AddFile("sub/a.txt", Enc("nested a"));
+      w.AddFile("sub/b.txt", Enc("nested b"));
+      w.AddFile("subway.txt", Enc("not inside sub"));
+      w.Finish();
+    }
+    return ms.ToArray();
+  }
+
+  private static Dictionary<string, byte[]> RemoveThroughDescriptor(byte[] original, params string[] names) {
+    using var stream = new MemoryStream();
+    stream.Write(original, 0, original.Length);
+    stream.Position = 0;
+    new RarFormatDescriptor().Remove(stream, names);
+    return ReadAll(stream.ToArray());
+  }
+
+  [TestCase(false)]
+  [TestCase(true)]
+  public void Given_SameLeafNameInAFolder_When_TopLevelFileRemoved_Then_TheNestedFileStays(bool solid) {
+    var all = RemoveThroughDescriptor(BuildTree(solid), "a.txt");
+
+    Assert.That(all.Keys, Does.Not.Contain("a.txt"));
+    Assert.That(all["sub/a.txt"], Is.EqualTo(Enc("nested a")));
+  }
+
+  [TestCase(false, "sub")]
+  [TestCase(true, "sub")]
+  [TestCase(false, "sub/")]
+  [TestCase(false, "SUB")]
+  public void Given_AFolder_When_Removed_Then_ItAndEverythingBeneathItGo(bool solid, string name) {
+    var all = RemoveThroughDescriptor(BuildTree(solid), name);
+
+    Assert.That(all.Keys, Is.EquivalentTo(new[] { "a.txt", "subway.txt" }));
+    Assert.That(all["subway.txt"], Is.EqualTo(Enc("not inside sub")));
+  }
+
+  [Test]
+  public void Given_ANonSolidFolder_When_RemovedInPlace_Then_NoRebuildIsNeeded() {
+    var original = BuildTree(solid: false);
+
+    var result = RemoveInPlace(original, "sub");
+
+    Assert.That(ReadAll(result).Keys, Is.EquivalentTo(new[] { "a.txt", "subway.txt" }));
+    Assert.That(result[..(8 + 32)], Is.EqualTo(original[..(8 + 32)]));
+  }
+
+  [Test]
+  public void Given_ABackslashName_When_RemovedInPlace_Then_ItMatchesTheStoredPath() {
+    var result = RemoveInPlace(BuildTree(solid: false), @"sub\b.txt");
+
+    Assert.That(ReadAll(result).Keys, Is.EquivalentTo(new[] { "a.txt", "sub", "sub/a.txt", "subway.txt" }));
+  }
+
   private static byte[] Enc(string s) => System.Text.Encoding.UTF8.GetBytes(s);
 }

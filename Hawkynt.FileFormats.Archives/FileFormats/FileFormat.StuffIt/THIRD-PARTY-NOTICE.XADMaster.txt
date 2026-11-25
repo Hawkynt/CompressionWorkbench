@@ -1,5 +1,5 @@
 StuffIt decoding in this folder (StuffItReader's classic and StuffIt 5 directory parsing,
-StuffIt13Decoder, StuffIt13Tables, StuffIt14Decoder, StuffItLzahDecoder, StuffItArsenicDecoder, StuffItHuffman,
+StuffIt13Decoder, StuffIt13Tables, StuffIt14Decoder, StuffItMwDecoder, StuffItLzahDecoder, StuffItArsenicDecoder, StuffItHuffman,
 StuffItRle90, StuffIt 5's password scheme in StuffIt5Crypto, and classic StuffIt's password scheme
 in StuffItClassicCrypto) is converted from XADMaster, the archive library of The Unarchiver.
 

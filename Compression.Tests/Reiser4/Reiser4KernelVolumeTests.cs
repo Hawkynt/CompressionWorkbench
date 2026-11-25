@@ -17,15 +17,26 @@ public sealed class Reiser4KernelVolumeTests {
 
   internal static readonly string[] Volumes = [
     "default", "gzip1-force-8k", "zstd1-latt-16k", "lzo1-none-4k", "reg40-smart", "reg40-tails", "reg40-node41",
-    "node41", "tea-lexic", "fnv1-dot-o", "deg-ext-3", "rupasov", "journal-replay",
+    "node41", "tea-lexic", "fnv1-dot-o", "deg-ext-3", "rupasov", "journal-replay", "short-keys", "short-keys-reg40",
   ];
+
+  /// <summary>
+  /// Volumes of three-word keys, formatted by a patched mkfs.reiser4 and filled by a kernel built
+  /// with <c>REISER4_LARGE_KEY=0</c>: neither the packaged kernel nor the packaged fsck.reiser4
+  /// reads them, so they are judged by <see cref="Reiser4ShortKeyOracle" /> instead.
+  /// </summary>
+  internal static readonly string[] ShortKeyVolumes = ["short-keys", "short-keys-reg40"];
 
   /// <summary>
   /// Volumes populate.sh filled that fsck.reiser4 calls consistent and the writer edits in the shared
   /// edit tests: every hash but Rupasov, whose long names fsck.reiser4 keys differently from the
   /// kernel (the Rupasov volume has its own kernel-judged edit test).
   /// </summary>
-  internal static readonly string[] EditableVolumes = [.. Volumes.Where(static v => v is not ("rupasov" or "journal-replay"))];
+  internal static readonly string[] EditableVolumes =
+    [.. Volumes.Where(static v => v is not ("rupasov" or "journal-replay") && !ShortKeyVolumes.Contains(v))];
+
+  /// <summary>Every volume the offline edit test carries across an edit: the editable ones and the short-key ones.</summary>
+  internal static readonly string[] OfflineEditableVolumes = [.. EditableVolumes, .. ShortKeyVolumes];
 
   internal static byte[] Image(string name) {
     using var resource = typeof(Reiser4KernelVolumeTests).Assembly.GetManifestResourceStream($"Reiser4Vectors.{name}.img.gz")
@@ -133,7 +144,7 @@ public sealed class Reiser4KernelVolumeTests {
       "without the replay the namespace is the one before the last commit");
   }
 
-  [TestCaseSource(nameof(EditableVolumes)), Category("HappyPath")]
+  [TestCaseSource(nameof(OfflineEditableVolumes)), Category("HappyPath")]
   public void GivenAVolumeTheKernelWrote_WhenAddingAndRemoving_ThenEveryOtherObjectIsCarriedUnchanged(string volume) {
     var image = new MemoryStream();
     image.Write(Image(volume));
@@ -168,7 +179,7 @@ public sealed class Reiser4KernelVolumeTests {
     });
   }
 
-  [TestCaseSource(nameof(EditableVolumes)), TestCase("rupasov"), Category("Spec")]
+  [TestCaseSource(nameof(EditableVolumes)), TestCase("rupasov"), TestCaseSource(nameof(ShortKeyVolumes)), Category("Spec")]
   public void GivenTheEntriesTheKernelKeyed_WhenKeyingTheirNamesAgain_ThenTheKeysAreIdentical(string volume) {
     using var reader = new Reiser4Reader(new MemoryStream(Image(volume)));
     var vol = reader.Volume!;
@@ -179,7 +190,7 @@ public sealed class Reiser4KernelVolumeTests {
       var fibration = (Reiser4FibrationId)vol.Plugin(directory, 5);
       foreach (var entry in directory.Entries.Where(static e => !e.IsDot)) {
         if (entry.Hashed && !Reiser4NameKeys.CanHash(hash)) continue;
-        var (ordering, objectId, offset, _) = Reiser4NameKeys.Make(entry.Name, hash, fibration);
+        var (ordering, objectId, offset, _) = vol.Keys.NameKey(entry.Name, hash, fibration);
         Assert.That((ordering, objectId, offset), Is.EqualTo((entry.Ordering, entry.ObjectId, entry.Offset)),
           $"{volume}: {Reiser4Volume.DecodeName(entry.Name)} under {hash}/{fibration}");
         ++checkedNames;
@@ -188,5 +199,85 @@ public sealed class Reiser4KernelVolumeTests {
     }
     Assert.That(checkedNames, Is.GreaterThan(300));
     Assert.That(hashedNames, Is.GreaterThanOrEqualTo(3), "the 35-, 46- and 255-byte names are hashed");
+  }
+
+  [TestCaseSource(nameof(ShortKeyVolumes)), Category("Spec")]
+  public void GivenAShortKeyVolume_WhenReading_ThenItsKeysAreThreeWordsAndNamesPastFifteenBytesAreHashed(string volume) {
+    using var reader = new Reiser4Reader(new MemoryStream(Image(volume)));
+    var vol = reader.Volume!;
+    var lengths = vol.Objects.Values.Single(o => vol.Paths.Any(p => p.Path == "lengths" && p.Object == o));
+    var byName = lengths.Entries.Where(static e => !e.IsDot && !e.IsDotDot).ToDictionary(static e => Reiser4Volume.DecodeName(e.Name));
+    Assert.Multiple(() => {
+      Assert.That(vol.Keys, Is.SameAs(Reiser4KeyShape.Short));
+      Assert.That(vol.Objects.Keys.All(static k => k.Ordering == 0), Is.True, "a short key has no ordering word");
+      // Held whole up to fifteen bytes, hashed from sixteen on - where a large key holds 23.
+      foreach (var name in new[] { "seven-7", "eight-08", "fifteen-bytes-x", "fifteen-bytes-y" })
+        Assert.That(byName[name].Hashed, Is.False, name);
+      foreach (var name in new[] { "sixteen-bytes-xy", "sixteen-bytes-yz", "twenty-three-bytes-xyz1", "twenty-four-bytes-xyz123" })
+        Assert.That(byName[name].Hashed, Is.True, name);
+    });
+  }
+
+  [Test, Category("Spec")]
+  public void GivenTheShortAndLargeKeyShapes_ThenTheirOnDiskSizesAreTheMeasuredOnes() {
+    Assert.Multiple(() => {
+      Assert.That((Reiser4KeyShape.Large.ItemHeaderBytes, Reiser4KeyShape.Large.UnitHeaderBytes, Reiser4KeyShape.Large.TargetBytes,
+        Reiser4KeyShape.Large.MaxInlineLength), Is.EqualTo((38, 26, 24, 23)));
+      Assert.That((Reiser4KeyShape.Short.ItemHeaderBytes, Reiser4KeyShape.Short.UnitHeaderBytes, Reiser4KeyShape.Short.TargetBytes,
+        Reiser4KeyShape.Short.MaxInlineLength), Is.EqualTo((30, 18, 16, 15)));
+      Assert.That(Reiser4KeyShape.FromFormatFlags(1), Is.SameAs(Reiser4KeyShape.Large));
+      Assert.That(Reiser4KeyShape.FromFormatFlags(0), Is.SameAs(Reiser4KeyShape.Short));
+      Assert.That(Reiser4KeyShape.FromFormatFlags(0xFFFF_FFFF_FFFF_FFFE), Is.SameAs(Reiser4KeyShape.Short), "only bit 0 decides");
+    });
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenAKeyWithAnOrderingWord_WhenWrittenAsAShortKey_ThenItIsRefused() {
+    var buffer = new byte[24];
+    Assert.Throws<InvalidDataException>(() => Reiser4KeyShape.Short.Write(Reiser4Key.Of(0x2a, Reiser4Key.MinorStatData, 1, 0x10000, 0), buffer));
+  }
+
+  [TestCase(1), TestCase(7), TestCase(8), TestCase(15), TestCase(16), TestCase(23), TestCase(24), TestCase(255), Category("Spec")]
+  public void GivenANameOfAnyLength_WhenKeyedShort_ThenItIsHashedExactlyWhenLongerThanFifteenAndUnpacksWhenNot(int length) {
+    var name = System.Text.Encoding.ASCII.GetBytes(new string('q', length));
+    var (ordering, objectId, offset, hashed) = Reiser4KeyShape.Short.NameKey(name, Reiser4HashId.R5, Reiser4FibrationId.Extension1);
+    Assert.Multiple(() => {
+      Assert.That(ordering, Is.Zero);
+      Assert.That(hashed, Is.EqualTo(length > 15));
+      Assert.That(Reiser4NameKeys.IsHashed(ordering, objectId), Is.EqualTo(hashed));
+      Assert.That(Reiser4NameKeys.Unpack(ordering, objectId, offset), hashed ? Is.Null : Is.EqualTo(name));
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenAShortKeyVolume_WhenAddingAFile_ThenEveryObjectIsCarriedAndTheKeysStayShort() {
+    var image = new MemoryStream();
+    image.Write(Image("short-keys"));
+    new Reiser4FormatDescriptor().Add(image, [ArchiveInputInfo.InMemory("lengths/new-name-of-24-bytes.txt", [1, 2, 3])]);
+    using var reader = new Reiser4Reader(image);
+    Assert.Multiple(() => {
+      Assert.That(reader.Volume!.Keys, Is.SameAs(Reiser4KeyShape.Short));
+      AssertMatches(reader, Manifest("short-keys"), "short-keys", new HashSet<string>(StringComparer.Ordinal) { "lengths", "lengths/new-name-of-24-bytes.txt" });
+      Assert.That(reader.Extract(reader.Entries.Single(static e => e.Name == "lengths/new-name-of-24-bytes.txt")), Is.EqualTo(new byte[] { 1, 2, 3 }));
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenTheWriterAskedForShortKeys_WhenCreating_ThenTheVolumeHasShortKeysAndReadsBack() {
+    var writer = new Reiser4Writer { ShortKeys = true };
+    writer.AddFile("a/fifteen-bytes-x", [1]);
+    writer.AddFile("a/sixteen-bytes-xy", [2]);
+    writer.AddFile("a/" + new string('z', 255), [3]);
+    writer.AddSymlink("a/link", "fifteen-bytes-x");
+    var image = writer.Build();
+    using var reader = new Reiser4Reader(new MemoryStream(image));
+    Assert.Multiple(() => {
+      Assert.That(reader.NativeTreeValid, Is.True, reader.NativeProblem);
+      Assert.That(reader.Volume!.Keys, Is.SameAs(Reiser4KeyShape.Short));
+      Assert.That(BitConverter.ToUInt64(image, 17 * 4096 + 72) & 1, Is.Zero, "the format40 flags say short keys");
+      Assert.That(reader.Extract(reader.Entries.Single(static e => e.Name == "a/sixteen-bytes-xy")), Is.EqualTo(new byte[] { 2 }));
+      Assert.That(reader.Extract(reader.Entries.Single(static e => e.Name == "a/" + new string('z', 255))), Is.EqualTo(new byte[] { 3 }));
+      Assert.That(reader.Entries.Single(static e => e.Name == "a/link").LinkTarget, Is.EqualTo("fifteen-bytes-x"));
+    });
   }
 }

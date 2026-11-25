@@ -31,6 +31,13 @@ internal static class DarWriter {
     public ulong Gid { get; init; }
     public DateTime? Changed { get; init; }
 
+    /// <summary>
+    /// Files with the same key are names of one hard-linked inode (section 9, <c>m</c> entries): the
+    /// first name in catalogue order carries the inode, its data and attributes, the others refer to
+    /// it. A key only one item carries is written as a plain file.
+    /// </summary>
+    public ulong? HardLink { get; init; }
+
     /// <summary>An entry carried over from an existing archive, written back exactly as it was stored.</summary>
     public Kept? Kept { get; init; }
 
@@ -45,6 +52,22 @@ internal static class DarWriter {
   /// checksum, copied rather than recompressed.
   /// </summary>
   public sealed record Kept(byte[] RawInode) {
+    /// <summary>
+    /// The inode's flag byte to its last date. When set, the inode is written as this head followed
+    /// by the EA and FSA fields of <see cref="Ea"/>, <see cref="FsaFamilies"/> and <see cref="Fsa"/>
+    /// at their new offsets, and <see cref="RawInode"/> is not used.
+    /// </summary>
+    public byte[]? InodeHead { get; init; }
+
+    /// <summary>Saved extended attributes (EA status full), or <see langword="null"/>.</summary>
+    public Attributes? Ea { get; init; }
+
+    /// <summary>The FSA families of an inode whose FSA status is not none, or <see langword="null"/>.</summary>
+    public ulong? FsaFamilies { get; init; }
+
+    /// <summary>Saved file-system specific attributes (FSA status full), or <see langword="null"/>.</summary>
+    public Attributes? Fsa { get; init; }
+
     public Func<Stream>? OpenStored { get; init; }
     public ulong Size { get; init; }
     public ulong StorageSize { get; init; }
@@ -52,6 +75,9 @@ internal static class DarWriter {
     public char Algorithm { get; init; } = 'n';
     public byte[]? Checksum { get; init; }
   }
+
+  /// <summary>An EA or FSA block carried over: the size the catalogue records, the clear bytes and their checksum.</summary>
+  public sealed record Attributes(ulong Size, byte[] Clear, byte[] Checksum);
 
   /// <summary>How to write.</summary>
   /// <param name="Algorithm">Compression letter (<see cref="AlgorithmFor"/>).</param>
@@ -123,6 +149,7 @@ internal static class DarWriter {
       // dar stops reading a unit at the first end: a file that large goes into blocks instead.
       settings = settings with { BlockSize = AutoBlockSize };
     var root = BuildTree(items);
+    AssignHardLinks(root);
     var name = NewLabel();
     using var sink = new DarArchiveSink(openSlice, name, settings.SliceSize, settings.FirstSliceSize, settings.TapeMarks);
 
@@ -203,12 +230,19 @@ internal static class DarWriter {
   private static void WriteChildren(DarArchiveSink sink, Node dir, Settings settings) {
     foreach (var child in dir.Children.Values) {
       switch (child.Kind) {
+        case ItemKind.File when child.LinkLabel is not null && !child.LinkFirst:
+          // a further name of a hard-linked inode: only the reference, inline
+          if (settings.TapeMarks)
+            InlineEntry(sink, child);
+          break;
         case ItemKind.File:
           WriteFile(sink, child, settings);
+          WriteAttributes(sink, child, settings);
           break;
         case ItemKind.Directory:
           if (settings.TapeMarks)
             InlineEntry(sink, child);
+          WriteAttributes(sink, child, settings);
           WriteChildren(sink, child, settings);
           if (settings.TapeMarks) {
             // End of directory, as its own inline entry.
@@ -219,7 +253,64 @@ internal static class DarWriter {
         case ItemKind.Symlink:
           if (settings.TapeMarks)
             InlineEntry(sink, child);
+          WriteAttributes(sink, child, settings);
           break;
+      }
+    }
+  }
+
+  /// <summary>
+  /// A carried-over entry's EA and FSA blocks (section 9), after its data: the EAs through the
+  /// compression layer as their own unit, the FSAs as they are; with tape marks each between its
+  /// mark (<c>E</c>, <c>S</c>) and its checksum mark (<c>r</c>, <c>s</c>).
+  /// </summary>
+  private static void WriteAttributes(DarArchiveSink sink, Node node, Settings settings) {
+    if (node.Item?.Kept is not { } kept)
+      return;
+    if (kept.Ea is { } ea) {
+      if (settings.TapeMarks)
+        sink.Mark((byte)'E');
+      node.EaOffset = (ulong)sink.Position;
+      sink.Data(settings.Algorithm == 'n' ? ea.Clear : Compress(settings.Algorithm, ea.Clear, settings.Level, settings.BlockSize));
+      if (settings.TapeMarks) {
+        sink.Mark((byte)'r');
+        sink.Data(DarPrimitives.EncodeChecksum(ea.Checksum));
+      }
+    }
+    if (kept.Fsa is { } fsa) {
+      if (settings.TapeMarks)
+        sink.Mark((byte)'S');
+      node.FsaOffset = (ulong)sink.Position;
+      sink.Data(fsa.Clear);
+      if (settings.TapeMarks) {
+        sink.Mark((byte)'s');
+        sink.Data(DarPrimitives.EncodeChecksum(fsa.Checksum));
+      }
+    }
+  }
+
+  /// <summary>
+  /// Numbers the hard-link groups with two or more names, in catalogue order, and marks each
+  /// group's first name as the one that carries the inode; a group left with one name is a plain file.
+  /// </summary>
+  private static void AssignHardLinks(Node root) {
+    var names = new List<Node>();
+    void Walk(Node dir) {
+      foreach (var child in dir.Children.Values)
+        if (child.Kind == ItemKind.Directory)
+          Walk(child);
+        else if (child.Kind == ItemKind.File && child.Item?.HardLink is not null)
+          names.Add(child);
+    }
+    Walk(root);
+    ulong next = 0;
+    foreach (var group in names.GroupBy(n => n.Item!.HardLink!.Value).Where(g => g.Count() > 1)) {
+      var label = next++;
+      var first = true;
+      foreach (var node in group) {
+        node.LinkLabel = label;
+        node.LinkFirst = first;
+        first = false;
       }
     }
   }
@@ -231,8 +322,7 @@ internal static class DarWriter {
   /// </summary>
   private static void InlineEntry(DarArchiveSink sink, Node node) {
     using var ms = new MemoryStream();
-    WriteEntryHead(ms, node, node.Name);
-    switch (node.Kind) {
+    switch (WriteEntryHead(ms, node, node.Name, inline: true) ? node.Kind : (ItemKind?)null) {
       case ItemKind.File:
         DarPrimitives.WriteInfinint(ms, (ulong)node.Size);
         ms.WriteByte(node.DataFlags);
@@ -492,7 +582,8 @@ internal static class DarWriter {
           DarPrimitives.WriteString(cat, child.LinkTarget!);
           continue;
         default:
-          WriteEntryHead(cat, child, child.Name);
+          if (!WriteEntryHead(cat, child, child.Name))
+            continue; // a further name of a hard-linked inode
           DarPrimitives.WriteInfinint(cat, (ulong)child.Size);
           DarPrimitives.WriteInfinint(cat, child.Offset);
           DarPrimitives.WriteInfinint(cat, child.StorageSize);
@@ -505,13 +596,48 @@ internal static class DarWriter {
     cat.WriteByte(Signature('z'));
   }
 
-  /// <summary>Signature, name and inode (section 9) — what every saved entry starts with.</summary>
-  private static void WriteEntryHead(Stream s, Node node, string name) {
+  /// <summary>
+  /// Signature, name and inode (section 9) — what every saved entry starts with; a hard-linked
+  /// name wrapped in its <c>m</c> entry. Returns <see langword="false"/> for a further name of a
+  /// hard-linked inode, which is only the reference (<c>X</c>) and takes nothing after it.
+  /// </summary>
+  /// <param name="inline">The tape-mark copy (section 6): the EA and FSA fields without offsets and checksums.</param>
+  private static bool WriteEntryHead(Stream s, Node node, string name, bool inline = false) {
+    if (node.LinkLabel is { } label) {
+      s.WriteByte(Signature('m'));
+      DarPrimitives.WriteString(s, name);
+      DarPrimitives.WriteInfinint(s, label);
+      if (!node.LinkFirst) {
+        s.WriteByte((byte)'X');
+        return false;
+      }
+      s.WriteByte((byte)'>');
+    }
     s.WriteByte(Signature(node.Kind switch { ItemKind.Directory => 'd', ItemKind.Symlink => 'l', _ => 'f' }));
     DarPrimitives.WriteString(s, name);
+    if (node.Item?.Kept is { InodeHead: { } head } kept) {
+      s.Write(head);
+      if (kept.Ea is { } ea) {
+        DarPrimitives.WriteInfinint(s, ea.Size);
+        if (!inline) {
+          DarPrimitives.WriteInfinint(s, node.EaOffset);
+          DarPrimitives.WriteChecksum(s, ea.Checksum);
+        }
+      }
+      if (kept.FsaFamilies is { } families)
+        DarPrimitives.WriteInfinint(s, families);
+      if (kept.Fsa is { } fsa) {
+        DarPrimitives.WriteInfinint(s, fsa.Size);
+        if (!inline) {
+          DarPrimitives.WriteInfinint(s, node.FsaOffset);
+          DarPrimitives.WriteChecksum(s, fsa.Checksum);
+        }
+      }
+      return true;
+    }
     if ((node.Item?.Kept?.RawInode ?? node.RootInode) is { } raw) {
       s.Write(raw);
-      return;
+      return true;
     }
     s.WriteByte(0x03); // EA none, FSA none
     DarPrimitives.WriteInfinint(s, node.Uid);
@@ -522,6 +648,7 @@ internal static class DarWriter {
     WriteDate(s, node.Accessed);
     WriteDate(s, node.Modified);
     WriteDate(s, node.Changed);
+    return true;
   }
 
   // Saved status 3 ("saved") in the top three bits, the type letter's low five bits below.
@@ -610,5 +737,9 @@ internal static class DarWriter {
     public byte DataFlags { get; set; }
     public byte[]? Checksum { get; set; }
     public byte[]? RootInode { get; set; }
+    public ulong EaOffset { get; set; }
+    public ulong FsaOffset { get; set; }
+    public ulong? LinkLabel { get; set; }
+    public bool LinkFirst { get; set; }
   }
 }

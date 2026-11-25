@@ -162,7 +162,8 @@ public class RarRecoveryTests {
   public void Given_ARecordRequest_When_TheOutputCannotBeReadBack_Then_TheWriterRefuses() {
     Assert.That(() => new RarWriter(new WriteOnlyStream(), recoveryPercent: 5), Throws.TypeOf<NotSupportedException>());
     Assert.That(() => new Rar4Writer(new WriteOnlyStream(), recoveryPercent: 5), Throws.TypeOf<NotSupportedException>());
-    Assert.That(() => new RarWriter(new MemoryStream(), recoveryPercent: 5, volumeSize: 4096, openVolume: _ => new MemoryStream()),
+    // Volume sets carry a record per volume (RarVolumeRecoveryRecordTests); the first volume must still be readable.
+    Assert.That(() => new RarWriter(new WriteOnlyStream(), recoveryPercent: 5, volumeSize: 4096, openVolume: _ => new MemoryStream()),
       Throws.TypeOf<NotSupportedException>());
     Assert.That(() => new RarWriter(new MemoryStream(), recoveryPercent: 101), Throws.TypeOf<ArgumentOutOfRangeException>());
   }

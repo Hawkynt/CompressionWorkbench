@@ -4,6 +4,11 @@
 # ../KernelOracle/kernel-run.sh), and the kernel's read-back is kept as <name>.manifest.
 # journal-replay.img is captured between a kernel commit and its write-back. Documentation, not a
 # build input; run from this directory under Linux or WSL with qemu-system-x86_64.
+#
+# Short-key volumes need two things no distribution ships, so they are made only when
+# CWB_REISER4_SHORT_PROGS names the sbin directory of a reiser4progs built with the short-key oracle
+# patch and CWB_REISER4_BZIMAGE a kernel built with REISER4_LARGE_KEY=0 (see README.md and
+# docs/REISER4-NATIVE-PROFILE.md, "Short keys"); nothing else is regenerated then.
 . "$(dirname "$(readlink -f "$0")")/../../Support/cwb-rmtree.sh"
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -15,15 +20,26 @@ mkdir -p "$W/payload"
 for n in 0 1 100 4095 4096 4097; do head -c $n /dev/urandom > "$W/payload/f_$n"; done
 for i in $(seq 1 1200); do echo "line $i: the quick brown fox jumps over the lazy dog $((i*7919 % 1000))"; done > "$W/payload/f_text"
 
+MKFS=mkfs.reiser4; FSCK=fsck.reiser4; GUEST="$HERE/populate.sh"; PAYLOAD="$W/payload"
 volume() {
   local name=$1; shift
   truncate -s 0 "$W/$name.img"; truncate -s 16M "$W/$name.img"
-  mkfs.reiser4 -fffy -U 11111111-2222-3333-4444-555555555555 -L ref "$@" "$W/$name.img" >/dev/null
-  bash "$RUN" "$W/$name.img" "$HERE/populate.sh" "$W/payload" > "$W/$name.log"
+  "$MKFS" -fffy -U 11111111-2222-3333-4444-555555555555 -L ref "$@" "$W/$name.img" >/dev/null
+  bash "$RUN" "$W/$name.img" "$GUEST" "$PAYLOAD" > "$W/$name.log"
   sed -n '/===MANIFEST===/,/===END-MANIFEST===/p' "$W/$name.log" | grep -v '===' > "$HERE/$name.manifest"
   gzip -9 -n -c "$W/$name.img" > "$HERE/$name.img.gz"
-  echo "$name: $(wc -l < "$HERE/$name.manifest") objects; $(fsck.reiser4 --check -y "$W/$name.img" 2>&1 | grep -E 'consistent|corrupt' | head -1)"
+  echo "$name: $(wc -l < "$HERE/$name.manifest") objects; $("$FSCK" --check -y "$W/$name.img" 2>&1 | grep -E 'consistent|corrupt' | head -1)"
 }
+
+if [ -n "$CWB_REISER4_SHORT_PROGS" ]; then
+  [ -f "$CWB_REISER4_BZIMAGE" ] || { echo "CWB_REISER4_BZIMAGE must name a REISER4_LARGE_KEY=0 kernel"; exit 1; }
+  MKFS="$CWB_REISER4_SHORT_PROGS/mkfs.reiser4"; FSCK="$CWB_REISER4_SHORT_PROGS/fsck.reiser4"
+  GUEST="$HERE/short-names.sh"; PAYLOAD="$W/payload-short"
+  cp -a "$W/payload" "$PAYLOAD"; cp "$HERE/populate.sh" "$PAYLOAD/"
+  volume short-keys        -o key=key_short
+  volume short-keys-reg40  -o key=key_short,create=reg40
+  exit 0
+fi
 
 if [ -z "$JOURNAL_ONLY" ]; then
 volume default

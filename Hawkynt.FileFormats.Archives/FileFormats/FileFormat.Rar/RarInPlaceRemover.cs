@@ -40,14 +40,22 @@ public static class RarInPlaceRemover {
   /// pure byte-shifting removal (the caller should then rebuild).
   /// </summary>
   /// <param name="archive">A seekable, writable stream holding the RAR5 archive.</param>
-  /// <param name="entryNames">The names of the entries to remove (case-insensitive).</param>
+  /// <param name="entryNames">
+  /// The entries to remove: a file by its full path, a folder with everything beneath it.
+  /// Names match case-insensitively and with either separator, the rule
+  /// <c>RebuildVerb.DeleteNamedEntries</c> applies to the rebuild fallback.
+  /// </param>
   public static void Remove(Stream archive, IReadOnlyCollection<string> entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
     if (!archive.CanSeek || !archive.CanWrite)
       throw new NotSupportedException("In-place RAR5 remove requires a seekable, writable stream.");
 
-    var remove = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
+    var remove = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var name in entryNames) {
+      var normalized = (name ?? "").Replace('\\', '/').Trim('/');
+      if (normalized.Length > 0) remove.Add(normalized);
+    }
     if (remove.Count == 0)
       return;
 
@@ -133,7 +141,7 @@ public static class RarInPlaceRemover {
     var matchedAny = false;
     for (var i = 0; i < blocks.Count; ++i) {
       var b = blocks[i];
-      if (b.Type != RarConstants.HeaderTypeFile || b.Name == null || !remove.Contains(b.Name))
+      if (b.Type != RarConstants.HeaderTypeFile || b.Name == null || !IsSelected(remove, b.Name))
         continue;
 
       if (b.IsSolid)
@@ -177,6 +185,18 @@ public static class RarInPlaceRemover {
 
     archive.SetLength(dst);
     archive.Flush();
+  }
+
+  /// <summary>
+  /// Whether <paramref name="storedName"/> is named for removal itself or lies inside a folder
+  /// that is: <c>sub</c> selects <c>sub</c> and <c>sub/a.txt</c>, never <c>subway.txt</c>.
+  /// </summary>
+  private static bool IsSelected(HashSet<string> remove, string storedName) {
+    var name = storedName.Replace('\\', '/').Trim('/');
+    for (var cut = name.Length; cut > 0; cut = name.LastIndexOf('/', cut - 1))
+      if (remove.Contains(name[..cut]))
+        return true;
+    return false;
   }
 
   /// <summary>Index of the next FILE block after <paramref name="i"/>, or -1.</summary>

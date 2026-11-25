@@ -71,6 +71,9 @@ internal sealed class Reiser4Plan {
   /// <summary>Block size and fixed-block positions of the volume being laid out.</summary>
   internal Reiser4Layout Layout { get; set; } = Reiser4Layout.Default;
 
+  /// <summary>Whether the volume's keys are large (four words) or short (three).</summary>
+  internal Reiser4KeyShape Keys { get; set; } = Reiser4KeyShape.Large;
+
   /// <summary>How new regular files are stored.</summary>
   internal Reiser4FileBody FileBody { get; set; } = Reiser4FileBody.Extents;
 
@@ -78,7 +81,7 @@ internal sealed class Reiser4Plan {
   internal IReadOnlyList<Reiser4PlanObject> Objects => [.. this._objects.Values.OrderBy(static o => o.StatKey)];
   internal Reiser4PlanObject Root => this._objects[Reiser4Volume.RootStatKey];
 
-  private int MaxItemBody => this.Layout.BlockSize - (this.NodePlugin == 1 ? 32 : Reiser4Tree.NodeHeaderBytes) - Reiser4Tree.ItemHeaderBytes;
+  private int MaxItemBody => this.Layout.BlockSize - (this.NodePlugin == 1 ? 32 : Reiser4Tree.NodeHeaderBytes) - this.Keys.ItemHeaderBytes;
 
   // ── Construction ───────────────────────────────────────────────────────
 
@@ -102,6 +105,7 @@ internal sealed class Reiser4Plan {
       Status = status,
       Backup = volume.ReadBlock(layout.Backup),
       NodePlugin = volume.NodePlugin,
+      Keys = volume.Keys,
       MkfsId = BinaryPrimitives.ReadUInt32LittleEndian(format.AsSpan(48)),
       MinimumBlocks = volume.BlockCount,
     };
@@ -131,17 +135,19 @@ internal sealed class Reiser4Plan {
 
   /// <summary>An empty volume made from the captured mkfs blocks: a root directory holding only its dot entries.</summary>
   /// <param name="layout">The volume's block size; the fixed blocks passed in are of that size.</param>
-  /// <param name="rootLeaf">A captured first leaf (of any block size) holding the root's stat data as its first item.</param>
-  internal static Reiser4Plan Fresh(Reiser4Layout layout, byte[] master, byte[] format, byte[] status, byte[] backup, byte[] rootLeaf, uint mkfsId, ulong blocks) {
+  /// <param name="rootLeaf">A captured first leaf (of any block size, with large keys) holding the root's stat data as its first item.</param>
+  /// <param name="keys">The key length of the volume; the format and backup blocks passed in say the same.</param>
+  internal static Reiser4Plan Fresh(Reiser4Layout layout, byte[] master, byte[] format, byte[] status, byte[] backup, byte[] rootLeaf, uint mkfsId, ulong blocks,
+      Reiser4KeyShape? keys = null) {
     var rootStatOffset = BinaryPrimitives.ReadUInt16LittleEndian(rootLeaf.AsSpan(rootLeaf.Length - Reiser4Tree.ItemHeaderBytes + 32));
     var rootStatEnd = BinaryPrimitives.ReadUInt16LittleEndian(rootLeaf.AsSpan(rootLeaf.Length - 2 * Reiser4Tree.ItemHeaderBytes + 32));
     var plan = new Reiser4Plan {
       Layout = layout, Master = master, Format = format, Status = status, Backup = backup,
-      NodePlugin = 0, MkfsId = mkfsId, MinimumBlocks = blocks, NextObjectId = 0x10000,
+      NodePlugin = 0, MkfsId = mkfsId, MinimumBlocks = blocks, NextObjectId = 0x10000, Keys = keys ?? Reiser4KeyShape.Large,
     };
     var root = new Reiser4PlanObject { StatKey = Reiser4Volume.RootStatKey, Stat = rootLeaf.AsSpan(rootStatOffset, rootStatEnd - rootStatOffset).ToArray() };
     root.Entries.Add(new Reiser4DirEntry(0, 0, 0, [(byte)'.'], Reiser4Volume.RootStatKey));
-    var (o, i, f, _) = Reiser4NameKeys.Make(".."u8, Reiser4HashId.R5, Reiser4FibrationId.Extension1);
+    var (o, i, f, _) = plan.Keys.NameKey(".."u8, Reiser4HashId.R5, Reiser4FibrationId.Extension1);
     root.Entries.Add(new Reiser4DirEntry(o, i, f, ".."u8.ToArray(), Reiser4Volume.RootStatKey));
     plan._objects.Add(root.StatKey, root);
     return plan;
@@ -247,7 +253,7 @@ internal sealed class Reiser4Plan {
     var name = Encoding.UTF8.GetBytes(slash < 0 ? normalized : normalized[(slash + 1)..]);
     var stat = this.NewStat(metadata, 0x41ED, 0, 0, symlink: null, pluginSet: null);
     var directory = this.Link(parent, name, stat, metadata?.ObjectId ?? 0);
-    var (o, i, f, _) = Reiser4NameKeys.Make(".."u8, Reiser4HashId.R5, Reiser4FibrationId.Extension1);
+    var (o, i, f, _) = this.Keys.NameKey(".."u8, Reiser4HashId.R5, Reiser4FibrationId.Extension1);
     directory.Entries.Add(new Reiser4DirEntry(0, 0, 0, [(byte)'.'], directory.StatKey));
     directory.Entries.Add(new Reiser4DirEntry(o, i, f, ".."u8.ToArray(), parent.StatKey));
     return directory;
@@ -257,7 +263,7 @@ internal sealed class Reiser4Plan {
   private Reiser4PlanObject Link(Reiser4PlanObject parent, byte[] name, byte[] stat, ulong requestedId) {
     var hash = (Reiser4HashId)this.Plugin(parent, Reiser4PsetMember.Hash);
     var fibration = (Reiser4FibrationId)this.Plugin(parent, Reiser4PsetMember.Fibration);
-    var (ordering, objectId, offset, hashed) = MakeKey(name, hash, fibration);
+    var (ordering, objectId, offset, hashed) = this.MakeKey(name, hash, fibration);
     if (parent.Entries.Any(e => e.Ordering == ordering && e.ObjectId == objectId && e.Offset == offset))
       throw new NotSupportedException($"Reiser4: the name '{Reiser4Volume.DecodeName(name)}' would share its key with an existing entry.");
     ulong id;
@@ -265,7 +271,8 @@ internal sealed class Reiser4Plan {
       id = requestedId;
       this.NextObjectId = Math.Max(this.NextObjectId, id + 1);
     } else id = this.NextObjectId++;
-    var statKey = Reiser4Key.Of(parent.ObjectId, Reiser4Key.MinorStatData, ordering, id, 0);
+    // A large stat key carries the ordering of the object's first name; a short key has no such word.
+    var statKey = Reiser4Key.Of(parent.ObjectId, Reiser4Key.MinorStatData, this.Keys.IsLarge ? ordering : 0, id, 0);
     var obj = new Reiser4PlanObject { StatKey = statKey, Stat = stat };
     this._objects.Add(statKey, obj);
     parent.Entries.Add(new Reiser4DirEntry(ordering, objectId, offset, name, statKey));
@@ -274,11 +281,11 @@ internal sealed class Reiser4Plan {
     return obj;
   }
 
-  private static (ulong Ordering, ulong ObjectId, ulong Offset, bool Hashed) MakeKey(byte[] name, Reiser4HashId hash, Reiser4FibrationId fibration) {
-    if (name.Length > Reiser4NameKeys.MaxInlineLength && !Reiser4NameKeys.CanHash(hash))
+  private (ulong Ordering, ulong ObjectId, ulong Offset, bool Hashed) MakeKey(byte[] name, Reiser4HashId hash, Reiser4FibrationId fibration) {
+    if (name.Length > this.Keys.MaxInlineLength && !Reiser4NameKeys.CanHash(hash))
       throw new NotSupportedException(
-        $"Reiser4: names longer than {Reiser4NameKeys.MaxInlineLength} bytes cannot be added under hash plugin {(ushort)hash}, which is unknown.");
-    return Reiser4NameKeys.Make(name, hash, fibration);
+        $"Reiser4: names longer than {this.Keys.MaxInlineLength} bytes cannot be added under hash plugin {(ushort)hash}, which is unknown.");
+    return this.Keys.NameKey(name, hash, fibration);
   }
 
   private (Reiser4PlanObject Parent, byte[] Name) ParentOf(string path) {
@@ -421,7 +428,7 @@ internal sealed class Reiser4Plan {
     var (parent, name) = this.ParentOf(path);
     var hash = (Reiser4HashId)this.Plugin(parent, Reiser4PsetMember.Hash);
     var fibration = (Reiser4FibrationId)this.Plugin(parent, Reiser4PsetMember.Fibration);
-    var (ordering, objectId, offset, _) = MakeKey(name, hash, fibration);
+    var (ordering, objectId, offset, _) = this.MakeKey(name, hash, fibration);
     if (parent.Entries.Any(e => e.Ordering == ordering && e.ObjectId == objectId && e.Offset == offset))
       throw new NotSupportedException($"Reiser4: the name '{Reiser4Volume.DecodeName(name)}' would share its key with an existing entry.");
     parent.Entries.Add(new Reiser4DirEntry(ordering, objectId, offset, name, target.StatKey));
@@ -555,7 +562,7 @@ internal sealed class Reiser4Plan {
         var isRoot = obj.StatKey == Reiser4Volume.RootStatKey;
         obj.SetLinks((isRoot ? 3U : 2U) + subdirectories.GetValueOrDefault(obj.StatKey));
         obj.SetSize((ulong)obj.Entries.Count);
-        obj.SetBytes(Reiser4Tree.DirectoryBytes(obj.Entries));
+        obj.SetBytes(Reiser4Tree.DirectoryBytes(obj.Entries, this.Keys));
       } else {
         obj.SetLinks(names.GetValueOrDefault(obj.StatKey));
       }

@@ -86,7 +86,7 @@ to the WAVE reader the note says so rather than leaving it implied.
 | `Codec.EaXa` | ADPCM | R/W | — | — | Electronic Arts EA-XA coefficient/shift frames |
 | `Codec.WwiseIma` | ADPCM | R/W | — | — | Audiokinetic Wwise IMA / MS-IMA block layout |
 | `Codec.AicaAdpcm` | ADPCM | R/W | `0x0020` | [ffmpeg][ffmpeg] WAVE `0x0020` stream, byte-exact | Yamaha AICA / ADPCM-B (Dreamcast); the WAVE Yamaha ADPCM route decodes bit-exactly against libavcodec, mono and stereo |
-| `Codec.G722` | Speech | R/W | `0x0065`, `0x028F` | [ffmpeg][ffmpeg] known-answer frame | ITU-T G.722 sub-band ADPCM @ 64 kbit |
+| `Codec.G722` | Speech | R/W | `0x0065`, `0x028F` | [ITU-T G.722 Appendix II][g722] test sequences (opt-in) + [ffmpeg][ffmpeg] vectors, bit-exact both ways | ITU-T G.722 sub-band ADPCM @ 64 kbit |
 | `Codec.Cvsd` | Speech | R/W | `0x0005` | — | CVSD delta modulation |
 | `Codec.Mace` | Lossy | R | QuickTime `MAC3`, `MAC6` | — | Apple MACE 3:1 / 6:1 decode |
 | `Codec.MonkeysAudio` | Lossless/lossy | R/W ⚠️ | — | — | Monkey's Audio supported compression levels |
@@ -322,6 +322,7 @@ implementation here yet.
 [brrtools]: https://github.com/Optiroc/BRRtools
 [gsm]: https://quut.com/gsm/
 [g191]: https://www.itu.int/rec/T-REC-G.191
+[g722]: https://www.itu.int/rec/T-REC-G.722
 [a52]: https://www.atsc.org/wp-content/uploads/2015/03/A52-201212-17.pdf
 
 ## 🚀 Quick start

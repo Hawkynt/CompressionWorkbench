@@ -92,7 +92,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 | 3 | UPX | PARTIAL (read-only) | 3 | Writing refused: provable output needs UPX's GPL loader stubs. |
 | 4 | PECompact | MISSING | 3 | The handler locates the payload. Decode its block series (the aPLib and LZMA cores exist) against the 130 PackingData samples, then wrap it in a descriptor. |
 | 5 | ACE | PARTIAL | 2 | The writer lacks the ACE 2.0 SOUND/PIC modes. Oracle: unace, acefile (BSD-2). |
-| 6 | StuffIt | PARTIAL | 2 | Method 8 (no sample); segmented sets are read and written, verified with unar on our own sets (no real sample); method 14 is read and verified with unar; classic DES and StuffIt 5 RC4 reads and writes are proven. Rung 1: XADMaster (LGPL); oracle: unar. |
+| 6 | StuffIt | PARTIAL | 2 | Method 6 (fixed Huffman) is not read; method 8 (MW) is read and verified with unar on StuffIt 1.x archives; segmented sets are read and written, verified with unar on our own sets (no real sample); method 14 is read and verified with unar; classic DES and StuffIt 5 RC4 reads and writes are proven. Rung 1: XADMaster (LGPL); oracle: unar. |
 | 7 | StuffIt X | PARTIAL | 2 | Method 7 (JPEG recompression) and AES, Blowfish, DES and RC4 encryption are read: StuffIt Deluxe's own archives restore testfile.jpg byte for byte and open with their password (rung 1: KaitoKit, MIT; unar decodes neither). Neither is written. Archives with a recovery record are refused; their layout is measured in [STUFFITX-RECOVERY-ON-DISK](../STUFFITX-RECOVERY-ON-DISK.md). Every other coding is read and the writer stores or codes Deflate, Brimstone, Darkhorse, Cyanide, Blend, Obscured and Iron streams, optionally behind the English or x86 preprocessor, all verified with unar. Rung 1: XADMaster (LGPL); oracle: unar. |
 | 8 | ALZip | OK | 2 | Done: split sets read and written; obfuscated deflate (method 3) read and written (rung 1: XADMaster), our method-3 output extracted byte-exact by unar, ALZip 5.52 and Bandizip 7.38. No ALZip release we could run writes method 3, so no ALZip-made method-3 sample exists. |
 | 9 | PEA | OK | 2 | Done: volume sets, every single-cipher encryption and the TRI*/SRI*/HRI* triple cascades are read and written, single files and volume sets edited in place, all verified with pea. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
@@ -234,9 +234,9 @@ running real-world samples. The file named at the end of each row is where the l
 | Format | Ours | Sources | What is missing |
 | --- | --- | :---: | --- |
 | 7z | `SevenZip` | 7 | header data in an external stream refused, which 7-Zip never writes (SevenZipHeaderCodec.cs) |
-| ZIP | `Zip` | 7 | methods xz (95), JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs) |
+| ZIP | `Zip` | 7 | certificate-based and 3DES/RC2 strong encryption refused; password-based AES strong encryption is read and written (ZipStrongEncryption.cs). WavPack (97) is read only, from WavPack-produced payloads, with no WinZip-written sample (ZipMethodCodecs.cs) |
 | LHA / LZH | `Lzh` | 6 | every method and header level of lhasa's test suite reads except LHARK's lk7; lh2, lh3, lhx, pm1 and pm2 are read-only; self-extracting executables are not opened (LhaReader.cs) |
-| StuffIt (classic + 5) | `StuffIt` | 4 | store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs) |
+| StuffIt (classic + 5) | `StuffIt` | 4 | method 6 (fixed Huffman) throws (StuffItReader.cs) |
 | StuffIt X | `StuffItX` | 4 | Method 7 and encryption are read but not written |
 | zoo | `Zoo` | 4 | LZH method (2) unsupported (ZooReader.cs) |
 | BCM | `Bcm` | 1 | BCM 2.x files (`BCM2`) refused: bcm 2.03 is exe-only; its framing, CRC-32C and libsais BWT are measured but its LZP and context-mixing model are not ([BCM2-ON-DISK.md](../BCM2-ON-DISK.md)); BCM 1.x reads and writes (BcmStream.cs) |

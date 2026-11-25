@@ -2,3 +2,4 @@
 * -text -diff
 README.md text
 make-vectors.sh text eol=lf
+fetch-itu-vectors.sh text eol=lf
