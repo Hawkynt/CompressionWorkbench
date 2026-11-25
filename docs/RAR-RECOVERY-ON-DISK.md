@@ -177,10 +177,44 @@ not fit.
 matches the original. A volume counts as damaged when it is missing, a header CRC fails, or the
 end block's data CRC fails. A rebuilt last volume is cut at its end block.
 
+## Shifting damage (bytes inserted or lost)
+
+rar's `r` also repairs archives that gained or lost bytes inside the protected part. It reports
+the units it found again at another offset as "relocated" and rebuilds the rest from the record.
+This was measured on a 250 000-byte stored file with `-rr5%`, edited three ways: 100 bytes
+inserted at offset 30 000, 100 bytes removed there, and 3 inserted there plus 50 removed at
+120 003. rar 7.12 (RAR 5, for example "2 blocks are recovered, 175 blocks are relocated") and
+rar 6.24 (RAR 4) both gave back the original archive byte for byte, at its original length.
+
+`RarRecovery` does the same:
+
+- **Where the record is.** A RAR 5 record is found by its intact `{RB}` blocks wherever they are.
+  Its service header is the CRC-valid header frame that ends where the first block starts. The
+  protected bytes of the damaged file end at that header, and `P` in the block header gives their
+  original length. A RAR 4 record is found by its `Protect+` header and its data CRC-32, without
+  tying the sector count to its position. When several records are present, the last one in the
+  file is used: a record of an archive stored inside this one always comes earlier.
+- **Units.** Each unit (a RAR 5 shard, a RAR 4 sector) is first checked where it belongs, shifted
+  by the drift of the last unit found. Otherwise it is searched for within the overall shift plus
+  1 MiB with a rolling CRC: CRC-64 for RAR 5, and for RAR 4 the 16-bit sector check (the CRC-32
+  register is affine in the data, so it rolls too). A RAR 4 check is only 16 bits, so a sector
+  found away from its place counts only when at least 2 of the next 4 whole sectors check out
+  after it. Units not found become erasures. The record then rebuilds them as for damage in place.
+- **The RAR 4 last sector.** The record does not give the length of the last sector. When its
+  parity group is otherwise complete, the sector is rebuilt exactly. Its length is then chosen to
+  line its end up with the bytes just before the record header, and never inside its zero
+  padding. Otherwise the drift of the sector before it decides. If bytes moved inside that last
+  sector and its group cannot rebuild it, the length is not knowable and the repair is refused.
+- **Tail.** The record's header and blocks are copied to their original places. The end header
+  that follows them is kept when its CRC holds; RAR 5 otherwise gets a plain one (header flags 4,
+  end flags 0), as rar writes when it repairs.
+
+Proof in `Compression.Tests/Rar/RarRecoveryShiftTests.cs`. On the three edits above, rar 7.12 and
+6.24 `r` rebuild our archives byte for byte. We rebuild rar's (fresh `-rr5%` archives and the
+`r5-rr`/`r4-rr` fixtures) byte for byte, and `rar t` passes the result.
+
 ## Not covered
 
-- **Shifting damage** (bytes inserted or lost). rar reports such blocks as "relocated". Repair
-  here is in place only.
 - **Damage outside the protected range.** This covers the record's own header and the
   end-of-archive header. For RAR 4 it also covers the record's data, whose CRC-32 must hold
   before it is trusted.

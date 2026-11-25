@@ -38,9 +38,11 @@ public sealed record RarRecoveryReport(RarRecoveryKind Kind, bool Intact, int Da
 /// <see cref="Rar4Writer"/> protect, and this repairs what rar protects.
 /// </summary>
 /// <remarks>
-/// Damage is repaired in place: bytes that changed, not bytes inserted or removed. A recovery
-/// record protects the archive up to its own header; damage after that (the record's header, the
-/// end-of-archive block) is outside what it can rebuild.
+/// Bytes that changed are rebuilt in place. Bytes inserted or removed are handled as rar does:
+/// the protected units are found again at their new offsets (<see cref="RarRecoveryRelocation"/>)
+/// and the rest rebuilt from the record. A recovery record protects the archive up to its own
+/// header; damage after that (the record's header, the end-of-archive block) is outside what it
+/// can rebuild.
 /// </remarks>
 public static class RarRecovery {
   /// <summary>Checks the archive at <paramref name="path"/> against its recovery record.</summary>
@@ -53,9 +55,14 @@ public static class RarRecovery {
   public static RarRecoveryReport Verify(Stream archive) {
     ArgumentNullException.ThrowIfNull(archive);
     if (!archive.CanSeek || !archive.CanRead) throw new ArgumentException("The archive stream must be readable and seekable.", nameof(archive));
-    return Rar5RecoveryRecord.Find(archive) is { } r5 ? Rar5RecoveryRecord.Process(archive, r5, repair: false)
-      : Rar4RecoveryRecord.Find(archive) is { } r4 ? Rar4RecoveryRecord.Process(archive, r4, repair: false)
-      : new RarRecoveryReport(RarRecoveryKind.None, false, 0, 0, false, false, "No recovery record found.");
+    if (Rar5RecoveryRecord.Find(archive) is { } r5) return Rar5RecoveryRecord.Process(archive, r5, repair: false);
+    RarRecoveryReport? inPlace = null;
+    if (Rar4RecoveryRecord.Find(archive) is { } r4) {
+      inPlace = Rar4RecoveryRecord.Process(archive, r4, repair: false);
+      if (inPlace.Intact || inPlace.Repairable) return inPlace;
+    }
+    return Relocated(archive, repair: null) ?? inPlace
+      ?? new RarRecoveryReport(RarRecoveryKind.None, false, 0, 0, false, false, "No recovery record found.");
   }
 
   /// <summary>Repairs <paramref name="sourcePath"/> into <paramref name="destinationPath"/> from its recovery record.</summary>
@@ -80,12 +87,64 @@ public static class RarRecovery {
     return RepairInPlace(destination);
   }
 
-  /// <summary>Repairs a readable, writable, seekable archive stream in place.</summary>
+  /// <summary>
+  /// Repairs a readable, writable, seekable archive stream in place. Bytes changed in place are
+  /// rebuilt where they are; when bytes were inserted or lost, the protected units are found again
+  /// at their new offsets and the archive is rebuilt to its original layout, as <c>rar r</c> does.
+  /// </summary>
   public static RarRecoveryReport RepairInPlace(Stream archive) {
     ArgumentNullException.ThrowIfNull(archive);
-    return Rar5RecoveryRecord.Find(archive) is { } r5 ? Rar5RecoveryRecord.Process(archive, r5, repair: true)
-      : Rar4RecoveryRecord.Find(archive) is { } r4 ? Rar4RecoveryRecord.Process(archive, r4, repair: true)
-      : new RarRecoveryReport(RarRecoveryKind.None, false, 0, 0, false, false, "No recovery record found.");
+    RarRecoveryReport? inPlace = null;
+    if (Rar5RecoveryRecord.Find(archive) is { } r5) {
+      inPlace = Rar5RecoveryRecord.Process(archive, r5, repair: true);
+      if (inPlace.Intact || inPlace.Repaired) return inPlace;
+    } else if (Rar4RecoveryRecord.Find(archive) is { } r4) {
+      // Checked before repairing: a RAR 4 record cannot tell whether its sectors moved, so damage
+      // it could rebuild in place is still tried by relocation first when that rebuilds more.
+      var check = Rar4RecoveryRecord.Process(archive, r4, repair: false);
+      if (check.Intact) return check;
+      if (Relocated(archive, repair: true) is { Repaired: true } moved) return moved;
+      return Rar4RecoveryRecord.Process(archive, r4, repair: true);
+    }
+    return Relocated(archive, repair: true) ?? inPlace
+      ?? new RarRecoveryReport(RarRecoveryKind.None, false, 0, 0, false, false, "No recovery record found.");
+  }
+
+  /// <summary>
+  /// Reassembles a moved archive into a scratch copy and checks it there (<paramref name="repair"/>
+  /// null), or repairs it there and, when that succeeds, replaces <paramref name="archive"/> with
+  /// it. Null when no record is found for that.
+  /// </summary>
+  private static RarRecoveryReport? Relocated(Stream archive, bool? repair) {
+    using var scratch = archive.Length > 256L << 20
+      ? new FileStream(Path.GetTempFileName(), FileMode.Create, FileAccess.ReadWrite, FileShare.None, 1 << 16, FileOptions.DeleteOnClose)
+      : (Stream)new MemoryStream();
+    string unit;
+    (int Relocated, int Missing)? moved;
+    RarRecoveryReport? report = null;
+    if (RarRecoveryRelocation.Rar5(archive, scratch) is { } m5 && Rar5RecoveryRecord.Find(scratch) is { } l5) {
+      (unit, moved) = ("shard", m5);
+      report = Rar5RecoveryRecord.Process(scratch, l5, repair == true);
+    } else if (RarRecoveryRelocation.Rar4(archive, scratch) is { } m4 && Rar4RecoveryRecord.Find(scratch) is { } l4) {
+      (unit, moved) = ("sector", m4);
+      report = Rar4RecoveryRecord.Process(scratch, l4, repair == true);
+    } else {
+      return null;
+    }
+
+    var (relocated, missing) = moved.Value;
+    if (relocated == 0 && missing == 0 && archive.Length == scratch.Length) return null;
+    var what = $" Bytes were inserted or removed: {relocated} {unit}(s) found at a new offset, {missing} not found.";
+    // Reassembled from relocated units alone, the copy may already be whole.
+    var whole = report.Repaired || report.Intact;
+    if (repair != true || !whole)
+      return report with { Intact = false, Repaired = false, Repairable = report.Repairable || report.Intact, Message = report.Message + what };
+    archive.Position = 0;
+    archive.SetLength(0);
+    scratch.Position = 0;
+    scratch.CopyTo(archive);
+    archive.Flush();
+    return report with { Intact = false, Repairable = true, Repaired = true, Damaged = report.Damaged + relocated, Message = report.Message + what + " Repaired." };
   }
 
   internal static void ReadAt(Stream s, long position, Span<byte> buffer) {
@@ -224,8 +283,40 @@ internal static class Rar5RecoveryRecord {
     file.Write(header);
   }
 
-  /// <summary>Finds the record's blocks by their signature and CRC, wherever they are.</summary>
+  /// <summary>
+  /// Finds the record's blocks by their signature and CRC where the record belongs: its header
+  /// starts right where the bytes it protects end. A record that moved (bytes inserted or lost
+  /// before it) is left to <see cref="RarRecoveryRelocation"/>.
+  /// </summary>
   internal static Layout? Find(Stream s) {
+    var group = FindBlocks(s, placed: true);
+    if (group.Count == 0) return null;
+    var h0 = group[0].Header;
+    var nd0 = BinaryPrimitives.ReadUInt16LittleEndian(h0.AsSpan(58));
+    var nr0 = BinaryPrimitives.ReadUInt16LittleEndian(h0.AsSpan(60));
+    var blockSize = BinaryPrimitives.ReadUInt32LittleEndian(h0.AsSpan(12));
+    var protectedSize = BinaryPrimitives.ReadInt64LittleEndian(h0.AsSpan(34));
+    var first = group[0].Pos - BinaryPrimitives.ReadUInt16LittleEndian(h0.AsSpan(62)) * (long)blockSize;
+    // An encrypted (-hp) record header does not parse; then the 1 KB window above has to do.
+    if (RarRecoveryRelocation.Rar5ServiceHeaderBefore(s, first) is { } header && first - header.Length != protectedSize)
+      return null;
+    var valid = new bool[nr0];
+    foreach (var (pos, blockHeader) in group) {
+      var idx = BinaryPrimitives.ReadUInt16LittleEndian(blockHeader.AsSpan(62));
+      if (pos == first + idx * (long)blockSize) valid[idx] = true;
+    }
+    var crcs = new ulong[nd0];
+    for (var j = 0; j < nd0; ++j) crcs[j] = BinaryPrimitives.ReadUInt64LittleEndian(h0.AsSpan(HeaderBytes + 8 * j));
+    return new Layout(protectedSize, BinaryPrimitives.ReadInt64LittleEndian(h0.AsSpan(42)),
+      nd0, nr0, blockSize, h0.Length, crcs, BinaryPrimitives.ReadUInt64LittleEndian(h0.AsSpan(HeaderBytes + 8 * nd0)), h0, first, valid);
+  }
+
+  /// <summary>
+  /// The intact blocks (signature, consistent fields, CRC-64) of the record that has the most of
+  /// them. With <paramref name="placed"/>, only blocks whose record starts within 1 KB after the
+  /// bytes it protects count; a record further away belongs to an archive stored inside this one.
+  /// </summary>
+  internal static List<(long Pos, byte[] Header)> FindBlocks(Stream s, bool placed) {
     var found = new List<(long Pos, byte[] Header)>();
     var head = new byte[HeaderBytes];
     foreach (var pos in RarRecovery.Scan(s, Magic).ToList()) {
@@ -239,12 +330,11 @@ internal static class Rar5RecoveryRecord {
       var nr = BinaryPrimitives.ReadUInt16LittleEndian(head.AsSpan(60));
       var idx = BinaryPrimitives.ReadUInt16LittleEndian(head.AsSpan(62));
       if (nd == 0 || nr == 0 || idx >= nr || hdr != HeaderBytes + 8u * (nd + 1u) || block64 != block
-          || shard <= 0 || (shard & 1) != 0 || block != hdr + shard || prot <= 0 || prot > pos || pos + block > s.Length)
+          || shard <= 0 || (shard & 1) != 0 || block != hdr + shard || prot <= 0 || pos + block > s.Length)
         continue;
-      // The record's header sits between the protected bytes and its first block; a record found
-      // further away belongs to an archive stored inside this one.
+      // The record's header sits between the protected bytes and its first block.
       var firstAt = pos - idx * (long)block;
-      if (firstAt < prot || firstAt - prot > 1024) continue;
+      if (placed && (firstAt < prot || firstAt - prot > 1024)) continue;
       var full = new byte[hdr];
       RarRecovery.ReadAt(s, pos, full);
       var crc = RarCrc64.Update(ulong.MaxValue, full.AsSpan(12));
@@ -257,25 +347,13 @@ internal static class Rar5RecoveryRecord {
       if (~crc != BinaryPrimitives.ReadUInt64LittleEndian(full.AsSpan(4))) continue;
       found.Add((pos, full));
     }
-    if (found.Count == 0) return null;
+    if (found.Count == 0) return found;
 
-    // The blocks of one record share everything but their index; take the largest such group.
-    var group = found.GroupBy(f => Convert.ToHexString(f.Header.AsSpan(12, 50)) + Convert.ToHexString(f.Header.AsSpan(HeaderBytes)))
-      .OrderByDescending(g => g.Count()).First().ToList();
-    var h0 = group[0].Header;
-    var nd0 = BinaryPrimitives.ReadUInt16LittleEndian(h0.AsSpan(58));
-    var nr0 = BinaryPrimitives.ReadUInt16LittleEndian(h0.AsSpan(60));
-    var blockSize = BinaryPrimitives.ReadUInt32LittleEndian(h0.AsSpan(12));
-    var first = group[0].Pos - BinaryPrimitives.ReadUInt16LittleEndian(h0.AsSpan(62)) * (long)blockSize;
-    var valid = new bool[nr0];
-    foreach (var (pos, header) in group) {
-      var idx = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(62));
-      if (pos == first + idx * (long)blockSize) valid[idx] = true;
-    }
-    var crcs = new ulong[nd0];
-    for (var j = 0; j < nd0; ++j) crcs[j] = BinaryPrimitives.ReadUInt64LittleEndian(h0.AsSpan(HeaderBytes + 8 * j));
-    return new Layout(BinaryPrimitives.ReadInt64LittleEndian(h0.AsSpan(34)), BinaryPrimitives.ReadInt64LittleEndian(h0.AsSpan(42)),
-      nd0, nr0, blockSize, h0.Length, crcs, BinaryPrimitives.ReadUInt64LittleEndian(h0.AsSpan(HeaderBytes + 8 * nd0)), h0, first, valid);
+    // The blocks of one record share everything but their index. In place, take the largest such
+    // group; unplaced, the last one in the file, since a record of an archive stored inside this
+    // one always comes before this archive's own.
+    var groups = found.GroupBy(f => Convert.ToHexString(f.Header.AsSpan(12, 50)) + Convert.ToHexString(f.Header.AsSpan(HeaderBytes)));
+    return (placed ? groups.OrderByDescending(g => g.Count()) : groups.OrderByDescending(g => g.Max(f => f.Pos))).First().ToList();
   }
 
   private static ulong ShardCrc(Stream s, Layout l, int j) {
@@ -451,7 +529,21 @@ internal static class Rar4RecoveryRecord {
     return h;
   }
 
+  /// <summary>A record header found by its marker and CRC, wherever it is.</summary>
+  internal sealed record Header(long HeaderPos, int RecoverySectors, long DataSectors, long DataSize, uint DataCrc);
+
+  /// <summary>The record where it belongs: its sector count matches the bytes before its header.</summary>
   internal static Layout? Find(Stream s) {
+    foreach (var h in Headers(s))
+      if (h.DataSectors == (h.HeaderPos + Sector - 1) / Sector)
+        return new Layout(h.HeaderPos, h.HeaderPos, h.RecoverySectors, h.DataSectors, h.HeaderPos + HeaderSize, h.DataSize, h.DataCrc);
+    return null;
+  }
+
+  /// <summary>The last intact record header in the file, placed or not (see <see cref="Rar5RecoveryRecord.FindBlocks"/> for why the last).</summary>
+  internal static Header? FindHeader(Stream s) => Headers(s).LastOrDefault();
+
+  private static IEnumerable<Header> Headers(Stream s) {
     var head = new byte[HeaderSize];
     foreach (var m in RarRecovery.Scan(s, Marker).ToList()) {
       var pos = m - 34;
@@ -464,10 +556,9 @@ internal static class Rar4RecoveryRecord {
       var r = (int)BinaryPrimitives.ReadUInt32LittleEndian(head.AsSpan(42));
       var n = (long)BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(46));
       var size = (long)BinaryPrimitives.ReadUInt32LittleEndian(head.AsSpan(7));
-      if (r <= 0 || n != (pos + Sector - 1) / Sector || size != 2 * n + (long)Sector * r || pos + HeaderSize + size > s.Length) continue;
-      return new Layout(pos, pos, r, n, pos + HeaderSize, size, BinaryPrimitives.ReadUInt32LittleEndian(head.AsSpan(16)));
+      if (r <= 0 || n <= 0 || size != 2 * n + (long)Sector * r || pos + HeaderSize + size > s.Length) continue;
+      yield return new Header(pos, r, n, size, BinaryPrimitives.ReadUInt32LittleEndian(head.AsSpan(16)));
     }
-    return null;
   }
 
   internal static RarRecoveryReport Process(Stream s, Layout l, bool repair) {
