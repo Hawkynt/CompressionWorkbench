@@ -23,6 +23,8 @@ public static class OpenPgpMessage {
   private const int TagSeipd = 18;
   private const int TagAead = 20;
   private const int TagMarker = 10;
+  private const int TagSignature = 2;
+  private const int TagOnePass = 4;
   private const int MaxDepth = 8;
 
   /// <summary>
@@ -33,7 +35,26 @@ public static class OpenPgpMessage {
   /// <exception cref="CryptographicException">No key opens the message, a passphrase is wrong, or the integrity check fails.</exception>
   /// <exception cref="InvalidDataException">The message is malformed.</exception>
   /// <exception cref="NotSupportedException">The message uses an algorithm not implemented here.</exception>
-  public static byte[] Decrypt(ReadOnlySpan<byte> message, IEnumerable<OpenPgpKey> keys, string? passphrase) {
+  public static byte[] Decrypt(ReadOnlySpan<byte> message, IEnumerable<OpenPgpKey> keys, string? passphrase)
+    => Decrypt(message, keys, passphrase, out _);
+
+  /// <summary>
+  /// <see cref="Decrypt(ReadOnlySpan{byte}, IEnumerable{OpenPgpKey}, string?)"/>, and the signatures
+  /// the message carries, each checked against the keys given (<see cref="OpenPgpSignature.Verified"/>
+  /// stays null for a signer whose key is not among them).
+  /// </summary>
+  public static byte[] Decrypt(ReadOnlySpan<byte> message, IEnumerable<OpenPgpKey> keys, string? passphrase, out IReadOnlyList<OpenPgpSignature> signatures)
+    => Decrypt(message, keys, passphrase, out signatures, out _);
+
+  /// <summary>
+  /// As <see cref="Decrypt(ReadOnlySpan{byte}, IEnumerable{OpenPgpKey}, string?, out IReadOnlyList{OpenPgpSignature})"/>,
+  /// and the session key with the message's session key packets, so that new data can be sent to
+  /// the same recipients without their public keys (<see cref="Encrypt(ReadOnlySpan{byte}, OpenPgpSessionKey, IReadOnlyList{OpenPgpKey}?)"/>).
+  /// </summary>
+  public static byte[] Decrypt(ReadOnlySpan<byte> message, IEnumerable<OpenPgpKey> keys, string? passphrase,
+      out IReadOnlyList<OpenPgpSignature> signatures, out OpenPgpSessionKey sessionKey) {
+    var keyList = keys.ToList();
+    keys = keyList;
     var packets = OpenPgpPackets.Read(message);
     var candidates = keys.Where(k => k.HasSecret && k.CanEncrypt).ToList();
     (int Algorithm, byte[] Key)? session = null;
@@ -65,7 +86,15 @@ public static class OpenPgpMessage {
     var data = packets.FirstOrDefault(p => p.Tag is TagSeipd or TagAead)
       ?? throw new InvalidDataException("The OpenPGP message has no encrypted data packet.");
     var clear = data.Tag == TagSeipd ? DecryptSeipd(data.Body, found.Algorithm, found.Key) : DecryptAead(data.Body, found.Key);
-    return LiteralData(clear, 0);
+    var (literal, carried) = Contents(clear, 0);
+    foreach (var signature in carried)
+      signature.Verify(literal, keyList);
+    signatures = carried;
+    using var keyPackets = new MemoryStream();
+    foreach (var packet in packets.Where(p => p.Tag == TagPkesk))
+      OpenPgpPackets.Write(keyPackets, TagPkesk, packet.Body);
+    sessionKey = new OpenPgpSessionKey(found.Algorithm, found.Key, keyPackets.ToArray());
+    return literal;
   }
 
   /// <summary>The session key a v3 PKESK body (after version, key ID and algorithm) carries for <paramref name="key"/>.</summary>
@@ -106,19 +135,7 @@ public static class OpenPgpMessage {
   /// </summary>
   private static byte[] RsaDecrypt(OpenPgpKey key, byte[] c) {
     var n = key.PublicFields[0];
-    var (d, p, q, u) = (key.Secret[0], key.Secret[1], key.Secret[2], key.Secret[3]);
-    var half = (n.Length + 1) / 2;
-    var dValue = Unsigned(d);
-    var parameters = new RSAParameters {
-      Modulus = n,
-      Exponent = TrimLeadingZeros(key.PublicFields[1]),
-      D = Pad(d, n.Length),
-      P = Pad(q, half),
-      Q = Pad(p, half),
-      DP = Pad((dValue % (Unsigned(q) - 1)).ToByteArray(isUnsigned: true, isBigEndian: true), half),
-      DQ = Pad((dValue % (Unsigned(p) - 1)).ToByteArray(isUnsigned: true, isBigEndian: true), half),
-      InverseQ = Pad(u, half),
-    };
+    var parameters = RsaPrivateParameters(key);
     try {
       using var rsa = RSA.Create(parameters);
       var m = rsa.Decrypt(Pad(c, n.Length), RSAEncryptionPadding.Pkcs1);
@@ -132,6 +149,24 @@ public static class OpenPgpMessage {
       CryptographicOperations.ZeroMemory(parameters.DP);
       CryptographicOperations.ZeroMemory(parameters.DQ);
     }
+  }
+
+  /// <summary>The platform RSA parameters of an unlocked OpenPGP RSA key (p and q swapped so that InverseQ is OpenPGP's u).</summary>
+  internal static RSAParameters RsaPrivateParameters(OpenPgpKey key) {
+    var n = key.PublicFields[0];
+    var (d, p, q, u) = (key.Secret[0], key.Secret[1], key.Secret[2], key.Secret[3]);
+    var half = (n.Length + 1) / 2;
+    var dValue = Unsigned(d);
+    return new RSAParameters {
+      Modulus = TrimLeadingZeros(n),
+      Exponent = TrimLeadingZeros(key.PublicFields[1]),
+      D = Pad(d, n.Length),
+      P = Pad(q, half),
+      Q = Pad(p, half),
+      DP = Pad((dValue % (Unsigned(q) - 1)).ToByteArray(isUnsigned: true, isBigEndian: true), half),
+      DQ = Pad((dValue % (Unsigned(p) - 1)).ToByteArray(isUnsigned: true, isBigEndian: true), half),
+      InverseQ = Pad(u, half),
+    };
   }
 
   private static byte[] Pad(byte[] value, int length) {
@@ -276,13 +311,16 @@ public static class OpenPgpMessage {
   }
 
   /// <summary>The literal data inside decrypted packets, through compressed data packets.</summary>
-  internal static byte[] LiteralData(byte[] data, int depth) {
+  internal static byte[] LiteralData(byte[] data, int depth) => Contents(data, depth).Literal;
+
+  /// <summary>The literal data inside decrypted packets, through compressed data packets, and the signatures beside it.</summary>
+  internal static (byte[] Literal, List<OpenPgpSignature> Signatures) Contents(byte[] data, int depth) {
     if (depth > MaxDepth)
       throw new InvalidDataException("OpenPGP compressed packets nest too deep.");
+    byte[]? literal = null;
+    var signatures = new List<OpenPgpSignature>();
     foreach (var packet in OpenPgpPackets.Read(data)) {
       switch (packet.Tag) {
-        case TagMarker:
-          continue;
         case TagLiteral: {
           var body = packet.Body;
           if (body.Length < 6)
@@ -290,15 +328,23 @@ public static class OpenPgpMessage {
           var at = 2 + body[1] + 4; // format, name length, name, date
           if (at > body.Length)
             throw new InvalidDataException("The OpenPGP literal data packet is too short.");
-          return body[at..];
+          literal ??= body[at..];
+          break;
         }
-        case TagCompressed:
-          return LiteralData(Decompress(packet.Body), depth + 1);
+        case TagCompressed when literal == null: {
+          var (inner, innerSignatures) = Contents(Decompress(packet.Body), depth + 1);
+          literal = inner;
+          signatures.AddRange(innerSignatures);
+          break;
+        }
+        case TagSignature:
+          signatures.Add(OpenPgpSignature.Parse(packet.Body));
+          break;
         default:
-          continue; // signatures, one-pass signatures: not checked here
+          continue; // markers, one-pass signature headers
       }
     }
-    throw new InvalidDataException("The OpenPGP message holds no literal data.");
+    return (literal ?? throw new InvalidDataException("The OpenPGP message holds no literal data."), signatures);
   }
 
   private static byte[] Decompress(byte[] body) {
@@ -335,10 +381,11 @@ public static class OpenPgpMessage {
   /// <summary>
   /// Encrypts <paramref name="data"/> as binary literal data to every recipient in
   /// <paramref name="recipients"/> under symmetric algorithm <paramref name="algorithm"/>: one
-  /// PKESK v3 per recipient and a tag 18 version 1 packet.
+  /// PKESK v3 per recipient and a tag 18 version 1 packet; with <paramref name="signers"/> (unlocked
+  /// keys) the literal is wrapped in one-pass signature and signature packets.
   /// </summary>
   /// <exception cref="ArgumentException">A recipient key cannot take a session key.</exception>
-  public static byte[] Encrypt(ReadOnlySpan<byte> data, IReadOnlyList<OpenPgpKey> recipients, int algorithm = 9) {
+  public static byte[] Encrypt(ReadOnlySpan<byte> data, IReadOnlyList<OpenPgpKey> recipients, int algorithm = 9, IReadOnlyList<OpenPgpKey>? signers = null) {
     if (recipients.Count == 0)
       throw new ArgumentException("An OpenPGP message needs at least one recipient.", nameof(recipients));
     var sessionKey = RandomNumberGenerator.GetBytes(OpenPgpSymmetric.KeyLength(algorithm));
@@ -374,13 +421,40 @@ public static class OpenPgpMessage {
       OpenPgpPackets.Write(output, TagPkesk, pkesk.ToArray());
     }
 
+    WriteEncryptedData(output, data, algorithm, sessionKey, signers);
+    return output.ToArray();
+  }
+
+  /// <summary>
+  /// Encrypts <paramref name="data"/> under an existing <paramref name="sessionKey"/>: its session
+  /// key packets as they are, then a new tag 18 packet; signed by <paramref name="signers"/> when given.
+  /// </summary>
+  public static byte[] Encrypt(ReadOnlySpan<byte> data, OpenPgpSessionKey sessionKey, IReadOnlyList<OpenPgpKey>? signers = null) {
+    using var output = new MemoryStream();
+    output.Write(sessionKey.KeyPackets);
+    WriteEncryptedData(output, data, sessionKey.Algorithm, sessionKey.Key, signers);
+    return output.ToArray();
+  }
+
+  private static void WriteEncryptedData(MemoryStream output, ReadOnlySpan<byte> data, int algorithm, byte[] sessionKey, IReadOnlyList<OpenPgpKey>? signers) {
     using var literal = new MemoryStream();
     literal.WriteByte((byte)'b');
     literal.WriteByte(0); // no file name
     literal.Write([0, 0, 0, 0]); // no date
     literal.Write(data);
     using var inner = new MemoryStream();
+    // signed: one-pass signature packets, the literal, then the signatures in reverse order (section 5.4)
+    var signed = new List<(byte[] OnePass, byte[] Signature)>();
+    foreach (var signer in signers ?? [])
+      signed.Add(OpenPgpSignature.Create(signer, data));
+    for (var i = 0; i < signed.Count; ++i) {
+      var onePass = signed[i].OnePass;
+      onePass[12] = (byte)(i == signed.Count - 1 ? 1 : 0);
+      OpenPgpPackets.Write(inner, TagOnePass, onePass);
+    }
     OpenPgpPackets.Write(inner, TagLiteral, literal.ToArray());
+    for (var i = signed.Count - 1; i >= 0; --i)
+      OpenPgpPackets.Write(inner, TagSignature, signed[i].Signature);
 
     var cipher = OpenPgpSymmetric.Create(algorithm, sessionKey);
     var bs = cipher.BlockSize;
@@ -398,7 +472,6 @@ public static class OpenPgpMessage {
     seipd[0] = 1;
     plain.CopyTo(seipd, 1);
     OpenPgpPackets.Write(output, TagSeipd, seipd);
-    return output.ToArray();
   }
 
   /// <summary>RSAES-PKCS1-v1_5 encryption of <paramref name="m"/> to the recipient's n and e.</summary>
@@ -419,3 +492,6 @@ public static class OpenPgpMessage {
     return c.ToByteArray(isUnsigned: true, isBigEndian: true);
   }
 }
+
+/// <summary>A message's session key: its symmetric algorithm, the key, and the session key packets that carry it to the recipients.</summary>
+public sealed record OpenPgpSessionKey(int Algorithm, byte[] Key, byte[] KeyPackets);

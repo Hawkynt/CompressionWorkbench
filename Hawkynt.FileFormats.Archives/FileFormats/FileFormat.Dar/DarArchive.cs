@@ -163,9 +163,11 @@ public sealed class DarArchive {
     if ((trailer.Flags & FlagInitialOffset) == 0 || start <= 0 || start >= trailerAt)
       throw new InvalidDataException("The DAR version trailer of an encrypted archive records no plausible initial offset.");
     byte[] key;
+    DarGnuPg.Opened? opened = null;
     if (trailer.HasCryptedKey) {
       // GnuPG recipients (section 12): the key is the literal data of the OpenPGP message
-      key = DarGnuPg.OpenKey(trailer.CryptedKey!, trailer.Cipher, password);
+      opened = DarGnuPg.OpenKey(trailer.CryptedKey!, trailer.Cipher, (trailer.Flags & FlagSigned) != 0, password);
+      key = opened.Key;
     } else {
       if (string.IsNullOrEmpty(password))
         throw new ArchivePasswordException($"The DAR archive is encrypted ({DarCrypto.CipherName(trailer.Cipher)}); a password is needed.", false);
@@ -178,18 +180,27 @@ public sealed class DarArchive {
     var cipher = DarCrypto.OpenCipher(trailer.Cipher, key);
     // dar does not record -# (section 12): try the size asked for, then every size the zone allows.
     ArchivePasswordException? first = null;
+    DarArchive? found = null;
     foreach (var size in ClearBlockSizes(archive, start, trailerAt, cipher, clearBlockSize)) {
       try {
-        var read = ReadClearLevel(new DarDecryptingStream(archive, start, trailerAt, cipher, size), trailer, size);
-        read.ArchiveKey = trailer.HasCryptedKey ? key : null;
-        return read;
+        found = ReadClearLevel(new DarDecryptingStream(archive, start, trailerAt, cipher, size), trailer, size);
+        break;
       } catch (ArchivePasswordException e) {
         first ??= e;
       } catch (InvalidDataException e) {
         first ??= new ArchivePasswordException($"The DAR archive does not decrypt with this password, or it is damaged: {e.Message}", true);
       }
     }
-    throw first ?? new ArchivePasswordException("The DAR archive does not decrypt with this password, or it is damaged.", true);
+    if (found is null)
+      throw first ?? new ArchivePasswordException("The DAR archive does not decrypt with this password, or it is damaged.", true);
+    if (opened is not null) {
+      found.ArchiveKey = key;
+      found.Signers = opened.Signers;
+      // a signed archive carries a signed hash of its catalogue after it (section 12)
+      if ((trailer.Flags & FlagSigned) != 0)
+        found.GnuPg = DarGnuPg.CheckCatalogue(opened, found.CatalogueClear, found.CatalogueTail);
+    }
+    return found;
   }
 
   /// <summary>
@@ -258,6 +269,18 @@ public sealed class DarArchive {
   /// <summary>The cipher key of an archive encrypted for GnuPG recipients, opened from its OpenPGP message; null otherwise.</summary>
   internal byte[]? ArchiveKey { get; private set; }
 
+  /// <summary>The fingerprints of the keys whose signatures over a GnuPG archive key verified (dar --sign).</summary>
+  internal IReadOnlyList<byte[]> Signers { get; private set; } = [];
+
+  /// <summary>The catalogue's clear bytes, its checksum included.</summary>
+  internal byte[] CatalogueClear { get; private init; } = [];
+
+  /// <summary>What follows the catalogue in its compression unit: in a signed archive the signed catalogue hash (section 12).</summary>
+  internal byte[] CatalogueTail { get; private init; } = [];
+
+  /// <summary>For a signed GnuPG archive: the keys and session key that opened it, so an edit can sign its new catalogue.</summary>
+  internal DarGnuPg.Opened? GnuPg { get; private set; }
+
   private static DarArchive ReadLevel(Stream archive, long trailerAt, DarVersionHeader trailer) {
     var catalogueAt = (long)DarPrimitives.ReadTerminator(archive, trailerAt, out var term1Start);
     if (catalogueAt >= term1Start || term1Start - catalogueAt > MaxCatalogue)
@@ -272,8 +295,11 @@ public sealed class DarArchive {
     }
     var catalogue = Decompress(trailer.Algorithm, trailer.BlockSize, stored, -1);
 
-    var (dataName, inPlace, entries, rootInode) = ParseCatalogue(catalogue, trailer);
-    return new DarArchive(archive, term1Start, trailer, dataName, inPlace, entries, rootInode);
+    var (dataName, inPlace, entries, rootInode, length) = ParseCatalogue(catalogue, trailer);
+    return new DarArchive(archive, term1Start, trailer, dataName, inPlace, entries, rootInode) {
+      CatalogueClear = catalogue[..length],
+      CatalogueTail = catalogue[length..],
+    };
   }
 
   private static void Refuse(DarVersionHeader v) {
@@ -461,7 +487,7 @@ public sealed class DarArchive {
     return buffer.AsSpan(0, n).ToArray();
   }
 
-  private static (byte[] DataName, string InPlace, List<DarEntry> Entries, byte[] RootInode) ParseCatalogue(byte[] cat, DarVersionHeader v) {
+  private static (byte[] DataName, string InPlace, List<DarEntry> Entries, byte[] RootInode, int Length) ParseCatalogue(byte[] cat, DarVersionHeader v) {
     var c = new Cursor(cat, v);
     if (cat.Length < DarSliceHeader.NameLength)
       throw new InvalidDataException("The DAR catalogue is shorter than its data name.");
@@ -481,7 +507,7 @@ public sealed class DarArchive {
     var computed = DarPrimitives.Checksum(cat.AsSpan(0, end), stored.Length);
     if (!computed.AsSpan().SequenceEqual(stored))
       throw new InvalidDataException("The DAR catalogue fails its checksum.");
-    return (dataName, inPlace, entries, rootInode);
+    return (dataName, inPlace, entries, rootInode, c.Pos);
   }
 
   private static void ReadDirectory(ref Cursor c, string prefix, List<DarEntry> entries, Dictionary<ulong, DarEntry> labels, int depth) {

@@ -74,3 +74,17 @@ Per release (`-R /tmp/cwbdar-legacy/src`):
 | `dar-<r>-sliced.1.dar` … `.3.dar` | `dar -c … -S 3k -s 2k` |
 
 The release that wrote each set accepts it with `dar -t`.
+
+## GnuPG recipients and signers (dar 2.7.13, gpg 2.4.4)
+
+Made in a scratch `GNUPGHOME` holding the test keys of `Crypto/OpenPgpVectors` (passphrase
+`keypass`), from a tree of one file, `hello.txt` = `hello dar\n` (`-R /tmp/dar2/small`):
+
+| File | Command |
+| --- | --- |
+| `gnupg-ecc-aes256.1.dar` | `dar -c … -K gnupg:aes256:cwb-ecc@test.invalid` (cv25519 recipient) |
+| `gnupg-rsa-camellia256.1.dar` | `dar -c … -K gnupg:camellia256:cwb-rsa@test.invalid -at` (RSA recipient) |
+| `gnupg-signed-eddsa.1.dar` | `dar -c … -K gnupg::cwb-ecc@test.invalid --sign cwb-ecc@test.invalid` (EdDSA signer) |
+| `gnupg-signed-rsa.1.dar` | `dar -c … -K gnupg::cwb-ecc@test.invalid --sign cwb-rsa@test.invalid -at` (RSA signer) |
+
+`dar -t -K gnupg:` accepts each with those keys in its keyring.

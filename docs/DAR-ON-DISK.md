@@ -425,8 +425,32 @@ a new random key and a PKESK v3 + SEIPD v1 message to the recipients' exported p
 edit keeps the key and the message, so the same recipients open the edited archive. dar 2.7.13
 with the recipients' keys in its keyring tests (also sequentially) and restores our archives and
 our edits of its own, to cv25519 and RSA keys under AES-256, Blowfish, Twofish, Serpent and
-Camellia; we read its archives byte for byte (`DarGnuPgOracleTests`) [measured]. Signed archives
-(flag 0x0200) are not produced; their signature is not checked.
+Camellia; we read its archives byte for byte (`DarGnuPgOracleTests`) [measured].
+
+**Signed archives** (`--sign signer…`, header flags `03 34`, i.e. 0x0200 added) [measured: dar
+2.7.13 with EdDSA, RSA and ECDSA P-256 signers]:
+
+- The key message is signed as well: one-pass signature, the literal key, a v4 signature of
+  type 0x00 (SHA-512 with gpg's defaults). Per dar's manual only this key is covered by it.
+- In addition the catalogue's compression unit holds, after the catalogue's own checksum,
+  `00 00`, an infinint length and a second OpenPGP message to the same recipients, signed by the
+  same keys, whose literal data is the SHA-512 of the clear catalogue bytes (data name through
+  checksum) as 128 lowercase hex digits followed by `  x\n` (two spaces, `x`, newline). The
+  `00 00` was the same in every archive measured (one and two recipients and signers, with and
+  without tape marks and gzip). With compression the whole tail is compressed with the catalogue;
+  without, it is plain. dar refuses an archive flagged signed whose catalogue lacks it ("Cannot
+  open catalogue: Badly formed infinint"), and stops to ask when a signer's key is missing from
+  its keyring.
+
+The reader verifies both signatures (RSA, ECDSA over NIST P-256/384/521, legacy EdDSA over
+Ed25519) against the key files given and the catalogue hash against the catalogue, and refuses
+the archive when a signature fails, a signer's public key is not given, the signers differ, or
+the hash does not match. The writer signs both with an exported secret key (`GnuPgSigner`). An
+edit keeps the signed key message and signs the new catalogue's hash again, under the original
+catalogue message's session key (so the same recipients read it without their public keys) and
+with the original signers' secret keys, which the key files must hold; otherwise the edit is
+refused. dar 2.7.13 tests and restores our signed archives and our edits of its own signed ones,
+and gpg reports a good signature on the key message we wrote [measured].
 
 ## 13. Editing in place
 

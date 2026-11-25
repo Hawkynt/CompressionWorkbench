@@ -99,6 +99,12 @@ internal static class DarWriter {
 
     /// <summary>The OpenPGP message the header records under flag 0x04.</summary>
     public byte[]? CryptedKey { get; init; }
+
+    /// <summary>Whether <see cref="CryptedKey"/> carries signatures (dar's <c>--sign</c>, header flag 0x0200).</summary>
+    public bool Signed { get; init; }
+
+    /// <summary>For a signed archive: makes the bytes that follow the catalogue (the signed hash of it) from its clear bytes.</summary>
+    public Func<byte[], byte[]>? CatalogueTail { get; init; }
   }
 
   /// <summary>Compression letters this writer produces, by method name.</summary>
@@ -151,7 +157,7 @@ internal static class DarWriter {
         if (encryption.Cipher == 's' || raw.Length != DarCrypto.KeyLength(encryption.Cipher))
           throw new ArgumentException($"A GnuPG-encrypted DAR archive needs a block cipher and a {DarCrypto.KeyLength(encryption.Cipher)}-byte key.");
         cipher = DarCrypto.OpenCipher(encryption.Cipher, raw);
-        headerFlags |= DarArchive.FlagCryptedKey;
+        headerFlags |= DarArchive.FlagCryptedKey | (encryption.Signed ? DarArchive.FlagSigned : 0);
         header = header with { CryptedKey = crypted };
       } else if (encryption.Cipher == 's')
         scramble = password;
@@ -189,6 +195,9 @@ internal static class DarWriter {
       sink.Mark((byte)'C');
     var catalogueAt = (ulong)sink.Position;
     var catalogueBytes = catalogue.ToArray();
+    // a signed GnuPG archive: the signed catalogue hash follows the catalogue in its unit (section 12)
+    if (settings.Encryption?.CatalogueTail is { } tail)
+      catalogueBytes = [.. catalogueBytes, .. tail(catalogueBytes)];
     sink.Data(settings.Algorithm == 'n' ? catalogueBytes : Compress(settings.Algorithm, catalogueBytes, settings.Level, settings.BlockSize));
     sink.Raw(Bytes(s => DarPrimitives.WriteTerminator(s, catalogueAt)));
     // An encrypted zone ends after the first terminator; the trailer and the last terminator are clear.

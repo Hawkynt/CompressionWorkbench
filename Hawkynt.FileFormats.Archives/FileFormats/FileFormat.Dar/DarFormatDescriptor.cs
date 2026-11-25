@@ -126,6 +126,11 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <see cref="FormatCreateOptions.EncryptionMethod"/> (aes256 by default).</summary>
   public const string GnuPgRecipientsOption = "GnuPgRecipients";
 
+  /// <summary>Option key: with <see cref="GnuPgRecipientsOption"/>, sign the archive key (dar's
+  /// <c>--sign</c>): the path of an exported secret key (RSA, ECDSA or EdDSA), optionally followed
+  /// by <c>|</c> and its passphrase.</summary>
+  public const string GnuPgSignerOption = "GnuPgSigner";
+
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new(SliceSizeOption, "Slice size", FormatOptionKind.String, "",
       Description: "Cut the archive into slice files of this size (dar -s), named basename.1.dar, basename.2.dar, ... "
@@ -152,7 +157,12 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new(GnuPgRecipientsOption, "GnuPG recipients", FormatOptionKind.String, "",
       Description: "Encrypt for GnuPG recipients instead of a password (dar -K gnupg:cipher:recipient): the paths of their "
                  + "exported OpenPGP keys (RSA or cv25519), separated by ';'. Read such an archive with the path of an "
-                 + "exported secret key as the password, followed by '|' and its passphrase when it has one.",
+                 + "exported secret key as the password, followed by '|' and its passphrase when it has one; add a "
+                 + "signer's exported public key after ';' to verify a signed archive.",
+      IsOptimizationAxis: false),
+    new(GnuPgSignerOption, "GnuPG signer", FormatOptionKind.String, "",
+      Description: "With GnuPG recipients: sign the archive key (dar --sign) with this exported secret key "
+                 + "(RSA, ECDSA or EdDSA), written as path|passphrase.",
       IsOptimizationAxis: false),
   ];
 
@@ -197,8 +207,9 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var gpgCipher = DarCrypto.CipherFor(options.EncryptionMethod);
       if (gpgCipher == 's')
         throw new ArgumentException("GnuPG encryption needs a block cipher, not scrambling.");
-      var (key, crypted) = DarGnuPg.NewKey(gpgCipher, recipients.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-      return new DarWriter.Encryption(gpgCipher, "") { Key = key, CryptedKey = crypted };
+      var signer = options.GetString(GnuPgSignerOption);
+      var (key, crypted, signCatalogue) = DarGnuPg.NewKey(gpgCipher, recipients.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), signer);
+      return new DarWriter.Encryption(gpgCipher, "") { Key = key, CryptedKey = crypted, Signed = signCatalogue != null, CatalogueTail = signCatalogue };
     }
     if (string.IsNullOrEmpty(options.Password))
       return null;

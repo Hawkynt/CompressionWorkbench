@@ -121,6 +121,110 @@ public class OpenPgpTests {
   public void GivenWrongLength_WhenX25519IsComputed_ThenRefused(int scalar, int u)
     => Assert.That(() => X25519.ScalarMultiply(new byte[scalar], new byte[u]), Throws.ArgumentException);
 
+  // ── Ed25519 (RFC 8032 section 7.1) ────────────────────────────────────────
+
+  [TestCase("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60", "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a", "",
+    "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b")]
+  [TestCase("4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb", "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c", "72",
+    "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00")]
+  [TestCase("c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7", "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025", "af82",
+    "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a")]
+  [Category("HappyPath")]
+  public void GivenRfc8032Vector_WhenSignedAndVerified_ThenKeySignatureAndCheckMatch(string seed, string publicKey, string message, string signature) {
+    var s = Convert.FromHexString(seed);
+    var m = Convert.FromHexString(message);
+    Assert.That(Convert.ToHexStringLower(Ed25519.PublicKey(s)), Is.EqualTo(publicKey));
+    Assert.That(Convert.ToHexStringLower(Ed25519.Sign(s, m)), Is.EqualTo(signature));
+    Assert.That(Ed25519.Verify(Convert.FromHexString(publicKey), m, Convert.FromHexString(signature)), Is.True);
+    var bad = Convert.FromHexString(signature);
+    bad[5] ^= 1;
+    Assert.That(Ed25519.Verify(Convert.FromHexString(publicKey), m, bad), Is.False);
+    Assert.That(Ed25519.Verify(Convert.FromHexString(publicKey), [.. m, 0], Convert.FromHexString(signature)), Is.False);
+  }
+
+  [Test, Category("Exception")]
+  public void GivenSignatureWithSAboveTheGroupOrder_WhenVerified_ThenRejected() {
+    var sig = Convert.FromHexString("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b");
+    // S + L is the same scalar but not canonical
+    var s = new System.Numerics.BigInteger(sig.AsSpan(32), isUnsigned: true) + ((System.Numerics.BigInteger.One << 252) + System.Numerics.BigInteger.Parse("27742317777372353535851937790883648493"));
+    s.TryWriteBytes(sig.AsSpan(32), out _, isUnsigned: true);
+    Assert.That(Ed25519.Verify(Convert.FromHexString("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"), [], sig), Is.False);
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenSeedsWithDifferentBits_WhenEd25519Signs_ThenTheFieldOperationSequenceIsTheSame() {
+    long Count(byte[] seed) {
+      var before = Field25519.Operations;
+      Ed25519.Sign(seed, "message"u8);
+      return Field25519.Operations - before;
+    }
+    var expected = Count(new byte[32]);
+    Assert.That(new[] { Count(Enumerable.Repeat((byte)0xFF, 32).ToArray()), Count(RandomNumberGenerator.GetBytes(32)) }, Has.All.EqualTo(expected));
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenGpgEdDsaKey_WhenItsSecretIsUnlocked_ThenItsSeedGivesItsPublicPoint() {
+    var key = OpenPgpKey.Load(Vector("ecc-secret.asc"))[0];
+    key.Unlock(Passphrase);
+    var seed = new byte[32];
+    key.Secret[0].CopyTo(seed, 32 - key.Secret[0].Length);
+    Assert.That(Ed25519.PublicKey(seed), Is.EqualTo(key.PublicFields[1][1..]));
+  }
+
+  // ── signatures gpg made, and ours ─────────────────────────────────────────
+
+  [TestCase("ecc-signed-eddsa.pgp", "ecc-secret.asc", 22, TestName = "GivenGpgSignedMessage_WithEdDsa_WhenDecrypted_ThenTheSignatureVerifies")]
+  [TestCase("ecc-signed-rsa.pgp", "rsa-public.asc", 1, TestName = "GivenGpgSignedMessage_WithRsa_WhenDecrypted_ThenTheSignatureVerifies")]
+  [TestCase("ecc-signed-ecdsa.pgp", "p256-public.asc", 19, TestName = "GivenGpgSignedMessage_WithEcdsaP256_WhenDecrypted_ThenTheSignatureVerifies")]
+  public void GpgSignature(string message, string signerKey, int algorithm) {
+    var keys = OpenPgpKey.Load(Vector("ecc-secret.asc")).Concat(OpenPgpKey.Load(Vector(signerKey))).ToList();
+    var data = OpenPgpMessage.Decrypt(Vector(message), keys, Passphrase, out var signatures);
+    Assert.That(data, Is.EqualTo(Plain));
+    Assert.That(signatures.Select(s => (s.PublicKeyAlgorithm, s.Verified)), Is.EqualTo(new[] { (algorithm, (bool?)true) }));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenGpgSignedMessage_WhenTheSignersKeyIsMissing_ThenTheSignatureStaysUnverified() {
+    OpenPgpMessage.Decrypt(Vector("ecc-signed-rsa.pgp"), OpenPgpKey.Load(Vector("ecc-secret.asc")), Passphrase, out var signatures);
+    Assert.That(signatures.Single().Verified, Is.Null);
+  }
+
+  [TestCase("ecc-secret.asc", 22)]
+  [TestCase("rsa-secret.asc", 1)]
+  [TestCase("p256-secret.asc", 19)]
+  [Category("HappyPath")]
+  public void GivenSigner_WhenWeSignAndEncrypt_ThenOurVerifierAcceptsItAndATamperedOneFails(string signerFile, int algorithm) {
+    var signer = OpenPgpKey.Load(Vector(signerFile)).First(k => k.HasSecret && k.Algorithm == algorithm);
+    signer.Unlock(Passphrase);
+    var recipient = OpenPgpKey.Load(Vector("ecc-public.asc")).Last(k => k.CanEncrypt);
+    var message = OpenPgpMessage.Encrypt(Plain, [recipient], signers: [signer]);
+    var keys = OpenPgpKey.Load(Vector("ecc-secret.asc")).Concat(OpenPgpKey.Load(Vector(signerFile))).ToList();
+    OpenPgpMessage.Decrypt(message, keys, Passphrase, out var signatures);
+    Assert.That(signatures.Single().Verified, Is.True);
+    var signature = OpenPgpSignature.Parse(OpenPgpSignature.Create(signer, Plain).Signature);
+    Assert.That(signature.Verify(Plain, keys), Is.True);
+    Assert.That(signature.Verify("hello openpgp?"u8, keys), Is.False, "a signature over other data");
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenScalarsReducedModuloL_WhenComparedWithBigInteger_ThenTheyMatch() {
+    var l = (System.Numerics.BigInteger.One << 252) + System.Numerics.BigInteger.Parse("27742317777372353535851937790883648493");
+    var rng = new Random(77);
+    for (var i = 0; i < 200; ++i) {
+      var wide = new byte[64];
+      rng.NextBytes(wide);
+      var k = new byte[32];
+      var a = new byte[32];
+      var r = new byte[32];
+      rng.NextBytes(k); rng.NextBytes(a); rng.NextBytes(r);
+      var w = new System.Numerics.BigInteger(wide, isUnsigned: true);
+      Assert.That(new System.Numerics.BigInteger(Scalar25519.Reduce(wide), isUnsigned: true), Is.EqualTo(w % l));
+      var expected = (new System.Numerics.BigInteger(k, isUnsigned: true) * (new System.Numerics.BigInteger(a, isUnsigned: true) % l)
+        + new System.Numerics.BigInteger(r, isUnsigned: true)) % l;
+      Assert.That(new System.Numerics.BigInteger(Scalar25519.MultiplyAdd(k, a, r), isUnsigned: true), Is.EqualTo(expected));
+    }
+  }
+
   // ── AES key wrap (RFC 3394 section 4) ─────────────────────────────────────
 
   [TestCase("000102030405060708090A0B0C0D0E0F", "00112233445566778899AABBCCDDEEFF", "1FA68B0A8112B447AEF34BD8FB5A7B829D3E862371D2CFE5")]

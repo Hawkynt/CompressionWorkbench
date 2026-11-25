@@ -83,6 +83,93 @@ public class DarGnuPgTests {
     }
   }
 
+  [TestCase("gnupg-signed-eddsa.1.dar", "ecc-secret.asc", "A076F346C8844D63F4065625D6F494848082CEB6")]
+  [TestCase("gnupg-signed-rsa.1.dar", "ecc-secret.asc;rsa-public.asc", "02AAE52A50B9261967A9DDD09CB234AB9157E743")]
+  [Category("HappyPath")]
+  public void GivenDarSignedArchive_WhenReadWithTheSignersKey_ThenTheSignatureVerifies(string vector, string keys, string signer) {
+    File.WriteAllBytes(Path.Combine(this._tmp, "rsa-public.asc"), OpenPgpTests.Vector("rsa-public.asc"));
+    using var set = DarSliceSet.Open(new MemoryStream(DarFixtures.Vector(vector)));
+    var password = string.Join(';', keys.Split(';').Select(k => Path.Combine(this._tmp, k))) + "|keypass";
+    var archive = DarArchive.Read(set.Archive, password);
+    Assert.That((archive.Trailer.Flags & 0x0200) != 0, Is.True, "flag 0x0200: signed");
+    Assert.That(archive.Signers.Select(Convert.ToHexString), Is.EqualTo(new[] { signer }));
+    Assert.That(archive.ReadData(archive.Entries.Single(e => e.Path == "hello.txt")), Is.EqualTo("hello dar\n"u8.ToArray()));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenDarSignedArchive_WhenTheSignersKeyIsNotGiven_ThenRefused() {
+    using var set = DarSliceSet.Open(new MemoryStream(DarFixtures.Vector("gnupg-signed-rsa.1.dar")));
+    Assert.That(() => DarArchive.Read(set.Archive, this.Key("ecc-secret.asc")),
+      Throws.InstanceOf<ArchivePasswordException>().With.Message.Contains("9CB234AB9157E743"));
+  }
+
+  [TestCase("ecc-secret.asc")]
+  [TestCase("rsa-secret.asc")]
+  [Category("HappyPath")]
+  public void GivenOurSignedArchive_WhenWrittenEditedAndRead_ThenTheSignatureVerifiesAndTheEditKeepsIt(string signer) {
+    using var ms = new MemoryStream();
+    new DarFormatDescriptor().Create(ms, [ArchiveInputInfo.InMemory("a.txt", "a\n"u8.ToArray())], new FormatCreateOptions {
+      EncryptionMethod = "aes256",
+      FormatSpecific = {
+        [DarFormatDescriptor.GnuPgRecipientsOption] = Path.Combine(this._tmp, "ecc-public.asc"),
+        [DarFormatDescriptor.GnuPgSignerOption] = this.Key(signer),
+      },
+    });
+    var password = Path.Combine(this._tmp, "ecc-secret.asc") + ";" + Path.Combine(this._tmp, signer) + "|keypass";
+    new DarFormatDescriptor().Add(ms, [ArchiveInputInfo.InMemory("b.txt", "b\n"u8.ToArray())], new ArchiveMutationOptions { Password = password });
+    using var set = DarSliceSet.Open(new MemoryStream(ms.ToArray()));
+    var archive = DarArchive.Read(set.Archive, password);
+    Assert.That((archive.Trailer.Flags & 0x0200) != 0, Is.True);
+    Assert.That(archive.Signers.Single(), Is.EqualTo(OpenPgpKey.Load(OpenPgpTests.Vector(signer))[0].Fingerprint));
+    Assert.That(archive.Entries.Select(e => e.Path), Is.EquivalentTo(new[] { "a.txt", "b.txt" }));
+  }
+
+  private void WriteOurSigned(string path, string signer) {
+    using var fs = File.Create(path);
+    new DarFormatDescriptor().Create(fs, [ArchiveInputInfo.InMemory("hello.txt", "hello dar\n"u8.ToArray())], new FormatCreateOptions {
+      EncryptionMethod = "aes256",
+      FormatSpecific = {
+        [DarFormatDescriptor.GnuPgRecipientsOption] = Path.Combine(this._tmp, "ecc-public.asc"),
+        [DarFormatDescriptor.GnuPgSignerOption] = this.Key(signer),
+      },
+    });
+  }
+
+  [Test, Category("Exception")]
+  public void GivenSignedArchive_WhenEditedWithoutTheSignersSecretKey_ThenRefusedAndUntouched() {
+    File.WriteAllBytes(Path.Combine(this._tmp, "rsa-public.asc"), OpenPgpTests.Vector("rsa-public.asc"));
+    var path = Path.Combine(this._tmp, "signed.1.dar");
+    this.WriteOurSigned(path, "rsa-secret.asc");
+    var before = File.ReadAllBytes(path);
+    using (var fs = new FileStream(path, FileMode.Open, FileAccess.ReadWrite))
+      Assert.That(() => new DarFormatDescriptor().Add(fs, [ArchiveInputInfo.InMemory("b.txt", [1])],
+          new ArchiveMutationOptions { Password = Path.Combine(this._tmp, "ecc-secret.asc") + ";" + Path.Combine(this._tmp, "rsa-public.asc") + "|keypass" }),
+        Throws.InstanceOf<NotSupportedException>().With.Message.Contains("02AAE52A50B9261967A9DDD09CB234AB9157E743"));
+    Assert.That(File.ReadAllBytes(path), Is.EqualTo(before));
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenSignedArchive_WhenEditedWithTheSignersSecretKey_ThenTheNewCatalogueIsSignedAgain() {
+    var path = Path.Combine(this._tmp, "signed.1.dar");
+    this.WriteOurSigned(path, "rsa-secret.asc");
+    var password = Path.Combine(this._tmp, "ecc-secret.asc") + ";" + Path.Combine(this._tmp, "rsa-secret.asc") + "|keypass";
+    using (var fs = new FileStream(path, FileMode.Open, FileAccess.ReadWrite))
+      new DarFormatDescriptor().Add(fs, [ArchiveInputInfo.InMemory("b.txt", "b\n"u8.ToArray())], new ArchiveMutationOptions { Password = password });
+    using var set = DarSliceSet.Open(new MemoryStream(File.ReadAllBytes(path)));
+    var archive = DarArchive.Read(set.Archive, password);
+    Assert.That(archive.GnuPg, Is.Not.Null, "the signed catalogue hash verified");
+    Assert.That(archive.Entries.Select(e => e.Path), Is.EquivalentTo(new[] { "hello.txt", "b.txt" }));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenSignerWithAWrongPassphrase_WhenCreated_ThenRefused()
+    => Assert.That(() => new DarFormatDescriptor().Create(new MemoryStream(), [ArchiveInputInfo.InMemory("a.txt", [1])], new FormatCreateOptions {
+      FormatSpecific = {
+        [DarFormatDescriptor.GnuPgRecipientsOption] = Path.Combine(this._tmp, "ecc-public.asc"),
+        [DarFormatDescriptor.GnuPgSignerOption] = this.Key("ecc-secret.asc", "wrong"),
+      },
+    }), Throws.ArgumentException);
+
   [TestCase("scrambling", "ecc-public.asc")]
   [TestCase("aes256", "ecc-public.asc;missing.asc")]
   [Category("Exception")]

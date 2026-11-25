@@ -164,6 +164,31 @@ internal struct Field25519 {
     t = mask & (a._l4 ^ b._l4); a._l4 ^= t; b._l4 ^= t;
   }
 
+  /// <summary>A small constant.</summary>
+  public static Field25519 FromUInt(ulong value) => new() { _l0 = value & Mask51, _l1 = value >> 51 };
+
+  /// <summary>−this.</summary>
+  public readonly Field25519 Negate() => Zero - this;
+
+  /// <summary>
+  /// <paramref name="b"/> when <paramref name="choose"/> is 1, else <paramref name="a"/>, without
+  /// branching on <paramref name="choose"/>.
+  /// </summary>
+  public static Field25519 Select(Field25519 a, Field25519 b, ulong choose) {
+    ++Operations;
+    var mask = 0UL - choose;
+    return new() {
+      _l0 = a._l0 ^ (mask & (a._l0 ^ b._l0)), _l1 = a._l1 ^ (mask & (a._l1 ^ b._l1)), _l2 = a._l2 ^ (mask & (a._l2 ^ b._l2)),
+      _l3 = a._l3 ^ (mask & (a._l3 ^ b._l3)), _l4 = a._l4 ^ (mask & (a._l4 ^ b._l4)),
+    };
+  }
+
+  /// <summary>this^<paramref name="exponent"/> for a public exponent.</summary>
+  public readonly Field25519 Pow(System.Numerics.BigInteger exponent) => this.Pow(ExponentBits(exponent));
+
+  /// <summary>Whether two elements are equal (compared through their canonical encodings).</summary>
+  public readonly bool EqualsInConstantTime(Field25519 other) => (this - other).IsZero;
+
   /// <summary>Whether the canonical encoding is odd (the "negative" bit of Ed25519).</summary>
   public readonly bool IsNegative {
     get {

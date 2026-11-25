@@ -12,4 +12,10 @@ the keys exist for these tests, and their passphrase is `keypass`.
 | `rsa-ocb.pgp` | `gpg -r cwb-rsa@test.invalid -e plain.txt`: RSA session key, tag 20 AEAD (AES-256, OCB) |
 | `rsa-seipd-bz2.pgp` | `gpg -r cwb-rsa@test.invalid --compress-algo bzip2 --rfc4880 -e plain.txt`: tag 18, BZip2-compressed literal |
 
-`plain.txt` was `hello openpgp\n`. `gpg --list-packets` shows the structure of each message.
+| `rsa-public.asc` | the RSA key, `--armor --export` |
+| `p256-secret.asc`, `p256-public.asc` | `gpg --quick-gen-key 'CWB P256 <cwb-p256@test.invalid>' nistp256 sign never` (ECDSA), exported secret and public |
+| `ecc-signed-eddsa.pgp` | `gpg -r cwb-ecc@test.invalid -u cwb-ecc@test.invalid -s -e plain.txt`: signed by the EdDSA primary key |
+| `ecc-signed-rsa.pgp` | the same with `-u cwb-rsa@test.invalid`: an RSA signature |
+| `ecc-signed-ecdsa.pgp` | the same with `-u cwb-p256@test.invalid`: an ECDSA P-256 signature |
+
+`gpg -d` reports a good signature on each of the three signed messages. `plain.txt` was `hello openpgp\n`. `gpg --list-packets` shows the structure of each message.

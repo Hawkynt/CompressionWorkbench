@@ -14139,6 +14139,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`
 | `CompressionBlockSizeOption` | `const string CompressionBlockSizeOption` | Option key: dar's block-mode compression block size (`-z algo:level:size`). |
 | `FirstSliceSizeOption` | `const string FirstSliceSizeOption` | Option key: size of the first slice when it differs (dar's `-S`). |
 | `GnuPgRecipientsOption` | `const string GnuPgRecipientsOption` | Option key: encrypt for GnuPG recipients (dar's `-K gnupg:cipher:recipient`): paths of exported OpenPGP keys (`gpg --export`, binary or armored) separated by `;`. The archive key is random and needs no password; the cipher is `EncryptionMethod` (aes256 by default). |
+| `GnuPgSignerOption` | `const string GnuPgSignerOption` | Option key: with `GnuPgRecipientsOption`, sign the archive key (dar's `--sign`): the path of an exported secret key (RSA, ECDSA or EdDSA), optionally followed by `\|` and its passphrase. |
 | `KdfHashOption` | `const string KdfHashOption` | Option key: the key-derivation hash for the block ciphers (dar's `--kdf-param :hash`): argon2 (the default), sha512, sha1 or md5. |
 | `KdfIterationsOption` | `const string KdfIterationsOption` | Option key: the key-derivation iteration count (dar's `--kdf-param count`); 10 000 for argon2 and 200 000 for the others by default, as dar. |
 | `SliceSizeOption` | `const string SliceSizeOption` | Option key: size of every slice file in bytes (dar's `-s`); `k`, `M`, `G` and `T` suffixes count in 1024s. Empty or 0 writes one slice. |

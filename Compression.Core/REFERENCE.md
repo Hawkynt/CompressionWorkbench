@@ -182,7 +182,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesBlockCipher`](#aesblockcipher) · [`AesCryptor`](#aescryptor) · [`AesKeyWrap`](#aeskeywrap) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`BlockEncryptor128`](#blockencryptor128) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`ChaCha20`](#chacha20) · [`Eax`](#eax) · [`Eax.SpanAction`](#eaxspanaction) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`ManagedAes`](#managedaes) · [`Ocb`](#ocb) · [`Poly1305`](#poly1305) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Scrypt`](#scrypt) · [`Serpent`](#serpent) · [`TripleDes`](#tripledes) · [`Twofish`](#twofish) · [`X25519`](#x25519)
+[`AesBlockCipher`](#aesblockcipher) · [`AesCryptor`](#aescryptor) · [`AesKeyWrap`](#aeskeywrap) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`BlockEncryptor128`](#blockencryptor128) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`ChaCha20`](#chacha20) · [`Eax`](#eax) · [`Eax.SpanAction`](#eaxspanaction) · [`Ed25519`](#ed25519) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`ManagedAes`](#managedaes) · [`Ocb`](#ocb) · [`Poly1305`](#poly1305) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Scrypt`](#scrypt) · [`Serpent`](#serpent) · [`TripleDes`](#tripledes) · [`Twofish`](#twofish) · [`X25519`](#x25519)
 
 #### `AesBlockCipher`
 
@@ -332,6 +332,18 @@ Encrypts one block in place.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SpanAction` | `void Eax.SpanAction(Span<byte> block)` | Encrypts one block in place. |
+
+#### `Ed25519`
+
+Ed25519 signatures (RFC 8032 section 5.1): key generation from a 32-byte seed, signing and verification over twisted Edwards points in extended coordinates. Signing touches the secret scalar only through constant-time code: a double-and-add-always point multiplication with masked selection on `Field25519`, and scalar arithmetic modulo L by masked conditional subtraction.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `KeySize` | `const int KeySize` | Seed, public key and half-signature length. |
+| `SignatureSize` | `const int SignatureSize` | Signature length (R ‖ S). |
+| `PublicKey` | `static byte[] PublicKey(ReadOnlySpan<byte> seed)` | The public key A of a 32-byte `seed`. |
+| `Sign` | `static byte[] Sign(ReadOnlySpan<byte> seed, ReadOnlySpan<byte> message)` | Signs `message` with the key of `seed` (RFC 8032 section 5.1.6). |
+| `Verify` | `static bool Verify(ReadOnlySpan<byte> publicKey, ReadOnlySpan<byte> message, ReadOnlySpan<byte> signature)` | Verifies `signature` on `message` under `publicKey` (RFC 8032 section 5.1.7). |
 
 #### `KeyDerivation`
 
@@ -532,7 +544,7 @@ The Twofish block cipher (Bruce Schneier, John Kelsey, Doug Whiting, David Wagne
 
 #### `X25519`
 
-The X25519 Diffie-Hellman function of RFC 7748 (section 5): the Montgomery ladder over Curve25519 with the u-coordinate only, scalars and coordinates as 32-byte little-endian strings.
+The X25519 Diffie-Hellman function of RFC 7748 (section 5): the Montgomery ladder over Curve25519 with the u-coordinate only, scalars and coordinates as 32-byte little-endian strings. The ladder runs the same field operations for every scalar: its conditional swaps are masked, and `Field25519` neither branches nor looks up tables on its operands.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -543,7 +555,7 @@ The X25519 Diffie-Hellman function of RFC 7748 (section 5): the Montgomery ladde
 
 ### Namespace `Compression.Core.Crypto.OpenPgp`
 
-[`OpenPgpBlockCipher`](#openpgpblockcipher) · [`OpenPgpKey`](#openpgpkey) · [`OpenPgpMessage`](#openpgpmessage) · [`OpenPgpPacket`](#openpgppacket) · [`OpenPgpPackets`](#openpgppackets) · [`OpenPgpSymmetric`](#openpgpsymmetric)
+[`OpenPgpBlockCipher`](#openpgpblockcipher) · [`OpenPgpKey`](#openpgpkey) · [`OpenPgpMessage`](#openpgpmessage) · [`OpenPgpPacket`](#openpgppacket) · [`OpenPgpPackets`](#openpgppackets) · [`OpenPgpSessionKey`](#openpgpsessionkey) · [`OpenPgpSignature`](#openpgpsignature) · [`OpenPgpSymmetric`](#openpgpsymmetric)
 
 #### `OpenPgpBlockCipher`
 
@@ -585,7 +597,10 @@ Public-key encrypted OpenPGP messages (RFC 9580; RFC 4880 and its LibrePGP succe
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Decrypt` | `static byte[] Decrypt(ReadOnlySpan<byte> message, IEnumerable<OpenPgpKey> keys, string passphrase)` | Decrypts `message` with the first of `keys` a session key packet is addressed to (or, for a hidden recipient, that opens it), unlocking it with `passphrase`, and returns the literal data. |
-| `Encrypt` | `static byte[] Encrypt(ReadOnlySpan<byte> data, IReadOnlyList<OpenPgpKey> recipients, int algorithm = 9)` | Encrypts `data` as binary literal data to every recipient in `recipients` under symmetric algorithm `algorithm`: one PKESK v3 per recipient and a tag 18 version 1 packet. |
+| `Decrypt` | `static byte[] Decrypt(ReadOnlySpan<byte> message, IEnumerable<OpenPgpKey> keys, string passphrase, out IReadOnlyList<OpenPgpSignature> signatures)` | `Decrypt`, and the signatures the message carries, each checked against the keys given (`Verified` stays null for a signer whose key is not among them). |
+| `Decrypt` | `static byte[] Decrypt(ReadOnlySpan<byte> message, IEnumerable<OpenPgpKey> keys, string passphrase, out IReadOnlyList<OpenPgpSignature> signatures, out OpenPgpSessionKey sessionKey)` | As `Decrypt`, and the session key with the message's session key packets, so that new data can be sent to the same recipients without their public keys (`Encrypt`). |
+| `Encrypt` | `static byte[] Encrypt(ReadOnlySpan<byte> data, IReadOnlyList<OpenPgpKey> recipients, int algorithm = 9, IReadOnlyList<OpenPgpKey> signers = null)` | Encrypts `data` as binary literal data to every recipient in `recipients` under symmetric algorithm `algorithm`: one PKESK v3 per recipient and a tag 18 version 1 packet; with `signers` (unlocked keys) the literal is wrapped in one-pass signature and signature packets. |
+| `Encrypt` | `static byte[] Encrypt(ReadOnlySpan<byte> data, OpenPgpSessionKey sessionKey, IReadOnlyList<OpenPgpKey> signers = null)` | Encrypts `data` under an existing `sessionKey`: its session key packets as they are, then a new tag 18 packet; signed by `signers` when given. |
 
 #### `OpenPgpPacket`
 
@@ -611,6 +626,39 @@ The OpenPGP packet framing (RFC 9580 section 4.2, RFC 4880 section 4.2): old-for
 | `Read` | `static List<OpenPgpPacket> Read(ReadOnlySpan<byte> data)` | Splits `data` (binary or ASCII-armored) into packets. |
 | `WriteMpi` | `static void WriteMpi(Stream output, ReadOnlySpan<byte> magnitude)` | Writes `magnitude` (big-endian, leading zeros dropped) as an MPI. |
 | `Write` | `static void Write(Stream output, int tag, ReadOnlySpan<byte> body)` | Writes a new-format packet header and body. |
+
+#### `OpenPgpSessionKey`
+
+A message's session key: its symmetric algorithm, the key, and the session key packets that carry it to the recipients.
+
+Implements `IEquatable<OpenPgpSessionKey>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpenPgpSessionKey` | `OpenPgpSessionKey(int Algorithm, byte[] Key, byte[] KeyPackets)` | A message's session key: its symmetric algorithm, the key, and the session key packets that carry it to the recipients. |
+| `Algorithm` | `int Algorithm { get; init; }` |  |
+| `KeyPackets` | `byte[] KeyPackets { get; init; }` |  |
+| `Key` | `byte[] Key { get; init; }` |  |
+
+#### `OpenPgpSignature`
+
+A version 4 OpenPGP signature over binary data (RFC 9580 sections 5.2.3 and 5.2.4, signature type 0x00): RSA (PKCS#1 v1.5), ECDSA over NIST P-256/384/521 and the legacy EdDSA over Ed25519 that gpg makes with its default keys. `Verified` is null until checked, then whether the key it names verifies it.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Created` | `DateTimeOffset? Created { get; }` | The signature creation time (subpacket 2). |
+| `HashAlgorithm` | `int HashAlgorithm { get; }` | The hash algorithm (8 SHA-256, 10 SHA-512, …). |
+| `HashPrefix` | `byte[] HashPrefix { get; }` | The first two bytes of the hash, stored in the clear. |
+| `IssuerFingerprint` | `byte[] IssuerFingerprint { get; }` | The issuer's v4 fingerprint (subpacket 33), when present. |
+| `IssuerKeyId` | `ulong? IssuerKeyId { get; }` | The issuer's key ID (subpacket 16, or the fingerprint's low 64 bits). |
+| `PublicKeyAlgorithm` | `int PublicKeyAlgorithm { get; }` | The public-key algorithm (1 RSA, 19 ECDSA, 22 EdDSA). |
+| `Signer` | `OpenPgpKey Signer { get; }` | The key that verified it. |
+| `Type` | `int Type { get; }` | The signature type (0x00: binary document). |
+| `Verified` | `bool? Verified { get; }` | Null until `Verify` ran with the issuer's key; then whether the signature holds. |
+| `Create` | `static ValueTuple<byte[], byte[]> Create(OpenPgpKey signer, ReadOnlySpan<byte> data, DateTimeOffset? created = null)` | A one-pass signature packet body (section 5.4) and the signature packet body of `signer` (unlocked, RSA, ECDSA or Ed25519 EdDSA) over binary `data`, with SHA-512 as gpg uses for these keys. |
+| `IsIssuedBy` | `bool IsIssuedBy(OpenPgpKey key)` | Whether `key` is the issuer this signature names. |
+| `Parse` | `static OpenPgpSignature Parse(byte[] body)` | Parses a signature packet body. |
+| `Verify` | `bool? Verify(ReadOnlySpan<byte> data, IEnumerable<OpenPgpKey> keys)` | Checks the signature over `data` with the first of `keys` it names, and records the result in `Verified` (left null when no such key is given). |
 
 #### `OpenPgpSymmetric`
 

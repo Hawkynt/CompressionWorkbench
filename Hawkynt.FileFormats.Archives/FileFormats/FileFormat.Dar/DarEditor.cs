@@ -137,6 +137,9 @@ internal static partial class DarEditor {
             // GnuPG recipients: the same key under the same OpenPGP message, so they still open it
             Key = source.ArchiveKey,
             CryptedKey = source.ArchiveKey is null ? null : trailer.CryptedKey,
+            Signed = source.GnuPg is not null,
+            // a signed archive's new catalogue is signed again by the same keys, to the same recipients
+            CatalogueTail = source.GnuPg is { } opened ? DarGnuPg.ResignCatalogue(opened) : null,
           }
         : null,
     };

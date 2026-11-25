@@ -23,12 +23,12 @@ public class OpenPgpGnuPgOracleTests {
       Assert.Ignore("gpg is not installed (sudo apt-get install -y gnupg).");
     this._tmp = Path.Combine(Path.GetTempPath(), $"cwb_openpgp_{Guid.NewGuid():N}");
     Directory.CreateDirectory(this._tmp);
-    foreach (var name in new[] { "ecc-secret.asc", "rsa-secret.asc" })
+    foreach (var name in new[] { "ecc-secret.asc", "rsa-secret.asc", "p256-secret.asc" })
       File.WriteAllBytes(Path.Combine(this._tmp, name), OpenPgpTests.Vector(name));
     var made = FsInteropToolbox.RunWsl("mktemp -d /tmp/cwb-gnupg-XXXXXX");
     Assert.That(made.ExitCode, Is.Zero, made.StdErr);
     this._home = made.StdOut.Trim();
-    var import = this.Gpg($"--import {FsInteropToolbox.WinToWsl(Path.Combine(this._tmp, "ecc-secret.asc"))} {FsInteropToolbox.WinToWsl(Path.Combine(this._tmp, "rsa-secret.asc"))}");
+    var import = this.Gpg($"--import {FsInteropToolbox.WinToWsl(Path.Combine(this._tmp, "ecc-secret.asc"))} {FsInteropToolbox.WinToWsl(Path.Combine(this._tmp, "rsa-secret.asc"))} {FsInteropToolbox.WinToWsl(Path.Combine(this._tmp, "p256-secret.asc"))}");
     Assert.That(import.ExitCode, Is.Zero, import.StdErr);
   }
 
@@ -61,6 +61,23 @@ public class OpenPgpGnuPgOracleTests {
     var output = Path.Combine(this._tmp, "ours.out");
     var r = this.Gpg($"-o {FsInteropToolbox.WinToWsl(output)} -d {FsInteropToolbox.WinToWsl(message)}");
     Assert.That(r.ExitCode, Is.Zero, $"gpg refused our message:\n{r.StdErr}");
+    Assert.That(File.ReadAllBytes(output), Is.EqualTo(data));
+  }
+
+  [TestCase("ecc-secret.asc", 22)]
+  [TestCase("rsa-secret.asc", 1)]
+  [TestCase("p256-secret.asc", 19)]
+  public void GivenOurSignedMessage_WhenGpgDecryptsIt_ThenItReportsAGoodSignature(string signerFile, int algorithm) {
+    var signer = OpenPgpKey.Load(OpenPgpTests.Vector(signerFile)).First(k => k.HasSecret && k.Algorithm == algorithm);
+    signer.Unlock(Passphrase);
+    var recipient = OpenPgpKey.Load(OpenPgpTests.Vector("rsa-secret.asc")).Last(k => k.CanEncrypt);
+    var data = Data();
+    var message = Path.Combine(this._tmp, "signed.pgp");
+    File.WriteAllBytes(message, OpenPgpMessage.Encrypt(data, [recipient], signers: [signer]));
+    var output = Path.Combine(this._tmp, "signed.out");
+    var r = this.Gpg($"--status-fd 2 -o {FsInteropToolbox.WinToWsl(output)} -d {FsInteropToolbox.WinToWsl(message)}");
+    Assert.That(r.ExitCode, Is.Zero, $"gpg refused our signed message:\n{r.StdErr}");
+    Assert.That(r.StdErr, Does.Contain("[GNUPG:] GOODSIG").And.Contain("[GNUPG:] VALIDSIG " + Convert.ToHexString(signer.Fingerprint)));
     Assert.That(File.ReadAllBytes(output), Is.EqualTo(data));
   }
 
