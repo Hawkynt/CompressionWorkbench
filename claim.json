@@ -15,6 +15,22 @@
   "model": "Claude Opus 5.5",
   "pausedUntil": null,
   "renewedAt": "2026-11-25T11:32:37Z",
+  "runs": [
+    {
+      "active": true,
+      "agent": "claude",
+      "finished": "2026-11-25T11:32:39Z",
+      "kind": "continuation",
+      "manager": "DE05PCI025-28e1",
+      "model": "Claude Opus 5.5",
+      "models": [
+        "Claude Opus 5.5"
+      ],
+      "started": "2026-11-25T11:30:34Z",
+      "verdict": "needs-input",
+      "worker": "claude"
+    }
+  ],
   "state": "released",
   "step": "needs-input",
   "takeovers": 0
