@@ -82,6 +82,18 @@ public sealed class Reiser4Writer {
   /// captured mkfs profile, whose root names cryptcompress for new files.</summary>
   public Reiser4FileBody FileBody { get; set; } = Reiser4FileBody.Extents;
 
+  /// <summary>
+  /// Writes three-word ("short") keys instead of the default four-word ones, as
+  /// <c>mkfs.reiser4 -o key=key_short</c> would. Only a kernel compiled with
+  /// <c>REISER4_LARGE_KEY=0</c> mounts such a volume, and a reiser4progs 1.2.2 <c>mkfs.reiser4</c>
+  /// cannot make one without a fix (<c>docs/REISER4-NATIVE-PROFILE.md</c>, "Short keys").
+  /// </summary>
+  public bool ShortKeys { get; set; }
+
+  /// <summary>Offset of the format40 flags in the format superblock, and of their copy in the backup record.</summary>
+  private const int FormatFlagsOff = 72;
+  private const int BackupFormatFlagsOff = 91;
+
   /// <summary>Marker written at <see cref="MasterPayloadMarkerOff" /> of the master superblock by the earliest workbench writer.</summary>
   /// <remarks>The value spells nothing: a marker that reads as words names whoever chose them.</remarks>
   internal static readonly byte[] PayloadMarker =
@@ -248,8 +260,16 @@ public sealed class Reiser4Writer {
     Array.Clear(backup, BackupLabelOff, 16);
     label.AsSpan().CopyTo(backup.AsSpan(BackupLabelOff, 16));
 
-    var plan = Reiser4Plan.Fresh(new Reiser4Layout(blockSize), master, Sized(LoadTemplate(17), blockSize),
-      Sized(LoadTemplate(21), blockSize), backup, LoadTemplate(24), mkfsId, Math.Max(this.BlockCount, MinBlockCount));
+    // The captures have large keys; a short-key volume differs in the format40 flag bit that says
+    // so (and its copy in the backup record), then in every key the tree holds.
+    var format = Sized(LoadTemplate(17), blockSize);
+    var keys = this.ShortKeys ? Reiser4KeyShape.Short : Reiser4KeyShape.Large;
+    if (this.ShortKeys) {
+      format[FormatFlagsOff] &= unchecked((byte)~Reiser4KeyShape.LargeKeysFlag);
+      backup[BackupFormatFlagsOff] &= unchecked((byte)~Reiser4KeyShape.LargeKeysFlag);
+    }
+    var plan = Reiser4Plan.Fresh(new Reiser4Layout(blockSize), master, format,
+      Sized(LoadTemplate(21), blockSize), backup, LoadTemplate(24), mkfsId, Math.Max(this.BlockCount, MinBlockCount), keys);
     plan.FileBody = this.FileBody;
     return plan;
   }

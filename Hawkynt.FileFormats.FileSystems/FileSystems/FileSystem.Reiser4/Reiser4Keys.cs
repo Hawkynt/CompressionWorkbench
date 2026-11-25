@@ -47,6 +47,115 @@ internal readonly record struct Reiser4Key(ulong Word0, ulong Ordering, ulong Ob
   }
 }
 
+/// <summary>
+/// How long a volume's keys are, and everything on disk whose size follows from that: a large key
+/// is four words (locality and type, ordering, object id, offset), a short key three — it has no
+/// ordering word. Bit 0 of the format40 flags says which one a volume uses.
+/// </summary>
+/// <remarks>
+/// <para>A short key is held in memory as a <see cref="Reiser4Key" /> whose ordering is zero, so
+/// keys of either kind compare and sort alike. Its sizes, measured on volumes the patched
+/// <c>mkfs.reiser4</c> formatted and a <c>REISER4_LARGE_KEY=0</c> kernel filled
+/// (<c>docs/REISER4-NATIVE-PROFILE.md</c>, "Short keys"): a 30-byte item header, an 18-byte
+/// directory unit header (object id and offset of the entry key, then the unit offset) and a
+/// 16-byte entry target (the target's first word and object id).</para>
+/// </remarks>
+internal sealed class Reiser4KeyShape {
+
+  /// <summary>Four-word keys: what <c>mkfs.reiser4</c> makes unless told otherwise.</summary>
+  internal static readonly Reiser4KeyShape Large = new(large: true);
+
+  /// <summary>Three-word keys, which only a kernel compiled with <c>REISER4_LARGE_KEY=0</c> mounts.</summary>
+  internal static readonly Reiser4KeyShape Short = new(large: false);
+
+  private Reiser4KeyShape(bool large) {
+    this.IsLarge = large;
+    this.KeyBytes = large ? 32 : 24;
+  }
+
+  /// <summary>The format40 flag bit that marks a volume of large keys.</summary>
+  internal const ulong LargeKeysFlag = 1;
+
+  internal static Reiser4KeyShape FromFormatFlags(ulong flags) => (flags & LargeKeysFlag) != 0 ? Large : Short;
+
+  internal bool IsLarge { get; }
+
+  /// <summary>Bytes of one key on disk.</summary>
+  internal int KeyBytes { get; }
+
+  /// <summary>An item header: the key, then the body's offset, the flags and the item plugin.</summary>
+  internal int ItemHeaderBytes => this.KeyBytes + 6;
+
+  /// <summary>The part of an entry key a directory unit header keeps: every word but the first.</summary>
+  internal int EntryIdBytes => this.KeyBytes - 8;
+
+  /// <summary>A directory unit header: the entry id, then the offset of the unit's body.</summary>
+  internal int UnitHeaderBytes => this.EntryIdBytes + 2;
+
+  /// <summary>An entry's target: its stat key without the offset.</summary>
+  internal int TargetBytes => this.KeyBytes - 8;
+
+  /// <summary>Names up to this many bytes are held in the entry key itself and stored nowhere else.</summary>
+  internal int MaxInlineLength => this.IsLarge ? 23 : 15;
+
+  internal Reiser4Key Read(ReadOnlySpan<byte> at) => this.IsLarge
+    ? Reiser4Key.Read(at)
+    : new(BinaryPrimitives.ReadUInt64LittleEndian(at), 0, BinaryPrimitives.ReadUInt64LittleEndian(at[8..]), BinaryPrimitives.ReadUInt64LittleEndian(at[16..]));
+
+  internal void Write(Reiser4Key key, Span<byte> at) {
+    if (this.IsLarge) {
+      key.Write(at);
+      return;
+    }
+    if (key.Ordering != 0) throw new InvalidDataException("Reiser4: a key with an ordering word cannot be written as a short key.");
+    BinaryPrimitives.WriteUInt64LittleEndian(at, key.Word0);
+    BinaryPrimitives.WriteUInt64LittleEndian(at[8..], key.ObjectId);
+    BinaryPrimitives.WriteUInt64LittleEndian(at[16..], key.Offset);
+  }
+
+  /// <summary>The ordering, object id and offset of an entry key as a unit header holds them.</summary>
+  internal (ulong Ordering, ulong ObjectId, ulong Offset) ReadEntryId(ReadOnlySpan<byte> at) => this.IsLarge
+    ? (BinaryPrimitives.ReadUInt64LittleEndian(at), BinaryPrimitives.ReadUInt64LittleEndian(at[8..]), BinaryPrimitives.ReadUInt64LittleEndian(at[16..]))
+    : (0, BinaryPrimitives.ReadUInt64LittleEndian(at), BinaryPrimitives.ReadUInt64LittleEndian(at[8..]));
+
+  internal void WriteEntryId(Reiser4DirEntry entry, Span<byte> at) {
+    if (this.IsLarge) {
+      BinaryPrimitives.WriteUInt64LittleEndian(at, entry.Ordering);
+      at = at[8..];
+    } else if (entry.Ordering != 0) throw new InvalidDataException("Reiser4: an entry key with an ordering word cannot be written as a short key.");
+    BinaryPrimitives.WriteUInt64LittleEndian(at, entry.ObjectId);
+    BinaryPrimitives.WriteUInt64LittleEndian(at[8..], entry.Offset);
+  }
+
+  /// <summary>The stat key an entry names.</summary>
+  internal Reiser4Key ReadTarget(ReadOnlySpan<byte> at) {
+    var word0 = BinaryPrimitives.ReadUInt64LittleEndian(at);
+    return this.IsLarge
+      ? Reiser4Key.Of(word0 >> 4, Reiser4Key.MinorStatData, BinaryPrimitives.ReadUInt64LittleEndian(at[8..]), BinaryPrimitives.ReadUInt64LittleEndian(at[16..]), 0)
+      : Reiser4Key.Of(word0 >> 4, Reiser4Key.MinorStatData, 0, BinaryPrimitives.ReadUInt64LittleEndian(at[8..]), 0);
+  }
+
+  internal void WriteTarget(Reiser4Key target, Span<byte> at) {
+    BinaryPrimitives.WriteUInt64LittleEndian(at, target.Word0);
+    if (this.IsLarge) {
+      BinaryPrimitives.WriteUInt64LittleEndian(at[8..], target.Ordering);
+      BinaryPrimitives.WriteUInt64LittleEndian(at[16..], target.ObjectId);
+    } else {
+      if (target.Ordering != 0) throw new InvalidDataException("Reiser4: a target with an ordering word cannot be written as a short key.");
+      BinaryPrimitives.WriteUInt64LittleEndian(at[8..], target.ObjectId);
+    }
+  }
+
+  /// <summary>Bytes one entry takes in a directory item: unit header, target, and the name when the key could not hold it.</summary>
+  internal int EntryBytes(Reiser4DirEntry entry) => this.UnitHeaderBytes + this.TargetBytes + (entry.Hashed ? entry.Name.Length + 1 : 0);
+
+  /// <summary>The key words of the entry for <paramref name="name" /> under this key length.</summary>
+  internal (ulong Ordering, ulong ObjectId, ulong Offset, bool Hashed) NameKey(ReadOnlySpan<byte> name, Reiser4HashId hash, Reiser4FibrationId fibration)
+    => this.IsLarge ? Reiser4NameKeys.Make(name, hash, fibration) : Reiser4NameKeys.MakeShort(name, hash, fibration);
+
+  public override string ToString() => this.IsLarge ? "large keys" : "short keys";
+}
+
 /// <summary>Plugin identifiers of the hash and fibration plugin types (plugin type 3 and 4).</summary>
 internal enum Reiser4HashId : ushort { Rupasov = 0, R5 = 1, Tea = 2, Fnv1 = 3, Degenerate = 4 }
 
@@ -106,6 +215,34 @@ internal static class Reiser4NameKeys {
       offset = Pack(name, 15, 0);
     return (ordering | Fibre(fibration, name), objectId, offset, hashed);
   }
+
+  /// <summary>Names up to this many bytes are held whole in a short entry key.</summary>
+  internal const int MaxShortInlineLength = 15;
+
+  /// <summary>
+  /// The entry key words for <paramref name="name" /> on a short-key volume. There is no ordering
+  /// word, so the object id takes what the ordering holds in a large key — the first seven bytes,
+  /// the long-name bit and the fibre — and the offset the next eight bytes, or, past fifteen bytes,
+  /// the hash of everything after the first seven.
+  /// </summary>
+  internal static (ulong Ordering, ulong ObjectId, ulong Offset, bool Hashed) MakeShort(
+      ReadOnlySpan<byte> name, Reiser4HashId hash, Reiser4FibrationId fibration) {
+    if (name.Length == 1 && name[0] == (byte)'.') return (0, 0, 0, false);
+    var objectId = Pack(name, 0, 1);
+    var hashed = name.Length > MaxShortInlineLength;
+    ulong offset;
+    if (hashed) {
+      objectId |= LongNameBit;
+      offset = Hash(hash, name[7..]);
+    } else
+      offset = name.Length > 7 ? Pack(name, 7, 0) : 0UL;
+    return (0, objectId | Fibre(fibration, name), offset, hashed);
+  }
+
+  /// <summary>Whether an entry key with these words hashed its name rather than holding it.</summary>
+  /// <remarks>A large entry key always has a non-zero ordering (its first name byte), so a zero
+  /// ordering means either "." or a short key, whose object id carries the long-name bit.</remarks>
+  internal static bool IsHashed(ulong ordering, ulong objectId) => ((ordering != 0 ? ordering : objectId) & LongNameBit) != 0;
 
   /// <summary>The fibre bits a name sorts under, already shifted into place.</summary>
   internal static ulong Fibre(Reiser4FibrationId fibration, ReadOnlySpan<byte> name) {
@@ -226,8 +363,10 @@ internal static class Reiser4NameKeys {
 
   /// <summary>The name a key holds whole, or <see langword="null" /> when the key hashed it.</summary>
   internal static byte[]? Unpack(ulong ordering, ulong objectId, ulong offset) {
-    if ((ordering & LongNameBit) != 0) return null;
+    if (IsHashed(ordering, objectId)) return null;
     if (ordering == 0 && objectId == 0 && offset == 0) return [(byte)'.'];
+    // A short key: seven bytes in the object id, eight in the offset (see IsHashed).
+    if (ordering == 0) (ordering, objectId, offset) = (objectId, offset, 0);
     var bytes = new List<byte>(23);
     static bool Take(List<byte> into, ulong value, int count) {
       for (var shift = (count - 1) * 8; shift >= 0; shift -= 8) {

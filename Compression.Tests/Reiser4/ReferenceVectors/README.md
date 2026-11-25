@@ -28,6 +28,16 @@ modification time in 2001.
 | `deg-ext-3` | `create=reg40,hash=deg_hash,fibration=ext_3_fibre` | degenerate hash, three-letter extension fibres |
 | `rupasov` | `create=reg40,hash=rupasov_hash` | the kernel's Rupasov keys, which `fsck.reiser4` disagrees with |
 | `journal-replay` | `create=reg40` | a commit the kernel had not yet written back: block 19 names transaction 181, block 20 transaction 130 |
+| `short-keys` | `key=key_short` | three-word keys, cryptcompress files |
+| `short-keys-reg40` | `key=key_short,create=reg40` | three-word keys, tails and extents |
+
+The two short-key volumes come from tools no distribution ships, built from source as
+`docs/REISER4-NATIVE-PROFILE.md` ("Short keys") records: `mkfs.reiser4` from reiser4progs 1.2.2 with
+the local fix that lets it format them, and Linux 5.10.2 with the Reiser4 patch for it (format
+release 4.0.2) compiled with `REISER4_LARGE_KEY=0`, booted by the same harness with
+`CWB_REISER4_BZIMAGE`. Before `populate.sh` they get a `lengths` directory (`short-names.sh`) of names
+of 7, 8, 15, 16, 23 and 24 bytes — around the 15 bytes a short key holds whole and the 23 a large one
+does. The fixed `fsck.reiser4` called both consistent. Captured 2026-11-25.
 
 `<name>.manifest` is what the kernel read back after unmounting and mounting again: one line per
 object, `path|type|mode|uid|gid|size|nlink|mtime|major:minor|md5-or-link-target`, every regular file

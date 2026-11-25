@@ -48,14 +48,24 @@ internal static class Reiser4KernelOracle {
   /// guest that booted and mounted the image but did not finish — hung, crashed, or out of time —
   /// fails with its console, since that can be the image's doing.
   /// </remarks>
-  internal static Mount Read(string imagePath) {
-    var copy = imagePath + ".kernel";
-    File.Copy(imagePath, copy, overwrite: true);
+  /// <param name="imagePath">The volume.</param>
+  /// <param name="kernelImage">A Linux path to a kernel with Reiser4 built in, booted instead of the
+  /// packaged one (<see cref="Reiser4ShortKeyOracle" />).</param>
+  /// <param name="prelude">Guest shell commands run before the manifest is taken, with the volume
+  /// unmounted on entry and exit; when given, the guest writes to <paramref name="imagePath" />
+  /// itself rather than to a copy, so the caller can read what the kernel wrote.</param>
+  internal static Mount Read(string imagePath, string? kernelImage = null, string? prelude = null) {
+    var copy = prelude is null ? imagePath + ".kernel" : imagePath;
+    if (prelude is null) File.Copy(imagePath, copy, overwrite: true);
+    var guestPath = imagePath + ".guest.sh";
     try {
       var script = FsInteropToolbox.WinToWsl(Path.Combine(ScriptDirectory, "kernel-run.sh"));
-      var guest = FsInteropToolbox.WinToWsl(Path.Combine(ScriptDirectory, "manifest.sh"));
+      var manifest = Path.Combine(ScriptDirectory, "manifest.sh");
+      if (prelude is not null) File.WriteAllText(guestPath, prelude.ReplaceLineEndings("\n") + "\n" + File.ReadAllText(manifest).ReplaceLineEndings("\n"));
+      var guest = FsInteropToolbox.WinToWsl(prelude is null ? manifest : guestPath);
       var timeout = GuestTimeoutSeconds;
-      var run = FsInteropToolbox.RunWsl($"CWB_REISER4_KERNEL_TIMEOUT={timeout} bash {script} {FsInteropToolbox.WinToWsl(copy)} {guest}",
+      var kernel = kernelImage is null ? "" : $"CWB_REISER4_BZIMAGE={kernelImage} ";
+      var run = FsInteropToolbox.RunWsl($"{kernel}CWB_REISER4_KERNEL_TIMEOUT={timeout} bash {script} {FsInteropToolbox.WinToWsl(copy)} {guest}",
         TimeSpan.FromSeconds(timeout + 180));
       var log = run.StdOut + "\n" + run.StdErr;
       if (run.TimedOut)
@@ -89,7 +99,10 @@ internal static class Reiser4KernelOracle {
       Assert.That(start >= 0 && end > start, Is.True, $"the kernel printed no manifest:\n{log}");
       return new Mount(Reiser4KernelVolumeTests.ParseManifest(log[start..end]), complaints, log);
     } finally {
-      try { File.Delete(copy); } catch { /* best effort */ }
+      try {
+        if (prelude is null) File.Delete(copy);
+        else File.Delete(guestPath);
+      } catch { /* best effort */ }
     }
   }
 

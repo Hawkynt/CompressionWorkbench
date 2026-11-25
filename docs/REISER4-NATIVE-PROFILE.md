@@ -63,8 +63,8 @@ An edit carries the master, format, status and backup blocks of the source and p
 counters (block and free-block counts, root, next object id, file count, height); the journal blocks
 are written blank because the rebuilt volume already holds the replayed state, and the copies are
 written for the rebuilt volume's length. A volume whose status is not 0 is refused, as is one with
-short keys (`mkfs.reiser4 -o key=key_short` crashes in 1.2.2, so no reference exists) or a block
-size `mkfs.reiser4` does not make.
+a block size `mkfs.reiser4` does not make. Short-key volumes are read and written (see "Short keys"
+below).
 
 ## Plugin profile
 
@@ -158,6 +158,62 @@ of its units (26 + 24 bytes each, plus a long name and its NUL), its `nlink` 2 p
 subdirectories (3 plus them for the root). The writer recomputes these, and a file's `nlink`, from
 the namespace; every other stat-data byte is carried.
 
+## Short keys
+
+Bit 0 of the format40 flags (block 17, byte 72; its copy in the backup block is byte 91) says the
+volume's keys are large — four 64-bit words. Clear, they are short: three words, `(locality and
+type, object id, offset)`, with no ordering word. Nothing else in the fixed blocks differs; an empty
+volume made with `-o key=key_short` differs from a default one in those two bits and in the tree.
+Everything sized by the key shrinks with it:
+
+| On disk | Large keys | Short keys |
+| --- | --- | --- |
+| key | 32 bytes | 24 bytes |
+| item header (key, body offset, flags, plugin) | 38 bytes | 30 bytes |
+| cde40 unit header (entry key less its first word, body offset) | 26 bytes | 18 bytes |
+| entry target (stat key less its offset) | 24 bytes | 16 bytes |
+| longest name held in the entry key | 23 bytes | 15 bytes |
+
+A short entry key puts in the object id what a large one puts in the ordering — the name's first
+seven bytes from its second byte, the fibre in the top seven bits, bit 56 for a hashed name — and
+in the offset the next eight bytes, or, for a name longer than 15 bytes, the hash of every byte
+after the seventh; such a name is stored after the 16-byte target, NUL-terminated. A stat key has
+no ordering, so a new object's stat key is `(parent oid, type 1, oid, 0)`. A directory's `bytes`
+sums 18 + 16 bytes per entry plus each stored name and its NUL.
+
+The reader takes the shape from the flag, and the writer keeps it on every edit; a new volume has
+short keys when asked (`Reiser4Writer.ShortKeys`, the `Keys` create option).
+
+### Oracle
+
+No distribution ships a tool that makes or mounts such a volume, so both oracles were built from
+source for this purpose only. Nothing of them is part of this repository; they live in the
+developer's Linux environment, and the short-key tests skip without them.
+
+* **reiser4progs 1.2.2 with libaal 1.0.7**, built from the Debian `orig` tarballs
+  (`reiser4progs_1.2.2.orig.tar.gz`, SHA-256 `1ddf462f…a5bdbe`; `libaal_1.0.7.orig.tar.gz`,
+  SHA-256 `7c856886…aab9891`). `mkfs.reiser4 -o key=key_short` in the released 1.2.2 (and in
+  reiser4progs master) crashes while creating the root directory: the cde40 item's accessors for an
+  entry's ordering word read through the ordering field's address, which the short-key layout does
+  not have. The local oracle patch makes those two accessors yield 0 for the short-key policy
+  instead, which is what the field means there; with it, `mkfs.reiser4` formats short-key volumes,
+  `debugfs.reiser4` shows `key policy: SHORT`, and `fsck.reiser4 --check` checks them (the packaged
+  `fsck.reiser4` crashes on the same volumes). A second, build-only change drops `-static` from the
+  libaal version probe in `configure`, because libaal installs no static archive.
+* **Linux 5.10.2 with the Reiser4 patch for it** (`linux-5.10.2.tar.xz` from kernel.org, SHA-256
+  `3b84e13a…ef781a2`; `reiser4-for-5.10.2.patch.gz` from the Reiser4 project's
+  `reiser4-for-linux-5.x` downloads, SHA-256 `2f7a9e61…dc860f3`, format release 4.0.2), with the one
+  compile-time switch the module offers for this, `REISER4_LARGE_KEY`, set to 0 in
+  `fs/reiser4/reiser4.h`: a module built that way mounts only short-key volumes. Built with gcc 12
+  (`defconfig` plus `kvm_guest.config`, Reiser4 and virtio built in, `make -j2 bzImage`); two
+  build-only changes let a 2020 kernel's host tools build with today's toolchain: warnings are not
+  errors in objtool, and objtool treats an object file without a symbol table as having no symbols,
+  as later kernels do. The image boots under `KernelOracle/kernel-run.sh` with
+  `CWB_REISER4_BZIMAGE` naming it (no modules are loaded then), with 1 GiB of guest memory.
+
+`Reiser4ShortKeyOracle` finds them at `CWB_REISER4_SHORT_BZIMAGE` and `CWB_REISER4_SHORT_PROGS`
+(Linux paths; defaults `~/.cache/cwb/reiser4-short/bzImage` and `.../sbin`).
+
 ## Encrypted files
 
 The format reserves room for them — plugin-set member 8 (cipher), member 9 (digest) and the crypto
@@ -232,6 +288,9 @@ by path with the source's SHA-256 before the result is accepted.
 | 13 kernel-written reference volumes: default (lzo1, conv, 64K), gzip1+force+8K, zstd1+latt+16K, lzo1+none+4K, reg40 smart, reg40 tails, reg40+extents+node41, node41, tea+lexic, fnv1+dot_o, deg+ext_3, rupasov, journal replay | our reader against the kernel's read-back manifest | every path, type, mode, owner, mtime, link count, size, device, symlink target and file MD5 equal |
 | the same, edited (add a long-named file under each body, a symlink, a hard link; remove two names) | `fsck.reiser4 --check`; the kernel's manifest | consistent; carried objects identical, new ones read back byte for byte, including clusters we compressed with lzo1, gzip1 and zstd1 |
 | names in every reference directory | re-keyed with the volume's hash and fibration | identical to the kernel's keys, Rupasov included |
+| 2 short-key volumes the short-key kernel filled (cryptcompress and reg40), with names of 7, 8, 15, 16, 23 and 24 bytes | our reader against the kernel's manifest; names re-keyed | identical; names past 15 bytes hashed, none of them before |
+| the same, edited (names of 1 to 255 bytes under the profile body, a symlink, a hard link; two names removed); a short-key `mkfs.reiser4` volume edited; writer volumes with short keys under extents and the smart policy | the short-key kernel's manifest; the fixed `fsck.reiser4 --check` | identical; consistent, key policy SHORT |
+| a writer volume with short keys after the short-key kernel added 214 names, a 80 KiB file, a symlink and a hard link and removed a file | our reader against the kernel's manifest; the fixed `fsck.reiser4` | identical; consistent |
 | every `mkfs.reiser4 -o` profile (hashes, fibrations, formattings, create, compression, mode, cluster, node41) edited under each body | `fsck.reiser4 --check`; `debugfs.reiser4 -i/-k` | consistent; names resolve; plain bodies read back; root plugin set unchanged |
 | writer volumes with every object kind and body | `fsck.reiser4`; the kernel's manifest | consistent; identical |
 | a tall tree scattered and defragmented in place | `fsck.reiser4`; the kernel's manifest | consistent after both; no node moved; every file identical |
@@ -253,4 +312,5 @@ reported by `fsck.reiser4` as having the wrong size. `debugfs.reiser4` keys look
 wherever it is installed; the Linux CI leg installs it and runs them as the hard "Reiser4 oracle"
 gate with `CWB_REQUIRE_REISER4PROGS=1`, so a missing tool fails the gate instead of skipping it.
 `Reiser4KernelOracleTests` need the kernel (`CWB_REISER4_KERNEL_DOWNLOAD=1` fetches it) and skip
-without it.
+without it; `Reiser4ShortKeyOracleTests` need the short-key oracle built as described under "Short
+keys" and skip without it.
