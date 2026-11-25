@@ -16,7 +16,9 @@ $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $OutDir, $WorkDir | Out-Null
 . (Join-Path $PSScriptRoot 'refs-common.ps1')
 
-$formats = @{ default = @{}; cluster64k = @{ AllocationUnitSize = 65536 }; integrity = @{ SetIntegrityStreams = $true } }
+# The empty* variants are formatted and left empty: what a fresh volume holds before any file.
+$formats = @{ default = @{}; cluster64k = @{ AllocationUnitSize = 65536 }; integrity = @{ SetIntegrityStreams = $true }
+  empty = @{}; empty64k = @{ AllocationUnitSize = 65536 }; emptyintegrity = @{ SetIntegrityStreams = $true } }
 $gen = Join-Path $WorkDir 'gen'
 Invoke-Probe @('gen', $gen)
 Invoke-Probe @('pattern', '30', '65536', (Join-Path $WorkDir 'replace-same.bin'))
@@ -24,6 +26,8 @@ Invoke-Probe @('pattern', '31', '300000', (Join-Path $WorkDir 'replace-grow.bin'
 Invoke-Probe @('pattern', '32', '20000', (Join-Path $WorkDir 'replace-shrink.bin'))
 Invoke-Probe @('pattern', '33', '70000', (Join-Path $WorkDir 'replace-grow-small.bin'))
 Invoke-Probe @('pattern', '34', '30000', (Join-Path $WorkDir 'added.bin'))
+foreach ($i in 0..23) { Invoke-Probe @('pattern', "$(40 + $i)", "$(5000 + $i)", (Join-Path $WorkDir ('split-{0:D2}.bin' -f $i))) }
+Invoke-Probe @('patterns', '100', '3000', '120', (Join-Path $WorkDir 'grow-{0:D3}.bin'))
 
 # CWB_REFS_OPS limits the edits made (comma list); CWB_REFS_KEEP names the edits whose volumes
 # (base, win-<op>, ours-<op>) are kept for upload, so an artifact holds only what is compared.
@@ -59,7 +63,7 @@ foreach ($name in $Variants) {
     catch { try { Dismount-DiskImage -ImagePath $vhd | Out-Null } catch {} }
   }
   if (-not $vol) { $summary += [ordered]@{ variant = $name; error = 'format failed' }; continue }
-  Copy-Item -Path (Join-Path $gen '*') -Destination "$($vol.Letter):\" -Recurse -Force
+  if ($name -notlike 'empty*') { Copy-Item -Path (Join-Path $gen '*') -Destination "$($vol.Letter):\" -Recurse -Force }
   $offset = $vol.Partition.Offset; $length = $vol.Partition.Size
   Dismount-DiskImage -ImagePath $vhd | Out-Null
   $dir = Join-Path $OutDir $name
@@ -77,6 +81,15 @@ foreach ($name in $Variants) {
     'remove-small' = { param($r) Remove-Item (Join-Path $r 'many/f007.txt') -Force }
     'add'          = { param($r) Copy-Item (Join-Path $WorkDir 'added.bin') (Join-Path $r 'added.bin') -Force }
     'add-dir'      = { param($r) New-Item -ItemType Directory -Path (Join-Path $r 'new-folder') | Out-Null }
+    # "many" holds 200 files over several directory pages.
+    'add-many'     = { param($r) Copy-Item (Join-Path $WorkDir 'added.bin') (Join-Path $r 'many/added.bin') -Force }
+    'add-dir-many' = { param($r) New-Item -ItemType Directory -Path (Join-Path $r 'many/new-folder') | Out-Null }
+    'rename-many'  = { param($r) Rename-Item (Join-Path $r 'many/f010.txt') 'f010-renamed.txt' }
+    'replace-many' = { param($r) Copy-Item (Join-Path $WorkDir 'replace-grow-small.bin') (Join-Path $r 'many/f020.txt') -Force }
+    # 24 files sorting into one page of "many", enough to split it.
+    'add-many-split' = { param($r) foreach ($i in 0..23) { Copy-Item (Join-Path $WorkDir ('split-{0:D2}.bin' -f $i)) (Join-Path $r ('many/f015-{0:D2}.bin' -f $i)) -Force } }
+    # 120 files into dir1, a one-page directory, enough to grow it a level at 4 and 64 KiB.
+    'add-dir1-grow' = { param($r) foreach ($i in 0..119) { Copy-Item (Join-Path $WorkDir ('grow-{0:D3}.bin' -f $i)) (Join-Path $r ('dir1/grow-{0:D3}.bin' -f $i)) -Force } }
     'rename'       = { param($r) Rename-Item (Join-Path $r 'rename-me.txt') 'renamed.txt' }
     'rename-long'  = { param($r) Rename-Item (Join-Path $r 'small.txt') 'a-much-longer-name-for-the-small-file.txt' }
     'rename-unicode' = { param($r) Rename-Item (Join-Path $r 'rename-me.txt') ([string]::new([char[]]@(0x47,0x72,0xFC,0xDF,0x65,0x2D,0x3A9,0x3BC,0x3AD,0x3B3,0x3B1,0x2D,0x65E5,0x672C)) + '.txt') }
@@ -116,6 +129,7 @@ foreach ($name in $Variants) {
       try {
         $root = Mount-Rw $copy
         $verdict.readWrite = @(Get-Manifest $root | ForEach-Object { "$($_.path) $($_.size) $($_.sha256)" })
+        $verdict.directories = @(Get-ChildItem -LiteralPath $root -Recurse -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'System Volume Information' } | ForEach-Object { $_.FullName.Substring($root.Length) })
         $scan = Join-Path $WorkDir "$name.$op.salvage"
         New-Item -ItemType Directory -Force -Path $scan | Out-Null
         $verdict.refsutil = ((refsutil salvage -QS $root.TrimEnd('\') $scan 2>&1) -join "`n")
