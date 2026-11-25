@@ -146,7 +146,9 @@ public class ArcCrushedTests {
       foreach (var (entry, data, error) in ReadAll(archive)) {
         var theirs = Path.Combine(outDir, entry.FileName);
         TestContext.Out.WriteLine($"{entry.FileName} method {entry.Method}: ours {error ?? "ok"}, unar {(File.Exists(theirs) ? "wrote it" : "none")}");
-        if (data == null || !File.Exists(theirs)) continue;
+        // unar still writes a member whose checksum it rejects; those bytes are not its answer.
+        var unarRejected = (r.StdOut + r.StdErr).Split('\n').Any(l => l.Contains(entry.FileName, StringComparison.Ordinal) && l.Contains("Failed", StringComparison.Ordinal));
+        if (data == null || !File.Exists(theirs) || unarRejected) continue;
         Assert.That(data, Is.EqualTo(File.ReadAllBytes(theirs)), $"{entry.FileName} (method {entry.Method})");
         compared.Add(entry.FileName);
       }

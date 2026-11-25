@@ -89,6 +89,25 @@ public class ArcDistillTests {
     Assert.That(reader.ReadEntryData(), Is.EqualTo(data));
   }
 
+  [Test, Category("ThemVsUs")]
+  public void GivenNoGatesPak251Distribution_WhenEveryMemberIsRead_ThenEachPassesItsStoredCrc() {
+    // Arc/ReferenceVectors/README.md: ORDER.FRM, UPDATE.FRM and SITE.FRM hold matches that reach
+    // before the start of the data; they pass their CRC-16 only if those bytes are spaces.
+    using var stream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("ArcVectors.pak251.exe")
+      ?? throw new InvalidOperationException("missing embedded vector pak251.exe");
+    using var ms = new MemoryStream();
+    stream.CopyTo(ms);
+    using var reader = new ArcReader(new MemoryStream(ms.ToArray()[0x1AD3..]));
+    var names = new List<string>();
+    while (reader.GetNextEntry() is { } e) {
+      var data = reader.ReadEntryData(); // throws on a CRC-16 mismatch
+      Assert.That(data, Has.Length.EqualTo(e.OriginalSize), e.FileName);
+      names.Add(e.FileName);
+    }
+
+    Assert.That(names, Is.EqualTo(new[] { "READ.ME", "PAK.EXE", "PAK.DOC", "PAKINST.EXE", "ORDER.FRM", "UPDATE.FRM", "SITE.FRM", "STDCFG.TXT", "ALTCFG.TXT" }));
+  }
+
   [Test, Category("Exception")]
   public void ArcWriter_DistilledOutsideExtendedProfile_IsRefused() {
     using var ms = new MemoryStream();
