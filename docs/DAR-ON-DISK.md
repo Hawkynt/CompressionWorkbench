@@ -342,8 +342,8 @@ accepted. A 5 GiB file, stored and sliced or gzip-compressed with tape marks, pa
   parameters (formats before 10), formats before 8 or after 11.3, unknown compression letters and
   unknown header flags. `List()` then returns the raw slice and a `metadata.ini` that names the
   reason, and does not throw. A missing or wrong password is reported as such instead.
-- **Crypto block size**: dar's `-#` is not recorded in the archive; the reader assumes dar's
-  default of 10 240 clear bytes, so an archive written with another `-#` does not decrypt.
+- **Crypto block size**: dar's `-#` is not recorded in the archive; the reader infers it
+  (section 12) and an edit keeps it.
 - **Delta patches** (saved status 1) are listed, but extraction is refused because the data is a
   binary diff against another archive. Not-saved and inode-only entries are listed and have no
   data to extract.
@@ -393,6 +393,18 @@ key is SHA-256 of the key under AES-256, or for Blowfish SHA-1 of the key under 
 [src][measured: libdar's own self-test vectors, and dar 2.7.13]. The final elastic buffer is
 sized so the last block is full: dar tells the encrypted blocks from the clear trailer by the
 short read at the end [src].
+
+**Inferring `-#`.** The archive does not record the clear block size, and dar itself must be
+given the same `-#` to read it. It can be recovered from the archive: since every encrypted
+block, the last included, is *E* bytes, *E* divides the length of the encrypted zone (initial
+offset to version trailer) [measured: `-#` 1000, 4096, 10240, 65536 under AES-256, 1000 under
+Blowfish, 333 under Twofish: zones of 60 × 1008, 10 × 4112, 5 × 10 256, 1 × 65 552, 85 × 1008 and 180 × 336 bytes]. Each
+*E* stands for the clear sizes *E* − 1 down to *E* − cipher block, all padded to the same *E*;
+the first block, decrypted as *E* bytes, ends in an elastic buffer whose length tells which. So
+the reader tries the default first, then each divisor *E* of the zone that is a whole number of
+cipher blocks (up to 64 MiB), takes the clear size the first block gives, and keeps the first
+that yields a catalogue passing its checksum; the key is derived once. A wrong password fails
+every candidate and is reported as before.
 
 **Scrambling.** Each byte of the zone plus the password byte at its archive-level position
 modulo the password length; no key derivation [src][measured].

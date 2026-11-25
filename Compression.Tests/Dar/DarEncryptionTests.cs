@@ -208,6 +208,44 @@ public class DarEncryptionTests {
       Throws.InstanceOf<ArchivePasswordException>().With.Property(nameof(ArchivePasswordException.PasswordWasSupplied)).True);
   }
 
+  [TestCase('a', 1)]
+  [TestCase('a', 15)]
+  [TestCase('a', 16)]
+  [TestCase('a', 1000)]
+  [TestCase('a', 10239)]
+  [TestCase('a', 10241)]
+  [TestCase('a', 65536)]
+  [TestCase('b', 8)]
+  [TestCase('b', 4001)]
+  [TestCase('t', 333)]
+  [Category("HappyPath")]
+  public void GivenArchiveWithAnotherCryptoBlockSize_WhenReadWithoutBeingTold_ThenTheSizeIsInferred(char cipher, int blockSize) {
+    var bytes = Write(new DarWriter.Settings('z') { Encryption = Fast(cipher) with { ClearBlockSize = blockSize } });
+    var archive = Open(bytes, Password);
+    Assert.That(archive.ClearBlockSize, Is.EqualTo(blockSize));
+    AssertTree(archive);
+  }
+
+  [TestCase(1000)]
+  [TestCase(10241)]
+  [Category("Exception")]
+  public void GivenArchiveWithAnotherCryptoBlockSize_WhenReadWithAWrongPassword_ThenThePasswordIsStillRefused(int blockSize) {
+    var bytes = Write(new DarWriter.Settings('n') { Encryption = Fast('a') with { ClearBlockSize = blockSize } });
+    Assert.That(() => Open(bytes, "not it"),
+      Throws.InstanceOf<ArchivePasswordException>().With.Property(nameof(ArchivePasswordException.PasswordWasSupplied)).True);
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenArchiveWithAnotherCryptoBlockSize_WhenEdited_ThenTheEditKeepsTheSize() {
+    using var ms = new MemoryStream();
+    DarWriter.Write(ms, Items(), new DarWriter.Settings('n') { Encryption = Fast('c') with { ClearBlockSize = 2000 } });
+    new DarFormatDescriptor().Add(ms, [ArchiveInputInfo.InMemory("added.txt", "added\n"u8.ToArray())], new ArchiveMutationOptions { Password = Password });
+    var archive = Open(ms.ToArray(), Password);
+    Assert.That(archive.ClearBlockSize, Is.EqualTo(2000));
+    AssertTree(archive);
+    Assert.That(archive.ReadData(archive.Entries.Single(e => e.Path == "added.txt")), Is.EqualTo("added\n"u8.ToArray()));
+  }
+
   [TestCase(null)]
   [TestCase("")]
   [Category("Exception")]

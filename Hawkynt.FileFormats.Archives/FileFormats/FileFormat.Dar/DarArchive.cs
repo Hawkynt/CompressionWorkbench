@@ -161,44 +161,91 @@ public sealed class DarArchive {
 
     if (string.IsNullOrEmpty(password))
       throw new ArchivePasswordException($"The DAR archive is encrypted ({DarCrypto.CipherName(trailer.Cipher)}); a password is needed.", false);
-    var (level, end) = OpenEncrypted(archive, trailerAt, trailer, Encoding.UTF8.GetBytes(password), clearBlockSize);
+    var start = (long)trailer.InitialOffset;
+    if ((trailer.Flags & FlagInitialOffset) == 0 || start <= 0 || start >= trailerAt)
+      throw new InvalidDataException("The DAR version trailer of an encrypted archive records no plausible initial offset.");
+    var secret = Encoding.UTF8.GetBytes(password);
+    if (trailer.Cipher == 's')
+      return ReadClearLevel(new DarUnscramblingStream(archive, start, trailerAt, secret), trailer, 0);
+
+    var kdf = trailer.Kdf ?? throw new NotSupportedException("The DAR archive is encrypted without recorded key-derivation parameters (a format before 10).");
+    var cipher = DarCrypto.OpenCipher(trailer.Cipher, DarCrypto.DeriveKey(secret, trailer.Cipher, kdf));
+    // dar does not record -# (section 12): try the size asked for, then every size the zone allows.
+    ArchivePasswordException? first = null;
+    foreach (var size in ClearBlockSizes(archive, start, trailerAt, cipher, clearBlockSize)) {
+      try {
+        return ReadClearLevel(new DarDecryptingStream(archive, start, trailerAt, cipher, size), trailer, size);
+      } catch (ArchivePasswordException e) {
+        first ??= e;
+      } catch (InvalidDataException e) {
+        first ??= new ArchivePasswordException($"The DAR archive does not decrypt with this password, or it is damaged: {e.Message}", true);
+      }
+    }
+    throw first ?? new ArchivePasswordException("The DAR archive does not decrypt with this password, or it is damaged.", true);
+  }
+
+  /// <summary>
+  /// The clear block sizes (dar's <c>-#</c>) an encrypted zone of a block cipher can have been
+  /// written with, <paramref name="preferred"/> first (section 12): every encrypted block but the
+  /// last is <c>E</c> bytes and dar fills the last one too, so <c>E</c> divides the zone; the clear
+  /// size within <c>E</c> is what the first block decrypts to under that <c>E</c>.
+  /// </summary>
+  private static IEnumerable<int> ClearBlockSizes(Stream archive, long start, long end, DarBlockCipher cipher, int preferred) {
+    if (preferred > 0)
+      yield return preferred;
+    var zone = end - start;
+    var unit = cipher.BlockSize;
+    var candidates = new SortedSet<long>();
+    for (long d = 1; d * d <= zone; ++d)
+      if (zone % d == 0) {
+        candidates.Add(d);
+        candidates.Add(zone / d);
+      }
+    var buffer = Array.Empty<byte>();
+    foreach (var encrypted in candidates) {
+      if (encrypted % unit != 0 || encrypted > MaxClearBlock + unit)
+        continue;
+      if (buffer.Length < encrypted)
+        buffer = new byte[encrypted];
+      var block = buffer.AsSpan(0, (int)encrypted);
+      archive.Position = start;
+      archive.ReadExactly(block);
+      int clear;
+      try {
+        clear = cipher.Decrypt(0, block);
+      } catch (InvalidDataException) {
+        continue;
+      }
+      if (clear > 0 && clear != preferred && cipher.EncryptedSize(clear) == encrypted)
+        yield return clear;
+    }
+  }
+
+  // dar takes -# up to the size it can allocate; this reader tries blocks up to 64 MiB.
+  private const int MaxClearBlock = 64 << 20;
+
+  /// <summary>
+  /// Reads the clear level of an encrypted archive (section 12): its final elastic buffer, read
+  /// backwards from the end, hides the first terminator.
+  /// </summary>
+  private static DarArchive ReadClearLevel(Stream level, DarVersionHeader trailer, int clearBlockSize) {
     try {
-      return ReadLevel(level, end, trailer);
+      var tail = (int)Math.Min(level.Length, DarCrypto.ElasticDraw + 2L * Math.Max(clearBlockSize, DarCrypto.DefaultClearBlockSize));
+      var bytes = new byte[tail];
+      level.Position = level.Length - tail;
+      level.ReadExactly(bytes);
+      var elastic = DarCrypto.ElasticSizeAtEnd(bytes);
+      var read = ReadLevel(level, level.Length - elastic, trailer);
+      read.ClearBlockSize = clearBlockSize;
+      return read;
     } catch (InvalidDataException e) {
       // A wrong key decrypts to noise, which no structure survives; dar cannot tell either.
       throw new ArchivePasswordException($"The DAR archive does not decrypt with this password, or it is damaged: {e.Message}", true);
     }
   }
 
-  /// <summary>
-  /// The clear level of an encrypted archive (section 12) and where its final elastic buffer
-  /// starts: the zone from the initial offset to the version trailer, decrypted block by block or
-  /// unscrambled.
-  /// </summary>
-  private static (Stream Level, long End) OpenEncrypted(Stream archive, long trailerAt, DarVersionHeader trailer, byte[] password, int clearBlockSize) {
-    var start = (long)trailer.InitialOffset;
-    if ((trailer.Flags & FlagInitialOffset) == 0 || start <= 0 || start >= trailerAt)
-      throw new InvalidDataException("The DAR version trailer of an encrypted archive records no plausible initial offset.");
-    Stream level;
-    try {
-      if (trailer.Cipher == 's')
-        level = new DarUnscramblingStream(archive, start, trailerAt, password);
-      else {
-        var kdf = trailer.Kdf ?? throw new NotSupportedException("The DAR archive is encrypted without recorded key-derivation parameters (a format before 10).");
-        var key = DarCrypto.DeriveKey(password, trailer.Cipher, kdf);
-        level = new DarDecryptingStream(archive, start, trailerAt, DarCrypto.OpenCipher(trailer.Cipher, key), clearBlockSize);
-      }
-      // The final elastic buffer hides the first terminator; read it backwards from the end.
-      var tail = (int)Math.Min(level.Length, DarCrypto.ElasticDraw + 2L * clearBlockSize);
-      var bytes = new byte[tail];
-      level.Position = level.Length - tail;
-      level.ReadExactly(bytes);
-      var elastic = DarCrypto.ElasticSizeAtEnd(bytes);
-      return (level, level.Length - elastic);
-    } catch (InvalidDataException e) {
-      throw new ArchivePasswordException($"The DAR archive does not decrypt with this password, or it is damaged: {e.Message}", true);
-    }
-  }
+  /// <summary>Clear bytes per encrypted block (dar's <c>-#</c>) the archive was found to use; 0 unless block-encrypted.</summary>
+  internal int ClearBlockSize { get; private set; }
 
   private static DarArchive ReadLevel(Stream archive, long trailerAt, DarVersionHeader trailer) {
     var catalogueAt = (long)DarPrimitives.ReadTerminator(archive, trailerAt, out var term1Start);
