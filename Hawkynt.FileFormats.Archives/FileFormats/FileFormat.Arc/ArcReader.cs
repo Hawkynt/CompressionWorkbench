@@ -161,10 +161,20 @@ public sealed class ArcReader : IDisposable {
         ArcCrunch.DecodeCrunched6(compressedData, (int)entry.OriginalSize),
       ArcConstants.MethodCrunched7 =>
         ArcCrunch.DecodeCrunched7(compressedData, (int)entry.OriginalSize),
+      ArcConstants.MethodCrushed => DecompressCrushed(compressedData, entry),
       ArcConstants.MethodDistilled =>
         Compression.Core.Dictionary.ArcDistill.ArcDistillBuildingBlock.Decode(compressedData, (int)entry.OriginalSize),
       _ => throw new NotSupportedException($"Unknown ARC compression method {entry.Method}."),
     };
+
+  // PAK crushes RLE90-packed data; a literal 0x90 doubles, so the packed layer is at most twice the size.
+  private static byte[] DecompressCrushed(byte[] compressedData, ArcEntry entry) {
+    var packedLimit = (int)Math.Min(int.MaxValue, 2L * entry.OriginalSize + 2);
+    var data = ArcRle.Decode(ArcCrushed.Decode(compressedData, packedLimit));
+    return data.Length == entry.OriginalSize
+      ? data
+      : throw new InvalidDataException($"'{entry.FileName}' decodes to {data.Length} bytes, not {entry.OriginalSize}.");
+  }
 
   private static byte[] DecompressLzw(byte[] compressedData, ArcEntry entry) {
     using var ms = new MemoryStream(compressedData);

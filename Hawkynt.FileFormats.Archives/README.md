@@ -113,7 +113,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | AMPK (Amiga Pack) | `Ampk` | `.ampk` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/AmiPack) |
 | [Apple Archive](https://en.wikipedia.org/wiki/Apple_Archive) | `AppleArchive` | `.aar` `.yaa` | R/W | ✅ | — | Reads raw, LZFSE, zlib, xz, LZ4 and LZBITMAP archives macOS `aa` wrote; writes raw/LZFSE/zlib that `aa` extracts | [developer.apple.com](https://developer.apple.com/documentation/applearchive) |
 | [AR](https://en.wikipedia.org/wiki/Ar_(Unix)) | `Ar` | `.a` `.ar` `.deb` | R/W | ✅ | defrag · wipe |  | [freebsd.org](https://www.freebsd.org/cgi/man.cgi?query=ar&sektion=5) |
-| [ARC](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Arc` | `.arc` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/hyc/arc) |
+| [ARC](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Arc` | `.arc` | R/W | ✅ | defrag · wipe | Also reads NoGate PAK's Crushed (10) and Distilled (11) members | [GitHub](https://github.com/hyc/arc) |
 | [ARJ](https://en.wikipedia.org/wiki/ARJ) | `Arj` | `.arj` | R/W | ✅ | defrag · wipe |  | [arj.sourceforge.net](https://arj.sourceforge.net) |
 | [B1](https://en.wikipedia.org/wiki/B1_(file_format)) | `B1` | `.b1` | R/W | ✅ | — | Plain, LZMA and AES-256-GCM archives b1-pack wrote, and ours that it reads; single volume only | [GitHub](https://github.com/b1-pack/b1-pack) |
 | [BagIt](https://en.wikipedia.org/wiki/BagIt) | `BagIt` |  | R/W | ✅ | — | RFC 8493 bag serialized as ZIP; listing and extraction validate the manifests; bagit-python validates ours | [rfc-editor.org](https://www.rfc-editor.org/rfc/rfc8493) |

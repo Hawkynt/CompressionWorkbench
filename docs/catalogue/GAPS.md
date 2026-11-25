@@ -17,16 +17,16 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | Catalogue rows | 1029 |
 | … formats listed by at least one source | 586 |
 | … registry ids no source lists (OURS-ONLY) | 443 |
-| Source-listed rows mapped to something here | 416 / 586 (71.0 %) |
-| … of rows listed by ≥ 2 sources | 150 / 159 (94.3 %) |
-| … of rows listed by ≥ 3 sources | 76 / 77 (98.7 %) |
+| Source-listed rows mapped to something here | 418 / 586 (71.3 %) |
+| … of rows listed by ≥ 2 sources | 151 / 159 (95.0 %) |
+| … of rows listed by ≥ 3 sources | 77 / 77 (100.0 %) |
 | … of rows listed by ≥ 4 sources | 43 / 43 (100.0 %) |
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 160 | a source lists it; no descriptor or building block covers it |
+| `MISSING` | 158 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 30 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 57 | covered, but the reader handles only part of the format (see the table below) |
+| `PARTIAL` | 59 | covered, but the reader handles only part of the format (see the table below) |
 | `OK` | 339 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 443 | in our registry, listed by none of the eight sources |
 
@@ -39,12 +39,12 @@ read-only rows.
 | --- | ---: | ---: | ---: | ---: |
 | 7-Zip (formats + codecs) | 96 | 94 | 97.9 | 89 |
 | libarchive (formats + filters) | 28 | 28 | 100.0 | 27 |
-| XADMaster / The Unarchiver | 127 | 108 | 85.0 | 94 |
+| XADMaster / The Unarchiver | 127 | 110 | 86.6 | 94 |
 | binwalk v3 | 79 | 56 | 70.9 | 51 |
 | Universal Extractor 2 | 124 | 104 | 83.9 | 74 |
 | PRONOM | 87 | 83 | 95.4 | 75 |
-| Wikipedia | 268 | 198 | 73.9 | 157 |
-| Wikipedia (de): list of compression programs | 124 | 78 | 62.9 | 48 |
+| Wikipedia | 268 | 199 | 74.3 | 157 |
+| Wikipedia (de): list of compression programs | 124 | 79 | 63.7 | 48 |
 
 These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-20. The source inventories retain their original 2026-10-19 snapshot; the German list is revision 268525499 (2026-07-05). The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.
 
@@ -96,7 +96,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 | 7 | StuffIt X | PARTIAL | 2 | Method 7 (JPEG recompression) and AES, Blowfish, DES and RC4 encryption are read: StuffIt Deluxe's own archives restore testfile.jpg byte for byte and open with their password (rung 1: KaitoKit, MIT; unar decodes neither). Neither is written. Archives with a recovery record are refused; their layout is measured in [STUFFITX-RECOVERY-ON-DISK](../STUFFITX-RECOVERY-ON-DISK.md). Every other coding is read and the writer stores or codes Deflate, Brimstone, Darkhorse, Cyanide, Blend, Obscured and Iron streams, optionally behind the English or x86 preprocessor, all verified with unar. Rung 1: XADMaster (LGPL); oracle: unar. |
 | 8 | ALZip | OK | 2 | Done: split sets read and written; obfuscated deflate (method 3) read and written (rung 1: XADMaster), our method-3 output extracted byte-exact by unar, ALZip 5.52 and Bandizip 7.38. No ALZip release we could run writes method 3, so no ALZip-made method-3 sample exists. |
 | 9 | PEA | OK | 2 | Done: volume sets, every single-cipher encryption and the TRI*/SRI*/HRI* triple cascades are read and written, single files and volume sets edited in place, all verified with pea. Rung 1: PeaZip is LGPL-3; the pea CLI is the oracle. |
-| 10 | PAK (NoGate) | MISSING | 2 | Rung 1: XADMaster's Crushed method (BB_ArcDistill already covers Distilled). Needs a real sample; PAK 2.51 under DOSBox is the oracle. |
+| 10 | PAK (NoGate) | PARTIAL | 2 | Read by the ARC reader: Crushed (method 10, rung 1 XADMaster) and Distilled, checked on NoGate's own PAK 2.51 distribution with unar. Distilled matches reaching before the data's start are refused; .pak names route to other PAK formats (open as .arc); self-extractors are not opened; not written (PAK 2.51 under DOSBox would be the oracle). |
 | 11 | 7-Zip-zstd coders in 7z | PARTIAL | 2 | Write Zstandard, Brotli and LZ4 (the encoders exist); decode LZ5 and Lizard (BB_Lizard exists). Oracle: 7-Zip-zstd. |
 | 12 | ASPack | PARTIAL (read-only) | 2 | The read side is real; creating packed executables is not a goal. |
 | 13 | DIET | PARTIAL | 2 | EXE and COM files are restored against DIET 1.45f and UNP 4.11; compressed data files remain unsupported. |

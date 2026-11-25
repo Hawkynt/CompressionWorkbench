@@ -40,6 +40,8 @@
     <None Include="README.md" Pack="true" PackagePath="\" />
     <None Update="FileFormats\FileFormat.StuffIt\THIRD-PARTY-NOTICE.XADMaster.txt"
           Pack="true" PackagePath="notices/StuffIt/" />
+    <None Update="FileFormats\FileFormat.Arc\THIRD-PARTY-NOTICE.XADMaster.txt"
+          Pack="true" PackagePath="notices/Arc/" />
     <None Update="FileFormats\FileFormat.NowCompress\THIRD-PARTY-NOTICE.XADMaster.txt"
           Pack="true" PackagePath="notices/NowCompress/" />
     <None Update="FileFormats\FileFormat.Install4j\THIRD-PARTY-NOTICE.Observer.txt"
