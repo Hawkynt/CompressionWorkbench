@@ -69,6 +69,80 @@ public sealed class RefsVolumeFormatterTests {
   }
 
   [Test]
+  public void GivenAFreshVolume_WhenFilesAreAdded_ThenTheyAreReadBack() {
+    using var stream = Fresh();
+    var descriptor = new RefsFormatDescriptor();
+    var files = new Dictionary<string, byte[]> {
+      ["one.txt"] = "hello ReFS"u8.ToArray(),
+      ["big.bin"] = Enumerable.Range(0, 70000).Select(static i => (byte)(i * 7)).ToArray(),
+      ["sub/inner.bin"] = Enumerable.Range(0, 5000).Select(static i => (byte)(i ^ 0x5A)).ToArray(),
+    };
+    descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("sub", "sub", true)]);
+    foreach (var (name, data) in files) descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory(name, data)]);
+    stream.Position = 0;
+    var metadata = RefsMetadataReader.Open(stream);
+    Assert.That(new RefsMetadataGraph(stream, metadata).FindStaleReferences(), Is.Empty);
+    var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_fresh_" + Guid.NewGuid().ToString("N")[..8]);
+    try {
+      stream.Position = 0;
+      descriptor.Extract(stream, outDir, null, null);
+      Assert.Multiple(() => {
+        foreach (var (name, data) in files)
+          Assert.That(File.ReadAllBytes(Path.Combine(outDir, name.Replace('/', Path.DirectorySeparatorChar))), Is.EqualTo(data), name);
+      });
+    } finally {
+      try { Directory.Delete(outDir, recursive: true); } catch { /* best effort */ }
+    }
+  }
+
+  [Test]
+  public void GivenFilesInNestedDirectories_WhenCreated_ThenEveryFileAndDirectoryIsReadBack() {
+    var files = new Dictionary<string, byte[]> {
+      ["top.txt"] = "top"u8.ToArray(),
+      ["a/b/c/deep.bin"] = Enumerable.Range(0, 9000).Select(static i => (byte)(i * 3)).ToArray(),
+      ["a/side.bin"] = Enumerable.Range(0, 4096).Select(static i => (byte)i).ToArray(),
+    };
+    using var stream = new MemoryStream();
+    var descriptor = new RefsFormatDescriptor();
+    descriptor.Create(stream,
+      [.. files.Select(static f => Compression.Registry.ArchiveInputInfo.InMemory(f.Key, f.Value)),
+       new Compression.Registry.ArchiveInputInfo("empty", "empty", true)],
+      new Compression.Registry.FormatCreateOptions());
+    stream.Position = 0;
+    var entries = new RefsNamespaceReader(RefsMetadataReader.Open(stream)).ReadAll();
+    Assert.That(entries.Where(static e => e.IsDirectory).Select(static e => e.Path),
+      Is.SupersetOf(new[] { "a", "a/b", "a/b/c", "empty" }));
+    var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_create_" + Guid.NewGuid().ToString("N")[..8]);
+    try {
+      stream.Position = 0;
+      descriptor.Extract(stream, outDir, null, null);
+      Assert.Multiple(() => {
+        foreach (var (name, data) in files)
+          Assert.That(File.ReadAllBytes(Path.Combine(outDir, name.Replace('/', Path.DirectorySeparatorChar))), Is.EqualTo(data), name);
+      });
+    } finally {
+      try { Directory.Delete(outDir, recursive: true); } catch { /* best effort */ }
+    }
+  }
+
+  [Test]
+  public void GivenAnEmptyFile_WhenCreated_ThenItIsRefused() {
+    using var stream = new MemoryStream();
+    Assert.Throws<NotSupportedException>(() => new RefsFormatDescriptor().Create(stream,
+      [Compression.Registry.ArchiveInputInfo.InMemory("zero.bin", Array.Empty<byte>())],
+      new Compression.Registry.FormatCreateOptions()));
+    Assert.That(stream.Length, Is.Zero, "nothing is written");
+  }
+
+  [Test]
+  public void GivenTwoInputsWithOneName_WhenCreated_ThenItIsRefused() {
+    using var stream = new MemoryStream();
+    Assert.Throws<ArgumentException>(() => new RefsFormatDescriptor().Create(stream,
+      [Compression.Registry.ArchiveInputInfo.InMemory("x.bin", [1]), Compression.Registry.ArchiveInputInfo.InMemory("X.BIN", [2])],
+      new Compression.Registry.FormatCreateOptions()));
+  }
+
+  [Test]
   public void GivenTheSameSeed_WhenFormattedTwice_ThenTheVolumesAreIdentical() {
     using var a = Fresh(seed: 3);
     using var b = Fresh(seed: 3);

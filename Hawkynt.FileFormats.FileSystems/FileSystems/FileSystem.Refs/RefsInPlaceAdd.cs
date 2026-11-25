@@ -55,7 +55,7 @@ internal static class RefsInPlaceAdd {
     var candidates = rows.Select(r => (Row: r, Directory: parent));
     if (parent.Length > 0)
       candidates = candidates.Concat(metadata.WalkTree(RefsInPlaceRename.ResolveDirectoryRoot(metadata, ""), virtualAddresses: true).Select(static r => (Row: r, Directory: "")));
-    (RefsBTreeRow Row, RefsFileRecord File, int Block, int Leaf, RefsExtent First)? template = null;
+    Template? template = null;
     foreach (var (row, directory) in candidates) {
       if (BinaryPrimitives.ReadUInt16LittleEndian(row.Key) != 0x30 || BinaryPrimitives.ReadUInt16LittleEndian(row.Key.AsSpan(2)) != 1) continue;
       var rowName = Encoding.Unicode.GetString(row.Key, 4, row.Key.Length - 4);
@@ -70,21 +70,29 @@ internal static class RefsInPlaceAdd {
       var leaf = RefsExtentLeaf.Find(v, (uint)file.Extents.Count);
       if (block < 0 || leaf < block || BinaryPrimitives.ReadUInt32LittleEndian(v.AsSpan(block - 0x10)) != (uint)file.Extents.Count) continue;
       if (RefsExtentLeaf.Read(v, leaf) is not { Count: > 0 } entries || entries.Any(e => e.IsIntegrity != entries[0].IsIntegrity)) continue;
-      template = (row, file, block, leaf, entries[0]);
+      var near = file.Extents.SelectMany(e => Enumerable.Range(0, (int)e.ClusterCount)
+        .Select(i => metadata.TranslateVirtualLcn(e.VirtualLcn + (ulong)i))).ToList();
+      template = new Template(row.Value, row.Flags, block, leaf, entries[0], near);
       break;
     }
+    // A volume without any such file (a freshly formatted one) gets the record Windows writes for
+    // a plain file, or an integrity stream where the directory carries the integrity attribute.
+    template ??= BuiltInTemplate(metadata, rows);
     if (template is not { } t) throw new NotSupportedException("ReFS: the directory holds no extent-backed file whose record a new file can take.");
 
     var cs = (ulong)metadata.ClusterSize;
     var clusterCount = ((ulong)data.Length + cs - 1) / cs;
     var graph = new RefsMetadataGraph(image, metadata);
-    var templateClusters = t.File.Extents.SelectMany(e => Enumerable.Range(0, (int)e.ClusterCount)
-      .Select(i => metadata.TranslateVirtualLcn(e.VirtualLcn + (ulong)i))).ToList();
-    var allocator = RefsAllocatorWriter.WindowsMedium(metadata, graph, templateClusters)
+    var allocator = RefsAllocatorWriter.WindowsMedium(metadata, graph, t.Near)
       ?? throw new NotSupportedException("ReFS: the volume's Medium Allocator is not one this editor writes.");
-    var (rowStart, rowLength) = allocator.RangeOfPhysical(templateClusters[^1])
-      ?? throw new NotSupportedException("ReFS: the allocator row holding the template file was not found.");
-    if (!allocator.TryFindFreeRun(checked((int)clusterCount), p => p >= rowStart && p < rowStart + rowLength, out var start))
+    // Next to the template's clusters; for a built-in record, anywhere a bitmap row has room.
+    Func<ulong, bool> inRow = allocator.InBitmapRow;
+    if (t.Near.Count > 0) {
+      var (rowStart, rowLength) = allocator.RangeOfPhysical(t.Near[^1])
+        ?? throw new NotSupportedException("ReFS: the allocator row holding the template file was not found.");
+      inRow = p => p >= rowStart && p < rowStart + rowLength;
+    }
+    if (!allocator.TryFindFreeRun(checked((int)clusterCount), inRow, out var start))
       throw new NotSupportedException($"ReFS: no free run of {clusterCount} clusters next to the directory's files.");
     var run = Enumerable.Range(0, (int)clusterCount).Select(i => start + (ulong)i).ToList();
     if (!metadata.TryPhysicalToVirtualLcn(start, out var vstart)
@@ -108,7 +116,7 @@ internal static class RefsInPlaceAdd {
     var objectValue = objectRow.Row.Value.ToArray();
     BinaryPrimitives.WriteUInt64LittleEndian(objectValue.AsSpan(objectRow.CounterOffset), fileNumber);
 
-    var value = t.Row.Value.ToArray();
+    var value = t.Value.ToArray();
     var now = (ulong)DateTime.UtcNow.ToFileTimeUtc();
     for (var o = 0x28; o < 0x48; o += 8) BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(o), now);
     var newAlloc = clusterCount * cs;
@@ -147,7 +155,7 @@ internal static class RefsInPlaceAdd {
         : !nameFits && idFits ? tree.PlanSplit(metadata, graph, nameLeaf, [(nameKey, nameCost)], collation)
         : nameFits && !idFits ? tree.PlanSplit(metadata, graph, idLeaf, [(idKey, idCost)], collation)
         : throw new NotSupportedException("ReFS: two pages of the directory would have to split for the new file; that is not made in place.");
-      if (!allocator.TryFindFreeRun(checked((int)clusterCount), p => p >= rowStart && p < rowStart + rowLength && !split.Clusters.Contains(p), out _))
+      if (!allocator.TryFindFreeRun(checked((int)clusterCount), p => inRow(p) && !split.Clusters.Contains(p), out _))
         throw new NotSupportedException($"ReFS: no free run of {clusterCount} clusters next to the directory's files besides the new directory page.");
       split.Apply(image, metadata, graph);
       Add(image, path, data);
@@ -163,7 +171,7 @@ internal static class RefsInPlaceAdd {
     if (crcs is not null) RefsExtentLeaf.WritePadded(image, metadata.ClusterSize, run, data);
     else RefsInPlaceOverwrite.Apply(image, metadata.ClusterSize, run, data);
     // A file-number row sorts before every name row, so inserting it never moves the name row's position.
-    RefsPageEditor.InsertRow(graph, nameLeaf, namePosition, nameKey, value, t.Row.Flags);
+    RefsPageEditor.InsertRow(graph, nameLeaf, namePosition, nameKey, value, t.Flags);
     RefsPageEditor.InsertRow(graph, idLeaf, idPosition, idKey, idValue, templateId?.Flags ?? 0);
     if (headerValue is not null) RefsPageEditor.ReplaceValue(graph, header!, headerValue);
     tree.AdjustRowCount(graph, +2);
@@ -171,5 +179,29 @@ internal static class RefsInPlaceAdd {
     // The object-table page was repacked, so the offsets of the page references it holds moved:
     // the checksums are refreshed through a graph built from the volume as it now is.
     new RefsMetadataGraph(image, RefsMetadataReader.Open(image)).RefreshChecksumPaths([nameLeaf, idLeaf, header?.PhysicalPageLcn ?? nameLeaf, tree.RootPage, objectPage]);
+  }
+
+  /// <summary>A file record to copy: its value and row flags, the size block and extent leaf in it, its first extent, and the clusters to allocate near (none for a built-in record).</summary>
+  private sealed record Template(byte[] Value, ushort Flags, int Block, int Leaf, RefsExtent First, IReadOnlyList<ulong> Near);
+
+  /// <summary>
+  /// The record Windows Server 2022 writes for a plain file, or for an integrity stream when the
+  /// directory's header carries the integrity attribute (0x8000 at +0x48): ReFS 3.7 only. Its
+  /// timestamps are now and its security descriptor reference (+0x50) is the directory's own.
+  /// </summary>
+  private static Template? BuiltInTemplate(RefsMetadataReader metadata, IReadOnlyList<RefsBTreeRow> rows) {
+    if (metadata.Header.MinorVersion >= 14) return null;
+    var header = rows.FirstOrDefault(static r => r.Key.Length == 4 && BinaryPrimitives.ReadUInt32LittleEndian(r.Key) == 0x10);
+    if (header is null || header.Value.Length < 0x58) return null;
+    var integrity = (BinaryPrimitives.ReadUInt32LittleEndian(header.Value.AsSpan(0x48)) & 0x8000) != 0;
+    var now = Convert.ToHexString(BitConverter.GetBytes((ulong)DateTime.UtcNow.ToFileTimeUtc()));
+    var value = Convert.FromHexString((integrity ? RefsFormatConstants.IntegrityFileRecord : RefsFormatConstants.FileRecord).Replace("{T}", now));
+    header.Value.AsSpan(0x50, 8).CopyTo(value.AsSpan(0x50));
+    var size = BinaryPrimitives.ReadUInt64LittleEndian(value.AsSpan(0x58));
+    var alloc = BinaryPrimitives.ReadUInt64LittleEndian(value.AsSpan(0x60));
+    var block = RefsInPlaceResize.FindOnce(value, [alloc, size, size, alloc], 0x68);
+    var leaf = RefsExtentLeaf.Find(value, 1);
+    if (block < 0 || leaf < block || RefsExtentLeaf.Read(value, leaf) is not { Count: 1 } entries) return null;
+    return new Template(value, 1, block, leaf, entries[0], []);
   }
 }

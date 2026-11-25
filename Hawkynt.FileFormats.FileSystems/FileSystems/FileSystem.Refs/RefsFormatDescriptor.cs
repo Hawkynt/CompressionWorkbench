@@ -18,6 +18,7 @@ public sealed class RefsFormatDescriptor :
   IFormatDescriptor,
   IArchiveFormatOperations,
   IArchiveModifiable,
+  IArchiveCreatable,
   IFilesystemExtentMap,
   ILayoutOptimizable,
   IFilesystemDriverProvider,
@@ -43,12 +44,49 @@ public sealed class RefsFormatDescriptor :
   // creating a directory (RefsInPlaceMkdir), in the layouts those checks cover.
   // Defragment and everything outside those layouts is refused before a byte is touched.
   // See tools/foreign-os-oracles and RefsWindowsOracleTests.
+  // CanCreate: a new ReFS 3.7 volume from scratch (RefsVolumeFormatter), then its directories
+  // and files added with the same in-place editors; Windows Server 2022 mounts it and hashes
+  // every file.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanModify |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Writes a new ReFS 3.7 volume (<see cref="RefsVolumeFormatter.Geometry"/> bytes) holding
+  /// <paramref name="inputs"/>: every directory (a file's parents included) is made first,
+  /// parents before children, then every file is added. Empty files are refused, as adding one
+  /// is; files must fit the volume.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    static string Normal(string name) => name.Replace('\\', '/').Trim('/');
+    var files = inputs.Where(static i => !i.IsDirectory).Select(i => (Name: Normal(i.ArchiveName), Input: i)).ToList();
+    var contents = files.Select(static f => f.Input.ReadContent()).ToList();
+    if (contents.Any(static c => c.Length == 0)) throw new NotSupportedException("ReFS: empty files are not written.");
+    if (files.Select(static f => f.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() != files.Count)
+      throw new ArgumentException("ReFS: two inputs have the same name.", nameof(inputs));
+    var directories = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+    void AddParents(string path) {
+      for (var at = path.LastIndexOf('/'); at > 0; at = path.LastIndexOf('/', at - 1)) directories.Add(path[..at]);
+    }
+    foreach (var input in inputs.Where(static i => i.IsDirectory)) {
+      var name = Normal(input.ArchiveName);
+      if (name.Length == 0) continue;
+      directories.Add(name);
+      AddParents(name);
+    }
+    foreach (var (name, _) in files) AddParents(name);
+
+    RefsVolumeFormatter.Format(output, new RefsFormatOptions(RefsVolumeFormatter.Geometry));
+    foreach (var directory in directories.OrderBy(static d => d.Count(static c => c == '/')).ThenBy(static d => d, StringComparer.OrdinalIgnoreCase))
+      this.Add(output, [new ArchiveInputInfo(directory, directory, true)]);
+    for (var i = 0; i < files.Count; ++i)
+      this.Add(output, [ArchiveInputInfo.InMemory(files[i].Name, contents[i])]);
+  }
 
   /// <summary>Why an edit outside the Windows-checked set is refused.</summary>
   internal const string EditsWithheld =
