@@ -409,8 +409,8 @@ public class StuffItTests {
   [Category("ErrorHandling")]
   [Test]
   public void Extract_UnsupportedMethod_Throws() {
-    // Method 6 = fixed Huffman — not supported.
-    var archive = BuildSitArchive("f.bin", 6, [0xAB, 0xCD], 100, [], 0);
+    // Method 4 is unassigned — not supported.
+    var archive = BuildSitArchive("f.bin", 4, [0xAB, 0xCD], 100, [], 0);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
