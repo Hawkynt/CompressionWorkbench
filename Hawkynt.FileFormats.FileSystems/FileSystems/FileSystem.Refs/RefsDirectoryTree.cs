@@ -144,7 +144,7 @@ internal sealed class RefsDirectoryTree {
       throw new NotSupportedException("ReFS: the directory's only page is full; growing it a level is not made in place.");
     var (rows, capacity) = RefsPageEditor.ReadRows(graph.ReadPage(leaf));
     if (rows.Count < 2) throw new NotSupportedException("ReFS: the directory page is full with fewer than two rows; it is not split.");
-    var costs = rows.Select(static r => RefsPageEditor.RowCost(r.Key.Length, r.Value.Length)).ToArray();
+    var costs = rows.Select(static r => RefsPageEditor.RowCost(r)).ToArray();
     var positions = pending.Select(p => (Position: rows.Count(r => collation.Compare(r.Key, p.Key) < 0), p.Cost)).ToList();
     var best = -1;
     var bestBalance = int.MaxValue;
@@ -158,7 +158,7 @@ internal sealed class RefsDirectoryTree {
     if (best < 0) throw new NotSupportedException("ReFS: no split of the directory page makes room for the new row.");
     var separator = rows[best - 1].Key;
     var (inner, innerCapacity) = RefsPageEditor.ReadRows(graph.ReadPage(this.RootPage), allowInner: true);
-    var innerCost = inner.Sum(static r => RefsPageEditor.RowCost(r.Key.Length, r.Value.Length)) + RefsPageEditor.RowCost(separator.Length, inner[0].Value.Length);
+    var innerCost = inner.Sum(static r => RefsPageEditor.RowCost(r)) + RefsPageEditor.RowCost(separator.Length, inner[0].Value.Length);
     if (innerCost > innerCapacity)
       throw new NotSupportedException("ReFS: the directory's root page has no room for another leaf; growing it a level is not made in place.");
     var page = RefsMetadataPageAllocation.Plan(metadata, graph, graph.GetPageSlots(leaf));

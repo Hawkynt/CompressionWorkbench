@@ -7,8 +7,11 @@ namespace FileSystem.Refs;
 /// Offline editor for one live MSB+ leaf page. ReFS rows are variable sized and
 /// the sorted key-index grows downward from its fixed end. Mutations therefore
 /// repack only rows named by the live key-index array, preserve their row
-/// metadata, and rebuild the index with the ReFS v3 0xFFFF upper-word marker.
-/// Stale row bodies outside the live index are never resurrected.
+/// metadata, and rebuild the index keeping each row's upper index word as found
+/// (0xFFFF on most tables; on ReFS 3.14 allocator pages, node flags 0x0E00, the
+/// row's start LCN — measured on Windows-written volumes). A row whose key lies
+/// inside its value (key and value offsets equal, as allocator rows are stored)
+/// keeps that form. Stale row bodies outside the live index are never resurrected.
 /// </summary>
 internal static class RefsPageEditor {
   internal sealed record LiveRow(
@@ -16,7 +19,8 @@ internal static class RefsPageEditor {
     ushort Flags,
     ushort Reserved,
     byte[] Key,
-    byte[] Value);
+    byte[] Value,
+    bool KeyInValue = false);
 
   private sealed record LeafState(
     byte[] Page,
@@ -118,9 +122,12 @@ internal static class RefsPageEditor {
   /// <summary>The bytes a row of these lengths takes in a node, its index entry included.</summary>
   public static int RowCost(int keyLength, int valueLength) => Align8(Align8(16 + keyLength) + valueLength) + 4;
 
+  /// <summary>The bytes an existing row takes in a node in the form it is stored, its index entry included.</summary>
+  public static int RowCost(LiveRow row) => Serialize(row).Length + 4;
+
   /// <summary><paramref name="page"/> holding exactly <paramref name="rows"/>, in that order; throws when they do not fit.</summary>
   public static byte[] PackRows(byte[] page, IReadOnlyList<LiveRow> rows, bool allowInner = false)
-    => Repack(ReadLeaf(page, allowInner), rows, dryRun: false, keepTags: true);
+    => Repack(ReadLeaf(page, allowInner), rows, dryRun: false);
 
   private static LeafState ReadLeaf(RefsMetadataGraph graph, ulong physicalPageLcn) => ReadLeaf(graph.ReadPage(physicalPageLcn), false);
 
@@ -164,13 +171,14 @@ internal static class RefsPageEditor {
         flags,
         reserved,
         page.AsSpan(rowOffset + keyOffset, keyLength).ToArray(),
-        page.AsSpan(rowOffset + valueOffset, valueLength).ToArray()));
+        page.AsSpan(rowOffset + valueOffset, valueLength).ToArray(),
+        KeyInValue: keyOffset == valueOffset && keyLength <= valueLength));
     }
 
     return new LeafState(page, nodeOffset, dataStart, indexStart, indexEnd, rows);
   }
 
-  private static byte[] Repack(LeafState state, IReadOnlyList<LiveRow> rows, bool dryRun, bool keepTags = false) {
+  private static byte[] Repack(LeafState state, IReadOnlyList<LiveRow> rows, bool dryRun) {
     var serialized = new byte[rows.Count][];
     var total = 0;
     for (var i = 0; i < rows.Count; ++i) {
@@ -194,9 +202,7 @@ internal static class RefsPageEditor {
       var rowRelative = cursor - state.NodeOffset;
       if ((uint)rowRelative > ushort.MaxValue)
         throw new InvalidOperationException("ReFS row offset exceeds the 16-bit B+ key-index field.");
-      var upper = rows[i].EncodedIndex & 0xFFFF0000U;
-      if (upper == 0 && !keepTags) upper = 0xFFFF0000U;
-      var encoded = upper | (uint)rowRelative;
+      var encoded = (rows[i].EncodedIndex & 0xFFFF0000U) | (uint)rowRelative;
       BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(newIndexStart + i * 4, 4), encoded);
       cursor += rowBytes.Length;
     }
@@ -232,7 +238,8 @@ internal static class RefsPageEditor {
   private static byte[] Serialize(LiveRow row) {
     const int headerSize = 16;
     var keyOffset = headerSize;
-    var valueOffset = Align8(keyOffset + row.Key.Length);
+    var keyInValue = row.KeyInValue && row.Key.Length <= row.Value.Length && row.Value.AsSpan(0, row.Key.Length).SequenceEqual(row.Key);
+    var valueOffset = keyInValue ? keyOffset : Align8(keyOffset + row.Key.Length);
     var rowSize = Align8(checked(valueOffset + row.Value.Length));
     if (row.Key.Length > ushort.MaxValue || row.Value.Length > ushort.MaxValue || valueOffset > ushort.MaxValue)
       throw new InvalidOperationException("ReFS row key/value exceeds the on-disk 16-bit length fields.");
@@ -245,7 +252,7 @@ internal static class RefsPageEditor {
     BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(10, 2), checked((ushort)valueOffset));
     BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(12, 2), checked((ushort)row.Value.Length));
     BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(14, 2), row.Reserved);
-    row.Key.CopyTo(result, keyOffset);
+    if (!keyInValue) row.Key.CopyTo(result, keyOffset);
     row.Value.CopyTo(result, valueOffset);
     return result;
   }
