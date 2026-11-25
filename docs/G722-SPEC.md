@@ -206,8 +206,10 @@ h    = [3, -11, 12, 32, -210, 951, 3876, -805, 362, -156, 53, -11]
 | Encoder level search falls through | `m = 30` (`WD` above the largest threshold) |
 | Decoder fed every octet 0x00..0xFF | no exception; output deterministic |
 
-Mode 2/3 decoding, if ever added, keeps the same adaptation (which only uses `IL >> 2`) and
-changes only the block 5L reconstruction table — that is why §4.6 separates the two.
+Mode 2/3 decoding keeps the same adaptation (which only uses `IL >> 2`) and changes only the
+block 5L reconstruction table — that is why §4.6 separates the two. The codec implements it at
+the sub-band level (`G722Codec.DecodeSubbands`; mode 2 uses `QQ5` × 8 indexed by `IL >> 1`,
+mode 3 the block 2L table indexed by `IL >> 2`), where the Appendix II sequences pin it.
 
 ## 7. Reference vectors to capture
 
@@ -216,7 +218,10 @@ Commit each vector with a note naming the tool, its version and the exact comman
 1. **ITU-T G.722 Appendix II digital test sequences** (distributed with the Recommendation /
    ITU-T G.191 STL): the mode 1 encoder and decoder sequences. They are 14-bit and include
    reset patterns, so they pin §4.2–§4.6 bit-exactly once the §2 scaling is accounted for;
-   record how the 14-bit samples were mapped.
+   record how the 14-bit samples were mapped. *Captured:* `G722ItuTestSequenceTests` runs them
+   (opt-in, `CWB_G722_ITU_VECTORS`; mapping and fetch script in
+   `Compression.Tests/Codecs/G722/ReferenceVectors/README.md`) and matches every word, decoder
+   modes 2 and 3 included.
 2. **FFmpeg (LGPL-2.1-or-later, usable as an oracle and licence-compatible)**:
    `ffmpeg -f s16le -ar 16000 -ac 1 -i in.raw -c:a g722 -f g722 out.g722` and
    `ffmpeg -f g722 -ar 16000 -i in.g722 -f s16le out.raw`, on: 1 s of silence; a 1 kHz sine
