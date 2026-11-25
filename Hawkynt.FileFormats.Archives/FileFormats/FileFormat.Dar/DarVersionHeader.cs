@@ -30,6 +30,9 @@ public sealed record DarVersionHeader(int Major, int Minor, char Algorithm, stri
   /// <summary>The key-derivation parameters, when recorded (flag 0x0400).</summary>
   internal DarKdf? Kdf { get; init; }
 
+  /// <summary>The archive key as an OpenPGP message to the GnuPG recipients (flag 0x04), or <see langword="null"/>.</summary>
+  internal byte[]? CryptedKey { get; init; }
+
   /// <summary>Whether the archive is encrypted (flag 0x20).</summary>
   public bool IsEncrypted => (this.Flags & DarArchive.FlagScrambled) != 0;
 
@@ -71,6 +74,7 @@ public sealed record DarVersionHeader(int Major, int Minor, char Algorithm, stri
     if ((flags & DarArchive.FlagInitialOffset) != 0)
       initialOffset = DarPrimitives.ReadInfinint(s, ref pos);
     var cipher = '\0';
+    byte[]? cryptedKey = null;
     if ((flags & DarArchive.FlagScrambled) != 0 && major >= 9) {
       if (pos >= s.Length)
         throw new InvalidDataException("The DAR version header ends inside its cipher.");
@@ -81,6 +85,7 @@ public sealed record DarVersionHeader(int Major, int Minor, char Algorithm, stri
       var size = DarPrimitives.ReadInfinint(s, ref pos);
       if (size > (ulong)(s.Length - pos))
         throw new InvalidDataException("The DAR encrypted key runs past the version header.");
+      cryptedKey = s.Slice(pos, (int)size).ToArray();
       pos += (int)size;
     }
     if ((flags & DarArchive.FlagReferenceSlicing) != 0) {
@@ -111,7 +116,7 @@ public sealed record DarVersionHeader(int Major, int Minor, char Algorithm, stri
     if (!DarPrimitives.Checksum(s[..end], stored.Length).AsSpan().SequenceEqual(stored))
       throw new InvalidDataException("The DAR version header fails its checksum.");
     length = pos;
-    return new DarVersionHeader(major, minor, algorithm, comment, flags, initialOffset, blockSize) { Cipher = cipher, Kdf = kdf };
+    return new DarVersionHeader(major, minor, algorithm, comment, flags, initialOffset, blockSize) { Cipher = cipher, Kdf = kdf, CryptedKey = cryptedKey };
   }
 
   /// <summary>Writes this header in the layout dar 2.7/2.8 write.</summary>
@@ -138,6 +143,11 @@ public sealed record DarVersionHeader(int Major, int Minor, char Algorithm, stri
       DarPrimitives.WriteInfinint(body, this.InitialOffset);
     if ((this.Flags & DarArchive.FlagScrambled) != 0)
       body.WriteByte((byte)this.Cipher);
+    if ((this.Flags & DarArchive.FlagCryptedKey) != 0) {
+      var key = this.CryptedKey ?? throw new InvalidOperationException("The DAR crypted-key flag needs the encrypted key.");
+      DarPrimitives.WriteInfinint(body, (ulong)key.Length);
+      body.Write(key);
+    }
     if ((this.Flags & DarArchive.FlagKdf) != 0) {
       var kdf = this.Kdf ?? throw new InvalidOperationException("The DAR KDF flag needs key-derivation parameters.");
       DarPrimitives.WriteInfinint(body, (ulong)kdf.Salt.Length);

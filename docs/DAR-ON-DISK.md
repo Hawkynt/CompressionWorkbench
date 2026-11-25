@@ -337,13 +337,12 @@ accepted. A 5 GiB file, stored and sliced or gzip-compressed with tape marks, pa
 
 ## 11. Refused, unverified and open
 
-- **Refused**: archives whose key is encrypted for GnuPG recipients (flag 0x04: an OpenPGP
-  message this repository does not decode), block-cipher archives without recorded key-derivation
+- **Refused**: block-cipher archives without recorded key-derivation
   parameters (formats before 10), formats before 8 or after 11.3, unknown compression letters and
   unknown header flags. `List()` then returns the raw slice and a `metadata.ini` that names the
   reason, and does not throw. A missing or wrong password is reported as such instead.
-- **Crypto block size**: dar's `-#` is not recorded in the archive; the reader assumes dar's
-  default of 10 240 clear bytes, so an archive written with another `-#` does not decrypt.
+- **Crypto block size**: dar's `-#` is not recorded in the archive; the reader infers it
+  (section 12) and an edit keeps it.
 - **Delta patches** (saved status 1) are listed, but extraction is refused because the data is a
   binary diff against another archive. Not-saved and inode-only entries are listed and have no
   data to extract.
@@ -394,8 +393,40 @@ key is SHA-256 of the key under AES-256, or for Blowfish SHA-1 of the key under 
 sized so the last block is full: dar tells the encrypted blocks from the clear trailer by the
 short read at the end [src].
 
+**Inferring `-#`.** The archive does not record the clear block size, and dar itself must be
+given the same `-#` to read it. It can be recovered from the archive: since every encrypted
+block, the last included, is *E* bytes, *E* divides the length of the encrypted zone (initial
+offset to version trailer) [measured: `-#` 1000, 4096, 10240, 65536 under AES-256, 1000 under
+Blowfish, 333 under Twofish: zones of 60 × 1008, 10 × 4112, 5 × 10 256, 1 × 65 552, 85 × 1008 and 180 × 336 bytes]. Each
+*E* stands for the clear sizes *E* − 1 down to *E* − cipher block, all padded to the same *E*;
+the first block, decrypted as *E* bytes, ends in an elastic buffer whose length tells which. So
+the reader tries the default first, then each divisor *E* of the zone that is a whole number of
+cipher blocks (up to 64 MiB), takes the clear size the first block gives, and keeps the first
+that yields a catalogue passing its checksum; the key is derived once. A wrong password fails
+every candidate and is reported as before.
+
 **Scrambling.** Each byte of the zone plus the password byte at its archive-level position
 modulo the password length; no key derivation [src][measured].
+
+**GnuPG recipients** (`-K gnupg:[cipher]:recipient,…`). The header flags are `34` (0x20, 0x10,
+0x04; `24` with `-at`): the cipher letter, then under 0x04 an infinint length and an OpenPGP
+message, and no key-derivation fields; the trailer repeats them after the initial offset
+[measured: dar 2.7.13]. The message is what gpg makes for the recipients: one PKESK v3 per
+recipient and, with gpg 2.4 and its default keys, a version 1 AEAD packet (tag 20, AES-256, OCB)
+holding a ZLIB-compressed literal. Its literal data is a random key used **as the cipher key as
+it is** — 56 bytes for Blowfish, 32 for the other ciphers — with the same ESSIV, blocks and
+elastic buffers as above; decrypting a dar archive's first block with it showed the file data
+and the elastic buffer where they belong [measured]. Scrambling is not offered with GnuPG.
+
+The reader opens the message with an exported secret key (`gpg --export-secret-keys`, its
+passphrase if it has one), which the password parameter names as `path|passphrase`; the OpenPGP
+layer (RSA, cv25519, SEIPD, AEAD OCB/EAX) is `Compression.Core.Crypto.OpenPgp`. The writer makes
+a new random key and a PKESK v3 + SEIPD v1 message to the recipients' exported public keys; an
+edit keeps the key and the message, so the same recipients open the edited archive. dar 2.7.13
+with the recipients' keys in its keyring tests (also sequentially) and restores our archives and
+our edits of its own, to cv25519 and RSA keys under AES-256, Blowfish, Twofish, Serpent and
+Camellia; we read its archives byte for byte (`DarGnuPgOracleTests`) [measured]. Signed archives
+(flag 0x0200) are not produced; their signature is not checked.
 
 ## 13. Editing in place
 

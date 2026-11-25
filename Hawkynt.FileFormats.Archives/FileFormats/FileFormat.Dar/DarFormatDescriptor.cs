@@ -19,8 +19,9 @@ namespace FileFormat.Dar;
 /// of any size streamed to disk.
 /// Directories and regular files are extracted; symlinks, devices, pipes and sockets are listed
 /// but not materialised. Password-encrypted archives (scrambling, Blowfish, AES-256, Twofish-256,
-/// Serpent-256, Camellia-256 under argon2 or PBKDF2) are read with their password; GnuPG-encrypted
-/// archives, unknown compression and newer formats are refused: listing then falls back to the raw
+/// Serpent-256, Camellia-256 under argon2 or PBKDF2) are read with their password, archives encrypted
+/// for GnuPG recipients with an exported secret key (see <see cref="GnuPgRecipientsOption"/>);
+/// unknown compression and newer formats are refused: listing then falls back to the raw
 /// slice (<c>FULL.dar</c>) and a <c>metadata.ini</c> naming the reason, and never throws.</para>
 ///
 /// <para>Writing: format 11.3, stored or compressed with gzip, bzip2, xz, zstd or lz4, in one slice
@@ -119,6 +120,12 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// 10 000 for argon2 and 200 000 for the others by default, as dar.</summary>
   public const string KdfIterationsOption = "KdfIterations";
 
+  /// <summary>Option key: encrypt for GnuPG recipients (dar's <c>-K gnupg:cipher:recipient</c>):
+  /// paths of exported OpenPGP keys (<c>gpg --export</c>, binary or armored) separated by
+  /// <c>;</c>. The archive key is random and needs no password; the cipher is
+  /// <see cref="FormatCreateOptions.EncryptionMethod"/> (aes256 by default).</summary>
+  public const string GnuPgRecipientsOption = "GnuPgRecipients";
+
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new(SliceSizeOption, "Slice size", FormatOptionKind.String, "",
       Description: "Cut the archive into slice files of this size (dar -s), named basename.1.dar, basename.2.dar, ... "
@@ -141,6 +148,11 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new(KdfIterationsOption, "Key derivation iterations", FormatOptionKind.String, "",
       Description: "With a password and a block cipher: the iteration count (dar --kdf-param); empty is dar's default, "
                  + "10000 for argon2 and 200000 otherwise.",
+      IsOptimizationAxis: false),
+    new(GnuPgRecipientsOption, "GnuPG recipients", FormatOptionKind.String, "",
+      Description: "Encrypt for GnuPG recipients instead of a password (dar -K gnupg:cipher:recipient): the paths of their "
+                 + "exported OpenPGP keys (RSA or cv25519), separated by ';'. Read such an archive with the path of an "
+                 + "exported secret key as the password, followed by '|' and its passphrase when it has one.",
       IsOptimizationAxis: false),
   ];
 
@@ -181,6 +193,13 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// twofish256, serpent256, camellia256 or scrambling) under the key derivation the options name.
   /// </summary>
   internal static DarWriter.Encryption? EncryptionOf(FormatCreateOptions options) {
+    if (options.GetString(GnuPgRecipientsOption) is { Length: > 0 } recipients) {
+      var gpgCipher = DarCrypto.CipherFor(options.EncryptionMethod);
+      if (gpgCipher == 's')
+        throw new ArgumentException("GnuPG encryption needs a block cipher, not scrambling.");
+      var (key, crypted) = DarGnuPg.NewKey(gpgCipher, recipients.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+      return new DarWriter.Encryption(gpgCipher, "") { Key = key, CryptedKey = crypted };
+    }
     if (string.IsNullOrEmpty(options.Password))
       return null;
     var cipher = DarCrypto.CipherFor(options.EncryptionMethod);

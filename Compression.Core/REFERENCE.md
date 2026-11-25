@@ -182,7 +182,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesBlockCipher`](#aesblockcipher) · [`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`BlockEncryptor128`](#blockencryptor128) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`ChaCha20`](#chacha20) · [`Eax`](#eax) · [`Eax.SpanAction`](#eaxspanaction) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`ManagedAes`](#managedaes) · [`Poly1305`](#poly1305) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Scrypt`](#scrypt) · [`Serpent`](#serpent) · [`TripleDes`](#tripledes) · [`Twofish`](#twofish)
+[`AesBlockCipher`](#aesblockcipher) · [`AesCryptor`](#aescryptor) · [`AesKeyWrap`](#aeskeywrap) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`BlockEncryptor128`](#blockencryptor128) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`ChaCha20`](#chacha20) · [`Eax`](#eax) · [`Eax.SpanAction`](#eaxspanaction) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`ManagedAes`](#managedaes) · [`Ocb`](#ocb) · [`Poly1305`](#poly1305) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Scrypt`](#scrypt) · [`Serpent`](#serpent) · [`TripleDes`](#tripledes) · [`Twofish`](#twofish) · [`X25519`](#x25519)
 
 #### `AesBlockCipher`
 
@@ -216,6 +216,15 @@ AES-256 encryption and decryption wrapper supporting CBC and CTR modes. Runs on 
 | `EncryptCbcNoPadding` | `static byte[] EncryptCbcNoPadding(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv)` | Encrypts data using AES-256-CBC with no padding. Input length must be a multiple of 16 bytes. |
 | `EncryptCbc` | `static byte[] EncryptCbc(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv)` | Encrypts data using AES-256-CBC with PKCS7 padding. |
 | `TransformCtr` | `static byte[] TransformCtr(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> nonce)` | Encrypts or decrypts data using AES-256-CTR mode. CTR mode is symmetric — the same operation encrypts and decrypts. |
+
+#### `AesKeyWrap`
+
+The AES key wrap algorithm of RFC 3394 (section 2.2, index-based form) with its default initial value `A6A6A6A6A6A6A6A6`: key data of 8n bytes (n ≥ 2) becomes 8(n + 1) bytes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Unwrap` | `static byte[] Unwrap(ReadOnlySpan<byte> kek, ReadOnlySpan<byte> wrapped)` | Unwraps `wrapped` under `kek`. |
+| `Wrap` | `static byte[] Wrap(ReadOnlySpan<byte> kek, ReadOnlySpan<byte> keyData)` | Wraps `keyData` under the 16-, 24- or 32-byte `kek`. |
 
 #### `AntiForensicSplitter`
 
@@ -424,6 +433,18 @@ Inherits `Aes`. Implements `IDisposable`.
 | `TryEncryptCfbCore` | `protected override bool TryEncryptCfbCore(ReadOnlySpan<byte> plaintext, ReadOnlySpan<byte> iv, Span<byte> destination, PaddingMode paddingMode, int feedbackSizeInBits, out int bytesWritten)` |  |
 | `TryEncryptEcbCore` | `protected override bool TryEncryptEcbCore(ReadOnlySpan<byte> plaintext, Span<byte> destination, PaddingMode paddingMode, out int bytesWritten)` |  |
 
+#### `Ocb`
+
+OCB authenticated encryption (RFC 7253, OCB3) over a 128-bit block cipher with 128-bit tags and nonces of 1 to 15 bytes: ciphertext and plaintext have the same length; the tag is returned or checked separately.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ocb` | `Ocb(Action<Span<byte>> encrypt, Action<Span<byte>> decrypt)` | OCB over a cipher that encrypts and decrypts one 16-byte block in place. |
+| `BlockSize` | `const int BlockSize` | Block and tag size in bytes. |
+| `Decrypt` | `void Decrypt(ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> associated, ReadOnlySpan<byte> ciphertext, ReadOnlySpan<byte> tag, Span<byte> plaintext)` | Decrypts `ciphertext` into `plaintext` and checks `tag`. |
+| `Encrypt` | `void Encrypt(ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> associated, ReadOnlySpan<byte> plaintext, Span<byte> ciphertext, Span<byte> tag)` | Encrypts `plaintext` into `ciphertext` (same length) and writes the 16-byte tag. |
+| `WithAes` | `static Ocb WithAes(ReadOnlySpan<byte> key)` | OCB with AES under a 16-, 24- or 32-byte key. |
+
 #### `Poly1305`
 
 The Poly1305 one-time authenticator of RFC 8439 §2.5: the message, cut into 16-byte blocks each with a 1 bit appended, is evaluated as a polynomial in the clamped half `r` of the 32-byte key modulo 2¹³⁰−5, and the other half `s` is added modulo 2¹²⁸ to give a 16-byte tag.
@@ -508,6 +529,101 @@ The Twofish block cipher (Bruce Schneier, John Kelsey, Doug Whiting, David Wagne
 | `BlockSize` | `const int BlockSize` | The block size in bytes. |
 | `Decrypt` | `void Decrypt(Span<byte> block)` | Decrypts one 16-byte block in place. |
 | `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 16-byte block in place. |
+
+#### `X25519`
+
+The X25519 Diffie-Hellman function of RFC 7748 (section 5): the Montgomery ladder over Curve25519 with the u-coordinate only, scalars and coordinates as 32-byte little-endian strings.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `KeySize` | `const int KeySize` | The length of scalars, coordinates and shared secrets. |
+| `BasePoint` | `static ReadOnlySpan<byte> BasePoint { get; }` | The base point's u-coordinate, 9. |
+| `PublicKey` | `static byte[] PublicKey(ReadOnlySpan<byte> scalar)` | The public key (u-coordinate) of `scalar`. |
+| `ScalarMultiply` | `static byte[] ScalarMultiply(ReadOnlySpan<byte> scalar, ReadOnlySpan<byte> u)` | X25519(`scalar`, `u`): the scalar is clamped, the top bit of u is ignored. |
+
+### Namespace `Compression.Core.Crypto.OpenPgp`
+
+[`OpenPgpBlockCipher`](#openpgpblockcipher) · [`OpenPgpKey`](#openpgpkey) · [`OpenPgpMessage`](#openpgpmessage) · [`OpenPgpPacket`](#openpgppacket) · [`OpenPgpPackets`](#openpgppackets) · [`OpenPgpSymmetric`](#openpgpsymmetric)
+
+#### `OpenPgpBlockCipher`
+
+A keyed block cipher as OpenPGP uses it: block size and in-place single-block transforms.
+
+Implements `IEquatable<OpenPgpBlockCipher>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpenPgpBlockCipher` | `OpenPgpBlockCipher(int BlockSize, Action<Span<byte>> Encrypt, Action<Span<byte>> Decrypt)` | A keyed block cipher as OpenPGP uses it: block size and in-place single-block transforms. |
+| `BlockSize` | `int BlockSize { get; init; }` |  |
+| `Decrypt` | `Action<Span<byte>> Decrypt { get; init; }` |  |
+| `Encrypt` | `Action<Span<byte>> Encrypt { get; init; }` |  |
+
+#### `OpenPgpKey`
+
+A version 4 OpenPGP public key or subkey (RFC 9580 section 5.5.2) that can take an encrypted session key: RSA (algorithm 1 or 2) or ECDH over Curve25519 (algorithm 18, the legacy `cv25519` key gpg makes). From a secret key packet (section 5.5.3) it also carries the secret part, protected by a passphrase or not, until `Unlock` opens it.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Algorithm` | `int Algorithm { get; }` | The public-key algorithm (1 RSA, 18 ECDH, …). |
+| `CanEncrypt` | `bool CanEncrypt { get; }` | Whether a session key can be encrypted to this key and decrypted with it. |
+| `Created` | `DateTimeOffset Created { get; }` | When the key was made. |
+| `Curve25519Oid` | `static ReadOnlySpan<byte> Curve25519Oid { get; }` | The OID of Curve25519 for ECDH (RFC 9580 section 9.2): 1.3.6.1.4.1.3029.1.5.1. |
+| `Fingerprint` | `byte[] Fingerprint { get; }` | The v4 fingerprint: SHA-1 over the public key packet. |
+| `HasSecret` | `bool HasSecret { get; }` | Whether the key came with its secret part. |
+| `IsProtected` | `bool IsProtected { get; }` | Whether the secret part needs a passphrase. |
+| `IsUnlocked` | `bool IsUnlocked { get; }` | Whether the secret part has been opened. |
+| `KeyId` | `ulong KeyId { get; }` | The key ID: the low 64 bits of the fingerprint. |
+| `PublicFields` | `IReadOnlyList<byte[]> PublicFields { get; }` | The algorithm's public fields: RSA n and e; ECDH curve OID, point and KDF parameters (with their length byte). |
+| `Version` | `int Version { get; }` | The key packet version (4). |
+| `Load` | `static List<OpenPgpKey> Load(ReadOnlySpan<byte> data)` | Every key (primary and subkeys, public or secret) in an exported key block (binary or armored). |
+| `Unlock` | `void Unlock(string passphrase)` | Opens the secret part (section 5.5.3): unprotected, or protected under S2K usage 254 (SHA-1 check) or 255 (two-byte checksum) with a simple, salted or iterated and salted S2K and CFB. |
+
+#### `OpenPgpMessage`
+
+Public-key encrypted OpenPGP messages (RFC 9580; RFC 4880 and its LibrePGP successor for the version 1 AEAD packet gpg 2.4 writes): decrypts a message of version 3 public-key encrypted session key packets (RSA, or ECDH over Curve25519) followed by a symmetrically encrypted and integrity protected data packet (tag 18, version 1: CFB with a SHA-1 modification detection code) or an AEAD encrypted data packet (tag 20, version 1: OCB or EAX), down to its literal data through any compressed data packet (uncompressed, ZIP, ZLIB, BZip2). Encrypts to one or more recipients as PKESK v3 and a tag 18 packet.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decrypt` | `static byte[] Decrypt(ReadOnlySpan<byte> message, IEnumerable<OpenPgpKey> keys, string passphrase)` | Decrypts `message` with the first of `keys` a session key packet is addressed to (or, for a hidden recipient, that opens it), unlocking it with `passphrase`, and returns the literal data. |
+| `Encrypt` | `static byte[] Encrypt(ReadOnlySpan<byte> data, IReadOnlyList<OpenPgpKey> recipients, int algorithm = 9)` | Encrypts `data` as binary literal data to every recipient in `recipients` under symmetric algorithm `algorithm`: one PKESK v3 per recipient and a tag 18 version 1 packet. |
+
+#### `OpenPgpPacket`
+
+One OpenPGP packet: its tag and its whole body (partial body lengths joined).
+
+Implements `IEquatable<OpenPgpPacket>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpenPgpPacket` | `OpenPgpPacket(int Tag, byte[] Body)` | One OpenPGP packet: its tag and its whole body (partial body lengths joined). |
+| `Body` | `byte[] Body { get; init; }` |  |
+| `Tag` | `int Tag { get; init; }` |  |
+
+#### `OpenPgpPackets`
+
+The OpenPGP packet framing (RFC 9580 section 4.2, RFC 4880 section 4.2): old-format headers with one-, two-, four-byte or indeterminate lengths, new-format headers with one-, two- and five-byte and partial body lengths; MPIs (section 3.2) and ASCII armor (section 6).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Crc24` | `static uint Crc24(ReadOnlySpan<byte> data)` | The CRC-24 of RFC 9580 section 6.1.1 (init 0xB704CE, polynomial 0x864CFB). |
+| `Dearmor` | `static byte[] Dearmor(string text)` | The binary data of an ASCII-armored block; the CRC-24 line, when present, is checked. |
+| `ReadMpi` | `static byte[] ReadMpi(ReadOnlySpan<byte> body, ref int pos)` | Reads an MPI: a two-byte bit count and the big-endian magnitude. |
+| `Read` | `static List<OpenPgpPacket> Read(ReadOnlySpan<byte> data)` | Splits `data` (binary or ASCII-armored) into packets. |
+| `WriteMpi` | `static void WriteMpi(Stream output, ReadOnlySpan<byte> magnitude)` | Writes `magnitude` (big-endian, leading zeros dropped) as an MPI. |
+| `Write` | `static void Write(Stream output, int tag, ReadOnlySpan<byte> body)` | Writes a new-format packet header and body. |
+
+#### `OpenPgpSymmetric`
+
+OpenPGP's symmetric algorithms (RFC 9580 section 9.3) and its CFB mode (section 5.7 and RFC 4880 section 13.9, without the old resynchronisation step).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CfbDecrypt` | `static void CfbDecrypt(OpenPgpBlockCipher cipher, ReadOnlySpan<byte> iv, Span<byte> data)` | CFB-decrypts `data` in place, starting from `iv`. |
+| `CfbEncrypt` | `static void CfbEncrypt(OpenPgpBlockCipher cipher, ReadOnlySpan<byte> iv, Span<byte> data)` | CFB-encrypts `data` in place, starting from `iv`. |
+| `Create` | `static OpenPgpBlockCipher Create(int algorithm, ReadOnlySpan<byte> key)` | The block cipher `algorithm` keyed with `key`. |
+| `Hash` | `static IncrementalHash Hash(int algorithm)` | The hash of OpenPGP hash algorithm `algorithm` (section 9.5). |
+| `KeyLength` | `static int KeyLength(int algorithm)` | The key length of symmetric algorithm `algorithm`. |
+| `StringToKey` | `static byte[] StringToKey(int type, int hash, ReadOnlySpan<byte> salt, int countByte, ReadOnlySpan<byte> passphrase, int keyLength)` | The string-to-key derivation (section 3.7): simple (0), salted (1) or iterated and salted (3), as many hash contexts as the key needs, each preloaded with one more zero byte. |
 
 ### Namespace `Compression.Core.DataStructures`
 

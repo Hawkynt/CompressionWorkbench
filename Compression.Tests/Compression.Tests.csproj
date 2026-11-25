@@ -669,6 +669,10 @@
     <EmbeddedResource Include="Lfs\ReferenceVectors\*.gz;Lfs\ReferenceVectors\*.manifest">
       <LogicalName>LfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- OpenPGP keys and messages GnuPG 2.4.4 made; see Crypto/OpenPgpVectors/README.md. -->
+    <EmbeddedResource Include="Crypto\OpenPgpVectors\*.asc;Crypto\OpenPgpVectors\*.pgp">
+      <LogicalName>OpenPgpVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar itself (2.4.24 to 2.8.6); see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
