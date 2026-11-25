@@ -160,6 +160,9 @@ internal sealed class ZstdDecompressor {
     Span<byte> magicBuf = stackalloc byte[4];
     var skippedAny = false;
     while (true) {
+      // Bytes after the last frame belong to whoever embedded the stream: on a seekable input
+      // they are left unread. (A forward-only input cannot be told apart without reading.)
+      var start = this._input.CanSeek ? this._input.Position : -1;
       var read = 0;
       while (read < 4) {
         var n = this._input.Read(magicBuf[read..]);
@@ -170,6 +173,8 @@ internal sealed class ZstdDecompressor {
       if (read < 4) {
         if (beforeFirstFrame && (read > 0 || !skippedAny))
           throw new InvalidDataException("Unexpected end of Zstandard stream.");
+        if (start >= 0)
+          this._input.Position = start;
         return false;
       }
 
@@ -188,6 +193,8 @@ internal sealed class ZstdDecompressor {
 
       if (beforeFirstFrame)
         throw new InvalidDataException($"Invalid Zstandard frame magic: 0x{magic:X8}");
+      if (start >= 0)
+        this._input.Position = start;
       return false;
     }
   }
