@@ -11,7 +11,7 @@ namespace FileSystem.Refs;
 /// Stale row bodies outside the live index are never resurrected.
 /// </summary>
 internal static class RefsPageEditor {
-  private sealed record LiveRow(
+  internal sealed record LiveRow(
     uint EncodedIndex,
     ushort Flags,
     ushort Reserved,
@@ -109,8 +109,22 @@ internal static class RefsPageEditor {
     return target.PhysicalPageLcn;
   }
 
-  private static LeafState ReadLeaf(RefsMetadataGraph graph, ulong physicalPageLcn) {
-    var page = graph.ReadPage(physicalPageLcn);
+  /// <summary>The live rows of a page in index order, and the bytes its node holds for rows and index.</summary>
+  public static (IReadOnlyList<LiveRow> Rows, int Capacity) ReadRows(byte[] page, bool allowInner = false) {
+    var state = ReadLeaf(page, allowInner);
+    return (state.Rows, state.IndexEnd - state.DataStart);
+  }
+
+  /// <summary>The bytes a row of these lengths takes in a node, its index entry included.</summary>
+  public static int RowCost(int keyLength, int valueLength) => Align8(Align8(16 + keyLength) + valueLength) + 4;
+
+  /// <summary><paramref name="page"/> holding exactly <paramref name="rows"/>, in that order; throws when they do not fit.</summary>
+  public static byte[] PackRows(byte[] page, IReadOnlyList<LiveRow> rows, bool allowInner = false)
+    => Repack(ReadLeaf(page, allowInner), rows, dryRun: false, keepTags: true);
+
+  private static LeafState ReadLeaf(RefsMetadataGraph graph, ulong physicalPageLcn) => ReadLeaf(graph.ReadPage(physicalPageLcn), false);
+
+  private static LeafState ReadLeaf(byte[] page, bool allowInner) {
     if (page.Length < 0x80 || !page.AsSpan(0, 4).SequenceEqual("MSB+"u8))
       throw new InvalidDataException("ReFS row is not stored in an MSB+ page.");
 
@@ -118,7 +132,7 @@ internal static class RefsPageEditor {
     if (nodeOffset < 0x50 || nodeOffset + 40 > page.Length)
       throw new InvalidDataException("ReFS node header is malformed.");
     var nodeFlags = ReadU32(page, nodeOffset + 0x0C);
-    if ((nodeFlags & 0x100) != 0)
+    if (!allowInner && (nodeFlags & 0x100) != 0)
       throw new NotSupportedException("ReFS row mutation through the leaf editor is only valid on a B+ leaf page.");
 
     var dataStart = nodeOffset + checked((int)ReadU32(page, nodeOffset + 0x00));
@@ -156,7 +170,7 @@ internal static class RefsPageEditor {
     return new LeafState(page, nodeOffset, dataStart, indexStart, indexEnd, rows);
   }
 
-  private static byte[] Repack(LeafState state, IReadOnlyList<LiveRow> rows, bool dryRun) {
+  private static byte[] Repack(LeafState state, IReadOnlyList<LiveRow> rows, bool dryRun, bool keepTags = false) {
     var serialized = new byte[rows.Count][];
     var total = 0;
     for (var i = 0; i < rows.Count; ++i) {
@@ -181,7 +195,7 @@ internal static class RefsPageEditor {
       if ((uint)rowRelative > ushort.MaxValue)
         throw new InvalidOperationException("ReFS row offset exceeds the 16-bit B+ key-index field.");
       var upper = rows[i].EncodedIndex & 0xFFFF0000U;
-      if (upper == 0) upper = 0xFFFF0000U;
+      if (upper == 0 && !keepTags) upper = 0xFFFF0000U;
       var encoded = upper | (uint)rowRelative;
       BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(newIndexStart + i * 4, 4), encoded);
       cursor += rowBytes.Length;

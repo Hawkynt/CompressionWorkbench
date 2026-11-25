@@ -135,7 +135,24 @@ internal static class RefsInPlaceAdd {
       ? RefsPageEditor.CanInsertRow(graph, nameLeaf, namePosition, nameKey.Length + idKey.Length + 32, value.Length + idValue.Length)
       : RefsPageEditor.CanInsertRow(graph, nameLeaf, namePosition, nameKey.Length, value.Length)
         && RefsPageEditor.CanInsertRow(graph, idLeaf, idPosition, idKey.Length, idValue.Length);
-    if (!room) throw new NotSupportedException("ReFS: the directory page has no room for the new file's rows; splitting pages is not made in place.");
+    if (!room) {
+      // A full leaf of a larger directory is split first, when one split makes room for every
+      // row that goes to it; the add is then planned afresh on the split directory.
+      var nameCost = RefsPageEditor.RowCost(nameKey.Length, value.Length);
+      var idCost = RefsPageEditor.RowCost(idKey.Length, idValue.Length);
+      var nameFits = RefsPageEditor.CanInsertRow(graph, nameLeaf, namePosition, nameKey.Length, value.Length);
+      var idFits = RefsPageEditor.CanInsertRow(graph, idLeaf, idPosition, idKey.Length, idValue.Length);
+      var split = nameLeaf == idLeaf
+        ? tree.PlanSplit(metadata, graph, nameLeaf, [(idKey, idCost), (nameKey, nameCost)], collation)
+        : !nameFits && idFits ? tree.PlanSplit(metadata, graph, nameLeaf, [(nameKey, nameCost)], collation)
+        : nameFits && !idFits ? tree.PlanSplit(metadata, graph, idLeaf, [(idKey, idCost)], collation)
+        : throw new NotSupportedException("ReFS: two pages of the directory would have to split for the new file; that is not made in place.");
+      if (!allocator.TryFindFreeRun(checked((int)clusterCount), p => p >= rowStart && p < rowStart + rowLength && !split.Clusters.Contains(p), out _))
+        throw new NotSupportedException($"ReFS: no free run of {clusterCount} clusters next to the directory's files besides the new directory page.");
+      split.Apply(image, metadata, graph);
+      Add(image, path, data);
+      return;
+    }
     byte[]? headerValue = null;
     if (counter > 0) {
       headerValue = header!.Value.ToArray();
