@@ -69,3 +69,14 @@ down in `docs/REFS-FRESH-VOLUME-ON-DISK.md`. Run 45552136914 judged it like the 
 Server 2022 mounted the fresh volume read-only and read-write, found it empty, listed a directory
 our editor then made in it, passed `refsutil salvage -QS` and logged no ReFS warning or error.
 Other sizes, 64 KiB clusters, integrity streams and ReFS 3.14 are refused.
+
+`RefsFormatDescriptor.Create` formats such a volume and adds directories and files to it (a
+directory without a file takes the record Windows Server 2022 writes for a new file). Runs
+45565257876 to 45607722143 judged a created volume holding nested directories, an empty one and
+five files (the largest 200 000 bytes): Windows Server 2022 accepted it at once. Windows Server
+2025 mounted it, listed and hashed every file and upgraded it to ReFS 3.14, but then failed
+every dismount ("Object Name already exists") until the directory editor kept three tables
+Windows keeps: the object table root's highest object number (0x88), the parent-child table
+(table 3, one row per directory) and the object table's copy (table 4, identical to it). With
+those, run 45607722143 accepted the created volume, and every edit of the matrix above, on all
+six kinds.
