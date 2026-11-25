@@ -138,7 +138,7 @@ public class DatasetProbe {
       ("Neolite", "neolite", ExecutableUnpackLevel.PayloadLocated),
       ("NSPack", "nspack", ExecutableUnpackLevel.PayloadLocated),
       ("Packman", "packman", ExecutableUnpackLevel.PayloadLocated),
-      ("PECompact", "pecompact", ExecutableUnpackLevel.PayloadLocated),
+      ("PECompact", "pecompact", ExecutableUnpackLevel.PayloadDecompressed),
       ("PEtite", "petite", ExecutableUnpackLevel.PayloadLocated),
       ("RLPack", "rlpack", ExecutableUnpackLevel.PayloadDecompressed),
       ("TELock", "telock", ExecutableUnpackLevel.PayloadLocated),

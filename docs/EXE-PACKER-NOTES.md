@@ -125,23 +125,18 @@ because packing rebuilds the PE. Measuring against whole-file equality scores
 every packer here at zero and distinguishes nothing, which is why it is not the
 column.
 
-Five packers decompress nothing: Neolite, NSPack, PECompact and Yoda's Protector
-by not getting there at all, and exe32pack with a single sample. PECompact's 6
-claims and NSPack's 1 verify at zero, so they are not partial successes.
+Four packers decompress nothing: Neolite, NSPack and Yoda's Protector by not
+getting there at all, and exe32pack with a single sample. NSPack's single claim
+verifies at zero, so it is not a partial success.
 
-What blocks PECompact is worth writing down, because it rules out the obvious
-guess. Its first section opens with a dword that is a plausible uncompressed size
-— 770,836 against a virtual size of 790,528 on one sample — so the payload is
-found and framed correctly. But no codec here decodes it: aPLib, NRV2B/D/E and
-LZMA were each tried at every start offset from 0 to 96, on several samples, and
-none produced a cleanly-terminated expansion. The reason appears to be that the
-payload is not one stream. Across 40 samples a `u16` at offset 6 takes only
-512, 1,024, 2,048, 4,096 or 8,192 — block sizes, not a codec parameter — so what
-follows is a series of compressed blocks and feeding the whole region to a
-stream decoder cannot work whatever the codec is. Seventeen of those 40 instead
-share one fixed pair of values at offsets 4 and 6, which is a second layout
-rather than the same one varying. Both need reading before a decoder is written;
-guessing a codec is what has already failed.
+PECompact's row is the probe run from before the handler learned the real layout.
+Re-measured since, with the stricter check of comparing the whole
+code section with the corpus original (102 of the 107 samples that have one; the
+five others are two samples with a different data-block form and three system
+binaries whose import address table sits in the code section). An earlier
+reading of this corpus took the `u16` at offset 6 of the first section for a
+block size; it is the middle of the LZMA dictionary size, and the payload is
+one LZMA stream. The layout is in [PECOMPACT-ON-DISK.md](PECOMPACT-ON-DISK.md).
 
 Neolite is stuck for an unrelated reason and wants a different first move. It
 keeps the ordinary section names — `.text`, `.rdata`, `.data`, `.rsrc`,

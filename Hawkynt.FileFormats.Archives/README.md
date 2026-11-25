@@ -511,6 +511,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | MPRESS | Unpack | 2.x: bare LZMA1 stream behind MPRESS's own 8-byte header, decoded through `BB_Lzma`; E8/E9 transform reversed. 1.x packs with another codec and stays at payload location. |
 | Packman | Unpack | Shared aPLib PE pipeline; decompressed payload plus synthetic rebuilt PE. |
 | PEtite | Unpack | Block table behind the entry stub replayed; every block inflated with the PEtite DEFLATE dialect; absolute-branch transform reversed. Imports, relocations and OEP are not rebuilt. |
+| PECompact | Unpack | PECompact 2 LZMA codec: the bytes under the entry sequence are put back, the one LZMA stream is decoded, sections are placed by the table in the aPLib-compressed data block and the E8/E9 filter plus its exception lists are reversed. Code section byte-identical for 102 of 107 corpus originals; imports, resources and relocations are not rebuilt. Layout: [PECOMPACT-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/PECOMPACT-ON-DISK.md) |
 | RLPack | Unpack | Own `{sourceRva, destinationRva}` block table, one bare LZMA or aPLib stream per section; x86 call/jump filter reversed. All 130 corpus samples decompress. |
 | WinUpack | Unpack | Upack's LZMA-idiom range coder plus call/jump filter, driven by the loader's parameter block; both container shapes decode. |
 | Yoda's Crypter | Unpack | Stub walker replays the per-build byte cipher and restores the original entry point; 129 of 130 corpus samples decrypt. |
@@ -530,7 +531,6 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | _(generic aPLib PE)_ | Unpack | `aplib_pe` fallback: any PE whose section inflates to a clean aPLib stream. |
 | _(generic NRV PE)_ | Unpack | `nrv_pe` fallback: any PE whose section inflates as NRV2B/2D/2E to a plausible payload. |
 | FSG | Locate* | `FSG!` marker and t/ta/a layouts recognised; synthetic aPLib-FSG fixtures unpack through the generic path. |
-| PECompact | Locate | Payload found and framed; the region is a series of compressed blocks (block sizes at offset 6), not one stream, so no codec is guessed. |
 | NsPack | Locate | `nsp0`/`nsp1` layout; `nsp1` opens with the relocated resource directory, then a second-stage loader, then the compressed data — the table has to be read before a decoder is written. |
 | Neolite | Locate* | Ordinary section names; `.text` opens with the loader and no section is dense enough to be a single compressed image. |
 | JDPack / Exe32pack / eXpressor / Alienyze | Locate | Packer section emitted as `compressed_payload.bin`; custom LZ recovery remains. |
