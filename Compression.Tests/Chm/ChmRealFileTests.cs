@@ -74,6 +74,37 @@ public class ChmRealFileTests {
     Assert.Throws<InvalidDataException>(() => r.Extract(r.Entries.First(e => e.Section == 1 && e.Size > 0)));
   }
 
+  [Test, Category("Exception")]
+  public void Given_UndecodableLzxSection_When_DescriptorExtracts_Then_InvalidDataCountsTheFailures() {
+    var bytes = Vector("7-zip.chm");
+    var ctrl = Meta(bytes, "::DataSpace/Storage/MSCompressed/ControlData");
+    bytes[(int)(FindContentOffset(bytes) + ctrl.Offset) + 4] = (byte)'X';
+    var lzx = new ChmReader(new MemoryStream(bytes)).Entries
+      .Count(e => e.Section == 1 && e.Size > 0 && !e.Path.StartsWith("::", StringComparison.Ordinal));
+    var dir = Directory.CreateTempSubdirectory("cwb_chm_").FullName;
+    try {
+      var ex = Assert.Throws<InvalidDataException>(() => new ChmFormatDescriptor().Extract(new MemoryStream(bytes), dir, null, null));
+      Assert.That(ex!.Message, Does.Contain($"{lzx} entries could not be decoded"));
+      Assert.That(ex.InnerException, Is.InstanceOf<InvalidDataException>());
+    } finally {
+      Directory.Delete(dir, recursive: true);
+    }
+  }
+
+  [Test, Category("HappyPath")]
+  public void Given_IntactChm_When_DescriptorExtracts_Then_EveryListedFileIsWritten() {
+    var dir = Directory.CreateTempSubdirectory("cwb_chm_").FullName;
+    try {
+      new ChmFormatDescriptor().Extract(new MemoryStream(Vector("7-zip.chm")), dir, null, null);
+      var expected = new ChmReader(new MemoryStream(Vector("7-zip.chm"))).Entries
+        .Count(e => e.Size > 0 && !e.Path.StartsWith("::", StringComparison.Ordinal));
+      Assert.That(expected, Is.GreaterThan(70));
+      Assert.That(Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Count(), Is.EqualTo(expected));
+    } finally {
+      Directory.Delete(dir, recursive: true);
+    }
+  }
+
   private static long FindContentOffset(byte[] chm) => (long)BitConverter.ToUInt64(chm, 0x58);
 
   // ── live: every CHM installed on this machine against 7-Zip ──────────
