@@ -120,8 +120,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 
 The other 46 are rare (weight 1). In rank order: BlakHole, GCA
 (refused), WinHKI, ICE (refused), PAQ, WinRK, SQX, UC2, YZ1, then single-source rows. Among the
-single-source rows, btoa is the cheapest new format, and Courgette has a BSD-3 source to
-convert. QUAD needs its licence checked. IMP, JAR (.j), PAE, Aladdin Private File, Central Point
+single-source rows, Courgette has a BSD-3 source to convert (btoa is now read and written). QUAD needs its licence checked. IMP, JAR (.j), PAE, Aladdin Private File, Central Point
 SFX, FLAMFILE and x-PRESS are closed. The rest are executable packers with no specification or
 sample (four of them have handlers). For the full order, sort
 [`sources/wikipedia_de.tsv`](sources/wikipedia_de.tsv) by `weight`, then by the catalogue

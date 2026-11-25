@@ -12,6 +12,10 @@
     <EmbeddedResource Include="NowCompress/ReferenceVectors/*.now;NowCompress/ReferenceVectors/*.json;NowCompress/ReferenceVectors/*.txt">
       <LogicalName>NowCompressVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- btoa 4.0 output for known inputs; see Btoa/Vectors/README.md. -->
+    <EmbeddedResource Include="Btoa/Vectors/*.bin;Btoa/Vectors/*.btoa">
+      <LogicalName>BtoaVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Real DOS packer output and UNP 4.11 restorations; see ExePackers/DosVectors/README.md. -->
     <EmbeddedResource Include="ExePackers/DosVectors/*.EXE;ExePackers/DosVectors/*.COM">
       <LogicalName>DosPackerVectors.%(Filename)%(Extension)</LogicalName>
