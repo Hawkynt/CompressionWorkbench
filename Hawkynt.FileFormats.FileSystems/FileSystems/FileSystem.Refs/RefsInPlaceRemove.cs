@@ -5,15 +5,16 @@ namespace FileSystem.Refs;
 
 /// <summary>
 /// Removes a file held in its directory row: its clusters are released in the Medium Allocator
-/// (the bits of its allocator rows cleared in place) and the row is deleted from the directory's
-/// one leaf page in place; every page-reference checksum from the changed pages up to the
+/// (the bits of its allocator rows cleared in place) and its rows are deleted from the leaf
+/// pages holding them (<see cref="RefsDirectoryTree"/>); every page-reference checksum from the changed pages up to the
 /// checkpoint is then refreshed (<see cref="RefsMetadataGraph.RefreshChecksumPaths"/>).
 /// </summary>
 /// <remarks>
 /// Refused before the first write: directories, files with their own object (kind 2), sparse
 /// runs, extent entries of an unknown shape (integrity-stream entries, with their checksums,
 /// go with the row), clusters another stream shares, clusters the allocator does not show as
-/// allocated, and directories spanning more than one page.
+/// allocated, directories deeper than a root over leaves, and a removal that would empty a leaf
+/// of a larger directory (merging pages is not made).
 /// </remarks>
 internal static class RefsInPlaceRemove {
   private const ulong RootDirectoryOid = 0x600;
@@ -38,10 +39,8 @@ internal static class RefsInPlaceRemove {
       throw new NotSupportedException($"ReFS: '{normalized}' has extent entries of a shape this editor does not remove.");
 
     var directoryRoot = RefsInPlaceRename.ResolveDirectoryRoot(metadata, parentPath);
-    var rows = metadata.WalkTree(directoryRoot, virtualAddresses: true).ToList();
-    var page = rows.Count > 0 ? rows[0].PhysicalPageLcn : 0;
-    if (rows.Count == 0 || rows.Any(r => r.PhysicalPageLcn != page) || metadata.TranslateVirtualLcn(directoryRoot.Lcns[0]) != page)
-      throw new NotSupportedException("ReFS: the directory spans more than one page; only single-page directories are edited.");
+    var tree = RefsDirectoryTree.Open(metadata, directoryRoot);
+    var rows = tree.Rows;
     var targets = rows.Where(r => r.Key.Length == 4 + name.Length * 2 && BinaryPrimitives.ReadUInt16LittleEndian(r.Key) == 0x30
         && string.Equals(Encoding.Unicode.GetString(r.Key, 4, r.Key.Length - 4), name, StringComparison.OrdinalIgnoreCase)).ToList();
     if (targets.Count != 1) throw new NotSupportedException($"ReFS: '{normalized}' is not one directory row.");
@@ -51,6 +50,11 @@ internal static class RefsInPlaceRemove {
     // The file-number row (type 0x20) goes with the name row.
     var idRow = RefsDirectoryRows.FindIdRow(rows, RefsDirectoryRows.FileNumber(target.Value), Encoding.Unicode.GetString(target.Key, 4, target.Key.Length - 4))
       ?? throw new NotSupportedException($"ReFS: the file-number row of '{normalized}' was not found; it is not removed.");
+    if (target.PhysicalPageLcn == idRow.PhysicalPageLcn) tree.RequireNotEmptied(target.PhysicalPageLcn, 2);
+    else {
+      tree.RequireNotEmptied(target.PhysicalPageLcn, 1);
+      tree.RequireNotEmptied(idRow.PhysicalPageLcn, 1);
+    }
 
     var clusters = new List<ulong>();
     foreach (var extent in file.Extents)
@@ -76,11 +80,13 @@ internal static class RefsInPlaceRemove {
     }
     // The allocator rewrite changed pages, so the directory row is read afresh.
     var current = RefsMetadataReader.Open(image);
-    var currentRows = current.WalkTree(RefsInPlaceRename.ResolveDirectoryRoot(current, parentPath), virtualAddresses: true).ToList();
-    var row = currentRows.Single(r => r.Key.AsSpan().SequenceEqual(target.Key));
-    var currentIdRow = currentRows.Single(r => r.Key.AsSpan().SequenceEqual(idRow.Key));
+    var currentTree = RefsDirectoryTree.Open(current, RefsInPlaceRename.ResolveDirectoryRoot(current, parentPath));
+    var row = currentTree.Rows.Single(r => r.Key.AsSpan().SequenceEqual(target.Key));
+    var currentIdRow = currentTree.Rows.Single(r => r.Key.AsSpan().SequenceEqual(idRow.Key));
     var after = new RefsMetadataGraph(image, current);
     RefsPageEditor.DeleteRow(after, row);
-    after.RefreshChecksumPaths([RefsPageEditor.DeleteRow(after, currentIdRow)]);
+    RefsPageEditor.DeleteRow(after, currentIdRow);
+    currentTree.AdjustRowCount(after, -2);
+    after.RefreshChecksumPaths([row.PhysicalPageLcn, currentIdRow.PhysicalPageLcn, currentTree.RootPage]);
   }
 }

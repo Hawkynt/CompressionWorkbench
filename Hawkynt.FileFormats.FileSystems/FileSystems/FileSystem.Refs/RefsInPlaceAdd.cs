@@ -18,7 +18,8 @@ namespace FileSystem.Refs;
 /// <see cref="RefsDirectoryCollation"/> does not reproduce,
 /// an empty file, a directory without an extent-backed file to take the record from (an
 /// integrity stream gives its kind and its per-cluster CRC32C entries to the new file),
-/// multi-page directories, a page without room for the two rows, and no free run.
+/// directories deeper than a root over leaves, a leaf without room for its row (a page split is
+/// not made), and no free run.
 /// </remarks>
 internal static class RefsInPlaceAdd {
 
@@ -35,10 +36,8 @@ internal static class RefsInPlaceAdd {
 
     var metadata = RefsMetadataReader.Open(image);
     var (directoryOid, root) = RefsInPlaceRename.ResolveDirectory(metadata, parent);
-    var rows = metadata.WalkTree(root, virtualAddresses: true).ToList();
-    var page = rows.Count > 0 ? rows[0].PhysicalPageLcn : 0;
-    if (rows.Count == 0 || rows.Any(r => r.PhysicalPageLcn != page) || metadata.TranslateVirtualLcn(root.Lcns[0]) != page)
-      throw new NotSupportedException("ReFS: the directory spans more than one page; only single-page directories are edited.");
+    var tree = RefsDirectoryTree.Open(metadata, root);
+    var rows = tree.Rows;
     var collation = RefsDirectoryCollation.For(metadata, rows, name);
     var nameKey = new byte[4 + name.Length * 2];
     BinaryPrimitives.WriteUInt16LittleEndian(nameKey, 0x30);
@@ -50,12 +49,17 @@ internal static class RefsInPlaceAdd {
     // The template: an extent-backed file held in a name row of this directory, whose record
     // this editor already rewrites (one embedded leaf, size block found once). A new file in a
     // directory of integrity streams is one too (Windows gives it the directory's setting).
+    // A directory of small files kept in their rows (ReFS 3.14) has none; the root's files are
+    // the fallback, the record carrying nothing of its directory.
     var files = new RefsNamespaceReader(metadata).ReadAll();
+    var candidates = rows.Select(r => (Row: r, Directory: parent));
+    if (parent.Length > 0)
+      candidates = candidates.Concat(metadata.WalkTree(RefsInPlaceRename.ResolveDirectoryRoot(metadata, ""), virtualAddresses: true).Select(static r => (Row: r, Directory: "")));
     (RefsBTreeRow Row, RefsFileRecord File, int Block, int Leaf, RefsExtent First)? template = null;
-    foreach (var row in rows) {
+    foreach (var (row, directory) in candidates) {
       if (BinaryPrimitives.ReadUInt16LittleEndian(row.Key) != 0x30 || BinaryPrimitives.ReadUInt16LittleEndian(row.Key.AsSpan(2)) != 1) continue;
       var rowName = Encoding.Unicode.GetString(row.Key, 4, row.Key.Length - 4);
-      var filePath = parent.Length == 0 ? rowName : parent + "/" + rowName;
+      var filePath = directory.Length == 0 ? rowName : directory + "/" + rowName;
       var file = files.FirstOrDefault(f => string.Equals(f.Path, filePath, StringComparison.OrdinalIgnoreCase));
       if (file is null || file.IsResident || file.Extents.Count == 0 || file.Extents.Any(static e => e.IsSparse)) continue;
       var v = row.Value;
@@ -122,9 +126,16 @@ internal static class RefsInPlaceAdd {
     var idKey = RefsDirectoryRows.IdKey(fileNumber);
     var idValue = RefsDirectoryRows.IdValue(name);
     var templateId = rows.FirstOrDefault(static r => BinaryPrimitives.ReadUInt16LittleEndian(r.Key) == 0x20);
-    var namePosition = rows.Count(r => collation.Compare(r.Key, nameKey) < 0);
-    if (!RefsPageEditor.CanInsertRow(graph, page, namePosition, nameKey.Length + idKey.Length + 32, value.Length + idValue.Length))
-      throw new NotSupportedException("ReFS: the directory page has no room for the new file's rows.");
+    // The two rows go to the leaves their keys belong to (one leaf, or two of a larger directory).
+    var nameLeaf = tree.LeafFor(nameKey, collation);
+    var idLeaf = tree.LeafFor(idKey, collation);
+    var namePosition = tree.PositionIn(nameLeaf, nameKey, collation);
+    var idPosition = tree.PositionIn(idLeaf, idKey, collation);
+    var room = nameLeaf == idLeaf
+      ? RefsPageEditor.CanInsertRow(graph, nameLeaf, namePosition, nameKey.Length + idKey.Length + 32, value.Length + idValue.Length)
+      : RefsPageEditor.CanInsertRow(graph, nameLeaf, namePosition, nameKey.Length, value.Length)
+        && RefsPageEditor.CanInsertRow(graph, idLeaf, idPosition, idKey.Length, idValue.Length);
+    if (!room) throw new NotSupportedException("ReFS: the directory page has no room for the new file's rows; splitting pages is not made in place.");
     byte[]? headerValue = null;
     if (counter > 0) {
       headerValue = header!.Value.ToArray();
@@ -134,14 +145,14 @@ internal static class RefsInPlaceAdd {
     allocator.SetAllocated(run, allocated: true);
     if (crcs is not null) RefsExtentLeaf.WritePadded(image, metadata.ClusterSize, run, data);
     else RefsInPlaceOverwrite.Apply(image, metadata.ClusterSize, run, data);
-    RefsPageEditor.InsertRow(graph, page, namePosition, nameKey, value, t.Row.Flags);
-    var current = metadata.WalkTree(root, virtualAddresses: true).ToList();
-    var idPosition = current.Count(r => collation.Compare(r.Key, idKey) < 0);
-    RefsPageEditor.InsertRow(graph, page, idPosition, idKey, idValue, templateId?.Flags ?? 0);
+    // A file-number row sorts before every name row, so inserting it never moves the name row's position.
+    RefsPageEditor.InsertRow(graph, nameLeaf, namePosition, nameKey, value, t.Row.Flags);
+    RefsPageEditor.InsertRow(graph, idLeaf, idPosition, idKey, idValue, templateId?.Flags ?? 0);
     if (headerValue is not null) RefsPageEditor.ReplaceValue(graph, header!, headerValue);
+    tree.AdjustRowCount(graph, +2);
     var objectPage = RefsPageEditor.ReplaceValue(graph, objectRow.Row, objectValue);
     // The object-table page was repacked, so the offsets of the page references it holds moved:
     // the checksums are refreshed through a graph built from the volume as it now is.
-    new RefsMetadataGraph(image, RefsMetadataReader.Open(image)).RefreshChecksumPaths([page, objectPage]);
+    new RefsMetadataGraph(image, RefsMetadataReader.Open(image)).RefreshChecksumPaths([nameLeaf, idLeaf, header?.PhysicalPageLcn ?? nameLeaf, tree.RootPage, objectPage]);
   }
 }

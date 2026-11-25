@@ -54,10 +54,8 @@ internal static class RefsInPlaceResize {
     var parent = normalized.Contains('/') ? normalized[..normalized.LastIndexOf('/')] : "";
     var name = normalized[(normalized.LastIndexOf('/') + 1)..];
     var root = RefsInPlaceRename.ResolveDirectoryRoot(metadata, parent);
-    var rows = metadata.WalkTree(root, virtualAddresses: true).ToList();
-    var page = rows.Count > 0 ? rows[0].PhysicalPageLcn : 0;
-    if (rows.Count == 0 || rows.Any(r => r.PhysicalPageLcn != page) || metadata.TranslateVirtualLcn(root.Lcns[0]) != page)
-      throw new NotSupportedException("ReFS: the directory spans more than one page; only single-page directories are edited.");
+    // The row is rewritten in the leaf holding it, whichever leaf of the directory that is.
+    var rows = RefsDirectoryTree.Open(metadata, root).Rows;
     var row = rows.SingleOrDefault(r => r.Key.Length == 4 + name.Length * 2 && BinaryPrimitives.ReadUInt16LittleEndian(r.Key) == 0x30
         && BinaryPrimitives.ReadUInt16LittleEndian(r.Key.AsSpan(2)) == 1
         && string.Equals(Encoding.Unicode.GetString(r.Key, 4, r.Key.Length - 4), name, StringComparison.OrdinalIgnoreCase))
