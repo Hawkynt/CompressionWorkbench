@@ -234,7 +234,7 @@ running real-world samples. The file named at the end of each row is where the l
 | Format | Ours | Sources | What is missing |
 | --- | --- | :---: | --- |
 | 7z | `SevenZip` | 7 | header data in an external stream refused, which 7-Zip never writes (SevenZipHeaderCodec.cs) |
-| ZIP | `Zip` | 7 | methods xz (95), JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs) |
+| ZIP | `Zip` | 7 | certificate-based and 3DES/RC2 strong encryption refused; password-based AES strong encryption is read and written (ZipStrongEncryption.cs). WavPack (97) is read only, from WavPack-produced payloads, with no WinZip-written sample (ZipMethodCodecs.cs) |
 | LHA / LZH | `Lzh` | 6 | every method and header level of lhasa's test suite reads except LHARK's lk7; lh2, lh3, lhx, pm1 and pm2 are read-only; self-extracting executables are not opened (LhaReader.cs) |
 | StuffIt (classic + 5) | `StuffIt` | 4 | store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs) |
 | StuffIt X | `StuffItX` | 4 | Method 7 and encryption are read but not written |
