@@ -305,13 +305,87 @@ public sealed class RefsWindowsOracleTests {
     return stale;
   }
 
+  private static readonly string[] ManyEdits = ["add-many", "remove-many", "rename-many", "mkdir-many", "grow-many"];
+
+  [Test, Category("ExternalFsInterop")]
+  public void GivenADirectoryOverSeveralPages_WhenEdited_ThenTheListingAndTheRowCountFollow(
+      [ValueSource(nameof(Volumes))] string volume, [ValueSource(nameof(ManyEdits))] string edit) {
+    var oracle = Load(volume);
+    var copy = Path.Combine(Path.GetTempPath(), "cwb_refs_many_" + Guid.NewGuid().ToString("N")[..8] + ".refs");
+    File.Copy(ImagePath(oracle), copy);
+    try {
+      var descriptor = new RefsFormatDescriptor();
+      var expected = oracle.Files.ToDictionary(static f => f.Path, static f => f.Sha256);
+      var added = Pattern(30000);
+      var grown = Pattern(70000);
+      using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
+        var before = SHA256.HashData(stream);
+        stream.Position = 0;
+        try {
+          switch (edit) {
+            case "add-many":
+              descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("many/added.bin", added)]);
+              expected["many/added.bin"] = Convert.ToHexStringLower(SHA256.HashData(added));
+              break;
+            case "remove-many":
+              descriptor.Remove(stream, ["many/f007.txt"]);
+              expected.Remove("many/f007.txt");
+              break;
+            case "rename-many":
+              descriptor.Rename(stream, "many/f010.txt", "many/f010-renamed.txt");
+              expected["many/f010-renamed.txt"] = expected["many/f010.txt"];
+              expected.Remove("many/f010.txt");
+              break;
+            case "mkdir-many":
+              descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("many/new-folder", "many/new-folder", true)]);
+              break;
+            case "grow-many":
+              descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("many/f020.txt", grown)]);
+              expected["many/f020.txt"] = Convert.ToHexStringLower(SHA256.HashData(grown));
+              break;
+          }
+        } catch (NotSupportedException refused) {
+          TestContext.Out.WriteLine($"{volume}: {edit} refused: {refused.Message}");
+          stream.Position = 0;
+          Assert.That(SHA256.HashData(stream), Is.EqualTo(before), "a refused edit leaves the image as it was");
+          // ReFS 3.14 keeps the small files of "many" in their rows (resident), which are not resized.
+          var expectedRefusal = oracle.RefsVersion == "3.14" && (oracle.Variant == "cluster64k" || edit == "grow-many");
+          Assert.That(expectedRefusal, Is.True, $"{edit} is only refused on ReFS 3.14 at 64 KiB or for a resident file: {refused.Message}");
+          return;
+        }
+      }
+      using var check = File.OpenRead(copy);
+      var metadata = RefsMetadataReader.Open(check);
+      var many = RefsInPlaceRename.ResolveDirectory(metadata, "many");
+      var tree = RefsDirectoryTree.Open(metadata, many.Root);
+      var root = metadata.TryReadReferencedPage(many.Root, virtualAddresses: true)!;
+      Assert.That(System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(root.AsSpan(0x70)), Is.EqualTo((ulong)tree.Rows.Count), "the root's row count");
+      var files = new RefsNamespaceReader(metadata).ReadAll();
+      if (edit == "mkdir-many") Assert.That(files.Any(static f => f.IsDirectory && f.Path == "many/new-folder"), Is.True);
+      Assert.That(files.Where(static f => !f.IsDirectory && !f.Path.StartsWith("System Volume Information/", StringComparison.Ordinal)).Select(static f => f.Path).Order().ToList(), Is.EqualTo(expected.Keys.Order().ToList()), "the files listed");
+      var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_many_x_" + Guid.NewGuid().ToString("N")[..8]);
+      try {
+        check.Position = 0;
+        descriptor.Extract(check, outDir, null, null);
+        Assert.Multiple(() => {
+          foreach (var (path, sha) in expected)
+            Assert.That(Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Path.Combine(outDir, path.Replace('/', Path.DirectorySeparatorChar))))), Is.EqualTo(sha), path);
+        });
+      } finally {
+        try { Directory.Delete(outDir, recursive: true); } catch { /* best effort */ }
+      }
+    } finally {
+      File.Delete(copy);
+    }
+  }
+
   private static byte[] Pattern(int length) {
     var bytes = new byte[length];
     for (var i = 0; i < length; ++i) bytes[i] = (byte)(i * 31 + (i >> 9));
     return bytes;
   }
 
-  private static readonly string[] Edits = ["none", "overwrite", "grow", "shrink", "rename", "rename-unicode", "remove", "add", "mkdir"];
+  private static readonly string[] Edits = ["none", "overwrite", "grow", "shrink", "rename", "rename-unicode", "remove", "add", "mkdir", "add-many", "remove-many", "rename-many", "mkdir-many", "grow-many"];
 
   [Test, Category("ExternalFsInterop")]
   public void GivenAVolumeWindowsFormatted_WhenAnyEditIsMade_ThenEveryPageReferenceChecksumStillMatches(
@@ -333,6 +407,12 @@ public sealed class RefsWindowsOracleTests {
             case "remove": descriptor.Remove(stream, ["remove-me.bin"]); break;
             case "add": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("added.bin", Pattern(30000))]); break;
             case "mkdir": descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("new-folder", "new-folder", true)]); break;
+            // "many" holds 200 files over several leaf pages under one inner root.
+            case "add-many": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("many/added.bin", Pattern(30000))]); break;
+            case "remove-many": descriptor.Remove(stream, ["many/f007.txt"]); break;
+            case "rename-many": descriptor.Rename(stream, "many/f010.txt", "many/f010-renamed.txt"); break;
+            case "mkdir-many": descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("many/new-folder", "many/new-folder", true)]); break;
+            case "grow-many": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("many/f020.txt", Pattern(70000))]); break;
           }
         } catch (NotSupportedException refused) {
           Assert.Ignore($"{edit} refused on {volume}: {refused.Message}");

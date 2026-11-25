@@ -26,7 +26,8 @@ namespace FileSystem.Refs;
 /// Every page-reference checksum from the changed pages up to the checkpoint is then refreshed.
 /// </summary>
 /// <remarks>
-/// Refused before the first write: a name that exists, a parent spanning more than one page, a
+/// Refused before the first write: a name that exists, a parent deeper than a root over leaves
+/// or whose leaf has no room (a page split is not made), a
 /// volume without a directory whose page and records match these layouts (it is the template),
 /// and no room or no free run.
 /// </remarks>
@@ -45,10 +46,8 @@ internal static class RefsInPlaceMkdir {
     var metadata = RefsMetadataReader.Open(image);
     var legacy = metadata.Header.MinorVersion < 14;
     var (parentOid, parentRoot) = RefsInPlaceRename.ResolveDirectory(metadata, parent);
-    var rows = metadata.WalkTree(parentRoot, virtualAddresses: true).ToList();
-    var parentPage = rows.Count > 0 ? rows[0].PhysicalPageLcn : 0;
-    if (rows.Count == 0 || rows.Any(r => r.PhysicalPageLcn != parentPage) || metadata.TranslateVirtualLcn(parentRoot.Lcns[0]) != parentPage)
-      throw new NotSupportedException("ReFS: the parent directory spans more than one page.");
+    var tree = RefsDirectoryTree.Open(metadata, parentRoot);
+    var rows = tree.Rows;
     var collation = RefsDirectoryCollation.For(metadata, rows, name);
     var nameKey = new byte[4 + name.Length * 2];
     BinaryPrimitives.WriteUInt16LittleEndian(nameKey, 0x30);
@@ -110,7 +109,8 @@ internal static class RefsInPlaceMkdir {
     BinaryPrimitives.WriteUInt64LittleEndian(nameValue.AsSpan(0x08), oid);
     for (var o = 0x10; o < 0x30; o += 8) BinaryPrimitives.WriteUInt64LittleEndian(nameValue.AsSpan(o), now);
 
-    var namePosition = rows.Count(r => collation.Compare(r.Key, nameKey) < 0);
+    var parentPage = tree.LeafFor(nameKey, collation);
+    var namePosition = tree.PositionIn(parentPage, nameKey, collation);
     var objectPosition = objectRows.Count(r => BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(8)) < oid);
     if (!RefsPageEditor.CanInsertRow(graph, parentPage, namePosition, nameKey.Length, nameValue.Length)
         || !RefsPageEditor.CanInsertRow(graph, objectPage, objectPosition, objectKey.Length, objectValue.Length))
@@ -124,9 +124,10 @@ internal static class RefsInPlaceMkdir {
     image.Flush();
     RefsPageEditor.InsertRow(graph, objectPage, objectPosition, objectKey, objectValue, template.ObjectFlags);
     RefsPageEditor.InsertRow(graph, parentPage, namePosition, nameKey, nameValue, template.NameFlags);
+    tree.AdjustRowCount(graph, +1);
     // The object-table page was repacked, so the offsets of the page references it holds moved:
     // the checksums are refreshed through a graph built from the volume as it now is.
-    new RefsMetadataGraph(image, RefsMetadataReader.Open(image)).RefreshChecksumPaths([parentPage, objectPage]);
+    new RefsMetadataGraph(image, RefsMetadataReader.Open(image)).RefreshChecksumPaths([parentPage, tree.RootPage, objectPage]);
   }
 
   private sealed record Template(

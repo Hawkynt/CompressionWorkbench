@@ -4,9 +4,10 @@ using System.Text;
 namespace FileSystem.Refs;
 
 /// <summary>
-/// Renames a file within its directory by rewriting the directory's one leaf page in place: the
-/// row keyed by the old name is removed and the same value is inserted under the new name at its
-/// collation position, then every page-reference checksum from that page up to the checkpoint is
+/// Renames a file within its directory by rewriting the directory's leaf pages in place
+/// (<see cref="RefsDirectoryTree"/>): the row keyed by the old name is removed and the same value
+/// is inserted under the new name at its collation position in the leaf that key belongs to,
+/// then every page-reference checksum from those pages up to the checkpoint is
 /// refreshed (<see cref="RefsMetadataGraph.RefreshChecksumPaths"/>). Directory keys are
 /// [u16 0x30, u16 kind, UTF-16 name]; rows collate as <see cref="RefsDirectoryCollation"/> says —
 /// checked against the order the page already holds before anything is written.
@@ -14,7 +15,8 @@ namespace FileSystem.Refs;
 /// <remarks>
 /// Only files whose whole record lives in the directory row (kind 1) are renamed: a file or
 /// directory with its own object (kind 2) also names itself elsewhere. Refused as well: a
-/// directory whose rows span more than one page, a page without room for the new key, a name
+/// directory deeper than a root over leaves, a leaf without room for the new key or one the
+/// move would empty, a name
 /// already present under case-insensitive lookup, and a page whose stored order the collation
 /// here does not reproduce. Every check runs before the first write.
 /// </remarks>
@@ -38,14 +40,10 @@ internal static class RefsInPlaceRename {
 
     var metadata = RefsMetadataReader.Open(image);
     var directoryRoot = ResolveDirectoryRoot(metadata, sourceParent);
-    var rows = metadata.WalkTree(directoryRoot, virtualAddresses: true).ToList();
-    if (rows.Count == 0) throw new InvalidDataException("ReFS: the directory has no rows.");
-    var page = rows[0].PhysicalPageLcn;
-    if (rows.Any(r => r.PhysicalPageLcn != page) || metadata.TranslateVirtualLcn(directoryRoot.Lcns[0]) != page)
-      throw new NotSupportedException("ReFS: the directory spans more than one page; only single-page directories are renamed in.");
+    var tree = RefsDirectoryTree.Open(metadata, directoryRoot);
+    var rows = tree.Rows;
 
     var collation = RefsDirectoryCollation.For(metadata, rows, newName);
-    Func<byte[], byte[], int> Compare = collation.Compare;
 
     bool IsName(RefsBTreeRow row, string name)
       => row.Key.Length >= 4 && BinaryPrimitives.ReadUInt16LittleEndian(row.Key) == 0x30
@@ -63,8 +61,10 @@ internal static class RefsInPlaceRename {
     var newKey = new byte[4 + newName.Length * 2];
     target.Key.AsSpan(0, 4).CopyTo(newKey);
     Encoding.Unicode.GetBytes(newName).CopyTo(newKey, 4);
-    var remaining = rows.Where(r => !ReferenceEquals(r, target)).ToList();
-    var position = remaining.Count(r => Compare(r.Key, newKey) < 0);
+    // The renamed row goes to the leaf its new key belongs to, which may be another one.
+    var leaf = tree.LeafFor(newKey, collation);
+    var position = tree.PositionIn(leaf, newKey, collation, target);
+    if (leaf != target.PhysicalPageLcn) tree.RequireNotEmptied(target.PhysicalPageLcn, 1);
 
     // The file-number row (type 0x20) names the file too; it gets the new name.
     var storedName = Encoding.Unicode.GetString(target.Key, 4, target.Key.Length - 4);
@@ -73,13 +73,13 @@ internal static class RefsInPlaceRename {
     var idValue = RefsDirectoryRows.IdValue(newName);
 
     var graph = new RefsMetadataGraph(image, metadata);
-    if (!RefsPageEditor.CanInsertRow(graph, page, Math.Min(position, rows.Count), newKey.Length + idValue.Length, target.Value.Length))
-      throw new NotSupportedException("ReFS: the directory page has no room for the longer name.");
+    if (!RefsPageEditor.CanInsertRow(graph, leaf, position, newKey.Length + idValue.Length, target.Value.Length))
+      throw new NotSupportedException("ReFS: the directory page has no room for the longer name; splitting pages is not made in place.");
 
     RefsPageEditor.DeleteRow(graph, target);
-    RefsPageEditor.InsertRow(graph, page, position, newKey, target.Value, target.Flags);
+    RefsPageEditor.InsertRow(graph, leaf, position, newKey, target.Value, target.Flags);
     RefsPageEditor.ReplaceValue(graph, idRow, idValue);
-    graph.RefreshChecksumPaths([page]);
+    graph.RefreshChecksumPaths([target.PhysicalPageLcn, leaf, idRow.PhysicalPageLcn]);
   }
 
   internal static RefsPageReference ResolveDirectoryRoot(RefsMetadataReader metadata, string path)
