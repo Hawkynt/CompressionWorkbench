@@ -22,8 +22,6 @@ namespace FileFormat.Shar;
 public static class SharInPlaceModifier {
 
   private static readonly byte[] ExitMarker = "exit 0\n"u8.ToArray();
-  private const string Delimiter = "SHAR_EOF";
-  private const string UuDelimiter = "SHAR_UU_EOF";
 
   /// <summary>
   /// Appends a file entry to a shar archive. The byte range before the
@@ -37,16 +35,9 @@ public static class SharInPlaceModifier {
     var exitOffset = FindExitMarkerOffset(shar);
     shar.Position = exitOffset;
 
-    // Emit a new entry block. Mirrors SharWriter's layout so SharReader
-    // round-trips the append.
+    // Emit a new entry block exactly as SharWriter does.
     using (var sw = new StreamWriter(shar, new UTF8Encoding(false), leaveOpen: true) { NewLine = "\n" }) {
-      var safeName = name.Replace("'", "'\\''");
-      sw.WriteLine($"echo x - {safeName}");
-      if (IsBinary(data))
-        WriteUuencoded(sw, safeName, data);
-      else
-        WriteHeredoc(sw, safeName, data);
-      sw.WriteLine();
+      SharWriter.WriteEntry(sw, name, data);
       sw.WriteLine("exit 0");
       sw.Flush();
     }
@@ -104,51 +95,4 @@ public static class SharInPlaceModifier {
     }
     return -1;
   }
-
-  // ── Entry body writers (mirror SharWriter so SharReader round-trips) ──
-
-  private static bool IsBinary(byte[] data) {
-    var probe = Math.Min(data.Length, 8192);
-    for (var i = 0; i < probe; ++i) {
-      var b = data[i];
-      if (b == 0 || (b < 0x20 && b != '\t' && b != '\n' && b != '\r'))
-        return true;
-    }
-    return false;
-  }
-
-  private static void WriteHeredoc(StreamWriter writer, string name, byte[] data) {
-    writer.WriteLine($"sed 's/^X//' > '{name}' << '{Delimiter}'");
-    var text = Encoding.UTF8.GetString(data);
-    foreach (var line in text.Split('\n'))
-      writer.WriteLine("X" + line);
-    writer.WriteLine(Delimiter);
-  }
-
-  private static void WriteUuencoded(StreamWriter writer, string name, byte[] data) {
-    writer.WriteLine($"uudecode << '{UuDelimiter}'");
-    writer.WriteLine($"begin 644 {name}");
-    var offset = 0;
-    while (offset < data.Length) {
-      var len = Math.Min(45, data.Length - offset);
-      var sb = new StringBuilder();
-      sb.Append((char)(len + 32));
-      for (var i = 0; i < len; i += 3) {
-        var b0 = data[offset + i];
-        var b1 = i + 1 < len ? data[offset + i + 1] : (byte)0;
-        var b2 = i + 2 < len ? data[offset + i + 2] : (byte)0;
-        sb.Append(UuChar(b0 >> 2));
-        sb.Append(UuChar(((b0 & 0x3) << 4) | (b1 >> 4)));
-        sb.Append(UuChar(((b1 & 0xF) << 2) | (b2 >> 6)));
-        sb.Append(UuChar(b2 & 0x3F));
-      }
-      writer.WriteLine(sb.ToString());
-      offset += len;
-    }
-    writer.WriteLine("`");
-    writer.WriteLine("end");
-    writer.WriteLine(UuDelimiter);
-  }
-
-  private static char UuChar(int val) => (char)((val & 0x3F) + 32);
 }

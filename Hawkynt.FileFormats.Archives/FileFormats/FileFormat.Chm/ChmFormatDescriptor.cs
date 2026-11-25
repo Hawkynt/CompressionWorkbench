@@ -116,16 +116,31 @@ public sealed class ChmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
+  /// <exception cref="InvalidDataException">
+  /// An entry could not be decoded. Every entry that could is written first; the failures are
+  /// then reported together rather than left out of the output without a word.
+  /// </exception>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new ChmReader(stream);
+    var failures = new List<(string Path, Exception Error)>();
     foreach (var e in r.Entries) {
       if (e.Size == 0) continue;
       if (e.Path.StartsWith("::", StringComparison.Ordinal)) continue; // skip internal entries
       if (files != null && !MatchesFilter(e.Path, files)) continue;
+      byte[] data;
       try {
-        WriteFile(outputDir, e.Path.TrimStart('/'), r.Extract(e));
-      } catch { /* skip entries that can't be decompressed */ }
+        data = r.Extract(e);
+      } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or EndOfStreamException) {
+        failures.Add((e.Path, ex));
+        continue;
+      }
+      WriteFile(outputDir, e.Path.TrimStart('/'), data);
     }
+
+    if (failures.Count > 0)
+      throw new InvalidDataException(
+        $"CHM: {failures.Count} entr{(failures.Count == 1 ? "y" : "ies")} could not be decoded, first '{failures[0].Path}': {failures[0].Error.Message}",
+        failures[0].Error);
   }
 
   /// <summary>

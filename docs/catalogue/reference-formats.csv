@@ -21,7 +21,7 @@ cpio (odc/newc/crc/bin),cpio;crc;pwb,archive,R,RW,R,D,R,fmt/635,Y,Y,8,https://pu
 Unix ar,a;ar;lib;deb,archive,R,RW,R,,,fmt/1835,Y,Y,6,https://en.wikipedia.org/wiki/Ar_(Unix),Ar,Y,Y,Y,OK,,
 Debian package,deb;udeb,package,,,R,D,R,,Y,Y,5,https://manpages.debian.org/deb.5,Deb,Y,Y,Y,OK,,
 RPM package,rpm;srpm;src.rpm,package,R,R,R,,R,fmt/793;fmt/794;fmt/795,Y,Y,7,https://rpm-software-management.github.io/rpm/manual/format.html,Rpm,Y,Y,,OK,,
-Shell archive (shar),shar;run;sh,archive,,W,,,,fmt/329,Y,,3,https://www.gnu.org/software/sharutils/,Shar,Y,Y,Y,OK,,
+Shell archive (shar),shar;run;sh,archive,,W,,,,fmt/329,Y,,3,https://www.gnu.org/software/sharutils/,Shar,Y,Y,Y,OK,,"reads GNU sharutils 4.15.2 archives (default, -T, -B, -z, -C xz/bzip2, --no-md5-digest) to exactly what sh extracts; sh and unshar extract ours byte for byte; other unpackers (compress) refused (SharReader.cs)"
 mtree manifest,mtree;spec,archive,,RW,,,,,,,1,https://man.freebsd.org/mtree/5,Mtree,Y,Y,,OK,,
 WARC (Web ARChive),warc,archive,,RW,R,,R,fmt/1281;fmt/1355;fmt/289,,,4,https://iipc.github.io/warc-specifications/,Warc,Y,Y,,OK,,
 Internet Archive ARC (crawl),arc,archive,,,,,,fmt/410;x-fmt/219,,,1,https://archive.org/web/researcher/ArcFileFormat.php,IaArc,Y,Y,Y,OK,,

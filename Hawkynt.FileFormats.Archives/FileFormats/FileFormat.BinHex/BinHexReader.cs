@@ -170,13 +170,13 @@ public sealed class BinHexReader {
     // Data fork length (4 bytes, big-endian)
     if (pos + 4 > data.Length)
       throw new InvalidDataException("BinHex data truncated at data fork length.");
-    var dataForkLen = ReadBigEndianInt32(data, pos);
+    var dataForkLen = ReadBigEndianUInt32(data, pos);
     pos += 4;
 
     // Resource fork length (4 bytes, big-endian)
     if (pos + 4 > data.Length)
       throw new InvalidDataException("BinHex data truncated at resource fork length.");
-    var resForkLen = ReadBigEndianInt32(data, pos);
+    var resForkLen = ReadBigEndianUInt32(data, pos);
     pos += 4;
 
     // Header CRC (2 bytes)
@@ -189,11 +189,10 @@ public sealed class BinHexReader {
     pos += 2;
 
     // Data fork
-    if (pos + dataForkLen > data.Length)
+    if ((ulong)pos + dataForkLen > (ulong)data.Length)
       throw new InvalidDataException("BinHex data truncated at data fork.");
-    var dataFork = new byte[dataForkLen];
-    Array.Copy(data, pos, dataFork, 0, dataForkLen);
-    pos += dataForkLen;
+    var dataFork = data.AsSpan(pos, (int)dataForkLen).ToArray();
+    pos += (int)dataForkLen;
 
     // Data fork CRC (2 bytes)
     if (pos + 2 > data.Length)
@@ -205,11 +204,10 @@ public sealed class BinHexReader {
     pos += 2;
 
     // Resource fork
-    if (pos + resForkLen > data.Length)
+    if ((ulong)pos + resForkLen > (ulong)data.Length)
       throw new InvalidDataException("BinHex data truncated at resource fork.");
-    var resourceFork = new byte[resForkLen];
-    Array.Copy(data, pos, resourceFork, 0, resForkLen);
-    pos += resForkLen;
+    var resourceFork = data.AsSpan(pos, (int)resForkLen).ToArray();
+    pos += (int)resForkLen;
 
     // Resource fork CRC (2 bytes)
     if (pos + 2 > data.Length)
@@ -222,8 +220,10 @@ public sealed class BinHexReader {
     return (fileName, dataFork, resourceFork, fileType, fileCreator);
   }
 
-  private static int ReadBigEndianInt32(byte[] data, int offset) =>
-    (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
+  // Fork lengths are unsigned 32-bit: read as int, a length of 2 GiB or more went negative and
+  // slipped past the bounds check.
+  private static uint ReadBigEndianUInt32(byte[] data, int offset) =>
+    System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset));
 
   private static ushort ReadBigEndianUInt16(byte[] data, int offset) =>
     (ushort)((data[offset] << 8) | data[offset + 1]);

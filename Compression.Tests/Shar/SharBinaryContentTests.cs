@@ -61,9 +61,10 @@ public class SharBinaryContentTests {
   [Test, Category("Regression")]
   public void PlainTextStillTravelsAsText() {
     // The here-document path is the point of a shar; widening what counts as
-    // binary must not send ordinary text down the uuencoded one.
+    // binary must not send ordinary text down the uuencoded one. (Text is lines, each ending in a
+    // newline; content without a final newline cannot pass through a here-document unchanged.)
     var text = System.Text.Encoding.ASCII.GetBytes(
-      string.Join('\n', Enumerable.Range(0, 200).Select(i => $"line {i} of a perfectly ordinary file")));
+      string.Concat(Enumerable.Range(0, 200).Select(i => $"line {i} of a perfectly ordinary file\n")));
 
     var writer = new SharWriter();
     writer.AddFile("NOTES.TXT", text);
