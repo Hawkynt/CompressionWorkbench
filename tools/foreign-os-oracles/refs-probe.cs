@@ -12,7 +12,8 @@
 //   refs-probe pattern <seed> <length> <out>   the bytes an edit writes, for Windows to write too
 //   refs-probe read <image.refs> <out.json>    what our reader lists and extracts (path, size, sha256)
 //   refs-probe mutate <image.refs> <op> <out.refs> <result.json>
-//        op: rename | rename-long | rename-unicode | replace-same | replace-grow | replace-shrink | replace-grow-small | add | add-dir | remove | remove-small | clone | defrag
+//        op: rename | rename-long | rename-unicode | replace-same | replace-grow | replace-shrink | replace-grow-small | add | add-dir | remove | remove-small
+//            | add-many | add-dir-many | rename-many | replace-many | add-many-split | add-dir1-grow | clone | defrag
 //
 // Every result is JSON so the PowerShell side can compare it with Get-FileHash.
 
@@ -25,6 +26,7 @@ using FileSystem.Refs;
 return args switch {
   ["gen", var dir] => Gen(dir),
   ["pattern", var seed, var length, var output] => WritePattern(int.Parse(seed), int.Parse(length), output),
+  ["patterns", var seed, var length, var count, var format] => WritePatterns(int.Parse(seed), int.Parse(length), int.Parse(count), format),
   ["read", var image, var output] => Read(image, output),
   ["mutate", var image, var op, var output, var result] => Mutate(image, op, output, result),
   _ => Usage(),
@@ -47,6 +49,12 @@ static byte[] Pattern(int length, int seed) {
 
 static int WritePattern(int seed, int length, string output) {
   File.WriteAllBytes(output, Pattern(length, seed));
+  return 0;
+}
+
+// count files: file i (named by format) holds Pattern(length + i, seed + i).
+static int WritePatterns(int seed, int length, int count, string format) {
+  for (var i = 0; i < count; ++i) File.WriteAllBytes(string.Format(format, i), Pattern(length + i, seed + i));
   return 0;
 }
 
@@ -149,6 +157,48 @@ static int Mutate(string image, string op, string output, string resultPath) {
         descriptor.Add(stream, [new ArchiveInputInfo("new-folder", "new-folder", true)]);
         expectation = new { added = "new-folder/" };
         break;
+      case "add-many": {
+        var data = Pattern(30000, 34);
+        descriptor.Add(stream, [ArchiveInputInfo.InMemory("many/added.bin", data)]);
+        expectation = new { added = "many/added.bin", size = data.Length, sha256 = Sha256(data) };
+        break;
+      }
+      case "add-dir-many":
+        descriptor.Add(stream, [new ArchiveInputInfo("many/new-folder", "many/new-folder", true)]);
+        expectation = new { added = "many/new-folder/" };
+        break;
+      case "rename-many":
+        descriptor.Rename(stream, "many/f010.txt", "many/f010-renamed.txt");
+        expectation = new { renamed = new[] { "many/f010.txt", "many/f010-renamed.txt" } };
+        break;
+      case "add-many-split": {
+        var added = new List<object>();
+        for (var i = 0; i < 24; ++i) {
+          var data = Pattern(5000 + i, 40 + i);
+          var name = $"many/f015-{i:D2}.bin";
+          descriptor.Add(stream, [ArchiveInputInfo.InMemory(name, data)]);
+          added.Add(new { path = name, size = data.Length, sha256 = Sha256(data) });
+        }
+        expectation = new { addedMany = added };
+        break;
+      }
+      case "add-dir1-grow": {
+        var added = new List<object>();
+        for (var i = 0; i < 120; ++i) {
+          var data = Pattern(3000 + i, 100 + i);
+          var name = $"dir1/grow-{i:D3}.bin";
+          descriptor.Add(stream, [ArchiveInputInfo.InMemory(name, data)]);
+          added.Add(new { path = name, size = data.Length, sha256 = Sha256(data) });
+        }
+        expectation = new { addedMany = added };
+        break;
+      }
+      case "replace-many": {
+        var data = Pattern(70000, 33);
+        descriptor.Add(stream, [ArchiveInputInfo.InMemory("many/f020.txt", data)]);
+        expectation = new { replaced = "many/f020.txt", size = data.Length, sha256 = Sha256(data) };
+        break;
+      }
       case "remove-small":
         descriptor.Remove(stream, ["many/f007.txt"]);
         expectation = new { removed = "many/f007.txt" };

@@ -159,21 +159,9 @@ public sealed class RefsWindowsOracleTests {
     var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_rm_x_" + Guid.NewGuid().ToString("N")[..8]);
     try {
       var descriptor = new RefsFormatDescriptor();
-      // The 4 KiB volumes must apply; elsewhere a clean refusal (image unchanged) is allowed.
-      using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
-        if (oracle.Variant == "default") {
-          descriptor.Remove(stream, ["remove-me.bin"]);
-        } else {
-          try {
-            descriptor.Remove(stream, ["remove-me.bin"]);
-          } catch (NotSupportedException refused) {
-            TestContext.Out.WriteLine($"{volume}: remove refused: {refused.Message}");
-            stream.Position = 0;
-            Assert.That(Convert.ToHexStringLower(SHA256.HashData(stream)), Is.EqualTo(oracle.ImageSha256));
-            return;
-          }
-        }
-      }
+      // Every volume kind must apply (Windows accepted all six).
+      using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite))
+        descriptor.Remove(stream, ["remove-me.bin"]);
       using (var stream = File.OpenRead(copy)) descriptor.Extract(stream, outDir, null, null);
       Assert.Multiple(() => {
         Assert.That(File.Exists(Path.Combine(outDir, "remove-me.bin")), Is.False);
@@ -201,14 +189,14 @@ public sealed class RefsWindowsOracleTests {
         var replacement = new byte[length];
         new Random(length).NextBytes(replacement);
         using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
-          // Proven layouts must apply; the refusals left (ReFS 3.14 at 64 KiB, 3.7 integrity growth past
-          // what the record's leaf holds) must leave the image unchanged.
+          // Proven layouts must apply; the refusal left (3.7 integrity growth past what the
+          // record's leaf holds) must leave the image unchanged.
           if (volume != "windows-2022-default") {
             var before = SHA256.HashData(stream);
             stream.Position = 0;
             try {
               descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", replacement)]);
-            } catch (NotSupportedException refused) when (volume == "windows-2025-cluster64k" || (volume == "windows-2022-integrity" && length == 300000)) {
+            } catch (NotSupportedException refused) when (volume == "windows-2022-integrity" && length == 300000) {
               TestContext.Out.WriteLine($"{volume}: resize to {length} refused: {refused.Message}");
               stream.Position = 0;
               Assert.That(SHA256.HashData(stream), Is.EqualTo(before), "a refused resize leaves the image unchanged");
@@ -349,8 +337,8 @@ public sealed class RefsWindowsOracleTests {
           stream.Position = 0;
           Assert.That(SHA256.HashData(stream), Is.EqualTo(before), "a refused edit leaves the image as it was");
           // ReFS 3.14 keeps the small files of "many" in their rows (resident), which are not resized.
-          var expectedRefusal = oracle.RefsVersion == "3.14" && (oracle.Variant == "cluster64k" || edit == "grow-many");
-          Assert.That(expectedRefusal, Is.True, $"{edit} is only refused on ReFS 3.14 at 64 KiB or for a resident file: {refused.Message}");
+          var expectedRefusal = oracle.RefsVersion == "3.14" && edit == "grow-many";
+          Assert.That(expectedRefusal, Is.True, $"{edit} is only refused for a file kept in its row: {refused.Message}");
           return;
         }
       }
@@ -394,17 +382,17 @@ public sealed class RefsWindowsOracleTests {
       }
       ulong leavesBefore;
       using (var s = File.OpenRead(copy)) leavesBefore = LeafCount(s);
-      for (var i = 0; i < SplitFiles; ++i) {
-        var name = $"many/f015-{i:D2}.bin";
+      // At least the 24 files the Windows check adds, and on until a leaf has split.
+      for (var i = 0; i < SplitFiles || (i < 200 && LeafCountOf(copy) == leavesBefore); ++i) {
+        var name = $"many/f015-{i:D3}.bin";
         var data = Pattern(5000 + i);
-        using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
-          try {
-            descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory(name, data)]);
-          } catch (NotSupportedException refused) when (oracle.RefsVersion == "3.14" && oracle.Variant == "cluster64k") {
-            Assert.Ignore($"{volume}: {refused.Message}");
-          }
-        }
+        using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite))
+          descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory(name, data)]);
         expected[name] = Convert.ToHexStringLower(SHA256.HashData(data));
+      }
+      ulong LeafCountOf(string path) {
+        using var s = File.OpenRead(path);
+        return LeafCount(s);
       }
       using var check = File.OpenRead(copy);
       Assert.That(LeafCount(check), Is.GreaterThan(leavesBefore), "a leaf was split");
@@ -430,8 +418,75 @@ public sealed class RefsWindowsOracleTests {
     }
   }
 
+  [Test, Category("ExternalFsInterop")]
+  public void GivenAOnePageDirectory_WhenFilesAreAddedUntilItGrowsALevel_ThenEveryFileIsReadBack([ValueSource(nameof(Volumes))] string volume) {
+    var oracle = Load(volume);
+    var copy = Path.Combine(Path.GetTempPath(), "cwb_refs_grow_" + Guid.NewGuid().ToString("N")[..8] + ".refs");
+    File.Copy(ImagePath(oracle), copy);
+    try {
+      var descriptor = new RefsFormatDescriptor();
+      var expected = oracle.Files.ToDictionary(static f => f.Path, static f => f.Sha256);
+      bool OnePage() {
+        using var s = File.OpenRead(copy);
+        var md = RefsMetadataReader.Open(s);
+        return RefsDirectoryTree.Open(md, RefsInPlaceRename.ResolveDirectory(md, "dir1").Root).IsSingleLeaf;
+      }
+      Assert.That(OnePage(), Is.True, "dir1 starts as one page");
+      var added = 0;
+      for (; added < 400 && OnePage(); ++added) {
+        var name = $"dir1/grow-{added:D3}.bin";
+        var data = Pattern(3000 + added);
+        using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite))
+          descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory(name, data)]);
+        expected[name] = Convert.ToHexStringLower(SHA256.HashData(data));
+      }
+      Assert.That(OnePage(), Is.False, $"dir1 grew a level after {added} files");
+      using var check = File.OpenRead(copy);
+      var metadata = RefsMetadataReader.Open(check);
+      Assert.That(new RefsMetadataGraph(check, metadata).FindStaleReferences(), Is.Empty);
+      var reference = RefsInPlaceRename.ResolveDirectory(metadata, "dir1").Root;
+      var tree = RefsDirectoryTree.Open(metadata, reference);
+      var root = metadata.TryReadReferencedPage(reference, virtualAddresses: true)!;
+      Assert.Multiple(() => {
+        Assert.That(System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(root.AsSpan(0x70)), Is.EqualTo((ulong)tree.Rows.Count), "row count");
+        Assert.That(System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(root.AsSpan(0x68)), Is.EqualTo((ulong)tree.Leaves.Count()), "leaf count");
+      });
+      var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_grow_x_" + Guid.NewGuid().ToString("N")[..8]);
+      try {
+        check.Position = 0;
+        descriptor.Extract(check, outDir, null, null);
+        Assert.Multiple(() => {
+          foreach (var (path, sha) in expected)
+            Assert.That(Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Path.Combine(outDir, path.Replace('/', Path.DirectorySeparatorChar))))), Is.EqualTo(sha), path);
+        });
+      } finally {
+        try { Directory.Delete(outDir, recursive: true); } catch { /* best effort */ }
+      }
+    } finally {
+      File.Delete(copy);
+    }
+  }
+
   /// <summary>Enough 5 KB files sorting into one leaf of "many" to split it on every volume kind.</summary>
   private const int SplitFiles = 24;
+
+  /// <summary>Every Medium Allocator row by key: its upper index word and whether its key lies inside its value.</summary>
+  private static Dictionary<string, (uint Tag, bool KeyInValue)> MediumRowForms(Stream stream) {
+    var metadata = RefsMetadataReader.Open(stream);
+    var graph = new RefsMetadataGraph(stream, metadata);
+    var forms = new Dictionary<string, (uint, bool)>();
+    foreach (var page in metadata.WalkRoot(1).Select(static r => r.PhysicalPageLcn).Distinct())
+      foreach (var row in RefsPageEditor.ReadRows(graph.ReadPage(page)).Rows)
+        forms[Convert.ToHexString(row.Key)] = (row.EncodedIndex & 0xFFFF0000u, row.KeyInValue);
+    return forms;
+  }
+
+  private static (ulong Header, ulong Rows) MediumFreeCounts(Stream stream) {
+    var metadata = RefsMetadataReader.Open(stream);
+    var counts = new RefsAllocatorWriter(metadata, new RefsMetadataGraph(stream, metadata), RefsAllocatorTier.Medium, physicalAddressing: true).FreeCounts();
+    Assert.That(counts, Is.Not.Null, "the Medium Allocator's root keeps a free count");
+    return counts!.Value;
+  }
 
   private static byte[] Pattern(int length) {
     var bytes = new byte[length];
@@ -450,6 +505,13 @@ public sealed class RefsWindowsOracleTests {
     File.Copy(source, copy);
     try {
       var descriptor = new RefsFormatDescriptor();
+      (ulong Header, ulong Rows) before;
+      Dictionary<string, (uint Tag, bool KeyInValue)> formsBefore;
+      using (var original = File.OpenRead(source)) {
+        before = MediumFreeCounts(original);
+        original.Position = 0;
+        formsBefore = MediumRowForms(original);
+      }
       using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
         try {
           switch (edit) {
@@ -476,6 +538,11 @@ public sealed class RefsWindowsOracleTests {
       var stale = new RefsMetadataGraph(check, RefsMetadataReader.Open(check)).FindStaleReferences();
       Assert.That(stale, Is.Empty, $"{edit} on {volume} left stale page-reference checksums");
       Assert.That(StaleClusterChecksums(check), Is.Empty, $"{edit} on {volume} left integrity-stream cluster checksums that do not match");
+      var after = MediumFreeCounts(check);
+      Assert.That((long)after.Header - (long)before.Header, Is.EqualTo((long)after.Rows - (long)before.Rows),
+        $"{edit} on {volume}: the Medium Allocator's free count moves with its rows");
+      check.Position = 0;
+      Assert.That(MediumRowForms(check), Is.EquivalentTo(formsBefore), $"{edit} on {volume}: Medium Allocator rows keep their index words and stored form");
     } finally {
       File.Delete(copy);
     }
@@ -493,14 +560,9 @@ public sealed class RefsWindowsOracleTests {
       using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
         var before = SHA256.HashData(stream);
         stream.Position = 0;
-        try {
-          descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("new-folder", "new-folder", true)]);
-        } catch (NotSupportedException refused) when (oracle.RefsVersion != "3.7" && oracle.Variant == "cluster64k") {
-          TestContext.Out.WriteLine($"{volume}: mkdir refused: {refused.Message}");
-          stream.Position = 0;
-          Assert.That(SHA256.HashData(stream), Is.EqualTo(before));
-          return;
-        }
+        descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("new-folder", "new-folder", true)]);
+        stream.Position = 0;
+        Assert.That(SHA256.HashData(stream), Is.Not.EqualTo(before));
       }
       using (var stream = File.OpenRead(copy)) {
         var listed = descriptor.List(stream, null);
@@ -535,14 +597,9 @@ public sealed class RefsWindowsOracleTests {
       using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
         var before = SHA256.HashData(stream);
         stream.Position = 0;
-        try {
-          descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("added.bin", added)]);
-        } catch (NotSupportedException refused) when (oracle.RefsVersion == "3.14" && oracle.Variant == "cluster64k") {
-          TestContext.Out.WriteLine($"{volume}: add refused: {refused.Message}");
-          stream.Position = 0;
-          Assert.That(SHA256.HashData(stream), Is.EqualTo(before));
-          return;
-        }
+        descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("added.bin", added)]);
+        stream.Position = 0;
+        Assert.That(SHA256.HashData(stream), Is.Not.EqualTo(before));
       }
       using (var stream = File.OpenRead(copy)) descriptor.Extract(stream, outDir, null, null);
       Assert.Multiple(() => {

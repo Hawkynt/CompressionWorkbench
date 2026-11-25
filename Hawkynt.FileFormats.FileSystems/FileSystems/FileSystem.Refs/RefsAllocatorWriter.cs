@@ -75,10 +75,6 @@ internal sealed class RefsAllocatorWriter {
   /// allocated. Null when the volume's allocator is not of that shape.
   /// </summary>
   public static RefsAllocatorWriter? WindowsMedium(RefsMetadataReader metadata, RefsMetadataGraph graph, IReadOnlyCollection<ulong> allocatedClusters) {
-    // Windows Server 2025 refused to mount a ReFS 3.14 volume with 64 KiB clusters after this
-    // writer freed a cluster there (3.7 at 64 KiB, and both versions at 4 KiB, accept it), so
-    // that combination is not written.
-    if (metadata.Header.MinorVersion >= 14 && metadata.ClusterSize >= 65536) return null;
     try {
       var writer = new RefsAllocatorWriter(metadata, graph, RefsAllocatorTier.Medium, physicalAddressing: true);
       if (writer._rows.Count == 0 || writer.CoverageEnd > metadata.Header.TotalClusters) return null;
@@ -215,20 +211,65 @@ internal sealed class RefsAllocatorWriter {
     if (requests.Count == 0) return;
 
     var replacements = new List<(RefsBTreeRow Row, byte[] Value)>();
+    var flipped = 0L;
     foreach (var (row, indices) in requests) {
       var state = this._rows.First(r => ReferenceEquals(r.Row, row));
+      flipped += indices.Count(i => this.ReadAllocated(row.Value, state.Length, i) != allocated);
       var value = this.BuildValue(row.Value, state.Length, indices, allocated);
       if (!RefsPageEditor.CanReplaceValue(this._graph, row, value.Length))
         throw new InvalidOperationException(
           $"ReFS {this._tier} Allocator row expansion needs a B+ page split before this allocation can be committed.");
       replacements.Add((row, value));
     }
+    var summary = this._windowsLayout ? this.FreeSummary() : null;
+    var freeDelta = allocated ? -flipped : flipped;
+    if (summary is { } s && ((long)s.Free + freeDelta < 0 || (long)s.Free + freeDelta > (long)s.Total))
+      throw new InvalidOperationException($"ReFS {this._tier} Allocator's free-cluster count would leave its range.");
 
     var changed = new HashSet<ulong>();
     foreach (var (row, value) in replacements)
       changed.Add(RefsPageEditor.ReplaceValue(this._graph, row, value));
+    if (summary is { } root && freeDelta != 0) {
+      var page = this._graph.ReadPage(root.Page);
+      BinaryPrimitives.WriteUInt64LittleEndian(page.AsSpan(0x88, 8), (ulong)((long)root.Free + freeDelta));
+      this._graph.WritePage(root.Page, page);
+      changed.Add(root.Page);
+    }
     this._graph.RefreshChecksumPaths(changed);
     this.ReloadRows();
+  }
+
+  /// <summary>The root header's free count and the free clusters its rows show (partial rows by their count, compact rows whole), or null without that header.</summary>
+  internal (ulong Header, ulong Rows)? FreeCounts() {
+    if (this.FreeSummary() is not { } summary) return null;
+    ulong rows = 0;
+    foreach (var state in this._rows) {
+      var flags = BinaryPrimitives.ReadUInt16LittleEndian(state.Row.Value.AsSpan(0x12, 2));
+      rows += flags switch {
+        PartialFlag => BinaryPrimitives.ReadUInt16LittleEndian(state.Row.Value.AsSpan(0x10, 2)),
+        FullyFreeFlag or FullyFreeAlternativeFlag => state.Length,
+        _ => 0,
+      };
+    }
+    return (summary.Free, rows);
+  }
+
+  /// <summary>
+  /// The Medium Allocator's root page keeps the clusters its rows cover (u64 at 0x80, the
+  /// volume's cluster count) and how many of them are free (u64 at 0x88) right after its table
+  /// descriptor; Windows moves the free count with every allocation and release (measured: +4
+  /// after it removed a 4-cluster file, +1 for one 64 KiB cluster), and this writer does the
+  /// same. Null when the root page does not hold that header.
+  /// </summary>
+  private (ulong Page, ulong Total, ulong Free)? FreeSummary() {
+    var reference = this._metadata.Roots[this._rootIndex];
+    if (reference.Lcns.Count == 0) return null;
+    var head = this._metadata.TranslateVirtualLcn(reference.Lcns[0]);
+    var page = this._graph.ReadPage(head);
+    if (page.Length < 0x90 || BinaryPrimitives.ReadUInt16LittleEndian(page.AsSpan(0x54, 2)) != 0x28) return null;
+    var total = BinaryPrimitives.ReadUInt64LittleEndian(page.AsSpan(0x80, 8));
+    var free = BinaryPrimitives.ReadUInt64LittleEndian(page.AsSpan(0x88, 8));
+    return total == this._metadata.Header.TotalClusters && free <= total ? (head, total, free) : null;
   }
 
   private void ReloadRows() {
