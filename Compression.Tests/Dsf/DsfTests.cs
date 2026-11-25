@@ -158,4 +158,93 @@ public class DsfTests {
   public void DefaultNames_StereoAreLeftRight() {
     Assert.That(ChannelLayout.DefaultNames(2), Is.EqualTo(new[] { "LEFT", "RIGHT" }));
   }
+
+  // ── malformed headers: refused, and nothing sized from the header alone ──
+
+  // Field offsets in the hand-crafted file: 'DSD ' chunk at 0, 'fmt ' at 28, 'data' at 80.
+  private const int DsdChunkSizeAt = 4, FmtSizeAt = 32, ChannelNumAt = 52, SampleRateAt = 56,
+    SampleCountAt = 64, BlockSizeAt = 72, DataSizeAt = 84;
+
+  private static byte[] Patch32(byte[] dsf, int at, uint value) {
+    BinaryPrimitives.WriteUInt32LittleEndian(dsf.AsSpan(at), value);
+    return dsf;
+  }
+
+  private static byte[] Patch64(byte[] dsf, int at, ulong value) {
+    BinaryPrimitives.WriteUInt64LittleEndian(dsf.AsSpan(at), value);
+    return dsf;
+  }
+
+  [Category("EdgeCase")]
+  [TestCase(ulong.MaxValue)]
+  [TestCase(1UL << 40)]
+  [TestCase((ulong)long.MaxValue)]
+  public void Given_SampleCountFarBeyondTheData_When_Read_Then_ChannelsHoldOnlyTheDataPresent(ulong sampleCount) {
+    var dsf = Patch64(MakeStereoDsf(bytesPerChannel: 100, leftFill: 0x69, rightFill: 0x96), SampleCountAt, sampleCount);
+    var parsed = new DsfReader().Read(dsf);
+    Assert.That(parsed.ChannelDsd.Select(c => c.Length), Is.All.EqualTo(BlockSize));
+    Assert.That(parsed.ChannelDsd[0][0], Is.EqualTo(0x69));
+    Assert.That(parsed.ChannelDsd[1][0], Is.EqualTo(0x96));
+  }
+
+  [Category("Boundary")]
+  [Test]
+  public void Given_SampleCountExactlyTheData_When_Read_Then_ChannelsAreThatLong() {
+    var dsf = Patch64(MakeStereoDsf(bytesPerChannel: 100, leftFill: 1, rightFill: 2), SampleCountAt, BlockSize * 8UL);
+    Assert.That(new DsfReader().Read(dsf).ChannelDsd.Select(c => c.Length), Is.All.EqualTo(BlockSize));
+  }
+
+  [Category("Exception")]
+  [TestCase(0u)]
+  [TestCase(7u)]
+  [TestCase(0x80000000u)]
+  [TestCase(0xFFFFFFFFu)]
+  public void Given_ChannelNumOutsideSpecAndData_When_Read_Then_InvalidData(uint channelNum)
+    => Assert.Throws<InvalidDataException>(() =>
+      new DsfReader().Read(Patch32(MakeStereoDsf(bytesPerChannel: 100, leftFill: 1, rightFill: 2), ChannelNumAt, channelNum)));
+
+  [Category("Boundary")]
+  [Test]
+  public void Given_SixChannelsDeclaredOverTwoBlocks_When_Read_Then_MissingChannelsAreEmpty() {
+    var parsed = new DsfReader().Read(Patch32(MakeStereoDsf(bytesPerChannel: 100, leftFill: 1, rightFill: 2), ChannelNumAt, 6));
+    Assert.That(parsed.ChannelDsd.Select(c => c.Length), Is.EqualTo(new[] { 100, 100, 0, 0, 0, 0 }));
+  }
+
+  [Category("Exception")]
+  [TestCase(0u)]
+  [TestCase(0x80000000u)]
+  public void Given_SampleRateOutsideRange_When_Read_Then_InvalidData(uint rate)
+    => Assert.Throws<InvalidDataException>(() =>
+      new DsfReader().Read(Patch32(MakeStereoDsf(bytesPerChannel: 100, leftFill: 1, rightFill: 2), SampleRateAt, rate)));
+
+  [Category("Exception")]
+  [TestCase(0x80000000u)]
+  [TestCase(0u)]
+  public void Given_BlockSizeOutsideRange_When_Read_Then_InvalidData(uint blockSize)
+    => Assert.Throws<InvalidDataException>(() =>
+      new DsfReader().Read(Patch32(MakeStereoDsf(bytesPerChannel: 100, leftFill: 1, rightFill: 2), BlockSizeAt, blockSize)));
+
+  [Category("Exception")]
+  [TestCase(0xFFFFFFFFUL)]
+  [TestCase(0x1_0000_001CUL)]
+  [TestCase(ulong.MaxValue)]
+  public void Given_DsdChunkSizePastTheFile_When_Read_Then_InvalidData(ulong size)
+    => Assert.Throws<InvalidDataException>(() =>
+      new DsfReader().Read(Patch64(MakeStereoDsf(bytesPerChannel: 100, leftFill: 1, rightFill: 2), DsdChunkSizeAt, size)));
+
+  [Category("Exception")]
+  [TestCase(0xFFFFFFFFUL)]
+  [TestCase(0xFFFFFFFF_FFFFFFF0UL)]
+  [TestCase(51UL)]
+  public void Given_FmtSizeOutsideTheFile_When_Read_Then_InvalidData(ulong size)
+    => Assert.Throws<InvalidDataException>(() =>
+      new DsfReader().Read(Patch64(MakeStereoDsf(bytesPerChannel: 100, leftFill: 1, rightFill: 2), FmtSizeAt, size)));
+
+  [Category("Exception")]
+  [TestCase(0x1_0000_000CUL)]
+  [TestCase(ulong.MaxValue)]
+  [TestCase(11UL)]
+  public void Given_DataSizeOutsideTheFile_When_Read_Then_InvalidData(ulong size)
+    => Assert.Throws<InvalidDataException>(() =>
+      new DsfReader().Read(Patch64(MakeStereoDsf(bytesPerChannel: 100, leftFill: 1, rightFill: 2), DataSizeAt, size)));
 }
