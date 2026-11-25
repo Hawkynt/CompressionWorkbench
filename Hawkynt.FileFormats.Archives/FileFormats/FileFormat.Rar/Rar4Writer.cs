@@ -64,7 +64,9 @@ public sealed class Rar4Writer : IDisposable {
   /// <param name="openVolume">Opens volume <c>n</c> (1-based after the first).</param>
   /// <param name="newVolumeNaming">The set is named <c>.partN.rar</c> (sets <c>MHD_NEWNUMBERING</c>), not <c>.rar/.r00</c>.</param>
   /// <param name="recoveryPercent">Add a recovery record of this size in percent (1-100) of the
-  /// archive, as <c>rar -rr</c> does; 0 for none. The output must then be readable and seekable.</param>
+  /// archive, as <c>rar -rr</c> does; 0 for none. In a volume set every volume carries its own
+  /// record over its own bytes, inside the volume size, as rar writes them. The output (and every
+  /// volume <paramref name="openVolume"/> returns) must then be readable and seekable.</param>
   public Rar4Writer(Stream stream, bool leaveOpen = false,
       byte method = RarConstants.Rar4MethodNormal,
       int windowBits = 20, bool solid = false, string? password = null,
@@ -75,8 +77,6 @@ public sealed class Rar4Writer : IDisposable {
     ArgumentOutOfRangeException.ThrowIfNegative(recoveryPercent);
     ArgumentOutOfRangeException.ThrowIfGreaterThan(recoveryPercent, 100);
     if (recoveryPercent > 0) {
-      if (volumeSize > 0)
-        throw new NotSupportedException("Recovery records in RAR 4 volume sets are not written; protect a volume set with recovery volumes instead.");
       if (!stream.CanSeek || !stream.CanRead)
         throw new NotSupportedException("A recovery record is computed over the written archive; the output must be readable and seekable.");
       if (stream.Position != 0)
@@ -187,16 +187,29 @@ public sealed class Rar4Writer : IDisposable {
     if (this._finished) return;
     this._finished = true;
     this.EnsureHeader();
-    if (this._recoveryPercent > 0) {
-      // The record covers everything written so far; rar names it RR, a sub-block of its own.
-      this._out.Flush();
-      var protectedSize = this._out.Position;
-      var record = Rar4RecoveryRecord.Build(this._out, protectedSize, this._recoveryPercent, DosTime(DateTimeOffset.Now));
-      this._out.Position = protectedSize;
-      this.Raw(record);
-    }
+    this.WriteRecoveryRecord();
     this.WriteEnd(moreVolumes: false);
     this._out.Flush();
+  }
+
+  /// <summary>
+  /// The record over everything written to this volume (or archive) so far; rar names it RR, a
+  /// sub-block of its own just before the end block, in every volume of a set.
+  /// </summary>
+  private void WriteRecoveryRecord() {
+    if (this._recoveryPercent == 0) return;
+    this._out.Flush();
+    var protectedSize = this._out.Position;
+    var record = Rar4RecoveryRecord.Build(this._out, protectedSize, this._recoveryPercent, DosTime(DateTimeOffset.Now));
+    this._out.Position = protectedSize;
+    this.Raw(record);
+  }
+
+  /// <summary>Bytes the record takes when it protects <paramref name="protectedSize"/> bytes; 0 without one.</summary>
+  private long RecoveryOnDisk(long protectedSize) {
+    if (this._recoveryPercent == 0) return 0;
+    var sectors = (protectedSize + Rar4RecoveryRecord.Sector - 1) / Rar4RecoveryRecord.Sector;
+    return Rar4RecoveryRecord.HeaderSize + 2 * sectors + (long)Rar4RecoveryRecord.Sector * Rar4RecoveryRecord.Plan(sectors, this._recoveryPercent);
   }
 
   /// <inheritdoc />
@@ -430,8 +443,9 @@ public sealed class Rar4Writer : IDisposable {
       if (this._volumeSize > 0) {
         var header = this.FileHeader(f, left, f.Crc, splitBefore, false).Length;
         var room = this._volumeSize - this._written - this.EndSize;
-        if (header + left > room) {
-          var dataRoom = room - this.FileHeader(f, Math.Max(room, 0), 0, splitBefore, true).Length;
+        if (header + left + this.RecoveryOnDisk(this._written + header + left) > room) {
+          var splitHeader = this.FileHeader(f, Math.Max(room, 0), 0, splitBefore, true).Length;
+          var dataRoom = RarWriter.FitBeforeRecord(room - splitHeader, this._written + splitHeader, this.RecoveryOnDisk);
           if (dataRoom < 16 || left == 0) {
             if (this._written <= 7 + 13 && dataRoom < 16)
               throw new InvalidOperationException("RAR volume size too small for a file header.");
@@ -463,11 +477,14 @@ public sealed class Rar4Writer : IDisposable {
   }
 
   private void NextVolume() {
+    this.WriteRecoveryRecord();
     this.WriteEnd(moreVolumes: true);
     this._out.Flush();
     ++this._volumeIndex;
     this._out = this._openVolume!(this._volumeIndex);
     this._opened.Add(this._out);
+    if (this._recoveryPercent > 0 && (!this._out.CanSeek || !this._out.CanRead || this._out.Position != 0))
+      throw new NotSupportedException("A recovery record is computed over each written volume; every volume must be readable, seekable and start empty.");
     this.StartVolume();
   }
 

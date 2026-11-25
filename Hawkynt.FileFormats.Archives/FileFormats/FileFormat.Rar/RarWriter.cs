@@ -69,8 +69,10 @@ public sealed class RarWriter : IDisposable {
   /// <paramref name="stream"/>); required when <paramref name="volumeSize"/> is set.</param>
   /// <param name="locked">Set the "locked archive" flag.</param>
   /// <param name="recoveryPercent">Add a recovery record of this size in percent (1-100) of the
-  /// archive, as <c>rar -rr</c> does; 0 for none. The output must then be readable and seekable,
-  /// since the record is computed over what was written.</param>
+  /// archive, as <c>rar -rr</c> does; 0 for none. In a volume set every volume carries its own
+  /// record over its own bytes, inside the volume size, as rar writes them. The output (and every
+  /// volume <paramref name="openVolume"/> returns) must then be readable and seekable, since the
+  /// record is computed over what was written.</param>
   public RarWriter(Stream stream, bool leaveOpen = false, int method = RarConstants.MethodNormal,
       int dictionarySizeLog = 17, bool solid = false, string? password = null,
       bool encryptHeaders = false, long volumeSize = 0, Func<int, Stream>? openVolume = null,
@@ -88,8 +90,6 @@ public sealed class RarWriter : IDisposable {
     ArgumentOutOfRangeException.ThrowIfGreaterThan(recoveryPercent, 100);
     this._recoveryPercent = recoveryPercent;
     if (recoveryPercent > 0) {
-      if (volumeSize > 0)
-        throw new NotSupportedException("Recovery records in RAR 5 volume sets are not written; protect a volume set with recovery volumes instead.");
       if (!stream.CanSeek || !stream.CanRead)
         throw new NotSupportedException("A recovery record is computed over the written archive; the output must be readable and seekable.");
     }
@@ -201,8 +201,33 @@ public sealed class RarWriter : IDisposable {
     if (this._volumeStart != 0)
       throw new NotSupportedException("A recovery record protects the file from its first byte; write the archive at the start of the stream.");
     var protectedSize = o.Position;
+    var dataSize = RecoveryDataSize(protectedSize);
+    this.WriteHeader(this.RecoveryHeaderBody(dataSize));
+    var dataPosition = o.Position;
+    var zeros = new byte[1 << 16];
+    for (var left = dataSize; left > 0; left -= zeros.Length)
+      this.Raw(zeros.AsSpan(0, (int)Math.Min(zeros.Length, left)));
+    Rar5RecoveryRecord.Write(o, protectedSize, this._recoveryPercent, dataPosition);
+    o.Position = dataPosition + dataSize;
+  }
+
+  private long RecoveryDataSize(long protectedSize) {
     var (nd, nr, shard) = Rar5RecoveryRecord.Plan(protectedSize, this._recoveryPercent);
-    var dataSize = nr * Rar5RecoveryRecord.BlockSize(nd, shard);
+    return nr * Rar5RecoveryRecord.BlockSize(nd, shard);
+  }
+
+  /// <summary>
+  /// Bytes the recovery record takes on disk (header and data) when it protects
+  /// <paramref name="protectedSize"/> bytes; 0 without one. Never smaller for a larger argument,
+  /// which is what lets a volume reserve room for it before the volume's content is known.
+  /// </summary>
+  private long RecoveryOnDisk(long protectedSize) {
+    if (this._recoveryPercent == 0) return 0;
+    var dataSize = RecoveryDataSize(protectedSize);
+    return this.OnDiskSize(this.RecoveryHeaderBody(dataSize)) + dataSize;
+  }
+
+  private byte[] RecoveryHeaderBody(long dataSize) {
     var extra = new MemoryStream();
     var rec = new MemoryStream();
     RarVint.Write(rec, 7);                     // service data
@@ -222,13 +247,7 @@ public sealed class RarWriter : IDisposable {
     RarVint.Write(body, 2);
     body.Write("RR"u8);
     body.Write(extraBytes);
-    this.WriteHeader(body.ToArray());
-    var dataPosition = o.Position;
-    var zeros = new byte[1 << 16];
-    for (var left = dataSize; left > 0; left -= zeros.Length)
-      this.Raw(zeros.AsSpan(0, (int)Math.Min(zeros.Length, left)));
-    Rar5RecoveryRecord.Write(o, protectedSize, this._recoveryPercent, dataPosition);
-    o.Position = dataPosition + dataSize;
+    return body.ToArray();
   }
 
   /// <summary>Creates a RAR 5 volume set in memory: one byte array per volume.</summary>
@@ -447,8 +466,9 @@ public sealed class RarWriter : IDisposable {
         var endSize = this.OnDiskSize(this.EndHeader(true));
         var headerSize = this.OnDiskSize(this.FileHeaderBody(f, left, finalCrc, splitBefore, false));
         var room = this._volumeSize - this._written - endSize;
-        if (headerSize + left > room) {
-          var dataRoom = room - this.OnDiskSize(this.FileHeaderBody(f, Math.Max(room, 0), 0, splitBefore, true));
+        if (headerSize + left + this.RecoveryOnDisk(this._written + headerSize + left) > room) {
+          var splitHeaderSize = this.OnDiskSize(this.FileHeaderBody(f, Math.Max(room, 0), 0, splitBefore, true));
+          var dataRoom = FitBeforeRecord(room - splitHeaderSize, this._written + splitHeaderSize, this.RecoveryOnDisk);
           if (dataRoom < 16 || left == 0) {
             if (this._written <= RarConstants.Rar5Signature.Length + 64 && dataRoom < 16)
               throw new InvalidOperationException("RAR volume size too small for a file header.");
@@ -483,13 +503,33 @@ public sealed class RarWriter : IDisposable {
   }
 
   private void NextVolume() {
+    if (this._recoveryPercent > 0) this.WriteRecoveryRecord();
     this.WriteHeader(this.EndHeader(moreVolumes: true));
     this._out.Flush();
     ++this._volumeIndex;
     var next = this._openVolume!(this._volumeIndex);
     this._openedVolumes.Add(next);
+    if (this._recoveryPercent > 0 && (!next.CanSeek || !next.CanRead || next.Position != 0))
+      throw new NotSupportedException("A recovery record is computed over each written volume; every volume must be readable, seekable and start empty.");
     this._out = next;
     this.StartVolume();
+  }
+
+  /// <summary>
+  /// The most data bytes that fit in <paramref name="room"/> together with the recovery record
+  /// that then protects <paramref name="before"/> + data bytes. <paramref name="record"/> never
+  /// shrinks as its argument grows, so sizing it for the whole room first is safe; the loop then
+  /// takes back what the smaller record frees while the result still fits.
+  /// </summary>
+  internal static long FitBeforeRecord(long room, long before, Func<long, long> record) {
+    if (room <= 0) return room;
+    var data = room - record(before + room);
+    for (var i = 0; i < 8; ++i) {
+      var grown = room - record(before + Math.Max(data, 0));
+      if (grown <= data || grown + record(before + grown) > room) break;
+      data = grown;
+    }
+    return data;
   }
 
   private static void CopyCounted(Stream from, Stream to, long count, byte[] buf, Crc32? crc) {
