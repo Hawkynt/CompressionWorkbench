@@ -12,10 +12,9 @@ namespace FileFormat.StuffIt;
 /// </summary>
 /// <remarks>
 /// Forks are decoded with methods 0 (store), 1 (RLE90), 2 (compress LZW), 3 (Huffman), 5 (LZAH),
-/// 13 (LZ+Huffman), 14 (installer LZ77) and 15 (Arsenic). Encrypted forks are decrypted when the password is given:
+/// 8 (MW), 13 (LZ+Huffman), 14 (installer LZ77) and 15 (Arsenic). Encrypted forks are decrypted when the password is given:
 /// StuffIt 5's RC4 scheme, and classic StuffIt's scheme, whose key check lives in the archive's
-/// resource fork (an archive wrapped in MacBinary carries it). Method 8 (MW) is listed but refused on
-/// extraction. Layouts follow XADMaster's XADStuffItParser and
+/// resource fork (an archive wrapped in MacBinary carries it). Layouts follow XADMaster's XADStuffItParser and
 /// XADStuffIt5Parser (LGPL-2.1-or-later).
 /// </remarks>
 public sealed class StuffItReader : IDisposable {
@@ -173,6 +172,7 @@ public sealed class StuffItReader : IDisposable {
       2 => StuffItLzw.Decode(compressed, length),
       3 => StuffItHuffman.Decode(compressed, length),
       5 => StuffItLzahDecoder.Decode(compressed, length),
+      8 => StuffItMwDecoder.Decode(compressed, length),
       13 => StuffIt13Decoder.Decode(compressed, length),
       14 => StuffIt14Decoder.Decode(compressed, length),
       15 => StuffItArsenicDecoder.Decode(compressed, length),
