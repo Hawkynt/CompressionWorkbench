@@ -74,16 +74,7 @@ public static class OpenPgpMessage {
     var pos = 0;
     if (key.Algorithm is 1 or 2) {
       var c = OpenPgpPackets.ReadMpi(fields, ref pos);
-      var n = key.PublicFields[0];
-      var d = key.Secret[0];
-      var value = BigInteger.ModPow(Unsigned(c), Unsigned(d), Unsigned(n));
-      var em = new byte[n.Length];
-      value.TryWriteBytes(em.AsSpan(em.Length - value.GetByteCount(isUnsigned: true)), out _, isUnsigned: true, isBigEndian: true);
-      // EME-PKCS1-v1_5: 00 02 nonzero padding 00 M
-      var separator = Array.IndexOf(em, (byte)0, 2);
-      if (em[0] != 0 || em[1] != 2 || separator < 10)
-        throw new CryptographicException("The RSA session key does not decrypt (wrong key).");
-      m = em[(separator + 1)..];
+      m = RsaDecrypt(key, c);
     } else {
       var ephemeral = OpenPgpPackets.ReadMpi(fields, ref pos);
       if (ephemeral.Length != 33 || ephemeral[0] != 0x40)
@@ -106,6 +97,58 @@ public static class OpenPgpMessage {
   }
 
   private static BigInteger Unsigned(ReadOnlySpan<byte> bigEndian) => new(bigEndian, isUnsigned: true, isBigEndian: true);
+
+  /// <summary>
+  /// RSAES-PKCS1-v1_5 decryption with the platform's RSA (CRT, blinded, constant-time padding
+  /// check) rather than a plain modular exponentiation of the secret exponent. OpenPGP stores
+  /// p &lt; q and u = p⁻¹ mod q; the platform wants InverseQ = Q⁻¹ mod P, which is u with p and q
+  /// swapped.
+  /// </summary>
+  private static byte[] RsaDecrypt(OpenPgpKey key, byte[] c) {
+    var n = key.PublicFields[0];
+    var (d, p, q, u) = (key.Secret[0], key.Secret[1], key.Secret[2], key.Secret[3]);
+    var half = (n.Length + 1) / 2;
+    var dValue = Unsigned(d);
+    var parameters = new RSAParameters {
+      Modulus = n,
+      Exponent = TrimLeadingZeros(key.PublicFields[1]),
+      D = Pad(d, n.Length),
+      P = Pad(q, half),
+      Q = Pad(p, half),
+      DP = Pad((dValue % (Unsigned(q) - 1)).ToByteArray(isUnsigned: true, isBigEndian: true), half),
+      DQ = Pad((dValue % (Unsigned(p) - 1)).ToByteArray(isUnsigned: true, isBigEndian: true), half),
+      InverseQ = Pad(u, half),
+    };
+    try {
+      using var rsa = RSA.Create(parameters);
+      var m = rsa.Decrypt(Pad(c, n.Length), RSAEncryptionPadding.Pkcs1);
+      if (m.Length < 4)
+        throw new CryptographicException("The RSA session key does not decrypt (wrong key).");
+      return m;
+    } catch (CryptographicException e) {
+      throw new CryptographicException("The RSA session key does not decrypt (wrong key).", e);
+    } finally {
+      CryptographicOperations.ZeroMemory(parameters.D);
+      CryptographicOperations.ZeroMemory(parameters.DP);
+      CryptographicOperations.ZeroMemory(parameters.DQ);
+    }
+  }
+
+  private static byte[] Pad(byte[] value, int length) {
+    var trimmed = TrimLeadingZeros(value);
+    if (trimmed.Length > length)
+      throw new CryptographicException("An RSA key field is longer than its modulus allows.");
+    var output = new byte[length];
+    trimmed.CopyTo(output, length - trimmed.Length);
+    return output;
+  }
+
+  private static byte[] TrimLeadingZeros(byte[] value) {
+    var start = 0;
+    while (start < value.Length - 1 && value[start] == 0)
+      ++start;
+    return value[start..];
+  }
 
   /// <summary>The native (little-endian) X25519 scalar from the secret MPI, which stores it reversed (RFC 9580 section 5.5.5.6).</summary>
   private static byte[] SecretScalar(ReadOnlySpan<byte> mpi) {
