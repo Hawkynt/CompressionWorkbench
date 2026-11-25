@@ -319,7 +319,7 @@ public sealed class RefsFormatDescriptor :
       if (files.Count != 1)
         throw new NotSupportedException("ReFS: a replacement that changes a file's length is made one file per call.");
       var graph = new RefsMetadataGraph(archive, metadata);
-      var plan = RefsInPlaceResize.Prepare(archive, metadata, graph, files[0].ArchiveName, contents[0].LongLength);
+      var plan = RefsInPlaceResize.Prepare(archive, metadata, graph, files[0].ArchiveName, contents[0]);
       RefsInPlaceResize.Apply(archive, metadata, graph, plan, contents[0]);
       return;
     }
