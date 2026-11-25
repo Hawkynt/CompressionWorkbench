@@ -88,7 +88,7 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       DisplayName: "Recovery record (%)",
       Kind: FormatOptionKind.Integer,
       Default: "0",
-      Description: "Add a recovery record of this size in percent of the archive (1-100, like rar -rr); rar and this tool repair damage within its reach. Single-file archives only. 0 adds none.",
+      Description: "Add a recovery record of this size in percent of the archive (1-100, like rar -rr); in a volume set every volume carries its own. rar and this tool repair damage within its reach. 0 adds none.",
       IsOptimizationAxis: false),
     new FormatOptionDescriptor(
       Key: RecoveryVolumesOption,
