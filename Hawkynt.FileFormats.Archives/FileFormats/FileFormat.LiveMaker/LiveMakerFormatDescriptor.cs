@@ -24,8 +24,9 @@ public sealed class LiveMakerFormatDescriptor : IFormatDescriptor, IArchiveForma
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".dat";
-  // Shared with other .dat containers; the "vf" + version header selects this reader.
-  public IReadOnlyList<string> Extensions => [".dat"];
+  // Shared with other .dat containers; the "vf" + version header selects this reader. A split
+  // archive's directory sits alone in name.ext.
+  public IReadOnlyList<string> Extensions => [".dat", ".ext"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'v', (byte)'f', 0x66, 0, 0, 0], Confidence: 0.8),
@@ -37,10 +38,11 @@ public sealed class LiveMakerFormatDescriptor : IFormatDescriptor, IArchiveForma
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "LiveMaker game.dat / save archive (versions 100-102), standalone or appended to a game executable: zlib, " +
-    "stored and LiveMaker Pro scrambled members, CRC-32 checked. Split archives (.ext index, .001 parts) are not joined.";
+    "stored and LiveMaker Pro scrambled members, CRC-32 checked. Split archives are read whole from their .ext directory or .dat file: .ext index, .dat data, .001, .002 ... parts.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new LiveMakerReader(stream);
+    using var set = LiveMakerArchiveSet.Open(stream);
+    var r = set.Reader;
     // The directory records no decoded size; stored members have it, the rest are decoded to learn it.
     return [.. r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name,
       e.Method == LiveMakerMethod.Stored ? e.StoredLength : DecodedLength(r, e), e.StoredLength, MethodName(e.Method),
@@ -56,7 +58,8 @@ public sealed class LiveMakerFormatDescriptor : IFormatDescriptor, IArchiveForma
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new LiveMakerReader(stream);
+    using var set = LiveMakerArchiveSet.Open(stream);
+    var r = set.Reader;
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
@@ -95,7 +98,10 @@ public sealed class LiveMakerFormatDescriptor : IFormatDescriptor, IArchiveForma
   private static void Rewrite(Stream archive, Action<List<LiveMakerWriteEntry>> edit) {
     ArgumentNullException.ThrowIfNull(archive);
     archive.Position = 0;
-    var r = new LiveMakerReader(archive);
+    using var set = LiveMakerArchiveSet.Open(archive);
+    var r = set.Reader;
+    if (r.IsSplit)
+      throw new NotSupportedException("Split LiveMaker archive (.ext directory or .001 parts): rewriting this one file would leave the others behind.");
     if (r.BaseOffset != 0)
       throw new NotSupportedException("LiveMaker archive appended to an executable: rewriting it would drop the executable.");
     var entries = r.Entries.Select(e => new LiveMakerWriteEntry(e.Name, r.ReadStored(e), e.Method, e.Unknown, e.Checksum, e.EncryptFlag)).ToList();

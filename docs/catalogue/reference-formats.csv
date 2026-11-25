@@ -418,7 +418,7 @@ Bethesda archive (BSA/BA2),bsa;ba2;pex,game,,,,,R,,,,1,,Bsa;Ba2,Y,Y,Y,OK,,
 Bruns engine (UM3),um3,game,,,,,R,,,,1,https://github.com/morkt/GARbro,Um3,Y,Y,,OK,,
 Godot PCK,pck,game,,,,,R,,,,1,,GodotPck,Y,Y,Y,OK,,
 KiriKiri XP3,xp3,game,,,,,R,,Y,,2,https://krkrz.github.io/,Xp3,Y,Y,Y,OK,,
-LiveMaker,gal,game,,,,,R,,,,1,https://github.com/morkt/GARbro,LiveMaker,Y,Y,Y,PARTIAL,,"VF archives (game.dat, appended to the game exe, saves) are R/W; .gal images and split .ext/.001 archives are not handled"
+LiveMaker,gal,game,,,,,R,,,,1,https://github.com/morkt/GARbro,LiveMaker,Y,Y,Y,PARTIAL,,"VF archives (game.dat, appended to the game exe, saves) are R/W; split archives (.ext directory, .dat, .001 ... parts) are read (pylivemaker and GARbro agree) and refused for editing; .gal images are not handled: image decoding belongs to the Hawkynt.FileFormats.Images package"
 Ren'Py archive (RPA),rpa,game,,,,,R,,,,1,,Rpa,Y,Y,Y,OK,,
 RPG Maker archives,rgssad;rgss2a;rgss3a;rpgmvp;rpgmvo;rpgmvm,game,,,,,R,,,,1,,Rgss;RpgMakerMvAsset,Y,Y,Y,OK,,"RGSSAD v1-3 archives; MV/MZ encrypted assets (.rpgmv*/.png_/.ogg_/.m4a_) decrypt with the System.json key, PNG and Ogg without it"
 Smile Game Builder pack,sgbpack,game,,,,,R,,,,1,,,,,,MISSING,,"refused: no specification or licence-compatible implementation is available (the sgbdec tool UniExtract2 used is gone), no redistributable sample and no free packer to test against"
