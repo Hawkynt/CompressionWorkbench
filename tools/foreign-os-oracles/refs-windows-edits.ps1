@@ -90,6 +90,9 @@ foreach ($name in $Variants) {
     'add-many-split' = { param($r) foreach ($i in 0..23) { Copy-Item (Join-Path $WorkDir ('split-{0:D2}.bin' -f $i)) (Join-Path $r ('many/f015-{0:D2}.bin' -f $i)) -Force } }
     # 120 files into dir1, a one-page directory, enough to grow it a level at 4 and 64 KiB.
     'add-dir1-grow' = { param($r) foreach ($i in 0..119) { Copy-Item (Join-Path $WorkDir ('grow-{0:D3}.bin' -f $i)) (Join-Path $r ('dir1/grow-{0:D3}.bin' -f $i)) -Force } }
+    # Ours formats a new volume from scratch over the partition (Windows' half changes nothing).
+    'create'       = { param($r) }
+    'create-plain' = { param($r) }
     'rename'       = { param($r) Rename-Item (Join-Path $r 'rename-me.txt') 'renamed.txt' }
     'rename-long'  = { param($r) Rename-Item (Join-Path $r 'small.txt') 'a-much-longer-name-for-the-small-file.txt' }
     'rename-unicode' = { param($r) Rename-Item (Join-Path $r 'rename-me.txt') ([string]::new([char[]]@(0x47,0x72,0xFC,0xDF,0x65,0x2D,0x3A9,0x3BC,0x3AD,0x3B3,0x3B1,0x2D,0x65E5,0x672C)) + '.txt') }

@@ -17847,7 +17847,7 @@ WORM writer for QNX6 (Neutrino) filesystem images. Emits a power-safe layout: th
 
 ### Namespace `FileSystem.Refs`
 
-[`RefsBlockMover`](#refsblockmover) · [`RefsExtentMap`](#refsextentmap) · [`RefsFormatDescriptor`](#refsformatdescriptor) · [`RefsOfflineBlockCloner`](#refsofflineblockcloner)
+[`RefsBlockMover`](#refsblockmover) · [`RefsExtentMap`](#refsextentmap) · [`RefsFormatDescriptor`](#refsformatdescriptor) · [`RefsFormatOptions`](#refsformatoptions) · [`RefsOfflineBlockCloner`](#refsofflineblockcloner) · [`RefsVolumeFormatter`](#refsvolumeformatter)
 
 #### `RefsBlockMover`
 
@@ -17909,6 +17909,20 @@ Implements `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files held in their directory row, in place (`RefsInPlaceRemove`). |
 | `Rename` | `void Rename(Stream image, string sourcePath, string destinationPath)` | Renames a file within its directory, in place (`RefsInPlaceRename`). |
 
+#### `RefsFormatOptions`
+
+What a new ReFS volume is made with.
+
+Implements `IEquatable<RefsFormatOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RefsFormatOptions` | `RefsFormatOptions(long Bytes, string Label = "", DateTime? Created = null, int? Seed = null)` | What a new ReFS volume is made with. |
+| `Bytes` | `long Bytes { get; init; }` | The target's size: from `Geometry` up to one 64 MiB container more (the rest stays unused). |
+| `Created` | `DateTime? Created { get; init; }` | The format time; now when null. |
+| `Label` | `string Label { get; init; }` | The volume label (up to 32 UTF-16 code units). |
+| `Seed` | `int? Seed { get; init; }` | Seeds the volume's identifiers (signature, GUIDs, serial); random when null. |
+
 #### `RefsOfflineBlockCloner`
 
 Performs the bounded offline ReFS block-clone operation for two existing, equal-sized ordinary extent-backed files. The destination's stream mapping is replaced by the source mapping through immutable object/Object-Table CoW, while root #6 gains the corresponding shared-cluster reference counts in the same alternate-checkpoint publication. This is deliberately narrower than FSCTL_DUPLICATE_EXTENTS_TO_FILE: it clones a whole cluster-aligned file only, does not create names or extend EOF, and refuses resident, sparse, integrity, already-shared and otherwise undecoded stream layouts. Native mounted-driver/MLog semantics remain fail-closed.
@@ -17916,6 +17930,15 @@ Performs the bounded offline ReFS block-clone operation for two existing, equal-
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CloneWholeFile` | `static void CloneWholeFile(Stream image, string sourcePath, string destinationPath)` | Replaces the contents of an existing destination file with a metadata-only clone of an existing source file on an unmounted ReFS image. |
+
+#### `RefsVolumeFormatter`
+
+Creates an empty ReFS 3.7 volume with 4 KiB clusters, laid out as Windows Server 2022 lays out a freshly formatted volume of the same size (measured on volumes it formatted, then mounted read-write and dismounted): the boot sector and its copy, three superblocks, two checkpoints, the metadata log, and every system table — object table, allocators, container table, schema table, upcase table, logfile information, volume information, security descriptors, the metadata directory, the root directory and System Volume Information — each built from its rows, with every page checksum, checkpoint and superblock checksum computed. The volume's identifiers (signature, GUIDs, serial number) and its timestamps are its own.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Geometry` | `const long Geometry` | The one geometry made so far: 0x3C000 clusters of 4 KiB (960 MiB, the volume Windows makes on a 1 GiB disk). |
+| `Format` | `static void Format(Stream target, RefsFormatOptions options)` | Writes a new, empty volume over `target`; refuses (writing nothing) any other geometry. |
 
 ### Namespace `FileSystem.Reiser4`
 

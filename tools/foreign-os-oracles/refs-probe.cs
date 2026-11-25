@@ -13,7 +13,7 @@
 //   refs-probe read <image.refs> <out.json>    what our reader lists and extracts (path, size, sha256)
 //   refs-probe mutate <image.refs> <op> <out.refs> <result.json>
 //        op: rename | rename-long | rename-unicode | replace-same | replace-grow | replace-shrink | replace-grow-small | add | add-dir | remove | remove-small
-//            | add-many | add-dir-many | rename-many | replace-many | add-many-split | add-dir1-grow | clone | defrag
+//            | add-many | add-dir-many | rename-many | replace-many | add-many-split | add-dir1-grow | create | clone | defrag
 //
 // Every result is JSON so the PowerShell side can compare it with Get-FileHash.
 
@@ -180,6 +180,23 @@ static int Mutate(string image, string op, string output, string resultPath) {
           added.Add(new { path = name, size = data.Length, sha256 = Sha256(data) });
         }
         expectation = new { addedMany = added };
+        break;
+      }
+      case "create": {
+        // A new volume over the whole partition, from scratch; then a directory made in it.
+        var length = stream.Length;
+        stream.SetLength(0);
+        RefsVolumeFormatter.Format(stream, new RefsFormatOptions(length, "CWB"));
+        descriptor.Add(stream, [new ArchiveInputInfo("new-folder", "new-folder", true)]);
+        expectation = new { fresh = true, added = "new-folder/" };
+        break;
+      }
+      case "create-plain": {
+        // A new volume over the whole partition, from scratch, and nothing else.
+        var length = stream.Length;
+        stream.SetLength(0);
+        RefsVolumeFormatter.Format(stream, new RefsFormatOptions(length, "CWB"));
+        expectation = new { fresh = true };
         break;
       }
       case "add-dir1-grow": {
