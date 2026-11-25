@@ -321,4 +321,26 @@ public class MoleboxBoxTests {
     }
     Assert.That(files, Is.GreaterThan(0));
   }
+
+  /// <summary>
+  /// MoleBox Ultra 4.x (not committed): <c>CWB_MOLEBOX_ULTRA4</c> names <c>Driller.exe</c> from the
+  /// archive.org item <c>Driller</c> (SHA-256 in docs/MOLEBOX-ON-DISK.md). Its catalog does not decrypt
+  /// under any published key, so it must be refused: no 2.x box, and List() reports a partial parse
+  /// instead of throwing or inventing files.
+  /// </summary>
+  [Test]
+  [Category("ExternalInterop")]
+  public void Given_AMoleboxUltra4Program_When_Listed_Then_ItIsRefusedWithoutThrowing() {
+    var path = Environment.GetEnvironmentVariable("CWB_MOLEBOX_ULTRA4");
+    if (string.IsNullOrEmpty(path) || !File.Exists(path))
+      Assert.Ignore("Set CWB_MOLEBOX_ULTRA4 to Driller.exe.");
+    var data = File.ReadAllBytes(path);
+    Assert.That(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(data)),
+      Is.EqualTo("cccc3549cc51ec159aa46ac1d1cbac10588cbe35870fddbf677966155f6ed918"));
+    using var ms = new MemoryStream(data);
+    Assert.That(MoleboxBox.HasBoxTrailer(ms), Is.False);
+    Assert.That(MoleboxBox.TryOpen(data), Is.Null);
+    var list = new MoleboxFormatDescriptor().List(new MemoryStream(data), null);
+    Assert.That(list.Single().Name, Is.EqualTo("metadata.ini"));
+  }
 }

@@ -129,3 +129,32 @@ Refused, with what differs:
 - Three programs of 2003/2004 (Desert Race, IMCast, a UT server tool) with the same older
   stub carry no file box at all; there is nothing to list.
 - One further program could not be read on the measuring machine.
+
+## MoleBox Ultra 4.x (measured, refused)
+
+The one MoleBox Ultra 4.x program found, the freeware *Driller* remake (Ovine by Design, 2007;
+archive.org item `Driller`, `Driller.zip` SHA-256
+`039a14b3a5504deca7ae9bf44c202a5a307f79f39fdb16f7c8ba408c8927b1b8`, `Driller.exe` 23,620,456 bytes,
+SHA-256 `cccc3549cc51ec159aa46ac1d1cbac10588cbe35870fddbf677966155f6ed918`; WineHQ bug 24374 names
+the packer), was measured statically. Nothing was run.
+
+- PE sections `.text` (raw 0x1000, 0x104000 bytes), `.bss` (no raw data), `.data`, `.rsrc`; entry RVA
+  0x1004. The 22,539,112 bytes after the last section (from file offset 0x108000) are the box.
+- The box starts with twelve zero bytes and the little-endian word 0x87; everything after that reads
+  as 8.0 bits per byte of entropy in every 64 KiB sampled. No PNG, Ogg, RIFF, MZ, ZIP or zlib header
+  and no `QUICKBOX`/`STELPACK` text occurs anywhere in it.
+- The file ends with a plain eight-byte footer: `u32 80`, `u32 0x44AD8A92`, preceded by an
+  80-byte block of the same high entropy. That is the shape of the open-source MoleBox's mount
+  catalog footer (catalog length, multiple of 8, then the CRC-32 of the decrypted catalog), except
+  that the open-source writer encrypts the footer and this one is plain.
+- The 2.x trailer above is absent: the length field 24 bytes from the end holds 3,179,596,328, not
+  the file length.
+- Decrypting the 80-byte block as the open-source writer encrypts its catalog (Blowfish-CBC with a
+  zero IV and the MD5 of the published catalog password, 15- and 16-byte keys, words loaded either
+  little- or big-endian) never yields CRC-32 0x44AD8A92; neither does the default package password.
+  The last 48 bytes do not decrypt to a `STELPACK` package header under the default password either.
+
+So Ultra 4.x keeps the footer's shape but keys or ciphers its catalog differently, and no public
+source states how. With no key, no readable directory and no independent extraction of this
+program to compare against, listing or extracting it could not be verified, so it is refused: the
+descriptor treats it as a program without a readable box.
