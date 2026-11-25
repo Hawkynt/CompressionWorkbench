@@ -16,7 +16,8 @@ namespace FileSystem.Refs;
 /// <remarks>
 /// Refused before the first write: a name that exists (case-insensitively), a directory whose order
 /// <see cref="RefsDirectoryCollation"/> does not reproduce,
-/// an empty file, a directory without a plain extent-backed file to take the record from,
+/// an empty file, a directory without an extent-backed file to take the record from (an
+/// integrity stream gives its kind and its per-cluster CRC32C entries to the new file),
 /// multi-page directories, a page without room for the two rows, and no free run.
 /// </remarks>
 internal static class RefsInPlaceAdd {
@@ -46,27 +47,29 @@ internal static class RefsInPlaceAdd {
     if (rows.Any(r => BinaryPrimitives.ReadUInt16LittleEndian(r.Key) == 0x30 && collation.Compare(r.Key, nameKey) == 0))
       throw new IOException($"ReFS: '{normalized}' already exists.");
 
-    // The template: a plain extent-backed file held in a name row of this directory, whose
-    // record this editor already rewrites (one leaf entry, size block found once).
+    // The template: an extent-backed file held in a name row of this directory, whose record
+    // this editor already rewrites (one embedded leaf, size block found once). A new file in a
+    // directory of integrity streams is one too (Windows gives it the directory's setting).
     var files = new RefsNamespaceReader(metadata).ReadAll();
-    (RefsBTreeRow Row, RefsFileRecord File, int Block, int Leaf)? template = null;
+    (RefsBTreeRow Row, RefsFileRecord File, int Block, int Leaf, RefsExtent First)? template = null;
     foreach (var row in rows) {
       if (BinaryPrimitives.ReadUInt16LittleEndian(row.Key) != 0x30 || BinaryPrimitives.ReadUInt16LittleEndian(row.Key.AsSpan(2)) != 1) continue;
       var rowName = Encoding.Unicode.GetString(row.Key, 4, row.Key.Length - 4);
       var filePath = parent.Length == 0 ? rowName : parent + "/" + rowName;
       var file = files.FirstOrDefault(f => string.Equals(f.Path, filePath, StringComparison.OrdinalIgnoreCase));
-      if (file is null || file.IsResident || file.Extents.Count == 0 || file.Extents.Any(static e => e.IsSparse || (e.Flags >> 16) != 0x18)) continue;
+      if (file is null || file.IsResident || file.Extents.Count == 0 || file.Extents.Any(static e => e.IsSparse)) continue;
       var v = row.Value;
       var size = (ulong)file.Size;
       var alloc = BinaryPrimitives.ReadUInt64LittleEndian(v.AsSpan(0x60));
       if (BinaryPrimitives.ReadUInt64LittleEndian(v.AsSpan(0x58)) != size) continue;
       var block = RefsInPlaceResize.FindOnce(v, [alloc, size, size, alloc], 0x68);
-      var leaf = RefsInPlaceResize.FindLeaf(v, (uint)file.Extents.Count);
-      if (block < 0 || leaf < 0 || BinaryPrimitives.ReadUInt32LittleEndian(v.AsSpan(block - 0x10)) != (uint)file.Extents.Count) continue;
-      template = (row, file, block, leaf);
+      var leaf = RefsExtentLeaf.Find(v, (uint)file.Extents.Count);
+      if (block < 0 || leaf < block || BinaryPrimitives.ReadUInt32LittleEndian(v.AsSpan(block - 0x10)) != (uint)file.Extents.Count) continue;
+      if (RefsExtentLeaf.Read(v, leaf) is not { Count: > 0 } entries || entries.Any(e => e.IsIntegrity != entries[0].IsIntegrity)) continue;
+      template = (row, file, block, leaf, entries[0]);
       break;
     }
-    if (template is not { } t) throw new NotSupportedException("ReFS: the directory holds no plain file whose record a new file can take.");
+    if (template is not { } t) throw new NotSupportedException("ReFS: the directory holds no extent-backed file whose record a new file can take.");
 
     var cs = (ulong)metadata.ClusterSize;
     var clusterCount = ((ulong)data.Length + cs - 1) / cs;
@@ -113,7 +116,8 @@ internal static class RefsInPlaceAdd {
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(t.Block + 16), (ulong)data.Length);
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(t.Block + 24), newAlloc);
     BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(t.Block - 0x10), 1);
-    RefsInPlaceResize.WriteLeaf(value, t.Leaf, [(vstart, t.File.Extents[0].Flags, 0u, (uint)clusterCount)], normalized);
+    var crcs = t.First.IsIntegrity ? RefsExtentLeaf.ClusterCrcs(data, metadata.ClusterSize, 0, (int)clusterCount) : null;
+    value = RefsExtentLeaf.Write(value, t.Leaf, [new RefsExtent(vstart, t.First.Flags, 0u, (uint)clusterCount, crcs)], normalized);
 
     var idKey = RefsDirectoryRows.IdKey(fileNumber);
     var idValue = RefsDirectoryRows.IdValue(name);
@@ -128,7 +132,8 @@ internal static class RefsInPlaceAdd {
     }
 
     allocator.SetAllocated(run, allocated: true);
-    RefsInPlaceOverwrite.Apply(image, metadata.ClusterSize, run, data);
+    if (crcs is not null) RefsExtentLeaf.WritePadded(image, metadata.ClusterSize, run, data);
+    else RefsInPlaceOverwrite.Apply(image, metadata.ClusterSize, run, data);
     RefsPageEditor.InsertRow(graph, page, namePosition, nameKey, value, t.Row.Flags);
     var current = metadata.WalkTree(root, virtualAddresses: true).ToList();
     var idPosition = current.Count(r => collation.Compare(r.Key, idKey) < 0);
