@@ -78,7 +78,29 @@ public sealed record DarEntry(
 
   /// <summary>The data flags as stored, the dirty bit included.</summary>
   internal byte RawDataFlags { get; init; }
+
+  /// <summary>The inode's leading bytes: flag byte, uid, gid, permissions and the three dates.</summary>
+  internal byte[] InodeHead { get; init; } = [];
+
+  /// <summary>Where the saved extended attributes are (EA status full), or <see langword="null"/>.</summary>
+  internal DarAttributeBlock? Ea { get; init; }
+
+  /// <summary>The FSA families infinint (any FSA status but none), or <see langword="null"/>.</summary>
+  internal ulong? FsaFamilies { get; init; }
+
+  /// <summary>Where the saved file-system specific attributes are (FSA status full), or <see langword="null"/>.</summary>
+  internal DarAttributeBlock? Fsa { get; init; }
+
+  /// <summary>Whether this name is the one the catalogue carries a hard-linked inode under (its first name, <c>&gt;</c>).</summary>
+  internal bool IsHardLinkInode { get; init; }
 }
+
+/// <summary>
+/// An EA or FSA block as the catalogue records it (<c>docs/DAR-ON-DISK.md</c>, section 9): the size
+/// dar records (the attributes' own measure, not the stored length), the block's offset and the
+/// checksum of its clear bytes.
+/// </summary>
+internal sealed record DarAttributeBlock(ulong Size, ulong Offset, byte[] Checksum);
 
 /// <summary>
 /// Reader for a DAR archive (archive formats 8.1 through 11.3, each verified on archives the dar release that writes it produced): the version
@@ -112,8 +134,11 @@ public sealed class DarArchive {
 
   private readonly Stream _archive;
   private readonly long _limit;
+  private readonly long _catalogueAt;
+  private ulong[]? _starts;
 
-  private DarArchive(Stream archive, long limit, DarVersionHeader trailer, byte[] dataName, string inPlace, List<DarEntry> entries, byte[] rootInode) {
+  private DarArchive(Stream archive, long limit, long catalogueAt, DarVersionHeader trailer, byte[] dataName, string inPlace, List<DarEntry> entries, byte[] rootInode) {
+    this._catalogueAt = catalogueAt;
     this.RootInode = rootInode;
     this._archive = archive;
     this._limit = limit;
@@ -215,7 +240,7 @@ public sealed class DarArchive {
     var catalogue = Decompress(trailer.Algorithm, trailer.BlockSize, stored, -1);
 
     var (dataName, inPlace, entries, rootInode) = ParseCatalogue(catalogue, trailer);
-    return new DarArchive(archive, term1Start, trailer, dataName, inPlace, entries, rootInode);
+    return new DarArchive(archive, term1Start, catalogueAt, trailer, dataName, inPlace, entries, rootInode);
   }
 
   private static void Refuse(DarVersionHeader v) {
@@ -307,6 +332,50 @@ public sealed class DarArchive {
     return this.Trailer.HasTapeMarks
       ? new DarDataStreams.Unescape(this._archive, (long)entry.Offset, (long)entry.StorageSize, this._limit)
       : new DarDataStreams.Range(this._archive, (long)entry.Offset, (long)entry.StorageSize);
+  }
+
+  private const int MaxAttributeBlock = 64 << 20;
+
+  /// <summary>
+  /// The clear bytes of an EA or FSA block (section 9), checked against its checksum. The catalogue
+  /// does not record a block's stored length: with tape marks the block ends at the next mark,
+  /// otherwise where the next thing the catalogue points at (data, EA, FSA or the catalogue itself)
+  /// begins. EAs travel through the compression layer, FSAs never do.
+  /// </summary>
+  /// <exception cref="InvalidDataException">The block does not decode, or fails its checksum.</exception>
+  internal byte[] ReadAttributeBlock(DarAttributeBlock block, bool compressed, string path) {
+    if (block.Offset >= (ulong)this._limit)
+      throw new InvalidDataException($"The attributes of '{path}' point outside the archive.");
+    byte[] stored;
+    if (this.Trailer.HasTapeMarks)
+      stored = DarPrimitives.ReadUnescaped(this._archive, (long)block.Offset, -1, Math.Min(this._limit, (long)block.Offset + MaxAttributeBlock));
+    else {
+      var end = this.NextStart(block.Offset);
+      if (end - block.Offset > MaxAttributeBlock)
+        throw new InvalidDataException($"The attributes of '{path}' run longer than this reader allows.");
+      stored = new byte[end - block.Offset];
+      this._archive.Position = (long)block.Offset;
+      this._archive.ReadExactly(stored);
+    }
+    var clear = compressed ? Decompress(this.Trailer.Algorithm, this.Trailer.BlockSize, stored, -1) : stored;
+    if (!DarPrimitives.Checksum(clear, block.Checksum.Length).AsSpan().SequenceEqual(block.Checksum))
+      throw new InvalidDataException($"The attributes of '{path}' fail their DAR checksum.");
+    return clear;
+  }
+
+  /// <summary>The first place after <paramref name="offset"/> the catalogue points at, or the catalogue's own start.</summary>
+  private ulong NextStart(ulong offset) {
+    this._starts ??= this.Entries
+      .SelectMany(e => new[] { e.HasData ? e.Offset : (ulong?)null, e.Ea?.Offset, e.Fsa?.Offset })
+      .OfType<ulong>()
+      .Append((ulong)this._catalogueAt)
+      .Distinct()
+      .Order()
+      .ToArray();
+    var i = Array.BinarySearch(this._starts, offset + 1);
+    if (i < 0)
+      i = ~i;
+    return i < this._starts.Length ? this._starts[i] : (ulong)this._catalogueAt;
   }
 
   /// <summary>A forward-only decoder for one compression unit read from <paramref name="stored"/>.</summary>
@@ -454,7 +523,7 @@ public sealed class DarArchive {
           if (flag == 'X') {
             if (!labels.TryGetValue(label, out var first))
               throw new InvalidDataException($"DAR hard link '{path}' refers to an inode not yet seen.");
-            entries.Add(first with { Path = path });
+            entries.Add(first with { Path = path, IsHardLinkInode = false });
             continue;
           }
           if (flag != '>')
@@ -465,7 +534,7 @@ public sealed class DarArchive {
           _ = c.String(); // the inode's own (empty) name
           if (innerType is 'd' or 'm' or 'z' or 'x')
             throw new InvalidDataException($"DAR hard link '{path}' wraps a '{innerType}' entry.");
-          var entry = ReadInodeEntry(ref c, path, innerType, innerStatus) with { HardLinkLabel = label };
+          var entry = ReadInodeEntry(ref c, path, innerType, innerStatus) with { HardLinkLabel = label, IsHardLinkInode = true };
           if (!labels.TryAdd(label, entry))
             throw new InvalidDataException($"DAR hard link label {label} is defined twice.");
           entries.Add(entry);
@@ -484,7 +553,8 @@ public sealed class DarArchive {
     }
   }
 
-  private readonly record struct Inode(ushort Permissions, ulong Uid, ulong Gid, DateTime? Access, DateTime? Modified, DateTime? Change, bool Ea, bool Fsa, byte[] Raw);
+  private readonly record struct Inode(ushort Permissions, ulong Uid, ulong Gid, DateTime? Access, DateTime? Modified, DateTime? Change,
+    byte[] Raw, byte[] Head, DarAttributeBlock? Ea, ulong? FsaFamilies, DarAttributeBlock? Fsa);
 
   private static Inode ReadInode(ref Cursor c) {
     var start = c.Pos;
@@ -501,19 +571,16 @@ public sealed class DarArchive {
     var access = c.Date();
     var modified = c.Date();
     var change = c.Date();
-    if (ea == 1) { // full: size, then offset and checksum in the catalogue
-      _ = c.Infinint();
-      _ = c.Infinint();
-      _ = c.Checksum();
-    }
+    var headEnd = c.Pos;
+    DarAttributeBlock? eaBlock = null, fsaBlock = null;
+    ulong? families = null;
+    if (ea == 1) // full: size, then offset and checksum in the catalogue
+      eaBlock = new(c.Infinint(), c.Infinint(), c.Checksum());
     if (fsa != 0)
-      _ = c.Infinint(); // families
-    if (fsa == 0x10) { // full: size, offset, checksum
-      _ = c.Infinint();
-      _ = c.Infinint();
-      _ = c.Checksum();
-    }
-    return new(perm, uid, gid, access, modified, change, ea == 1, fsa == 0x10, c.Bytes(start, c.Pos));
+      families = c.Infinint();
+    if (fsa == 0x10) // full: size, offset, checksum
+      fsaBlock = new(c.Infinint(), c.Infinint(), c.Checksum());
+    return new(perm, uid, gid, access, modified, change, c.Bytes(start, c.Pos), c.Bytes(start, headEnd), eaBlock, families, fsaBlock);
   }
 
   private static DarEntry ReadInodeEntry(ref Cursor c, string path, char type, int status) {
@@ -568,7 +635,9 @@ public sealed class DarArchive {
         break;
     }
     return new DarEntry(path, kind, saved, inode.Permissions, inode.Uid, inode.Gid, inode.Access, inode.Modified,
-      inode.Change, size, offset, storage, algorithm, flags, checksum, target, inode.Ea, inode.Fsa, null) { RawInode = inode.Raw, RawDataFlags = rawFlags };
+      inode.Change, size, offset, storage, algorithm, flags, checksum, target, inode.Ea != null, inode.Fsa != null, null) {
+      RawInode = inode.Raw, RawDataFlags = rawFlags, InodeHead = inode.Head, Ea = inode.Ea, FsaFamilies = inode.FsaFamilies, Fsa = inode.Fsa,
+    };
   }
 
   private struct Cursor(byte[] data, DarVersionHeader version) {

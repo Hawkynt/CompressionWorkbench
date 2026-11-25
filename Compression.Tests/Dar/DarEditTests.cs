@@ -192,11 +192,60 @@ public class DarEditTests {
   }
 
   [Test, Category("Exception")]
-  public void GivenDarArchiveWithHardLinksAndFileSystemAttributes_WhenEdited_ThenRefusedAndUntouched() {
+  public void GivenDarArchiveWithAFifo_WhenEdited_ThenRefusedAndUntouched() {
     var path = DarFixtures.Materialise(this._tmp, "tree.1.dar")[0];
     var before = File.ReadAllBytes(path);
-    Assert.That(() => Edit(path, Additions(), []), Throws.InstanceOf<NotSupportedException>().With.Message.Contains("cannot be carried over"));
+    Assert.That(() => Edit(path, Additions(), []), Throws.InstanceOf<NotSupportedException>().With.Message.Contains("'fifo' cannot be carried over"));
     Assert.That(File.ReadAllBytes(path), Is.EqualTo(before));
+  }
+
+  [TestCase("tree.1.dar")]
+  [TestCase("tree-notape.1.dar")]
+  [TestCase("tree-gzip.1.dar")]
+  [TestCase("tree-zstd-block.1.dar")]
+  [Category("HappyPath")]
+  public void GivenDarArchiveWithHardLinksAndFsa_WhenTheFifoIsRemoved_ThenLinksAndAttributesAreCarriedOver(string vector) {
+    var path = DarFixtures.Materialise(this._tmp, vector)[0];
+    using var oldSet = DarSliceSet.Open(new MemoryStream(File.ReadAllBytes(path)));
+    var old = DarArchive.Read(oldSet.Archive);
+    Assert.That(old.Entries.Count(e => e.HardLinkLabel is not null), Is.EqualTo(2), "hello.txt and hard.txt");
+    Assert.That(old.Entries.Where(e => e.Fsa is not null).Select(e => e.Path), Does.Contain("hello.txt").And.Contain("dir"));
+
+    Edit(path, [], ["fifo"]);
+    Edit(path, [ArchiveInputInfo.InMemory("new/added.txt", Added)], []);
+
+    var edited = Open(path, null, out var set);
+    using (set) {
+      Assert.That(edited.Entries.Select(e => e.Path), Does.Not.Contain("fifo").And.Contain("new/added.txt"));
+      var links = edited.Entries.Where(e => e.HardLinkLabel is not null).ToList();
+      Assert.That(links.Select(e => e.Path), Is.EquivalentTo(new[] { "hello.txt", "hard.txt" }));
+      Assert.That(links.Select(e => e.HardLinkLabel).Distinct().Count(), Is.EqualTo(1), "one inode under both names");
+      Assert.That(links.Count(e => e.IsHardLinkInode), Is.EqualTo(1));
+      Assert.That(edited.ReadData(links[1]), Is.EqualTo(old.ReadData(old.Entries.Single(e => e.Path == links[1].Path))));
+      foreach (var e in old.Entries.Where(e => e.Path != "fifo")) {
+        var kept = edited.Entries.Single(k => k.Path == e.Path);
+        Assert.That(kept.InodeHead, Is.EqualTo(e.InodeHead), e.Path);
+        Assert.That((kept.FsaFamilies, kept.Fsa?.Size, kept.Fsa?.Checksum), Is.EqualTo((e.FsaFamilies, e.Fsa?.Size, e.Fsa?.Checksum)), e.Path);
+        if (e.Fsa is { } fsa)
+          Assert.That(edited.ReadAttributeBlock(kept.Fsa!, false, e.Path), Is.EqualTo(old.ReadAttributeBlock(fsa, false, e.Path)), e.Path);
+        if (e.HasData)
+          Assert.That(edited.ReadData(kept), Is.EqualTo(old.ReadData(e)), e.Path);
+      }
+    }
+  }
+
+  [Test, Category("Exception")]
+  public void GivenDamagedFsaBlock_WhenEdited_ThenRefusedAndUntouched() {
+    var path = DarFixtures.Materialise(this._tmp, "tree-notape.1.dar")[0];
+    var bytes = File.ReadAllBytes(path);
+    using (var set = DarSliceSet.Open(new MemoryStream(bytes))) {
+      var fsa = DarArchive.Read(set.Archive).Entries.First(e => e.Fsa is not null).Fsa!;
+      // one slice: the archive level starts after the slice header
+      bytes[DarArchiveSink.SliceHeaderLength(0, 0) + (int)fsa.Offset + 7] ^= 0x01;
+    }
+    File.WriteAllBytes(path, bytes);
+    Assert.That(() => Edit(path, [], ["fifo"]), Throws.InstanceOf<InvalidDataException>().With.Message.Contains("attributes"));
+    Assert.That(File.ReadAllBytes(path), Is.EqualTo(bytes));
   }
 
   [Test, Category("HappyPath")]

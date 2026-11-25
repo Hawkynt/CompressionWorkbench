@@ -194,8 +194,15 @@ copy of the entry and a 2-byte checksum of that copy:
   entries, and the end of the directory is one more `F` whose copy is the single byte `7A`
   (checksum `80 00000002 7A 00`). The root's end is not written; `C` follows the last entry.
 - A symlink's copy ends in its target string; a pipe's ends after the inode.
-- With FSA, a mark `S`, the FSA block and `s` with its checksum follow the entry; with EA, `E`
-  and `r`.
+- An inode's EA and FSA fields appear in the copy without offsets and checksums: the EA size
+  (EA full), the FSA families (FSA not none), the FSA size (FSA full) [measured].
+- Saved EAs follow the entry as mark `E`, the EA block (section 9.2) and mark `r` with the EA
+  checksum; saved FSAs then as `S`, the FSA block and `s` with its checksum. For a file they come
+  after the data's `R`; for a directory right after its copy, before its children [measured:
+  dar 2.7.13 on an ext4 tree with user EAs, `chattr +d` and hard links].
+- A hard-linked inode (section 9.3): its first name is copied as the whole `m … >` entry with the
+  inner entry's copy, then its data and attributes as for a file; each further name is the copy
+  `m`, name, label, `X` alone.
 
 The marks and copies are never compressed; each file's data in between is a compression unit as
 in section 7. The 2-byte checksum covers the copy from its signature byte [measured: `63 86` for
@@ -258,7 +265,7 @@ permissions 0 and its own `z`.
 | `l` symlink | name, inode, target (string, only when saved) |
 | `c`/`b` device | name, inode, major u16 BE, minor u16 BE (only when saved) |
 | `p` pipe, `s` socket | name, inode |
-| `m` hard link | name, infinint label, `>` + a full entry (name empty) the first time; `X` for later names |
+| `m` hard link | name, infinint label, `>` + a full entry the first time; `X` for later names (section 9.3) |
 | `x` removed since the reference | name, the type letter it had, a date |
 
 `i`/`j` entries (ignored) exist in memory but are never written [src].
@@ -284,6 +291,47 @@ dar on Linux ext4 records FSA (`-L-` in `dar -l`) for every inode [measured].
 If the data flags carry `04`, delta-signature metadata follows: a base checksum (formats before
 11.2 only), an infinint signature size, its offset when the size is non-zero, and the
 result checksum.
+
+### 9.1 Where the EA and FSA blocks are
+
+The offsets point into the archive level (the escaped stream with tape marks, the clear stream of
+a block cipher), like file data offsets [measured]. Neither *size* is the stored length: the EA
+size is the sum of the attribute names' and values' lengths (`user.dir` = `d` gives 9, the block
+is 20 bytes), and the FSA size is likewise dar's own measure (61 for a 67-byte block of 13
+attributes). The catalogue records no stored length at all [measured: dar 2.7.13]. A block ends:
+
+- with tape marks, at the next mark (`r` after an EA block, `s` after an FSA block);
+- otherwise where the next thing the catalogue points at begins — file data, another EA or FSA
+  block, or the catalogue. dar writes them back to back: a file's data, its EA block, its FSA
+  block; a directory's EA and FSA blocks before its children's [measured].
+
+The **EA block passes through the compression layer** as its own unit, like a file's data, under
+the archive's algorithm and block size, even when it grows (20 bytes became a 25-byte zlib
+stream); the **FSA block never does**. Both checksums cover the clear (uncompressed, unescaped)
+block: the EA checksum of `user.dir` = `d` is `81 5B 96 68` in a stored and in a gzip archive
+alike. dar writes them 4 bytes wide [measured].
+
+### 9.2 EA and FSA block contents
+
+Read for this document but carried by the editor as opaque bytes [measured: dar 2.6.16
+(format 10.1, EAs) and 2.7.13 (11.3, EAs and FSAs) on the same tree]:
+
+- **EA block**: an infinint count, then per attribute its full name as a string (`user.color`)
+  and its value as an infinint length and the bytes. An empty value is length 0.
+- **FSA block**: an infinint count, then per attribute a family letter (`l` Linux ext2/3/4), a
+  two-letter nature and a value. On ext4 dar 2.7.13 writes 13: `aa` (the birth time, a date
+  as in section 2.4) and `ba` to `bl`, the twelve `chattr` flags, each `T` or `F` (`bc` is
+  `chattr +d`, no dump). The families infinint of the inode was 2 on every ext4 inode.
+
+### 9.3 Hard links
+
+All names of one inode share an infinint **label**, numbered from 0 in the order dar meets them
+[measured]. The first name in catalogue order is written `m` (saved status 3: `6D`), the name,
+the label, `>`, and then a complete entry of the inode — signature (`66` for a file), the same
+name again, the inode with its EA and FSA fields, the file part. Every further name is `6D`, the
+name, the label and `X`, nothing else. The data, EA and FSA blocks exist once, written where the
+first name is. A label may only be referred to (`X`) after its `>` entry [measured: `h3`, `h1`,
+`h2` of one inode written `m h3 0 > f h3 …`, `m h1 0 X`, `m h2 0 X` by dar 2.7.13].
 
 ## 10. What this writer emits
 
@@ -347,12 +395,12 @@ accepted. A 5 GiB file, stored and sliced or gzip-compressed with tape marks, pa
 - **Delta patches** (saved status 1) are listed, but extraction is refused because the data is a
   binary diff against another archive. Not-saved and inode-only entries are listed and have no
   data to extract.
-- **Listed, not materialised**: symlinks, devices, pipes, sockets. EAs and FSAs are skipped
-  using their recorded offsets and sizes.
+- **Listed, not materialised**: symlinks, devices, pipes, sockets. EAs and FSAs are not
+  extracted; edits carry them over (section 13).
 - **Memory when reading**: members stream to disk in constant memory, except xz in streaming
   mode: the xz decoder holds one whole .xz stream, which is the whole file when dar wrote it.
-- **Not written**: hard links, devices, pipes, sockets, EAs and FSAs; the archive input model
-  carries none of them.
+- **Not written for new files**: hard links, devices, pipes, sockets, EAs and FSAs; the archive
+  input model carries none of them. Edits keep those of the entries they carry over.
 
 ## 12. Encryption
 
@@ -405,14 +453,34 @@ count, a new salt). Kept entries go across unchanged — their inode bytes, and 
 (compressed, unescaped) data, compression letter, data flags (holes included) and checksum — after
 each kept file has passed its checksum; added files are written as by the writer. The new archive
 is written to temporary files first; only then does it replace the old slices, and slices it no
-longer needs are deleted. Refused, with the archive untouched: entries whose data is not in the
-archive (differential archives), hard links, devices, pipes and sockets, entries with EA or FSA
-data (dar records Linux FSA for every inode on ext4), delta signatures, formats before 9, lzo as
-the archive's compression, and an edit through a slice the edited set would no longer have.
+longer needs are deleted.
+
+**EAs, FSAs and hard links** travel too. Each EA and FSA block is read where section 9.1 says it
+ends, checked against its checksum and written again after its entry's data (a directory's
+before its children), the EA block recompressed as its own unit under the archive's settings,
+the FSA block as it is; the inode keeps its flag, ids, permissions, dates, sizes, families and
+checksums, with the new offsets. With tape marks the blocks go between `E`/`r` and `S`/`s` and
+the inline copies carry the fields of section 6. A hard-linked file keeps one inode: its names
+are numbered again from label 0, the first name the edited catalogue meets carries the inode
+(`>`), the others refer to it (`X`), and a group an edit leaves with one name becomes a plain
+file. Removing the name dar had written the inode under is fine; the inode moves to the next.
+
+Refused, with the archive untouched: entries whose data is not in the archive (differential
+archives), devices, pipes and sockets, hard-linked entries other than files, EA blocks of formats
+before 10.1 and FSA records of formats before 11.3 (layouts not measured there), a root directory
+with saved attributes (dar never writes one), delta signatures, formats before 9, lzo as the
+archive's compression, and an edit through a slice the edited set would no longer have.
 
 dar 2.7.13 tests (`dar -t`, sequentially too with tape marks) and restores byte for byte what an
 edit leaves of its own archives — default, `-at -zgzip`, block mode, xz, slice sets, AES-256,
-scrambled slice sets, sparse files carried over — and of ours [measured].
+scrambled slice sets, sparse files carried over — and of ours [measured]. For archives dar made
+from an ext4 tree with user EAs on files and a directory, `chattr +d` on a file and a directory,
+a file with three names, a symlink, an empty file and an empty directory — default, `-at`, gzip,
+bzip2 without tape marks, zstd block mode, xz, an lz4 slice set and AES-256 — an edit that
+replaces a file, adds one, removes one and removes the name dar wrote the hard-linked inode under passes
+`dar -t` (and `--sequential-read` with tape marks), and `dar -x` restores a tree whose contents,
+modes, file times, `getfattr` EAs, `lsattr` flags and hard-link groups equal the source edited the
+same way (`DarEditAttributesOracleTests`) [measured].
 
 ## Sources
 
