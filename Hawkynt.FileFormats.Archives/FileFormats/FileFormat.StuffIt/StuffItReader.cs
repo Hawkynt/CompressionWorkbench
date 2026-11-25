@@ -172,6 +172,7 @@ public sealed class StuffItReader : IDisposable {
       2 => StuffItLzw.Decode(compressed, length),
       3 => StuffItHuffman.Decode(compressed, length),
       5 => StuffItLzahDecoder.Decode(compressed, length),
+      6 => StuffItFixedHuffmanDecoder.Decode(compressed, length),
       8 => StuffItMwDecoder.Decode(compressed, length),
       13 => StuffIt13Decoder.Decode(compressed, length),
       14 => StuffIt14Decoder.Decode(compressed, length),
