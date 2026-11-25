@@ -1,0 +1,12 @@
+pylm-ext.dat	hello.txt	13	stored	0ba904eae8773b70c75333db4de2f3ac45a8ad4ddba1b242f0b3cfc199391dd8
+pylm-ext.dat	sub/data.bin	4096	packed	c8f5d0341d54d951a71b136e6e2afcb14d11ed8489a7ae126a8fee0df6ecf193
+pylm-ext.dat	big.bin	3000	stored	f541874101876255b4baf3a739778d04cb9cba25ffa38b30bc1fb8b0701f2a45
+cut-ext.dat	hello.txt	13	stored	0ba904eae8773b70c75333db4de2f3ac45a8ad4ddba1b242f0b3cfc199391dd8
+cut-ext.dat	sub/data.bin	4096	packed	c8f5d0341d54d951a71b136e6e2afcb14d11ed8489a7ae126a8fee0df6ecf193
+cut-ext.dat	big.bin	3000	stored	f541874101876255b4baf3a739778d04cb9cba25ffa38b30bc1fb8b0701f2a45
+pylm-inline.dat	hello.txt	13	stored	0ba904eae8773b70c75333db4de2f3ac45a8ad4ddba1b242f0b3cfc199391dd8
+pylm-inline.dat	sub/data.bin	4096	packed	c8f5d0341d54d951a71b136e6e2afcb14d11ed8489a7ae126a8fee0df6ecf193
+pylm-inline.dat	big.bin	3000	stored	f541874101876255b4baf3a739778d04cb9cba25ffa38b30bc1fb8b0701f2a45
+cut-inline.dat	hello.txt	13	stored	0ba904eae8773b70c75333db4de2f3ac45a8ad4ddba1b242f0b3cfc199391dd8
+cut-inline.dat	sub/data.bin	4096	packed	c8f5d0341d54d951a71b136e6e2afcb14d11ed8489a7ae126a8fee0df6ecf193
+cut-inline.dat	big.bin	3000	stored	f541874101876255b4baf3a739778d04cb9cba25ffa38b30bc1fb8b0701f2a45

@@ -6,6 +6,8 @@ File:     ArcFormats/LiveMaker/ArcVF.cs
 Author:   Copyright (C) 2014-2017 by morkt
 Licence:  MIT (reproduced below)
 
+LiveMakerArchiveSet.cs follows ArcVF.cs's VffOpener in finding a split archive's
+.ext directory and joining its .dat, .001, .002 ... data files in order.
 LiveMakerReader.cs converts ArcVF.cs's directory reader (TpRandom name and
 offset obfuscation) and its LiveMaker Pro chunk scramble (TpScramble,
 ReshuffleStream) into this codebase. The three per-member arrays after the

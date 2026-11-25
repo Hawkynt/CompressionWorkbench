@@ -54,12 +54,25 @@ public sealed class LiveMakerReader {
   private static readonly Encoding NameEncoding = CreateNameEncoding();
 
   private readonly Stream _stream;
+  private readonly Stream _data;
 
   /// <summary>Parses the archive directory.</summary>
   /// <exception cref="InvalidDataException">The stream holds no well-formed LiveMaker archive.</exception>
-  public LiveMakerReader(Stream stream) {
-    ArgumentNullException.ThrowIfNull(stream);
+  public LiveMakerReader(Stream stream) : this(stream, null, separateIndex: false) { }
+
+  /// <summary>
+  /// Parses the directory in <paramref name="index"/> and reads members from
+  /// <paramref name="data"/>, the archive's data files joined in order (<c>name.dat</c>,
+  /// <c>name.001</c>, <c>name.002</c>, ...). With <paramref name="separateIndex"/> the directory
+  /// is a <c>name.ext</c> file of its own and offsets count from the start of the data; otherwise
+  /// the directory heads the data, as in a single <c>game.dat</c>.
+  /// </summary>
+  /// <exception cref="InvalidDataException">The streams hold no well-formed LiveMaker archive.</exception>
+  internal LiveMakerReader(Stream index, Stream? data, bool separateIndex) {
+    ArgumentNullException.ThrowIfNull(index);
+    var stream = index;
     this._stream = stream;
+    this._data = data ?? stream;
     var length = stream.Length;
     this.BaseOffset = FindArchive(stream);
     stream.Position = this.BaseOffset + 2;
@@ -108,9 +121,9 @@ public sealed class LiveMakerReader {
     for (var i = 0; i < count; ++i) {
       if (methods[i] > 3)
         throw new InvalidDataException($"LiveMaker member '{names[i]}' uses unknown method {methods[i]}.");
-      var start = this.BaseOffset + offsets[i];
+      var start = (separateIndex ? 0 : this.BaseOffset) + offsets[i];
       var size = offsets[i + 1] - offsets[i];
-      if (offsets[i] < 0 || size < 0 || start < this.DirectoryEnd || start + size > length)
+      if (offsets[i] < 0 || size < 0 || (!separateIndex && start < this.DirectoryEnd) || start + size > this._data.Length)
         throw new InvalidDataException($"LiveMaker member '{names[i]}' points outside the archive.");
       entries.Add(new LiveMakerEntry(names[i], start, size, (LiveMakerMethod)methods[i], unknown[i], checksums[i], encrypt[i]));
     }
@@ -133,10 +146,13 @@ public sealed class LiveMakerReader {
   public byte[] ReadStored(LiveMakerEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     var data = new byte[entry.StoredLength];
-    this._stream.Position = entry.Offset;
-    this._stream.ReadExactly(data);
+    this._data.Position = entry.Offset;
+    this._data.ReadExactly(data);
     return data;
   }
+
+  /// <summary>Whether members are read from data files apart from the directory (a split archive).</summary>
+  internal bool IsSplit => !ReferenceEquals(this._data, this._stream);
 
   /// <summary>Decodes a member, checking its CRC-32.</summary>
   /// <exception cref="InvalidDataException">The checksum does not match or the stream does not decode.</exception>

@@ -1,0 +1,52 @@
+# Writes LiveMaker split-archive fixtures with pylivemaker 1.2.1 (oracle) and cuts them into parts.
+# Usage: python make-split.py <pylivemaker site dir> <output dir>
+import os, sys
+sys.path.insert(0, sys.argv[1])
+from livemaker.archive import LMArchive, LMCompressType
+
+out = sys.argv[2]
+os.makedirs(out, exist_ok=True)
+src = os.path.join(out, "_src")
+os.makedirs(os.path.join(src, "sub"), exist_ok=True)
+files = {
+    "hello.txt": (b"Hello world!\n", LMCompressType.NONE),
+    "sub/data.bin": (bytes(range(256)) * 16, LMCompressType.ZLIB),
+    "big.bin": (bytes((i * 7 + 3) & 0xFF for i in range(3000)), LMCompressType.NONE),
+}
+for name, (data, _) in files.items():
+    with open(os.path.join(src, name), "wb") as f:
+        f.write(data)
+
+def build(path):
+    with LMArchive(path, mode="w", split=True) as a:
+        for name, (_, ctype) in files.items():
+            a.write(os.path.join(src, name), arcname=name.replace("/", "\\"), compress_type=ctype)
+
+# 1. separate index: pylm-ext.ext (directory) + pylm-ext.dat (data from offset 0)
+build(os.path.join(out, "pylm-ext.ext"))
+# 2. directory inside the .dat, split=True: no "lv" trailer
+build(os.path.join(out, "pylm-inline.dat"))
+
+def cut(path, first, second):
+    data = open(path, "rb").read()
+    base = os.path.splitext(path)[0]
+    open(path, "wb").write(data[:first])
+    open(base + ".001", "wb").write(data[first:second])
+    open(base + ".002", "wb").write(data[second:])
+
+# 3. the same sets cut into .dat/.001/.002 parts at arbitrary offsets (GARbro joins the parts in order)
+import shutil
+shutil.copy(os.path.join(out, "pylm-ext.ext"), os.path.join(out, "cut-ext.ext"))
+shutil.copy(os.path.join(out, "pylm-ext.dat"), os.path.join(out, "cut-ext.dat"))
+cut(os.path.join(out, "cut-ext.dat"), 1000, 2500)
+shutil.copy(os.path.join(out, "pylm-inline.dat"), os.path.join(out, "cut-inline.dat"))
+cut(os.path.join(out, "cut-inline.dat"), 700, 1801)
+shutil.rmtree(src)
+
+# pylivemaker's own reading of the uncut sets (it joins parts on 1 GiB boundaries only)
+import hashlib
+for name in ("pylm-ext.ext", "pylm-inline.dat"):
+    with LMArchive(os.path.join(out, name)) as a:
+        for info in a.infolist():
+            d = a.read(info, skip_checksum=False)
+            print("\t".join([name, info.name.replace("\\", "/"), str(len(d)), str(int(info.compress_type)), hashlib.sha256(d).hexdigest()]))

@@ -169,6 +169,9 @@
     <EmbeddedResource Include="LiveMaker\ReferenceVectors\*.dat;LiveMaker\ReferenceVectors\*.txt">
       <LogicalName>LiveMakerVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="LiveMaker\ReferenceVectors\Split\*" Exclude="LiveMaker\ReferenceVectors\Split\.gitattributes">
+      <LogicalName>LiveMakerSplit.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="Pcap\ReferenceVectors\*.pcap;Pcap\ReferenceVectors\*.pcapng;Pcap\ReferenceVectors\*.bin">
       <LogicalName>PcapVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
