@@ -5,8 +5,9 @@ using FileFormat.Dar;
 namespace Compression.Tests.Dar;
 
 /// <summary>
-/// dar as the oracle for in-place edits: archives dar wrote (from a source without file-system
-/// specific attributes, which edits refuse) and archives we wrote are edited — a file replaced, one
+/// dar as the oracle for in-place edits: archives dar wrote (from a source on the Windows side,
+/// without EAs or FSAs; <see cref="DarEditAttributesOracleTests"/> covers those) and archives we
+/// wrote are edited — a file replaced, one
 /// added, one removed — and must then pass <c>dar -t</c> (sequentially too when they carry tape
 /// marks) and restore the edited tree byte for byte with <c>dar -x</c>.
 /// </summary>

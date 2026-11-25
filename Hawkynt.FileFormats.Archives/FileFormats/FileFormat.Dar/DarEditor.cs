@@ -9,7 +9,7 @@ namespace FileFormat.Dar;
 /// every kept file checked against its checksum, then written again in the same format settings —
 /// compression, block size, tape marks, slice sizes, encryption with its key derivation — with the
 /// kept entries carried over byte for byte (inode bytes, stored data, compression letter, data
-/// flags, checksum) and the added files written as new. The rewrite goes to temporary files first;
+/// flags, checksum) with their EA and FSA blocks and hard links, and the added files written as new. The rewrite goes to temporary files first;
 /// only a complete archive replaces the old one, so a refused or failed edit leaves it untouched.
 /// </summary>
 internal static partial class DarEditor {
@@ -117,11 +117,16 @@ internal static partial class DarEditor {
     bool Dropped(DarEntry e) => gone.Any(r => e.Path == r || e.Path.StartsWith(r + "/", StringComparison.Ordinal))
       || e.Kind != DarEntryKind.Directory && replaced.Contains(e.Path);
 
+    // the root's inode travels verbatim; dar records it without attributes (flag 03)
+    if (source.RootInode is [var rootFlag, ..] && ((rootFlag & 0x07) == 1 || (rootFlag & 0x18) == 0x10))
+      throw new NotSupportedException("The DAR archive is not edited: its root directory carries saved attributes.");
+
     var items = new List<DarWriter.Item>();
+    var inodes = new Dictionary<ulong, DarWriter.Kept>();
     foreach (var e in source.Entries) {
       if (Dropped(e))
         continue;
-      items.Add(Keep(source, e));
+      items.Add(Keep(source, e, inodes));
     }
     items.AddRange(add.Select(DarFormatDescriptor.ToItem));
 
@@ -142,16 +147,17 @@ internal static partial class DarEditor {
   /// A kept entry, after its data passed its checksum; refused when it carries what the writer
   /// cannot reproduce exactly.
   /// </summary>
-  private static DarWriter.Item Keep(DarArchive source, DarEntry e) {
+  private static DarWriter.Item Keep(DarArchive source, DarEntry e, Dictionary<ulong, DarWriter.Kept> inodes) {
     string? why = null;
+    var version = source.Trailer;
     if (e.Status != DarSavedStatus.Saved)
       why = $"its data is not in this archive ({e.Status})";
-    else if (e.HardLinkLabel is not null)
-      why = "it is a hard link";
-    else if (e.HasExtendedAttributes)
-      why = "it has extended attributes";
-    else if (e.HasFilesystemAttributes)
-      why = "it has file-system specific attributes";
+    else if (e.HardLinkLabel is not null && e.Kind != DarEntryKind.File)
+      why = $"it is a hard-linked {e.Kind}";
+    else if (e.Ea is not null && !version.AtLeast(10, 1))
+      why = $"it has extended attributes, whose layout is measured from format 10.1 on, not in format {version.Major}.{version.Minor}";
+    else if (e.FsaFamilies is not null && !version.AtLeast(11, 3))
+      why = $"it has file-system specific attributes, whose layout is measured in format 11.3, not in format {version.Major}.{version.Minor}";
     else if (e.Kind is not (DarEntryKind.Directory or DarEntryKind.File or DarEntryKind.Symlink))
       why = $"it is a {e.Kind}";
     else if ((e.RawDataFlags & DarArchive.DataDeltaSignature) != 0)
@@ -169,21 +175,33 @@ internal static partial class DarEditor {
       Gid = e.Gid,
       Changed = e.LastChange,
       LinkTarget = e.LinkTarget,
+      HardLink = e.HardLinkLabel,
+    };
+    // the attributes are read (and checked) once per inode, the data too: a hard link's further
+    // names share them with the name that carries the inode
+    var shared = e.HardLinkLabel is { } label && inodes.TryGetValue(label, out var known) ? known : null;
+    var kept = shared ?? new DarWriter.Kept(e.RawInode) {
+      InodeHead = e.InodeHead,
+      Ea = e.Ea is { } ea ? new DarWriter.Attributes(ea.Size, source.ReadAttributeBlock(ea, compressed: true, e.Path), ea.Checksum) : null,
+      FsaFamilies = e.FsaFamilies,
+      Fsa = e.Fsa is { } fsa ? new DarWriter.Attributes(fsa.Size, source.ReadAttributeBlock(fsa, compressed: false, e.Path), fsa.Checksum) : null,
     };
     if (kind != DarWriter.ItemKind.File)
-      return item with { Kept = new DarWriter.Kept(e.RawInode) };
+      return item with { Kept = kept };
+    if (shared != null)
+      return item with { Length = (long)e.Size, Kept = shared };
     // verify before carrying over: a damaged file must not travel on under its old checksum
     source.CopyData(e, Stream.Null);
-    return item with {
-      Length = (long)e.Size,
-      Kept = new DarWriter.Kept(e.RawInode) {
-        OpenStored = () => source.OpenStored(e),
-        Size = e.Size,
-        StorageSize = e.StorageSize,
-        DataFlags = e.RawDataFlags,
-        Algorithm = e.Algorithm,
-        Checksum = e.Checksum,
-      },
+    kept = kept with {
+      OpenStored = () => source.OpenStored(e),
+      Size = e.Size,
+      StorageSize = e.StorageSize,
+      DataFlags = e.RawDataFlags,
+      Algorithm = e.Algorithm,
+      Checksum = e.Checksum,
     };
+    if (e.HardLinkLabel is { } first)
+      inodes[first] = kept;
+    return item with { Length = (long)e.Size, Kept = kept };
   }
 }
