@@ -18145,6 +18145,7 @@ Creator for a Reiser4 filesystem image that starts from what `mkfs.reiser4 -fffy
 | `FileBody` | `Reiser4FileBody FileBody { get; set; }` | How regular files are stored. `Profile` follows the captured mkfs profile, whose root names cryptcompress for new files. |
 | `Label` | `string Label { get; set; }` | Customisable label written to the master SB (NUL-padded to 16 bytes; longer strings are truncated; null = empty/zero). |
 | `MkfsId` | `uint? MkfsId { get; set; }` | Optional 32-bit mkfs identifier. When null, a random value is drawn from `Shared`. |
+| `ShortKeys` | `bool ShortKeys { get; set; }` | Writes three-word ("short") keys instead of the default four-word ones, as `mkfs.reiser4 -o key=key_short` would. Only a kernel compiled with `REISER4_LARGE_KEY=0` mounts such a volume, and a reiser4progs 1.2.2 `mkfs.reiser4` cannot make one without a fix (`docs/REISER4-NATIVE-PROFILE.md`, "Short keys"). |
 | `Uuid` | `byte[] Uuid { get; set; }` | Optional 16-byte UUID. When null, a random Guid is used. |
 | `VolumeBlockSize` | `int VolumeBlockSize { get; set; }` | The block size of the volume to write: 512, 1024, 2048, 4096 (the default) or 8192, the sizes `mkfs.reiser4 -b` accepts. The fixed blocks are the 4096-byte captures cut to this size with the block size field patched in, which is what `mkfs.reiser4 -b` writes at each of them; the tree is laid out in nodes of this size. |
 | `AddDirectory` | `void AddDirectory(string name, FileMetadata metadata = null)` | Retains an explicit directory, including an empty directory. |
