@@ -33,6 +33,10 @@ namespace FileSystem.Refs;
 /// </remarks>
 internal static class RefsInPlaceMkdir {
   private const int HeaderInnerNode = 0xA8;       // the embedded node inside a directory header value
+  private const uint Hidden = 0x2;
+  private const uint SystemFile = 0x4;
+  /// <summary>Read-only, hidden, system and archive: attribute bits a new directory does not take from its template.</summary>
+  private const uint PlainDirectoryMask = 0x1 | Hidden | SystemFile | 0x20;
 
   public static void Create(Stream image, string path) {
     ArgumentNullException.ThrowIfNull(image);
@@ -74,9 +78,20 @@ internal static class RefsInPlaceMkdir {
     var now = (ulong)DateTime.UtcNow.ToFileTimeUtc();
     var header = RewriteNameRecord(template.HeaderValue, template.NameRecord, name, parentOid);
     for (var o = 0x28; o < 0x48; o += 8) BinaryPrimitives.WriteUInt64LittleEndian(header.AsSpan(o), now);
+    // A new directory is a plain one: the template's read-only, hidden, system and archive bits
+    // are not passed on (System Volume Information is the only template a fresh volume has), and
+    // a hidden or system template's security descriptor gives way to the parent's (header +0x50).
+    var templateAttributes = BinaryPrimitives.ReadUInt32LittleEndian(template.NameValue.AsSpan(0x40));
+    var attributes = templateAttributes & ~PlainDirectoryMask;
+    if ((templateAttributes & (Hidden | SystemFile)) != 0
+        && rows.FirstOrDefault(static r => r.Key.Length == 4 && BinaryPrimitives.ReadUInt32LittleEndian(r.Key) == 0x10) is { } parentHeader
+        && parentHeader.Value.Length >= 0x58)
+      parentHeader.Value.AsSpan(0x50, 8).CopyTo(header.AsSpan(0x50));
     if (legacy) {
-      BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(0x48), BinaryPrimitives.ReadUInt32LittleEndian(template.NameValue.AsSpan(0x40)));
+      BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(0x48), attributes);
       BinaryPrimitives.WriteUInt64LittleEndian(header.AsSpan(0x80), 1);
+    } else {
+      BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(0x48), BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(0x48)) & ~PlainDirectoryMask);
     }
     var page = BuildPage(template.Page, template.HeaderRowOffset, header, virtualLcns, oid);
 
@@ -90,6 +105,7 @@ internal static class RefsInPlaceMkdir {
 
     var nameValue = template.NameValue.ToArray();
     BinaryPrimitives.WriteUInt64LittleEndian(nameValue.AsSpan(0x08), oid);
+    BinaryPrimitives.WriteUInt32LittleEndian(nameValue.AsSpan(0x40), attributes);
     for (var o = 0x10; o < 0x30; o += 8) BinaryPrimitives.WriteUInt64LittleEndian(nameValue.AsSpan(o), now);
 
     var parentPage = tree.LeafFor(nameKey, collation);
