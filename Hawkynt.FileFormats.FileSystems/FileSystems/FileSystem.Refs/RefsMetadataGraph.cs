@@ -369,6 +369,27 @@ internal sealed class RefsMetadataGraph {
     if (consumed != page.Length) throw new InvalidDataException("ReFS metadata page write was incomplete.");
   }
 
+  /// <summary>
+  /// Every page reference (in a parent page or the checkpoint) whose stored digest does not
+  /// match the page it names, as "child@parent" strings; empty when the graph is consistent.
+  /// </summary>
+  internal IReadOnlyList<string> FindStaleReferences() {
+    var stale = new List<string>();
+    var checkpoint = this.ReadCheckpoint();
+    foreach (var (child, parents) in this._parents) {
+      var page = this.ReadPage(child);
+      foreach (var parent in parents) {
+        var holder = parent.IsCheckpoint ? checkpoint : this.ReadPage(parent.ParentHead);
+        if (parent.ReferenceOffset < 0 || parent.ReferenceOffset + parent.ReferenceLength > holder.Length) { stale.Add($"{child:X}@{parent.ParentHead:X} (out of range)"); continue; }
+        var stored = holder.AsSpan(parent.ReferenceOffset, parent.ReferenceLength).ToArray();
+        var expected = stored.ToArray();
+        RefsChecksum.RefreshPageReference(expected, page);
+        if (!stored.AsSpan().SequenceEqual(expected)) stale.Add($"{child:X}@{parent.ParentHead:X}");
+      }
+    }
+    return stale;
+  }
+
   private byte[] ReadCheckpoint() {
     var page = new byte[this._metadata.PageSize];
     var clusters = this._metadata.PageSize / this._metadata.ClusterSize;

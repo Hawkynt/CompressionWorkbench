@@ -17,6 +17,19 @@ namespace FileSystem.Refs;
 internal static class RefsDirectoryRows {
   public const int FileNumberOffset = 0x80;
 
+  /// <summary>
+  /// The directory's object-table row (root 0, key [u64 0, oid u64]) and where in its value the
+  /// last file number handed out sits: +0xC8 on ReFS 3.7 (248-byte value), +0x48 on ReFS 3.14
+  /// (80-byte value) — measured equal to the directory header's counter and to the highest
+  /// file-number row on Windows-formatted volumes.
+  /// </summary>
+  public static (RefsBTreeRow Row, int CounterOffset)? ObjectRow(RefsMetadataReader metadata, ulong oid) {
+    var row = metadata.WalkRoot(0).FirstOrDefault(r => r.Key.Length >= 16 && BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(8)) == oid);
+    if (row is null) return null;
+    var offset = metadata.Header.MinorVersion >= 14 ? 0x48 : 0xC8;
+    return row.Value.Length >= offset + 8 ? (row, offset) : null;
+  }
+
   public static ulong FileNumber(byte[] nameRowValue)
     => nameRowValue.Length >= FileNumberOffset + 8 ? BinaryPrimitives.ReadUInt64LittleEndian(nameRowValue.AsSpan(FileNumberOffset)) : 0;
 
