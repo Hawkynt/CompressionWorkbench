@@ -17,7 +17,10 @@ namespace Compression.Core.Dictionary.ArcDistill;
 /// Symbols 0–255 are literals, 256 ends the data, <c>s ≥ 257</c> copies <c>s − 254</c> bytes.
 /// After a length, a fixed 64-symbol offset code gives the high part; then 0–7 raw bits,
 /// as many as the output position needs (0 below 4, 7 from 4036 on); distance =
-/// <c>(high &lt;&lt; bits) + raw + 1</c>.
+/// <c>(high &lt;&lt; bits) + raw + 1</c>. A distance reaching before the first byte reads
+/// spaces (0x20): the window starts out filled with them (described by Jason Summers,
+/// "ARC/PAK's Distilled compression scheme", 2021; confirmed by the stored CRC-16 of PAK 2.51's
+/// own order forms, which XADMaster does not decode).
 /// </para>
 /// <para>
 /// Converted from The Unarchiver's <c>XADARCDistillHandle</c> (XADMaster, LGPL-2.1); the
@@ -45,6 +48,9 @@ public sealed class ArcDistillBuildingBlock : IBuildingBlock {
   private const int MaxMatch = 64;
   private const int MaxNodes = 0x274;
   private const int WindowSize = 8192;
+
+  /// <summary>The byte a match reads when it reaches before the start of the data.</summary>
+  private const byte Prehistory = 0x20;
 
   // Offset prefix code: codes are given least-significant bit first.
   private static readonly int[] OffsetLengths = [
@@ -156,11 +162,12 @@ public sealed class ArcDistillBuildingBlock : IBuildingBlock {
         throw new InvalidDataException("Distill: invalid offset code.");
       var extra = ExtraBits(pos);
       var distance = (offsetSymbol << extra) + r.Bits(extra) + 1;
-      if (distance > pos)
-        throw new InvalidDataException("Distill: match reaches before the start of the data.");
+      // A match may reach before the first byte: PAK's history window starts out filled with
+      // spaces, and PAK itself emits such matches (NoGate's PAK 2.51 order forms carry them; every
+      // such member then passes its stored CRC-16 only when those bytes are 0x20).
       var end = Math.Min(maxOutput, pos + length);
       Grow(ref output, end, maxOutput);
-      for (; pos < end; ++pos) output[pos] = output[pos - distance];
+      for (; pos < end; ++pos) output[pos] = pos < distance ? Prehistory : output[pos - distance];
     }
     return output.AsSpan(0, pos).ToArray();
   }
