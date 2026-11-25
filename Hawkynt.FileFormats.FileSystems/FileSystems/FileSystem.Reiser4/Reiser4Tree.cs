@@ -13,14 +13,16 @@ namespace FileSystem.Reiser4;
 /// </summary>
 /// <remarks>
 /// <para>A node is a 28-byte header (32 for node41, whose last four bytes are a CRC-32C of the
-/// rest), item bodies growing up from there, and an array of 38-byte item headers growing down
-/// from the node's end — each a four-word key, the body's offset, flags, and the item plugin.
+/// rest), item bodies growing up from there, and an array of item headers growing down from the
+/// node's end — each a key (four words, or three on a short-key volume: 38 or 30 bytes a header),
+/// the body's offset, flags, and the item plugin.
 /// Items sit in key order. A leaf never straddles a twig extent: the leaf run is ended before an
 /// extent's key and resumed after it.</para>
 /// </remarks>
 internal static class Reiser4Tree {
 
   internal const int NodeHeaderBytes = 28;
+  /// <summary>An item header on a volume of large keys (<see cref="Reiser4KeyShape.ItemHeaderBytes" /> in general).</summary>
   internal const int ItemHeaderBytes = 38;
   internal const int NodeMagic = 0x52344653;
 
@@ -43,7 +45,8 @@ internal static class Reiser4Tree {
     var blockSize = layout.BlockSize;
     var headerBytes = plan.NodePlugin == 1 ? 32 : NodeHeaderBytes;
     var capacity = blockSize - headerBytes;
-    var maxBody = capacity - ItemHeaderBytes;
+    var keys = plan.Keys;
+    var maxBody = capacity - keys.ItemHeaderBytes;
 
     var reserved = layout.BackupCopies(reserveFor).ToHashSet();
     var cursor = layout.FirstData;
@@ -59,7 +62,7 @@ internal static class Reiser4Tree {
     foreach (var obj in plan.Objects) {
       items.Add(new Item(obj.StatKey, Reiser4ItemPlugin.StatData, obj.Stat));
       if (obj.IsDirectory) {
-        items.AddRange(DirectoryItems(obj, maxBody));
+        items.AddRange(DirectoryItems(obj, maxBody, keys));
         continue;
       }
       foreach (var (key, plugin, body) in obj.Items) {
@@ -114,7 +117,7 @@ internal static class Reiser4Tree {
     var pending = new List<Item>();
     var firstLeaf = true;
     void FlushLeaves() {
-      foreach (var group in Pack(pending, capacity)) {
+      foreach (var group in Pack(pending, capacity, keys)) {
         var block = firstLeaf ? layout.FirstLeaf : Allocate();
         firstLeaf = false;
         nodes.Add(block, EncodeNode(group, plan, headerBytes, 1));
@@ -133,7 +136,7 @@ internal static class Reiser4Tree {
     ushort level = 2;
     var parentItems = twigItems;
     while (true) {
-      var groups = Pack(parentItems, capacity).ToList();
+      var groups = Pack(parentItems, capacity, keys).ToList();
       if (groups.Count == 1) {
         nodes.Add(layout.Root, EncodeNode(groups[0], plan, headerBytes, (byte)level));
         break;
@@ -201,7 +204,7 @@ internal static class Reiser4Tree {
   }
 
   /// <summary>The cde40 items of a directory: its entries in key order, packed into items that fit a node.</summary>
-  private static IEnumerable<Item> DirectoryItems(Reiser4PlanObject directory, int maxBody) {
+  private static IEnumerable<Item> DirectoryItems(Reiser4PlanObject directory, int maxBody, Reiser4KeyShape keys) {
     var entries = directory.Entries.Select(static (entry, index) => (entry, index)).ToList();
     entries.Sort(static (a, b) => {
       var c = a.entry.Ordering.CompareTo(b.entry.Ordering);
@@ -211,14 +214,13 @@ internal static class Reiser4Tree {
       c = a.entry.Offset.CompareTo(b.entry.Offset);
       return c != 0 ? c : a.index.CompareTo(b.index);
     });
-    const int unitHeaderBytes = 26;
-    const int targetKeyBytes = 24;
+    var unitHeaderBytes = keys.UnitHeaderBytes;
     var first = 0;
     while (first < entries.Count) {
       var last = first;
       var bodySize = 2;
       while (last < entries.Count) {
-        var entrySize = unitHeaderBytes + targetKeyBytes + (entries[last].entry.Hashed ? entries[last].entry.Name.Length + 1 : 0);
+        var entrySize = keys.EntryBytes(entries[last].entry);
         if (bodySize + entrySize > maxBody) break;
         bodySize += entrySize;
         ++last;
@@ -230,14 +232,10 @@ internal static class Reiser4Tree {
       for (var i = first; i < last; ++i) {
         var entry = entries[i].entry;
         var header = 2 + (i - first) * unitHeaderBytes;
-        BinaryPrimitives.WriteUInt64LittleEndian(body.AsSpan(header), entry.Ordering);
-        BinaryPrimitives.WriteUInt64LittleEndian(body.AsSpan(header + 8), entry.ObjectId);
-        BinaryPrimitives.WriteUInt64LittleEndian(body.AsSpan(header + 16), entry.Offset);
-        BinaryPrimitives.WriteUInt16LittleEndian(body.AsSpan(header + 24), checked((ushort)unit));
-        BinaryPrimitives.WriteUInt64LittleEndian(body.AsSpan(unit), entry.Target.Word0);
-        BinaryPrimitives.WriteUInt64LittleEndian(body.AsSpan(unit + 8), entry.Target.Ordering);
-        BinaryPrimitives.WriteUInt64LittleEndian(body.AsSpan(unit + 16), entry.Target.ObjectId);
-        unit += targetKeyBytes;
+        keys.WriteEntryId(entry, body.AsSpan(header));
+        BinaryPrimitives.WriteUInt16LittleEndian(body.AsSpan(header + keys.EntryIdBytes), checked((ushort)unit));
+        keys.WriteTarget(entry.Target, body.AsSpan(unit));
+        unit += keys.TargetBytes;
         if (entry.Hashed) {
           entry.Name.CopyTo(body.AsSpan(unit));
           unit += entry.Name.Length + 1;
@@ -251,8 +249,8 @@ internal static class Reiser4Tree {
   }
 
   /// <summary>The body bytes of a directory's entries as its stat data's "bytes" counts them.</summary>
-  internal static ulong DirectoryBytes(IEnumerable<Reiser4DirEntry> entries)
-    => (ulong)entries.Sum(static e => 26 + 24 + (e.Hashed ? e.Name.Length + 1 : 0));
+  internal static ulong DirectoryBytes(IEnumerable<Reiser4DirEntry> entries, Reiser4KeyShape keys)
+    => (ulong)entries.Sum(e => keys.EntryBytes(e));
 
   /// <summary>A byte range of <paramref name="payload" />, read lazily.</summary>
   internal static FilePayload Slice(FilePayload payload, long offset, long length) {
@@ -283,11 +281,11 @@ internal static class Reiser4Tree {
     return body;
   }
 
-  private static IEnumerable<List<Item>> Pack(IReadOnlyList<Item> items, int capacity) {
+  private static IEnumerable<List<Item>> Pack(IReadOnlyList<Item> items, int capacity, Reiser4KeyShape keys) {
     var group = new List<Item>();
     var bytes = 0;
     foreach (var item in items) {
-      var need = checked(item.Body.Length + ItemHeaderBytes);
+      var need = checked(item.Body.Length + keys.ItemHeaderBytes);
       if (need > capacity) throw new InvalidDataException("Reiser4: an indivisible item exceeds node capacity.");
       if (bytes + need > capacity) {
         yield return group;
@@ -303,19 +301,21 @@ internal static class Reiser4Tree {
   private static byte[] EncodeNode(IReadOnlyList<Item> items, Reiser4Plan plan, int headerBytes, byte level) {
     var blockSize = plan.Layout.BlockSize;
     var node = new byte[blockSize];
+    var keys = plan.Keys;
+    var itemHeaderBytes = keys.ItemHeaderBytes;
     var at = headerBytes;
     for (var i = 0; i < items.Count; ++i) {
       var item = items[i];
       item.Body.CopyTo(node.AsSpan(at));
-      var header = blockSize - (i + 1) * ItemHeaderBytes;
-      item.Key.Write(node.AsSpan(header));
-      BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(header + 32), checked((ushort)at));
-      BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(header + 36), item.Plugin);
+      var header = blockSize - (i + 1) * itemHeaderBytes;
+      keys.Write(item.Key, node.AsSpan(header));
+      BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(header + keys.KeyBytes), checked((ushort)at));
+      BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(header + keys.KeyBytes + 4), item.Plugin);
       at += item.Body.Length;
     }
     BinaryPrimitives.WriteUInt16LittleEndian(node, plan.NodePlugin);
     BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(2), checked((ushort)items.Count));
-    BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(4), checked((ushort)(blockSize - items.Count * ItemHeaderBytes - at)));
+    BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(4), checked((ushort)(blockSize - items.Count * itemHeaderBytes - at)));
     BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(6), checked((ushort)at));
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(8), plan.NodePlugin == 1 ? Reiser4Volume.Node41Magic : unchecked((uint)NodeMagic));
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(12), plan.MkfsId);

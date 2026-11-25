@@ -35,7 +35,7 @@ internal sealed record Reiser4ItemRef(Reiser4Key Key, ushort Plugin, ushort Flag
 
 /// <summary>One directory entry: the three key words its name produced, the name and its target.</summary>
 internal sealed record Reiser4DirEntry(ulong Ordering, ulong ObjectId, ulong Offset, byte[] Name, Reiser4Key Target) {
-  internal bool Hashed => (this.Ordering & Reiser4NameKeys.LongNameBit) != 0;
+  internal bool Hashed => Reiser4NameKeys.IsHashed(this.Ordering, this.ObjectId);
   internal bool IsDot => this.Name is [(byte)'.'];
   internal bool IsDotDot => this.Name is [(byte)'.', (byte)'.'];
 }
@@ -175,7 +175,6 @@ internal sealed class Reiser4Volume : IDisposable {
   private const uint NodeMagic = 0x52344653;
   /// <summary>The magic a node41 (checksummed) node carries instead.</summary>
   internal const uint Node41Magic = 0x19051966;
-  private const int ItemHeaderBytes = 38;
 
   private readonly ImageAccessor _image;
   private Dictionary<ulong, byte[]> _replayed = [];
@@ -201,6 +200,9 @@ internal sealed class Reiser4Volume : IDisposable {
   /// <summary>Node plugin the format superblock names: 0 node40, 1 node41 (checksummed).</summary>
   internal ushort NodePlugin { get; private set; }
   internal int NodeHeaderBytes => this.NodePlugin == 1 ? 32 : 28;
+
+  /// <summary>Whether the volume's keys are large (four words) or short (three), from the format40 flags.</summary>
+  internal Reiser4KeyShape Keys { get; private set; } = Reiser4KeyShape.Large;
 
   internal ushort TreeHeight { get; private set; }
 
@@ -267,7 +269,7 @@ internal sealed class Reiser4Volume : IDisposable {
     var format = this.ReadBlock(this.Layout.Format);
     if (!format.AsSpan(52, FormatMagic.Length).SequenceEqual(FormatMagic)) return "the format40 superblock is missing";
     var flags = BinaryPrimitives.ReadUInt64LittleEndian(format.AsSpan(72));
-    if ((flags & 1) == 0) return "the volume uses short keys";
+    this.Keys = Reiser4KeyShape.FromFormatFlags(flags);
     this.NodePlugin = (ushort)BinaryPrimitives.ReadUInt32LittleEndian(format.AsSpan(84));
     if (this.NodePlugin > 1) return $"node plugin {this.NodePlugin} is not supported";
     var root = BinaryPrimitives.ReadUInt64LittleEndian(format.AsSpan(16));
@@ -295,14 +297,17 @@ internal sealed class Reiser4Volume : IDisposable {
     if (level == 0 || expectedLevel != 0 && level != expectedLevel) return $"node {block} sits at the wrong tree level";
     var count = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(2));
     var bodiesEnd = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(6));
-    if (count == 0 || count > (this.BlockSize - this.NodeHeaderBytes) / ItemHeaderBytes ||
-        bodiesEnd < this.NodeHeaderBytes || bodiesEnd > this.BlockSize - count * ItemHeaderBytes)
+    var keys = this.Keys;
+    var itemHeaderBytes = keys.ItemHeaderBytes;
+    if (count == 0 || count > (this.BlockSize - this.NodeHeaderBytes) / itemHeaderBytes ||
+        bodiesEnd < this.NodeHeaderBytes || bodiesEnd > this.BlockSize - count * itemHeaderBytes)
       return $"node {block} has a malformed header";
     var headers = new (Reiser4Key Key, ushort Offset, ushort Flags, ushort Plugin)[count];
     for (var i = 0; i < count; ++i) {
-      var at = this.BlockSize - (i + 1) * ItemHeaderBytes;
-      headers[i] = (Reiser4Key.Read(node.AsSpan(at)), BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(at + 32)),
-        BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(at + 34)), BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(at + 36)));
+      var at = this.BlockSize - (i + 1) * itemHeaderBytes;
+      var tail = at + keys.KeyBytes;
+      headers[i] = (keys.Read(node.AsSpan(at)), BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(tail)),
+        BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(tail + 2)), BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(tail + 4)));
       if (headers[i].Offset < this.NodeHeaderBytes || headers[i].Offset > bodiesEnd) return $"node {block} has an item outside its body area";
       if (i > 0 && headers[i].Key.CompareTo(headers[i - 1].Key) < 0) return $"node {block} holds items out of key order";
     }
@@ -390,7 +395,7 @@ internal sealed class Reiser4Volume : IDisposable {
       if (!byObjectId.TryGetValue(directoryId, out var owners) || owners.Count != 1) return "directory entries have no directory";
       foreach (var item in list) {
         var body = this.ReadBody(item);
-        if (DecodeEntries(body, item.Key, owners[0].Entries) is { } entryProblem) return entryProblem;
+        if (DecodeEntries(body, item.Key, owners[0].Entries, this.Keys) is { } entryProblem) return entryProblem;
       }
     }
 
@@ -430,33 +435,31 @@ internal sealed class Reiser4Volume : IDisposable {
     return null;
   }
 
-  private static string? DecodeEntries(byte[] body, Reiser4Key itemKey, List<Reiser4DirEntry> into) {
+  private static string? DecodeEntries(byte[] body, Reiser4Key itemKey, List<Reiser4DirEntry> into, Reiser4KeyShape keys) {
     if (body.Length < 2) return "a directory item is truncated";
     var count = BinaryPrimitives.ReadUInt16LittleEndian(body);
-    var unitsStart = 2 + count * 26;
+    var unitHeaderBytes = keys.UnitHeaderBytes;
+    var targetBytes = keys.TargetBytes;
+    var unitsStart = 2 + count * unitHeaderBytes;
     if (count == 0 || unitsStart > body.Length) return "a directory item is truncated";
     for (var i = 0; i < count; ++i) {
-      var header = 2 + i * 26;
-      var ordering = BinaryPrimitives.ReadUInt64LittleEndian(body.AsSpan(header));
-      var objectId = BinaryPrimitives.ReadUInt64LittleEndian(body.AsSpan(header + 8));
-      var offset = BinaryPrimitives.ReadUInt64LittleEndian(body.AsSpan(header + 16));
-      int unit = BinaryPrimitives.ReadUInt16LittleEndian(body.AsSpan(header + 24));
-      int unitEnd = i + 1 < count ? BinaryPrimitives.ReadUInt16LittleEndian(body.AsSpan(header + 26 + 24)) : body.Length;
-      if (unit < unitsStart || unitEnd < unit + 24 || unitEnd > body.Length) return "a directory unit lies outside its item";
+      var header = 2 + i * unitHeaderBytes;
+      var (ordering, objectId, offset) = keys.ReadEntryId(body.AsSpan(header));
+      int unit = BinaryPrimitives.ReadUInt16LittleEndian(body.AsSpan(header + keys.EntryIdBytes));
+      int unitEnd = i + 1 < count ? BinaryPrimitives.ReadUInt16LittleEndian(body.AsSpan(header + unitHeaderBytes + keys.EntryIdBytes)) : body.Length;
+      if (unit < unitsStart || unitEnd < unit + targetBytes || unitEnd > body.Length) return "a directory unit lies outside its item";
       if (i == 0 && (ordering != itemKey.Ordering || objectId != itemKey.ObjectId || offset != itemKey.Offset))
         return "a directory item's key is not its first entry's";
-      var targetWord0 = BinaryPrimitives.ReadUInt64LittleEndian(body.AsSpan(unit));
-      var target = Reiser4Key.Of(targetWord0 >> 4, Reiser4Key.MinorStatData,
-        BinaryPrimitives.ReadUInt64LittleEndian(body.AsSpan(unit + 8)), BinaryPrimitives.ReadUInt64LittleEndian(body.AsSpan(unit + 16)), 0);
+      var target = keys.ReadTarget(body.AsSpan(unit));
       byte[] name;
-      if ((ordering & Reiser4NameKeys.LongNameBit) != 0) {
-        var stored = body.AsSpan(unit + 24, unitEnd - unit - 24);
+      if (Reiser4NameKeys.IsHashed(ordering, objectId)) {
+        var stored = body.AsSpan(unit + targetBytes, unitEnd - unit - targetBytes);
         var nul = stored.IndexOf((byte)0);
         if (nul <= 0) return "a long directory entry has no stored name";
         name = stored[..nul].ToArray();
       } else {
         name = Reiser4NameKeys.Unpack(ordering, objectId, offset) ?? [];
-        if (unitEnd != unit + 24) return "a short directory entry carries a stored name";
+        if (unitEnd != unit + targetBytes) return "a short directory entry carries a stored name";
       }
       if (name.Length == 0 || name.AsSpan().IndexOf((byte)'/') >= 0) return "a directory entry has an invalid name";
       into.Add(new Reiser4DirEntry(ordering, objectId, offset, name, target));

@@ -53,6 +53,11 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       Description: "How regular files are stored: extents, tails, the kernel's smart policy (tails up to four blocks), " +
         "compressed cryptcompress clusters, or whatever the volume's plugin profile says.",
       IsOptimizationAxis: false),
+    new FormatOptionDescriptor("Keys", "Key size", FormatOptionKind.Enum, "Large",
+      AllowedValues: ["Large", "Short"],
+      Description: "Large (four-word) keys are mkfs.reiser4's default and what distribution kernels mount; short " +
+        "(three-word) keys mount only on a kernel built with REISER4_LARGE_KEY=0.",
+      IsOptimizationAxis: false),
   ];
 
   public string Id => "Reiser4";
@@ -242,7 +247,14 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     if (!string.IsNullOrEmpty(label)) writer.Label = label;
     writer.FileBody = ParseFileBody(options?.GetOption("FileBody", ""));
     writer.VolumeBlockSize = ParseBlockSize(options?.GetOption("BlockSize", ""));
+    writer.ShortKeys = ParseKeys(options?.GetOption("Keys", ""));
   }
+
+  private static bool ParseKeys(string? value) => value?.Trim().ToLowerInvariant() switch {
+    null or "" or "large" => false,
+    "short" => true,
+    _ => throw new NotSupportedException($"Reiser4: unknown key size '{value}' (Large or Short)."),
+  };
 
   private static int ParseBlockSize(string? value) {
     var size = FilesystemSchemaPresets.ParseSize(value);

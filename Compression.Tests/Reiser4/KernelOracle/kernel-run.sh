@@ -9,6 +9,10 @@
 # (default ~/.cache/cwb/reiser4-kernel) together with Ubuntu's busybox-static for the initramfs.
 # Nothing here is a build input: the tests that use it skip when it cannot run.
 #
+# CWB_REISER4_BZIMAGE names a kernel image with Reiser4 and virtio built in instead (no modules are
+# loaded then); the short-key tests use one, because only a kernel compiled with
+# REISER4_LARGE_KEY=0 mounts short-key volumes (docs/REISER4-NATIVE-PROFILE.md, "Short keys").
+#
 # Exit status of a run, so the caller can tell a broken harness or host from a broken image:
 #   0  the guest booted, ran the script and printed ===GUEST-END===
 #   2  the guest never reached ===GUEST-BEGIN=== (qemu or the kernel did not come up: the host)
@@ -22,7 +26,9 @@ K=${CWB_REISER4_KERNEL:-$HOME/.cache/cwb/reiser4-kernel}
 KV=5.4.0-3+reizer4.0.2-cloud-amd64
 DEB_URL='https://sourceforge.net/projects/metztli-reiser4/files/RyzenEpyc_Reiser4-SFRN-4.0.2_Linux-5.4.18-1_for-Debian_Buster/linux-image-5.4.0-3%2Breizer4.0.2-cloud-amd64_5.4.18-1%2Breizer4.0.2_amd64.deb/download'
 
+BZ=${CWB_REISER4_BZIMAGE:-}
 if [ "$1" = "--check" ]; then
+  if [ -n "$BZ" ]; then [ -f "$BZ" ] && [ -x "$K/bb/usr/bin/busybox" ] && command -v qemu-system-x86_64 >/dev/null; exit $?; fi
   [ -f "$K/x/boot/vmlinuz-$KV" ] && [ -x "$K/bb/usr/bin/busybox" ] && command -v qemu-system-x86_64 >/dev/null
   exit $?
 fi
@@ -50,7 +56,7 @@ trap 'cwb_rmtree "$R" "$R.cpio.gz" "$R.log" || echo "cleanup of $R failed" >&2' 
 mkdir -p "$R/bin" "$R/mods" "$R/dev" "$R/proc" "$R/sys" "$R/mnt" "$R/payload"
 cp "$K/bb/usr/bin/busybox" "$R/bin/"
 for a in $("$K/bb/usr/bin/busybox" --list); do [ "$a" = busybox ] || ln -s busybox "$R/bin/$a"; done
-for m in drivers/virtio/virtio.ko drivers/virtio/virtio_ring.ko drivers/virtio/virtio_pci.ko drivers/block/virtio_blk.ko \
+[ -z "$BZ" ] && for m in drivers/virtio/virtio.ko drivers/virtio/virtio_ring.ko drivers/virtio/virtio_pci.ko drivers/block/virtio_blk.ko \
          lib/xxhash.ko lib/zstd/zstd_compress.ko lib/zstd/zstd_decompress.ko crypto/crc32c_generic.ko fs/reiser4/reiser4.ko; do
   cp "$M/$m" "$R/mods/"
 done
@@ -59,9 +65,9 @@ cp "$2" "$R/run.sh"
 cat > "$R/init" <<'EOF'
 #!/bin/busybox sh
 export PATH=/bin
-mount -t proc proc /proc; mount -t sysfs sys /sys; mount -t devtmpfs dev /dev
+mount -t proc proc /proc; mount -t sysfs sys /sys; mount -t devtmpfs dev /dev 2>/dev/null
 echo "===GUEST-BEGIN==="
-for m in virtio virtio_ring virtio_pci virtio_blk xxhash zstd_compress zstd_decompress crc32c_generic reiser4; do
+[ -f /mods/reiser4.ko ] && for m in virtio virtio_ring virtio_pci virtio_blk xxhash zstd_compress zstd_decompress crc32c_generic reiser4; do
   insmod /mods/$m.ko || echo "insmod $m failed"
 done
 sleep 0.3
@@ -77,7 +83,7 @@ ACC=-enable-kvm; [ -w /dev/kvm ] || ACC="-accel tcg"
 T=${CWB_REISER4_KERNEL_TIMEOUT:-1200}
 set +e
 timeout "$T" qemu-system-x86_64 $ACC -m 1024 -nographic -no-reboot \
-  -kernel "$K/x/boot/vmlinuz-$KV" -initrd "$R.cpio.gz" \
+  -kernel "${BZ:-$K/x/boot/vmlinuz-$KV}" -initrd "$R.cpio.gz" \
   -append "console=ttyS0 quiet panic=-1" \
   -drive file="$1",format=raw,if=virtio,cache=unsafe 2>&1 | tr -d '\r' > "$R.log"
 QRC=${PIPESTATUS[0]}
