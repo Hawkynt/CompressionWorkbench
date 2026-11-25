@@ -211,7 +211,12 @@ public sealed class CafFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var memory = new MemoryStream();
     stream.CopyTo(memory);
     var blob = memory.ToArray();
-    var parsed = new CafReader().Read(blob);
+    CafReader.ParsedCaf parsed;
+    try {
+      parsed = new CafReader().Read(blob);
+    } catch (Exception ex) when (AudioPseudoArchive.IsParseFailure(ex)) {
+      return AudioPseudoArchive.Unparsed("FULL.caf", "caf", blob, ex);
+    }
     var entries = new List<AudioPseudoArchive.Entry> { new("FULL.caf", "Container", blob) };
 
     if (parsed.FormatId == "lpcm" && parsed.BitsPerSample is 8 or 16 or 24 or 32 or 64 &&
