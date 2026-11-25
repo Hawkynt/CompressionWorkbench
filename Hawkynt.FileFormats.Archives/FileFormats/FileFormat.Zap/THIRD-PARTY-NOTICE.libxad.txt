@@ -1,0 +1,26 @@
+libxad (ZAP client) - converted to C#
+
+Source:   https://github.com/ashang/libxad (mirror of the libxad sources)
+Revision: dbe67a865207e49cd917ad9170a11b9eaa83998a
+File:     libxad/amiga/source/clients/ZAP.c ($VER: ZAP.c 1.2 (20.08.2001))
+Licence:  GNU Lesser General Public License, version 2.1 or (at your option)
+          any later version. This repository is LGPL-3.0-or-later, which the
+          "or any later version" grant permits; the full LGPL text is in the
+          repository's LICENSE file.
+
+Upstream notice:
+
+  This XAD client is (C) 2000-2001 Stuart Caie <kyzer@4u.net>
+
+  This library is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  Lesser General Public License for more details.
+
+Converted into: ZapReader.cs (header and block layout, the backward LZ77
+decruncher with its checksum, the run-length decoder).
