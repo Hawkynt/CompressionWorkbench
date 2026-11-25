@@ -346,6 +346,43 @@ internal static class ExecutablePackerToolCache {
     return File.Exists(target) ? target : null;
   }
 
+  /// <summary>
+  /// One packed sample of the public chesvectain/PackingData corpus together with the
+  /// unpacked original the corpus ships for it. <c>CWB_PACKINGDATA</c> points at a local
+  /// checkout (the directory holding <c>PackingData/</c> and <c>Notpacked/</c>); otherwise,
+  /// with downloads enabled, the two files are fetched individually. The executables are
+  /// third-party programs and are never committed here.
+  /// </summary>
+  public static (string Packed, string Original)? GetPackingDataPair(string packerFolder, string packedName, string originalName) {
+    var configured = Environment.GetEnvironmentVariable("CWB_PACKINGDATA");
+    if (!string.IsNullOrWhiteSpace(configured)) {
+      var packed = Path.Combine(configured, "PackingData", packerFolder, packedName);
+      var original = Path.Combine(configured, "Notpacked", originalName);
+      return File.Exists(packed) && File.Exists(original) ? (packed, original) : null;
+    }
+
+    if (!DownloadsEnabled)
+      return null;
+
+    const string raw = "https://raw.githubusercontent.com/chesvectain/PackingData/master/";
+    var packedTarget = Path.Combine(Root, "packingdata", packerFolder, packedName);
+    var originalTarget = Path.Combine(Root, "packingdata", "Notpacked", originalName);
+    try {
+      Download(raw + "PackingData/" + Uri.EscapeDataString(packerFolder) + "/" + Uri.EscapeDataString(packedName), packedTarget);
+      Download(raw + "Notpacked/" + Uri.EscapeDataString(originalName), originalTarget);
+    } catch (HttpRequestException) {
+      return null;
+    }
+
+    return File.Exists(packedTarget) && File.Exists(originalTarget) ? (packedTarget, originalTarget) : null;
+  }
+
+  /// <summary>The local PackingData checkout named by <c>CWB_PACKINGDATA</c>, if any.</summary>
+  public static string? GetPackingDataRoot() {
+    var configured = Environment.GetEnvironmentVariable("CWB_PACKINGDATA");
+    return !string.IsNullOrWhiteSpace(configured) && Directory.Exists(Path.Combine(configured, "PackingData")) ? configured : null;
+  }
+
   public static string? GetPackingBoxDatasetPackedRoot() {
     var configured = Environment.GetEnvironmentVariable("CWB_DATASET");
     if (!string.IsNullOrWhiteSpace(configured)) {

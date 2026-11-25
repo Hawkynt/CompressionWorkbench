@@ -102,40 +102,6 @@ public sealed class FsgExecutablePackerHandler : AplibSectionPackerHandler {
 }
 
 /// <summary>
-/// Real unpack handler for PECompact 2 (Bitsum) — an aPLib-capable Win32 PE
-/// compressor whose stub carries a <c>"PEC2"</c> marker and typically renames
-/// sections to <c>.pec1</c>/<c>.pec2</c>. The shared base attempts an aPLib decode
-/// of the packed section (PECompact also supports other codecs via plug-ins, in
-/// which case the handler reports the payload as located but not aPLib-decodable).
-/// </summary>
-public sealed class PeCompactExecutablePackerHandler : AplibSectionPackerHandler {
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
-  public override string Id => "pecompact";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
-  public override string DisplayName => "PECompact aPLib-packed PE";
-  /// <summary>
-  /// Gets the packer label.
-  /// </summary>
-  protected override string PackerLabel => "PECompact";
-
-  /// <summary>
-  /// Performs the detect pe operation.
-  /// </summary>
-  protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
-    var hasMarker = PackerScanner.IndexOfBounded(image, "PEC2"u8, 0x10000) >= 0
-      || PackerScanner.IndexOfBounded(image, "PECompact2"u8, 0x10000) >= 0;
-    var hasSection = PackerScanner.GetPeSections(image).Any(s => s.Name.StartsWith(".pec", StringComparison.OrdinalIgnoreCase));
-    if (hasMarker || hasSection)
-      return (true, hasMarker && hasSection ? 1.0 : 0.85, "");
-    return (false, 0, "PECompact: no 'PEC2' marker or .pec section found.");
-  }
-}
-
-/// <summary>
 /// Real unpack handler for Packman - a Win32 PE compressor that marks its
 /// payload section as <c>.PACKMAN</c>. The shared aPLib base handles the
 /// corpus variant whose section contains a clean aPLib stream.

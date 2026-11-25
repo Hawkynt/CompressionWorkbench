@@ -17200,17 +17200,19 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 #### `PeCompactExecutablePackerHandler`
 
-Real unpack handler for PECompact 2 (Bitsum) — an aPLib-capable Win32 PE compressor whose stub carries a `"PEC2"` marker and typically renames sections to `.pec1`/`.pec2`. The shared base attempts an aPLib decode of the packed section (PECompact also supports other codecs via plug-ins, in which case the handler reports the payload as located but not aPLib-decodable).
+Unpack handler for PECompact 2 (Bitsum) executables packed with its LZMA codec — the layout every sample of the public `chesvectain/PackingData` PECompact corpus uses. The original image's sections come back at their original RVAs with the x86 call/jump filter reversed.
 
-Inherits `AplibSectionPackerHandler`. Implements `IExecutablePackerHandler`.
+Implements `IExecutablePackerHandler`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PeCompactExecutablePackerHandler` | `PeCompactExecutablePackerHandler()` |  |
-| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
-| `Id` | `override string Id { get; }` | Gets the id. |
-| `PackerLabel` | `protected override string PackerLabel { get; }` | Gets the packer label. |
-| `DetectPe` | `protected override ValueTuple<bool, double, string> DetectPe(ReadOnlySpan<byte> image)` | Performs the detect pe operation. |
+| `Capabilities` | `ExecutableUnpackCapabilities Capabilities { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Detect` | `DetectionResult Detect(ReadOnlySpan<byte> image)` |  |
+| `Parse` | `PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection)` |  |
+| `Unpack` | `UnpackResult Unpack(PackedExecutable packed, UnpackOptions options)` |  |
 
 #### `PePackerExecutablePackerHandler`
 

@@ -247,12 +247,12 @@ public class ExecutablePackerFrameworkTests {
     });
   }
 
-  // RLPack is deliberately absent: it carries its own container (a stub-addressed block
-  // table over per-section LZMA/aPLib streams) and is covered by RlPackHandlerTests.
+  // RLPack and PECompact are deliberately absent: each carries its own container (RLPack a
+  // stub-addressed block table, PECompact one LZMA stream behind an aPLib-compressed section
+  // table) and is covered by RlPackHandlerTests and PeCompactHandlerTests.
   private static readonly (string HandlerId, string Marker, string Section)[] AplibPackers = [
     ("fsg", "FSG!", ".fsg"),
     ("aspack", "ASPack", ".aspack"),
-    ("pecompact", "PEC2", ".pec1"),
     ("packman", "PACKMAN", ".PACKMAN"),
     ("enigmavirtualbox", "VirtualBox", ".enigma2"),
   ];

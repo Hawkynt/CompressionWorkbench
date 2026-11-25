@@ -386,7 +386,7 @@ eXPressor,exe,executable,,,,,,,,Y,1,,,,,,MISSING,eXPressor,no descriptor; an Exe
 BeRoEXEPacker,exe,executable,,,,,,,,Y,1,,,,,,MISSING,BeRoEXEPacker,no descriptor; an ExecutablePackerHandler unpacks it (LZMA or aPLib body; 123 of 127 corpus samples verified)
 RLPack,exe,executable,,,,,,,,Y,1,,,,,,MISSING,RLPack,no descriptor; an ExecutablePackerHandler unpacks it (LZMA or aPLib per section; 115 of 125 corpus samples verified)
 WinUpack (Upack),exe,executable,,,,,,,,Y,1,,,,,,MISSING,Upack,no descriptor; an ExecutablePackerHandler unpacks it (range coder + call/jump filter; 107 of 108 corpus samples verified)
-PECompact,exe,executable,,,,,,,,Y,1,,,,,,MISSING,PECompact,no descriptor; an ExecutablePackerHandler locates the payload but does not decode it (a series of compressed blocks; Hawkynt.FileFormats.Archives/README.md)
+PECompact,exe,executable,,,,,,,,Y,1,,,,,,MISSING,PECompact,"no descriptor; the ExecutablePackerHandler decompresses PECompact 2 LZMA payloads, lays the sections out at their RVAs and reverses the call/jump filter: 125 of 127 PackingData samples decompress and the code section is byte-identical to the original for 102 of 107 (docs/PECOMPACT-ON-DISK.md)"
 Flash SWF (incl. compressed SWFc),swf,media,R,,R,,R,,,,3,,Swf,Y,Y,,OK,,
 Flash Video (FLV),flv,media,R,,,,,,,,1,,Flv,Y,Y,,OK,,
 GIF,gif,media,,,,R,,,,,1,,Gif,Y,,,OK,,
