@@ -241,29 +241,40 @@ public sealed class XzStream : CompressionStream {
   private bool TryStartNextStream() {
     if (!InnerStream.CanSeek) return false;
 
-    // Streams are separated by padding to a 4-byte multiple, then the 6-byte magic.
+    // Streams may be followed by stream padding: null bytes in a multiple of four (xz file
+    // format 1.2.1 §2.2), which xz itself rejects otherwise; then either the end of the file or
+    // the 6-byte magic of the next stream.
     Span<byte> magic = stackalloc byte[6];
     while (true) {
-      var start = InnerStream.Position;
+      var padding = 0L;
+      int b;
+      while ((b = InnerStream.ReadByte()) == 0)
+        ++padding;
+      if (padding % 4 != 0)
+        throw new InvalidDataException($"XZ stream padding of {padding} bytes is not a multiple of four.");
+      if (b < 0)
+        return false;
+
+      var start = InnerStream.Position - 1;
+      InnerStream.Position = start;
       var read = 0;
       while (read < magic.Length) {
         var n = InnerStream.Read(magic[read..]);
-        if (n <= 0) return false;
+        if (n <= 0) break;
         read += n;
       }
 
-      // Skip 4-byte zero padding blocks between streams.
-      if (magic[0] == 0 && magic[1] == 0 && magic[2] == 0 && magic[3] == 0) {
-        InnerStream.Position = start + 4;
-        continue;
+      // Anything else after the streams is left where it is (an embedding container's data).
+      if (read < magic.Length || !magic.SequenceEqual(XzConstants.StreamHeaderMagic)) {
+        InnerStream.Position = start;
+        return false;
       }
-
-      for (var i = 0; i < XzConstants.StreamHeaderMagic.Length; ++i)
-        if (magic[i] != XzConstants.StreamHeaderMagic[i]) return false;
 
       InnerStream.Position = start;
       DecompressAll();
-      return this._decompressedData is { Length: > 0 };
+      // An empty stream is valid in the middle of a file too: keep looking past it.
+      if (this._decompressedData is { Length: > 0 })
+        return true;
     }
   }
 
