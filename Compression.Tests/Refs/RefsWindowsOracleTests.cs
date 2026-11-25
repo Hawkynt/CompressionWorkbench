@@ -379,6 +379,60 @@ public sealed class RefsWindowsOracleTests {
     }
   }
 
+  [Test, Category("ExternalFsInterop")]
+  public void GivenADirectoryOverSeveralPages_WhenFilesAreAddedUntilALeafSplits_ThenEveryFileIsReadBack([ValueSource(nameof(Volumes))] string volume) {
+    var oracle = Load(volume);
+    var copy = Path.Combine(Path.GetTempPath(), "cwb_refs_split_" + Guid.NewGuid().ToString("N")[..8] + ".refs");
+    File.Copy(ImagePath(oracle), copy);
+    try {
+      var descriptor = new RefsFormatDescriptor();
+      var expected = oracle.Files.ToDictionary(static f => f.Path, static f => f.Sha256);
+      ulong LeafCount(Stream s) {
+        var md = RefsMetadataReader.Open(s);
+        var page = md.TryReadReferencedPage(RefsInPlaceRename.ResolveDirectory(md, "many").Root, virtualAddresses: true)!;
+        return System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(page.AsSpan(0x68));
+      }
+      ulong leavesBefore;
+      using (var s = File.OpenRead(copy)) leavesBefore = LeafCount(s);
+      for (var i = 0; i < SplitFiles; ++i) {
+        var name = $"many/f015-{i:D2}.bin";
+        var data = Pattern(5000 + i);
+        using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
+          try {
+            descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory(name, data)]);
+          } catch (NotSupportedException refused) when (oracle.RefsVersion == "3.14" && oracle.Variant == "cluster64k") {
+            Assert.Ignore($"{volume}: {refused.Message}");
+          }
+        }
+        expected[name] = Convert.ToHexStringLower(SHA256.HashData(data));
+      }
+      using var check = File.OpenRead(copy);
+      Assert.That(LeafCount(check), Is.GreaterThan(leavesBefore), "a leaf was split");
+      var metadata = RefsMetadataReader.Open(check);
+      Assert.That(new RefsMetadataGraph(check, metadata).FindStaleReferences(), Is.Empty);
+      var tree = RefsDirectoryTree.Open(metadata, RefsInPlaceRename.ResolveDirectory(metadata, "many").Root);
+      var root = metadata.TryReadReferencedPage(RefsInPlaceRename.ResolveDirectory(metadata, "many").Root, virtualAddresses: true)!;
+      Assert.That(System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(root.AsSpan(0x70)), Is.EqualTo((ulong)tree.Rows.Count));
+      Assert.That(System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(root.AsSpan(0x68)), Is.EqualTo((ulong)tree.Leaves.Count()));
+      var outDir = Path.Combine(Path.GetTempPath(), "cwb_refs_split_x_" + Guid.NewGuid().ToString("N")[..8]);
+      try {
+        check.Position = 0;
+        descriptor.Extract(check, outDir, null, null);
+        Assert.Multiple(() => {
+          foreach (var (path, sha) in expected)
+            Assert.That(Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Path.Combine(outDir, path.Replace('/', Path.DirectorySeparatorChar))))), Is.EqualTo(sha), path);
+        });
+      } finally {
+        try { Directory.Delete(outDir, recursive: true); } catch { /* best effort */ }
+      }
+    } finally {
+      File.Delete(copy);
+    }
+  }
+
+  /// <summary>Enough 5 KB files sorting into one leaf of "many" to split it on every volume kind.</summary>
+  private const int SplitFiles = 24;
+
   private static byte[] Pattern(int length) {
     var bytes = new byte[length];
     for (var i = 0; i < length; ++i) bytes[i] = (byte)(i * 31 + (i >> 9));

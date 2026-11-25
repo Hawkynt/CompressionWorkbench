@@ -14,8 +14,9 @@ namespace FileSystem.Refs;
 /// row count at 0x70 (one leaf: 0 and the leaf's rows), which Windows keeps current.</item>
 /// </list>
 /// A row goes to the first leaf whose separator is not below its key. Leaves are edited in
-/// place; one without room would need a split, and one that would empty would need its
-/// separator removed — both are refused here.
+/// place; a full leaf below the root is split (<see cref="PlanSplit"/>). Refused: growing a
+/// one-page directory a level, a root without room for another leaf, and emptying a leaf
+/// (its separator would have to go).
 /// </summary>
 internal sealed class RefsDirectoryTree {
   private readonly List<(byte[] Separator, ulong Leaf)> _children;
@@ -96,6 +97,72 @@ internal sealed class RefsDirectoryTree {
   public void RequireNotEmptied(ulong leaf, int removed) {
     if (!this.IsSingleLeaf && this.RowsIn(leaf) <= removed)
       throw new NotSupportedException("ReFS: the edit would empty a page of the directory; merging pages is not made in place.");
+  }
+
+  /// <summary>
+  /// A planned split of a full leaf below the root: the leaf keeps its first rows, a new page
+  /// (next to it, see <see cref="RefsMetadataPageAllocation"/>) takes the rest, and the root
+  /// gains an inner row whose separator is the kept half's last key and points at the old leaf,
+  /// while the old inner row — its separator still bounding the moved rows — points at the new
+  /// page; the root's leaf count (0x68) goes up by one. The halves are chosen so the pending
+  /// rows fit in the halves their keys fall into.
+  /// </summary>
+  public sealed record Split(ulong Leaf, int Keep, byte[] Separator, RefsMetadataPageAllocation Page, RefsDirectoryTree Tree) {
+    public IReadOnlyList<ulong> Clusters => this.Page.Physical;
+
+    /// <summary>Writes the split: the new page, the shortened leaf, the root, then every checksum up to the checkpoint.</summary>
+    public ulong Apply(Stream image, RefsMetadataReader metadata, RefsMetadataGraph graph) {
+      var leafPage = graph.ReadPage(this.Leaf);
+      var rows = RefsPageEditor.ReadRows(leafPage).Rows;
+      var right = RefsPageEditor.PackRows(this.Page.Stamp(leafPage), rows.Skip(this.Keep).ToList());
+      var left = RefsPageEditor.PackRows(leafPage, rows.Take(this.Keep).ToList());
+      var rootPage = graph.ReadPage(this.Tree.RootPage);
+      var inner = RefsPageEditor.ReadRows(rootPage, allowInner: true).Rows.ToList();
+      var at = this.Tree._children.FindIndex(c => c.Leaf == this.Leaf);
+      var oldRow = inner[at];
+      var rightReference = oldRow.Value.ToArray();
+      for (var i = 0; i < 4; ++i)
+        BinaryPrimitives.WriteUInt64LittleEndian(rightReference.AsSpan(i * 8), i < this.Page.Virtual.Count ? this.Page.Virtual[i] : 0);
+      RefsChecksum.RefreshPageReference(rightReference, right);
+      inner[at] = oldRow with { Value = rightReference };
+      inner.Insert(at, new RefsPageEditor.LiveRow(0xFFFF0000u, 0, 0, this.Separator, oldRow.Value.ToArray()));
+      var newRoot = RefsPageEditor.PackRows(rootPage, inner, allowInner: true);
+      BinaryPrimitives.WriteUInt64LittleEndian(newRoot.AsSpan(0x68), BinaryPrimitives.ReadUInt64LittleEndian(newRoot.AsSpan(0x68)) + 1);
+
+      this.Page.Claim(image, metadata, right);
+      graph.WritePage(this.Leaf, left);
+      graph.WritePage(this.Tree.RootPage, newRoot);
+      var head = this.Page.Physical[0];
+      new RefsMetadataGraph(image, RefsMetadataReader.Open(image)).RefreshChecksumPaths([this.Leaf, head]);
+      return head;
+    }
+  }
+
+  /// <summary>Plans the split of <paramref name="leaf"/> that makes room for the <paramref name="pending"/> rows (key, bytes with index entry); refuses (writing nothing) when none does.</summary>
+  public Split PlanSplit(RefsMetadataReader metadata, RefsMetadataGraph graph, ulong leaf, IReadOnlyList<(byte[] Key, int Cost)> pending, RefsDirectoryCollation collation) {
+    if (this.IsSingleLeaf)
+      throw new NotSupportedException("ReFS: the directory's only page is full; growing it a level is not made in place.");
+    var (rows, capacity) = RefsPageEditor.ReadRows(graph.ReadPage(leaf));
+    if (rows.Count < 2) throw new NotSupportedException("ReFS: the directory page is full with fewer than two rows; it is not split.");
+    var costs = rows.Select(static r => RefsPageEditor.RowCost(r.Key.Length, r.Value.Length)).ToArray();
+    var positions = pending.Select(p => (Position: rows.Count(r => collation.Compare(r.Key, p.Key) < 0), p.Cost)).ToList();
+    var best = -1;
+    var bestBalance = int.MaxValue;
+    for (var keep = 1; keep < rows.Count; ++keep) {
+      var left = costs.Take(keep).Sum() + positions.Where(p => p.Position < keep).Sum(static p => p.Cost);
+      var right = costs.Skip(keep).Sum() + positions.Where(p => p.Position >= keep).Sum(static p => p.Cost);
+      if (left > capacity || right > capacity) continue;
+      var balance = Math.Abs(left - right);
+      if (balance < bestBalance) { best = keep; bestBalance = balance; }
+    }
+    if (best < 0) throw new NotSupportedException("ReFS: no split of the directory page makes room for the new row.");
+    var separator = rows[best - 1].Key;
+    var (inner, innerCapacity) = RefsPageEditor.ReadRows(graph.ReadPage(this.RootPage), allowInner: true);
+    var innerCost = inner.Sum(static r => RefsPageEditor.RowCost(r.Key.Length, r.Value.Length)) + RefsPageEditor.RowCost(separator.Length, inner[0].Value.Length);
+    if (innerCost > innerCapacity)
+      throw new NotSupportedException("ReFS: the directory's root page has no room for another leaf; growing it a level is not made in place.");
+    var page = RefsMetadataPageAllocation.Plan(metadata, graph, graph.GetPageSlots(leaf));
+    return new Split(leaf, best, separator, page, this);
   }
 
   private static uint U32(byte[] b, int o) => BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(o, 4));

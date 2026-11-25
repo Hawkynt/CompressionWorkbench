@@ -68,25 +68,8 @@ internal static class RefsInPlaceMkdir {
 
     // The page: clusters, allocation, bytes.
     var graph = new RefsMetadataGraph(image, metadata);
-    var pageClusters = Math.Max(1, metadata.PageSize / metadata.ClusterSize);
-    var templateClusters = template.PagePhysical;
-    var allocator = RefsAllocatorWriter.WindowsMedium(metadata, graph, templateClusters)
-      ?? throw new NotSupportedException("ReFS: the volume's Medium Allocator is not one this editor writes.");
-    var (rowStart, rowLength) = allocator.RangeOfPhysical(templateClusters[0])
-      ?? throw new NotSupportedException("ReFS: the allocator row holding directory pages was not found.");
-    // Metadata pages start on a page boundary (every directory page Windows wrote does).
-    List<ulong>? physical = null;
-    for (var candidate = (rowStart + (ulong)pageClusters - 1) / (ulong)pageClusters * (ulong)pageClusters;
-         candidate + (ulong)pageClusters <= rowStart + rowLength; candidate += (ulong)pageClusters) {
-      var run = Enumerable.Range(0, pageClusters).Select(i => candidate + (ulong)i).ToList();
-      if (run.All(allocator.CoversPhysical) && allocator.AreAllocated(run, expectedAllocated: false)) { physical = run; break; }
-    }
-    if (physical is null) throw new NotSupportedException("ReFS: no free run for the new directory page.");
-    var virtualLcns = new List<ulong>();
-    foreach (var p in physical) {
-      if (!metadata.TryPhysicalToVirtualLcn(p, out var v)) throw new NotSupportedException("ReFS: the new page has no virtual address.");
-      virtualLcns.Add(v);
-    }
+    var allocation = RefsMetadataPageAllocation.Plan(metadata, graph, template.PagePhysical);
+    var virtualLcns = allocation.Virtual;
 
     var now = (ulong)DateTime.UtcNow.ToFileTimeUtc();
     var header = RewriteNameRecord(template.HeaderValue, template.NameRecord, name, parentOid);
@@ -116,12 +99,7 @@ internal static class RefsInPlaceMkdir {
         || !RefsPageEditor.CanInsertRow(graph, objectPage, objectPosition, objectKey.Length, objectValue.Length))
       throw new NotSupportedException("ReFS: the parent directory or the object table has no room for the new rows.");
 
-    allocator.SetAllocated(physical, allocated: true);
-    for (var i = 0; i < pageClusters; ++i) {
-      image.Position = (long)physical[i] * metadata.ClusterSize;
-      image.Write(page, i * metadata.ClusterSize, Math.Min(metadata.ClusterSize, page.Length - i * metadata.ClusterSize));
-    }
-    image.Flush();
+    allocation.Claim(image, metadata, page);
     RefsPageEditor.InsertRow(graph, objectPage, objectPosition, objectKey, objectValue, template.ObjectFlags);
     RefsPageEditor.InsertRow(graph, parentPage, namePosition, nameKey, nameValue, template.NameFlags);
     tree.AdjustRowCount(graph, +1);
