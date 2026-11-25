@@ -49,6 +49,72 @@ public class OpenPgpTests {
     Assert.That(Convert.ToHexStringLower(X25519.ScalarMultiply(b, X25519.PublicKey(a))), Is.EqualTo(shared));
   }
 
+  [Test, Category("HappyPath")]
+  public void GivenRfc7748IteratedVector_WhenX25519RunsAThousandTimes_ThenTheResultMatches() {
+    // RFC 7748 section 5.2: k = u = 9, then k, u = X25519(k, u), k
+    byte[] k = [.. X25519.BasePoint], u = [.. X25519.BasePoint];
+    for (var i = 0; i < 1000; ++i) {
+      var next = X25519.ScalarMultiply(k, u);
+      u = k;
+      k = next;
+      if (i == 0)
+        Assert.That(Convert.ToHexStringLower(k), Is.EqualTo("422c8e7a6227d7bca1350b3e2bb7279f7897b87bb6854b783c60e80311ae3079"));
+    }
+    Assert.That(Convert.ToHexStringLower(k), Is.EqualTo("684cf59ba83309552800ef566f2f4d3c1c3887c49360e3875f2eb94d99532c51"));
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenScalarsWithDifferentBits_WhenX25519Runs_ThenTheFieldOperationSequenceIsTheSame() {
+    // the ladder must not branch on the secret scalar: count the field operations per run
+    var u = Convert.FromHexString("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c");
+    long Count(byte[] scalar) {
+      var before = Field25519.Operations;
+      X25519.ScalarMultiply(scalar, u);
+      return Field25519.Operations - before;
+    }
+    var zeros = new byte[32];
+    var ones = Enumerable.Repeat((byte)0xFF, 32).ToArray();
+    var alternating = Enumerable.Repeat((byte)0xAA, 32).ToArray();
+    var random = RandomNumberGenerator.GetBytes(32);
+    var expected = Count(zeros);
+    Assert.That(new[] { Count(ones), Count(alternating), Count(random) }, Has.All.EqualTo(expected));
+    Assert.That(expected, Is.GreaterThan(255 * 10), "every ladder step performs its field operations");
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenRandomFieldElements_WhenComputed_ThenTheyMatchBigIntegerArithmetic() {
+    var p = (System.Numerics.BigInteger.One << 255) - 19;
+    var rng = new Random(1234);
+    for (var i = 0; i < 300; ++i) {
+      var ab = new byte[32];
+      var bb = new byte[32];
+      rng.NextBytes(ab);
+      rng.NextBytes(bb);
+      if (i % 50 == 0) { // values at and above p must reduce too
+        Array.Fill(ab, (byte)0xFF);
+        ab[31] = 0x7F;
+        ab[0] = (byte)(0xED + i % 18);
+      }
+      ab[31] &= 0x7F;
+      bb[31] &= 0x7F;
+      var a = Field25519.FromBytes(ab);
+      var b = Field25519.FromBytes(bb);
+      var x = new System.Numerics.BigInteger(ab, isUnsigned: true);
+      var y = new System.Numerics.BigInteger(bb, isUnsigned: true);
+      System.Numerics.BigInteger Value(Field25519 f) {
+        var o = new byte[32];
+        f.ToBytes(o);
+        return new System.Numerics.BigInteger(o, isUnsigned: true);
+      }
+      Assert.That(Value(a * b), Is.EqualTo(x * y % p), "mul");
+      Assert.That(Value(a + b), Is.EqualTo((x + y) % p), "add");
+      Assert.That(Value(a - b), Is.EqualTo(((x - y) % p + p) % p), "sub");
+      Assert.That(Value(a.MultiplySmall(121665)), Is.EqualTo(x * 121665 % p), "small");
+      if (x % p != 0)
+        Assert.That(Value(a * a.Invert()), Is.EqualTo(System.Numerics.BigInteger.One), "invert");
+    }
+  }
+
   [TestCase(31, 32)]
   [TestCase(32, 33)]
   [Category("Exception")]
