@@ -12761,6 +12761,45 @@ BSC (libbsc) file-stream framing around `BscBlockCodec`.
 | `Compress` | `static void Compress(Stream input, Stream output)` | Encodes using libbsc's default 25 MiB block size, following contexts and QLFC-static coder. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes a bsc1 stream. |
 
+### Namespace `FileFormat.Btoa`
+
+[`BtoaCodec`](#btoacodec) · [`BtoaFormatDescriptor`](#btoaformatdescriptor)
+
+#### `BtoaCodec`
+
+The btoa 4.0 text encoding (Paul Rutter, Joe Orost): the input is taken four bytes at a time as a big-endian 32-bit word and written as five base-85 digits from `'!'` upward, a zero word as the single letter `z`, between an `xbtoa Begin` line and an `xbtoa End` trailer that carries the byte count and three running checksums.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BeginLine` | `const string BeginLine` | The line that opens the encoded data. |
+| `LineLength` | `const int LineLength` | Characters per encoded line. |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> text)` | Decodes btoa 4.0 text. Anything before the `xbtoa Begin` line (a mail header, say) is skipped; a character outside the alphabet, a misplaced `z`, a group that does not fit 32 bits, a malformed trailer or a checksum that does not match throws `InvalidDataException` and nothing is returned. |
+| `Encode` | `static void Encode(ReadOnlySpan<byte> data, Stream output)` | Encodes `data` into btoa 4.0 text. |
+
+#### `BtoaFormatDescriptor`
+
+btoa 4.0 (Paul Rutter, Joe Orost): the base-85 text encoding that later became Adobe's ASCII85, framed by `xbtoa Begin` and an `xbtoa End` trailer with the byte count and three checksums. Decoding checks every checksum and refuses on a mismatch; encoding writes byte-for-byte what btoa 4.0 writes. See `BtoaCodec`.
+
+Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BtoaFormatDescriptor` | `BtoaFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures: the `xbtoa Begin` line at the start of the file. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the input as btoa 4.0 text. |
+| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes btoa text, checking the trailer's count and checksums. |
+
 ### Namespace `FileFormat.Bwav`
 
 [`BwavFormatDescriptor`](#bwavformatdescriptor) · [`BwavReader`](#bwavreader) · [`BwavReader.ChannelInfo`](#bwavreaderchannelinfo) · [`BwavReader.ParsedBwav`](#bwavreaderparsedbwav) · [`BwavWriter`](#bwavwriter)

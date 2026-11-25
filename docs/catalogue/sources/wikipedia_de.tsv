@@ -65,7 +65,7 @@ PAE (PowerArchiver encrypted)	pae;pae2	encryption		Liste von Datenkompressionspr
 WAD	wad	archive		Liste von Datenkompressionsprogrammen, revision 268525499 (2026-07-05): QuickZip	FULL		WAD	
 HOG	hog	archive		Liste von Datenkompressionsprogrammen, revision 268525499 (2026-07-05): QuickZip	FULL		HOG	
 AppleSingle	as	encoding		Liste von Datenkompressionsprogrammen, revision 268525499 (2026-07-05): StuffIt	FULL		AppleSingle / AppleDouble	
-BtoA text	btoa	encoding		Liste von Datenkompressionsprogrammen, revision 268525499 (2026-07-05): StuffIt	MISSING	1	btoa (ASCII85 text encoding)	Small and well described (base-85 with an xbtoa frame and checksums); btoa sources circulate with the old Unix toolsets. Cheapest new format on this list.
+BtoA text	btoa	encoding		Liste von Datenkompressionsprogrammen, revision 268525499 (2026-07-05): StuffIt	FULL	1	btoa (ASCII85 text encoding)	btoa 4.0 read and written, byte-identical to btoa 4.0 and restored by atob 4.0 (built from the 4.0 sources). btoa 5.x is not read.
 Compact Pro	cpt	archive		Liste von Datenkompressionsprogrammen, revision 268525499 (2026-07-05): StuffIt	PARTIAL	1	Compact Pro	Multi-volume and encrypted archives refused; writer emits RLE only. Needs samples; Compact Pro under emulation and unar as oracles.
 MacBinary	bin	encoding		Liste von Datenkompressionsprogrammen, revision 268525499 (2026-07-05): StuffIt	FULL		MacBinary	
 Aladdin Private File	pf	encryption		Liste von Datenkompressionsprogrammen, revision 268525499 (2026-07-05): StuffIt	MISSING	1	Aladdin Private File	Closed; StuffIt Deluxe under emulation is the only oracle.
