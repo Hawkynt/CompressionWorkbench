@@ -1,0 +1,21 @@
+XADMaster (The Unarchiver) — PAK Crushed decoder converted to C#
+
+Source:   https://github.com/MacPaw/XADMaster
+Revision: 7cb9ee0abbb163f261e4cb74501e15067032319c
+Files:    XADARCCrushHandle.m (code modes, string-ratio window, usage counts and entry
+          reuse), LZW.c (the LZW table it builds on); XADARCParser.m (method 10 is
+          crushed data behind RLE90)
+Authors:  Dag Ågren and contributors; (c) 2017-present MacPaw Way Ltd.
+Licence:  GNU Lesser General Public License, version 2.1 or (at your option) any
+          later version. This repository is LGPL-3.0-or-later.
+
+ArcCrushed.Decode is a conversion of the handle above, rewritten in C# for this
+codebase.
+
+This library is free software; you can redistribute it and/or modify it under the
+terms of the GNU Lesser General Public License as published by the Free Software
+Foundation; either version 2.1 of the License, or (at your option) any later version.
+
+This library is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Lesser General Public License for more details.
