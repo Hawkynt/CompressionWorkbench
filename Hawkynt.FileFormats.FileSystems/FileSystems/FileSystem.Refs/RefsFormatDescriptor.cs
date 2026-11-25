@@ -40,7 +40,7 @@ public sealed class RefsFormatDescriptor :
   // event: same-length overwrite (RefsInPlaceOverwrite), rename within a directory
   // (RefsInPlaceRename), remove (RefsInPlaceRemove) and length-changing replace
   // (RefsInPlaceResize) and adding a file (RefsInPlaceAdd) held in its directory row, and
-  // creating a directory on ReFS 3.7 (RefsInPlaceMkdir), in the layouts those checks cover.
+  // creating a directory (RefsInPlaceMkdir), in the layouts those checks cover.
   // Defragment and everything outside those layouts is refused before a byte is touched.
   // See tools/foreign-os-oracles and RefsWindowsOracleTests.
   /// <summary>
@@ -91,7 +91,7 @@ public sealed class RefsFormatDescriptor :
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Microsoft ReFS 3.x volume image, read: namespace and allocation parsing checked file for file against volumes Windows Server 2022 (ReFS 3.7) and 2025 (ReFS 3.14) formatted. In place: overwrite, length-changing replace, rename, remove, adding files and creating directories (ReFS 3.7), as Windows accepts them; defragmenting is refused.";
+  public string Description => "Microsoft ReFS 3.x volume image, read: namespace and allocation parsing checked file for file against volumes Windows Server 2022 (ReFS 3.7) and 2025 (ReFS 3.14) formatted. In place: overwrite, length-changing replace, rename, remove, adding files and creating directories, as Windows accepts them; defragmenting is refused.";
 
   /// <summary>
   /// Probes the image and reports the filesystem driver profile.
@@ -319,7 +319,7 @@ public sealed class RefsFormatDescriptor :
       if (files.Count != 1)
         throw new NotSupportedException("ReFS: a replacement that changes a file's length is made one file per call.");
       var graph = new RefsMetadataGraph(archive, metadata);
-      var plan = RefsInPlaceResize.Prepare(archive, metadata, graph, files[0].ArchiveName, contents[0].LongLength);
+      var plan = RefsInPlaceResize.Prepare(archive, metadata, graph, files[0].ArchiveName, contents[0]);
       RefsInPlaceResize.Apply(archive, metadata, graph, plan, contents[0]);
       return;
     }

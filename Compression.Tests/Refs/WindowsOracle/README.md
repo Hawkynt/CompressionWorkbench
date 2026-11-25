@@ -39,19 +39,19 @@ nothing else. Windows Server 2022 and 2025, at 4 KiB and 64 KiB clusters, mount 
 read-only and read-write, hash the file as written, pass `refsutil salvage -QS` and log no ReFS
 error. On the integrity-stream volumes the overwrite is refused and the image is left unchanged.
 
-Later runs (45433556177, 45441757023, 45447908924, 45479960118, 45485070018, 45495972996, 45498729400, 45506225287) judged the edits made in place the same way:
+Later runs (45433556177, 45441757023, 45447908924, 45479960118, 45485070018, 45495972996, 45498729400, 45506225287, 45515811153) judged the edits made in place the same way:
 
 | Edit | 3.7 4 KiB | 3.7 64 KiB | 3.7 integrity | 3.14 4 KiB | 3.14 64 KiB | 3.14 integrity |
 | --- | --- | --- | --- | --- | --- | --- |
 | Overwrite, same length | accepted | accepted | accepted (checksums rewritten) | accepted | accepted | accepted (checksums rewritten) |
 | Rename (also to a longer name) | accepted | accepted | accepted | accepted | accepted | accepted |
 | Rename to a non-ASCII name | accepted | accepted | not run | accepted | accepted | not run |
-| Add a new file | accepted | accepted | refused (no plain template) | accepted | refused (allocator) | refused (no plain template) |
-| Add a directory | accepted | accepted | refused (no matching template) | refused (3.14 records) | refused | refused |
+| Add a new file | accepted | accepted | accepted (checksums written) | accepted | refused (allocator) | accepted (checksums written) |
+| Add a directory | accepted | accepted | accepted | accepted | refused (allocator) | accepted |
 | Remove | accepted | accepted | accepted | accepted | refused (Windows did not mount it) | accepted |
-| Replace, longer (new run) | accepted | accepted | refused | refused (leaf full) | refused | refused |
+| Replace, longer (new run) | accepted | accepted | refused (entries outgrow the record; Windows moves them to a page of their own) | accepted (leaf grows) | refused | accepted (leaf grows) |
 | Replace, slightly longer (run extended) | accepted | accepted | refused | refused | refused | refused |
-| Replace, shorter | accepted | accepted | refused | accepted | accepted | refused |
+| Replace, shorter | accepted | accepted | accepted | accepted | accepted | accepted |
 
 "Accepted" means Windows mounted the edited volume read-only and read-write, listed every file
 with the expected hash, passed `refsutil salvage -QS` and logged no ReFS warning or error.

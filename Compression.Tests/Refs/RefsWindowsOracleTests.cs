@@ -201,13 +201,14 @@ public sealed class RefsWindowsOracleTests {
         var replacement = new byte[length];
         new Random(length).NextBytes(replacement);
         using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
-          // Proven layouts must apply; elsewhere a clean refusal (image unchanged) is the allowed outcome.
+          // Proven layouts must apply; the refusals left (ReFS 3.14 at 64 KiB, 3.7 integrity growth past
+          // what the record's leaf holds) must leave the image unchanged.
           if (volume != "windows-2022-default") {
             var before = SHA256.HashData(stream);
             stream.Position = 0;
             try {
               descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", replacement)]);
-            } catch (NotSupportedException refused) {
+            } catch (NotSupportedException refused) when (volume == "windows-2025-cluster64k" || (volume == "windows-2022-integrity" && length == 300000)) {
               TestContext.Out.WriteLine($"{volume}: resize to {length} refused: {refused.Message}");
               stream.Position = 0;
               Assert.That(SHA256.HashData(stream), Is.EqualTo(before), "a refused resize leaves the image unchanged");
@@ -258,6 +259,58 @@ public sealed class RefsWindowsOracleTests {
     }
   }
 
+  [Test, Category("ExternalFsInterop")]
+  public void GivenAVolumeWindowsFormatted_WhenDirectoryObjectRowsAreRead_ThenTheCounterEqualsTheHighestFileNumber([ValueSource(nameof(Volumes))] string volume) {
+    var oracle = Load(volume);
+    using var stream = File.OpenRead(ImagePath(oracle));
+    var metadata = RefsMetadataReader.Open(stream);
+    var directories = 0;
+    Assert.Multiple(() => {
+      foreach (var row in metadata.WalkRoot(0)) {
+        var oid = System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(row.Key.AsSpan(8));
+        if (oid < 0x600 || RefsDirectoryRows.ObjectRow(metadata, oid) is not { } objectRow) continue;
+        var reference = RefsPageReference.Parse(row.Value.AsSpan(0x20));
+        var highest = metadata.WalkTree(reference, virtualAddresses: true)
+          .Where(static r => r.Key.Length >= 16 && System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(r.Key) == 0x20)
+          .Select(static r => System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(8))).DefaultIfEmpty(0UL).Max();
+        var counter = System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(objectRow.Row.Value.AsSpan(objectRow.CounterOffset));
+        Assert.That(counter, Is.EqualTo(Math.Max(highest, 1UL)), $"directory 0x{oid:X} (an empty directory starts at 1)");
+        ++directories;
+      }
+    });
+    Assert.That(directories, Is.GreaterThanOrEqualTo(4), "the root and the test tree's directories carry a counter");
+  }
+
+  /// <summary>Every integrity-stream cluster of the root directory's files whose CRC32C does not match its entry, as "name#cluster".</summary>
+  private static List<string> StaleClusterChecksums(Stream stream) {
+    var metadata = RefsMetadataReader.Open(stream);
+    var stale = new List<string>();
+    var root = RefsInPlaceRename.ResolveDirectoryRoot(metadata, "");
+    var buffer = new byte[metadata.ClusterSize];
+    foreach (var row in metadata.WalkTree(root, virtualAddresses: true)) {
+      if (row.Key.Length <= 4 || System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(row.Key) != 0x30
+          || System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(row.Key.AsSpan(2)) != 1) continue;
+      var name = System.Text.Encoding.Unicode.GetString(row.Key, 4, row.Key.Length - 4);
+      for (uint count = 1; count <= 8; ++count) {
+        var leaf = RefsExtentLeaf.Find(row.Value, count);
+        if (leaf < 0 || RefsExtentLeaf.Read(row.Value, leaf) is not { } entries) continue;
+        foreach (var entry in entries.Where(static e => e.IsIntegrity))
+          for (var i = 0; i < entry.Run; ++i) {
+            stream.Position = (long)metadata.TranslateVirtualLcn(entry.Vlcn + (ulong)i) * metadata.ClusterSize;
+            stream.ReadExactly(buffer);
+            if (RefsChecksum.Crc32C(buffer) != entry.Crcs![i]) stale.Add($"{name}#{entry.Vcn + i}");
+          }
+      }
+    }
+    return stale;
+  }
+
+  private static byte[] Pattern(int length) {
+    var bytes = new byte[length];
+    for (var i = 0; i < length; ++i) bytes[i] = (byte)(i * 31 + (i >> 9));
+    return bytes;
+  }
+
   private static readonly string[] Edits = ["none", "overwrite", "grow", "shrink", "rename", "rename-unicode", "remove", "add", "mkdir"];
 
   [Test, Category("ExternalFsInterop")]
@@ -272,13 +325,13 @@ public sealed class RefsWindowsOracleTests {
       using (var stream = File.Open(copy, FileMode.Open, FileAccess.ReadWrite)) {
         try {
           switch (edit) {
-            case "overwrite": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", new byte[65536])]); break;
-            case "grow": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", new byte[300000])]); break;
-            case "shrink": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", new byte[20000])]); break;
+            case "overwrite": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", Pattern(65536))]); break;
+            case "grow": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", Pattern(300000))]); break;
+            case "shrink": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("replace-me.bin", Pattern(20000))]); break;
             case "rename": descriptor.Rename(stream, "rename-me.txt", "renamed.txt"); break;
             case "rename-unicode": descriptor.Rename(stream, "rename-me.txt", "Grüße-日本.txt"); break;
             case "remove": descriptor.Remove(stream, ["remove-me.bin"]); break;
-            case "add": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("added.bin", new byte[30000])]); break;
+            case "add": descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("added.bin", Pattern(30000))]); break;
             case "mkdir": descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("new-folder", "new-folder", true)]); break;
           }
         } catch (NotSupportedException refused) {
@@ -288,6 +341,7 @@ public sealed class RefsWindowsOracleTests {
       using var check = File.OpenRead(copy);
       var stale = new RefsMetadataGraph(check, RefsMetadataReader.Open(check)).FindStaleReferences();
       Assert.That(stale, Is.Empty, $"{edit} on {volume} left stale page-reference checksums");
+      Assert.That(StaleClusterChecksums(check), Is.Empty, $"{edit} on {volume} left integrity-stream cluster checksums that do not match");
     } finally {
       File.Delete(copy);
     }
@@ -307,7 +361,7 @@ public sealed class RefsWindowsOracleTests {
         stream.Position = 0;
         try {
           descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("new-folder", "new-folder", true)]);
-        } catch (NotSupportedException refused) when (oracle.RefsVersion != "3.7" || oracle.Variant == "integrity") {
+        } catch (NotSupportedException refused) when (oracle.RefsVersion != "3.7" && oracle.Variant == "cluster64k") {
           TestContext.Out.WriteLine($"{volume}: mkdir refused: {refused.Message}");
           stream.Position = 0;
           Assert.That(SHA256.HashData(stream), Is.EqualTo(before));
@@ -349,7 +403,7 @@ public sealed class RefsWindowsOracleTests {
         stream.Position = 0;
         try {
           descriptor.Add(stream, [Compression.Registry.ArchiveInputInfo.InMemory("added.bin", added)]);
-        } catch (NotSupportedException refused) when (oracle.Variant != "default") {
+        } catch (NotSupportedException refused) when (oracle.RefsVersion == "3.14" && oracle.Variant == "cluster64k") {
           TestContext.Out.WriteLine($"{volume}: add refused: {refused.Message}");
           stream.Position = 0;
           Assert.That(SHA256.HashData(stream), Is.EqualTo(before));
