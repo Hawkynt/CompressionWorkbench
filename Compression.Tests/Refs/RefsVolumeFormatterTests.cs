@@ -69,6 +69,30 @@ public sealed class RefsVolumeFormatterTests {
   }
 
   [Test]
+  public void GivenAFreshVolume_WhenDirectoriesAreCreated_ThenTheObjectTableRecordsTheHighestNumber() {
+    using var stream = Fresh();
+    var descriptor = new RefsFormatDescriptor();
+    Assert.That(HighestObject(stream), Is.EqualTo(0x701UL), "fresh: System Volume Information");
+    descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("one", "one", true)]);
+    descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("two", "two", true)]);
+    stream.Position = 0;
+    var metadata = RefsMetadataReader.Open(stream);
+    var objects = metadata.WalkRoot(0).Select(static r => BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(8))).ToList();
+    Assert.Multiple(() => {
+      Assert.That(objects, Does.Contain(0x702UL).And.Contain(0x703UL));
+      Assert.That(HighestObject(stream), Is.EqualTo(0x703UL));
+      Assert.That(new RefsMetadataGraph(stream, metadata).FindStaleReferences(), Is.Empty);
+    });
+
+    static ulong HighestObject(MemoryStream volume) {
+      volume.Position = 0;
+      var metadata = RefsMetadataReader.Open(volume);
+      var page = new RefsMetadataGraph(volume, metadata).ReadPage(metadata.WalkRoot(0).First().PhysicalPageLcn);
+      return BinaryPrimitives.ReadUInt64LittleEndian(page.AsSpan(0x88));
+    }
+  }
+
+  [Test]
   public void GivenAFreshVolume_WhenFilesAreAdded_ThenTheyAreReadBack() {
     using var stream = Fresh();
     var descriptor = new RefsFormatDescriptor();

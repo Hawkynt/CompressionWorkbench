@@ -68,10 +68,15 @@ internal static class RefsInPlaceMkdir {
     var objectPage = objectRows[0].PhysicalPageLcn;
     if (objectRows.Any(r => r.PhysicalPageLcn != objectPage))
       throw new NotSupportedException("ReFS: the object table spans more than one page.");
-    var oid = objectRows.Select(static r => BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(8))).Where(static o => o >= 0x700).DefaultIfEmpty(0x700UL).Max() + 1;
+    // The next object number is past both the highest row and the highest number the table
+    // records as handed out (a removed directory's number is not used again).
+    var graph = new RefsMetadataGraph(image, metadata);
+    var objectRoot = graph.ReadPage(objectPage);
+    var highest = BinaryPrimitives.ReadUInt32LittleEndian(objectRoot.AsSpan(0x50)) == HighestObjectDescriptorEnd
+      ? BinaryPrimitives.ReadUInt64LittleEndian(objectRoot.AsSpan(HighestObjectOffset)) : 0;
+    var oid = Math.Max(highest, objectRows.Select(static r => BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(8))).Where(static o => o >= 0x700).DefaultIfEmpty(0x700UL).Max()) + 1;
 
     // The page: clusters, allocation, bytes.
-    var graph = new RefsMetadataGraph(image, metadata);
     var allocation = RefsMetadataPageAllocation.Plan(metadata, graph, template.PagePhysical);
     var virtualLcns = allocation.Virtual;
 
@@ -114,15 +119,37 @@ internal static class RefsInPlaceMkdir {
     if (!RefsPageEditor.CanInsertRow(graph, parentPage, namePosition, nameKey.Length, nameValue.Length)
         || !RefsPageEditor.CanInsertRow(graph, objectPage, objectPosition, objectKey.Length, objectValue.Length))
       throw new NotSupportedException("ReFS: the parent directory or the object table has no room for the new rows.");
+    if (BinaryPrimitives.ReadUInt32LittleEndian(graph.ReadPage(objectPage).AsSpan(0x50)) != HighestObjectDescriptorEnd)
+      throw new NotSupportedException("ReFS: the object table's root page does not hold its highest object number where expected.");
 
     allocation.Claim(image, metadata, page);
     RefsPageEditor.InsertRow(graph, objectPage, objectPosition, objectKey, objectValue, template.ObjectFlags);
+    RaiseHighestObject(graph, objectPage, oid);
     RefsPageEditor.InsertRow(graph, parentPage, namePosition, nameKey, nameValue, template.NameFlags);
     tree.AdjustRowCount(graph, +1);
     // The object-table page was repacked, so the offsets of the page references it holds moved:
     // the checksums are refreshed through a graph built from the volume as it now is.
     new RefsMetadataGraph(image, RefsMetadataReader.Open(image)).RefreshChecksumPaths([parentPage, tree.RootPage, objectPage]);
   }
+
+  /// <summary>
+  /// The object table's root page keeps the highest object number handed out at 0x88, inside
+  /// its 0x228-byte root descriptor (0x701 on a freshly formatted volume, 0x704 once Windows made
+  /// three directories), and Windows numbers the next object past it. Left behind, the next
+  /// object Windows makes collides with ours: Windows Server 2025 upgrading a ReFS 3.7 volume
+  /// with a directory of ours failed every dismount with "Object Name already exists".
+  /// </summary>
+  private static void RaiseHighestObject(RefsMetadataGraph graph, ulong objectPage, ulong oid) {
+    var page = graph.ReadPage(objectPage);
+    if (BinaryPrimitives.ReadUInt32LittleEndian(page.AsSpan(0x50)) != HighestObjectDescriptorEnd)
+      throw new InvalidDataException("ReFS: the object table's root page does not hold its highest object number where expected.");
+    if (BinaryPrimitives.ReadUInt64LittleEndian(page.AsSpan(HighestObjectOffset)) >= oid) return;
+    BinaryPrimitives.WriteUInt64LittleEndian(page.AsSpan(HighestObjectOffset), oid);
+    graph.WritePage(objectPage, page);
+  }
+
+  private const uint HighestObjectDescriptorEnd = 0x228;
+  private const int HighestObjectOffset = 0x88;
 
   private sealed record Template(
     byte[] NameValue, ushort NameFlags,
