@@ -2,10 +2,10 @@
 
 Tux3 is Daniel Phillips' and OGAWA Hirofumi's versioning filesystem for Linux. This page describes
 the layout the linux-tux3 tree (`fs/tux3`, branch `hirofumi-user`) writes with its magic
-`tux3` `20 15 06 01`, as far as `FileSystem.Tux3` reads it. Tux3 is GPL: its sources were read as
-reference material to write this page and its user tools (`tux3`, `tux3fuse`) were run as black
-boxes to make and check the reference volumes; no code was copied, converted or transliterated
-(sourcing rung 2). Constants (magic numbers, record codes and sizes, attribute numbers and sizes)
+`tux3` `20 15 06 01`, as far as `FileSystem.Tux3` reads and writes it. Tux3 is GPL: its sources
+were read as reference material to write this page, and its user tools (`tux3`, `tux3fuse`) and its
+kernel (branch `hirofumi`, see "Kernel oracle") were run as black boxes to make and check the
+reference volumes; no code was copied, converted or transliterated (sourcing rung 2). Constants (magic numbers, record codes and sizes, attribute numbers and sizes)
 are copied exactly.
 
 All integers are big-endian. Block numbers count blocks of `1 << blockbits` bytes from the start
@@ -69,7 +69,7 @@ in the low 12, always 0) followed by the attribute:
 | 2 link count | 4 | 32-bit count (absent: 2 for a directory, 1 otherwise) |
 | 3 mtime | 8 | 64-bit mtime (nanoseconds; absent: same as ctime) |
 | 4 data tree | 8 | packed root of the data tree (absent: empty) |
-| 9 generic | 8 | device number of a device node, parent inode of a directory |
+| 9 generic | 8 | device number of a device node (`major << 8 \| minor` while both fit in 8 bits, else `minor & 0xFF \| major << 8 \| (minor & ~0xFF) << 12`), parent inode of a directory |
 | 11 immediate data | 2 + n | 16-bit length *n*, then *n* bytes |
 | 12 extended attribute | 2 + n | 16-bit length *n*, a 16-bit atom, then *n − 2* bytes |
 
@@ -80,9 +80,13 @@ version and atom tables, the volume and log maps). Inodes from 64 are files.
 
 A file's bytes are its data tree's blocks, by logical block number, cut to its size; a hole reads as
 zeros. A symlink's target is its data, like a file's. A directory's data blocks hold entries like
-ext2: a 64-bit inode number, a 16-bit record length, an 8-bit name length, an 8-bit file type, then
-the name; a record length is a multiple of 8 and the records of a block cover it to the end; a
-name length of 0 marks a free record. There are no `.` and `..` entries on disk.
+ext2: a 64-bit inode number, a 16-bit record length, an 8-bit name length, an 8-bit file type (1
+file, 2 directory, 3 character device, 4 block device, 5 FIFO, 6 socket, 7 symlink), then the name;
+a record length is the entry rounded up to 8 bytes, an entry never crosses a block, and the last
+record of a block reaches its end; a name length of 0 marks a free record. There are no `.` and `..`
+entries on disk. A directory's size is its blocks times the block size (an empty one has size 0
+and no data tree); its link count is 2 plus its subdirectories and is stored only when it is not 2
+(a file's only when it is not 1); the mtime is stored only when it differs from the ctime.
 
 ## The log
 
@@ -135,13 +139,49 @@ From that mark on, the index-node records are applied in order to a working copy
 The allocation records (BALLOC, BFREE…, LEAF_REDIRECT, the log blocks themselves) change the
 allocation bitmap, not what a reader sees.
 
+## Writing
+
+`tux3 mkfs` leaves almost nothing in the trees: the inode tree is one leaf (base 4) holding inode 4
+(mode 0, size 2^60) and the root, and the allocation is not in any bitmap but in the log — `BALLOC 2
+@ 0`, `DELTA`, `BALLOC 1 @ 2` in one log block that is not itself allocated; the kernel builds the
+bitmap and group counts when it replays the log at mount. The internal inodes 1–3, 61 and 62 do not
+exist until the kernel first writes. The writer produces the same shape:
+
+* block 1 the superblock (log chain and count, inode-tree root, `usedinodes` one past the highest
+  inode, `nextblock` past the last block used, atom generation 1);
+* from block 2, every directory's entry blocks and every file's and symlink's bytes, each in one
+  contiguous run named by a direct data-tree root (a data leaf with the run and its sentinel when a
+  run is longer than the root's 15-bit count);
+* inode-tree leaves (base 4, then each leaf's first inode), under one index node when there are
+  several;
+* one log block (more if needed): `BALLOC 2 @ 0`, `DELTA`, then one `BALLOC` for every block from 2
+  to the last.
+
+Inodes are numbered from 64 in the order objects are added; every object gets the volume's creation
+time as ctime.
+
+## Kernel oracle
+
+The kernel is linux-tux3, branch `hirofumi`, commit `e1c4179dd161` (Linux 5.16 with `fs/tux3`;
+`codeload.github.com/OGAWAHirofumi/linux-tux3/tar.gz/e1c4179dd161`, SHA-256 `edc25418…958f7b8bd6`),
+configured from `defconfig` plus `kvm_guest.config` with `CONFIG_TUX3` and virtio built in, and
+built with gcc 12 (`make -j2 bzImage`). Two build-only changes let a 2021 kernel's host tools build
+with today's toolchain: objtool's warnings are not errors, and objtool treats an object file
+without a symbol table as having no symbols. `Compression.Tests/Tux3/KernelOracle/kernel-run.sh`
+boots it under QEMU (1 GiB) with a busybox initramfs; `CWB_TUX3_BZIMAGE` names the image (default
+`~/.cache/cwb/tux3-kernel/bzImage`). Nothing of it is in this repository; the kernel tests skip
+without it. It mounts volumes of the user tools and of this writer, writes through the page cache
+(files of any size, holes, devices, renames), and logs a warning on every non-waiting sync that
+says nothing about the volume.
+
 ## What the implementation does with it
 
 `Tux3Reader` reads revision 2015-06-01 volumes completely: it replays the log's index-node records
 over the nodes it reads, walks the inode tree, and lists every directory, file, symlink and hard
 link below the root with mode, owner, size, times and link count; it extracts file bytes (holes as
 zeros) and symlink targets. Anything that does not parse is refused (`InvalidDataException`), never
-guessed. The 2014-05-06 and 2012-12-20 revisions keep their metadata-only view. It does not write.
+guessed. The 2014-05-06 and 2012-12-20 revisions keep their metadata-only view. `Tux3Writer`
+creates new volumes as described under "Writing"; volumes are not edited in place.
 
 Checked against volumes the tux3 user tools made: `tux3 mkfs`, files written by `tux3 write`, a hard
 link and a symlink by `tux3 link` and `tux3 symlink`, and a directory tree (a 150-entry directory
@@ -149,4 +189,11 @@ among it, whose index changes were still in the log) written through `tux3fuse`,
 after `tux3 unify`. Every entry matches what `tux3fuse` lists and reads back from the same image.
 The tools are not dependable writers (`tux3fuse` aborts on writes of 4 KiB and more; `tux3 write`
 leaves larger files at size 0), so the reference volumes keep to what they store reliably, and no
-writer is offered: there is no tool whose acceptance of a written volume would prove it.
+writer was offered until the kernel was built. Now a volume the kernel filled
+(`kernel.img.gz`: files of 0 to 200 705 bytes with a hole, a 255-byte name, nested and empty
+directories, a 300-entry directory, symlinks, a hard link, a FIFO and two device nodes, an owner and a
+2001 mtime, index changes still in the log) reads back exactly as the kernel lists and reads it; the
+kernel mounts every volume the writer makes — every object kind, direct roots and data leaves, a
+400-entry directory over several inode leaves — and reads back each object byte for byte; and after
+the kernel adds, appends to, links, renames and removes objects in a writer volume, the reader sees
+exactly what the kernel reads back.

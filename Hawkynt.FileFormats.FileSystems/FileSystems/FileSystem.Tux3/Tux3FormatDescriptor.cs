@@ -13,12 +13,12 @@ namespace FileSystem.Tux3;
 /// log records to prove free/allocated block runs. Active structural tree-log records deliberately
 /// disable the in-volume allocation map until structural replay is implemented.
 ///
-/// <para>Create/Modify/Defragment capabilities remain withheld. Allocation-tree parsing is enough
-/// to make layout and Wipe useful inside the declared volume, but moving or deleting native objects
-/// additionally requires directory/inode traversal and transactional metadata/log writing.</para>
+/// <para>New 2015-06-01 volumes are created by <see cref="Tux3Writer" />, laid out as the
+/// linux-tux3 kernel lays out what it writes, and proven by that kernel mounting them. Modify and
+/// Defragment remain withheld: editing in place needs transactional metadata and log writing.</para>
 /// </remarks>
 public sealed class Tux3FormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, ISyntheticEntryNames, IFilesystemExtentMap, IArchiveShrinkable {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, ISyntheticEntryNames, IFilesystemExtentMap, IArchiveShrinkable {
 
   private static readonly HashSet<string> SyntheticNames =
     new(StringComparer.OrdinalIgnoreCase) { "FULL.tux3", "metadata.ini", "superblock.bin" };
@@ -37,7 +37,7 @@ public sealed class Tux3FormatDescriptor :
 
   /// <inheritdoc />
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
   /// <inheritdoc />
@@ -67,8 +67,9 @@ public sealed class Tux3FormatDescriptor :
 
   /// <inheritdoc />
   public string Description =>
-    "TUX3 version-tree research filesystem — 2015-06-01 volumes read whole (log replay, directories, files, symlinks); " +
-    "older revisions: superblock, allocation-tree and journal parsing; native mutation not implemented.";
+    "TUX3 version-tree research filesystem — 2015-06-01 volumes read whole (log replay, directories, files, symlinks) " +
+    "and created as the linux-tux3 kernel lays them out; older revisions: superblock, allocation-tree and journal parsing; " +
+    "editing in place not implemented.";
 
   /// <inheritdoc />
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -77,6 +78,27 @@ public sealed class Tux3FormatDescriptor :
       index, entry.Name, entry.Size, entry.Size, "Stored", entry.IsDirectory, false,
       entry.Node is { } node ? DateTime.UnixEpoch.AddTicks(node.ModifiedNanoseconds / 100) : null,
       IsSymlink: entry.Node?.IsSymlink ?? false, LinkTarget: entry.Node?.LinkTarget)).ToList();
+  }
+
+  /// <inheritdoc />
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    var writer = new Tux3Writer();
+    if (inputs is not null)
+      foreach (var input in inputs) {
+        var name = input.ArchiveName.Replace('\\', '/').Trim('/');
+        if (name.Length == 0) continue;
+        var metadata = ToMetadata(input.Metadata);
+        if (input.IsDirectory) writer.AddDirectory(name, metadata);
+        else writer.AddFile(name, input.InMemoryContent ?? File.ReadAllBytes(input.FullPath), metadata);
+      }
+    writer.Write(output);
+  }
+
+  private static Tux3Writer.Metadata? ToMetadata(ArchiveEntryMetadata? metadata) {
+    if (metadata is null) return null;
+    long? mtime = metadata.LastWriteTimeUtc is { } t ? (t.ToUnixTimeMilliseconds() * 1_000_000 + t.Ticks % TimeSpan.TicksPerMillisecond * 100) : null;
+    return new Tux3Writer.Metadata(metadata.UnixMode is { } mode ? mode & 0xFFF : null, metadata.UnixUserId ?? 0, metadata.UnixGroupId ?? 0, mtime);
   }
 
   /// <inheritdoc />

@@ -200,13 +200,13 @@ public class Tux3Tests {
       Assert.That(descriptor.MagicSignatures, Has.Count.EqualTo(3));
       Assert.That(descriptor.MagicSignatures.All(signature => signature.Offset == Tux3Reader.SuperblockOffset), Is.True);
       Assert.That(descriptor.MagicSignatures[0].Bytes, Is.EqualTo(Tux3Reader.Magic2015));
-      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True, "the kernel mounts what the writer makes");
       Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
       Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsMultipleEntries), Is.True);
       Assert.That(descriptor, Is.InstanceOf<IFilesystemExtentMap>());
       Assert.That(descriptor, Is.InstanceOf<IWipeEmpty>());
       Assert.That(descriptor, Is.InstanceOf<IArchiveShrinkable>());
-      Assert.That(descriptor, Is.Not.InstanceOf<IArchiveCreatable>());
+      Assert.That(descriptor, Is.InstanceOf<IArchiveCreatable>());
       Assert.That(descriptor, Is.Not.InstanceOf<IArchiveModifiable>());
       Assert.That(descriptor, Is.Not.InstanceOf<IArchiveDefragmentable>());
       Assert.That(descriptor.Description, Does.Contain("log replay"));
