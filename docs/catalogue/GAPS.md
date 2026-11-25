@@ -99,7 +99,7 @@ rare. Ties are broken by the number of catalogue sources. The first 30 rows:
 | 10 | PAK (NoGate) | MISSING | 2 | Rung 1: XADMaster's Crushed method (BB_ArcDistill already covers Distilled). Needs a real sample; PAK 2.51 under DOSBox is the oracle. |
 | 11 | 7-Zip-zstd coders in 7z | PARTIAL | 2 | Write Zstandard, Brotli and LZ4 (the encoders exist); decode LZ5 and Lizard (BB_Lizard exists). Oracle: 7-Zip-zstd. |
 | 12 | ASPack | PARTIAL (read-only) | 2 | The read side is real; creating packed executables is not a goal. |
-| 13 | DIET | PARTIAL | 2 | EXE and COM files are restored against DIET 1.45f and UNP 4.11; compressed data files remain unsupported. |
+| 13 | DIET | OK | 2 | Done: EXE and COM files are restored against DIET 1.45f and UNP 4.11; data files are read (all three layouts) and written (DietData), DIET 1.45f restoring ours. |
 | 14 | EXECryptor | MISSING | 2 | Runtime protector: detection is the ceiling; needs samples. |
 | 15 | FSG | PARTIAL (read-only) | 2 | Remaining variants against the corpus originals. |
 | 16 | LZEXE | PARTIAL (read-only) | 2 | The read side is real. |

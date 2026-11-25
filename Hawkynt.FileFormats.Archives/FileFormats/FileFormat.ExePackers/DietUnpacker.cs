@@ -120,6 +120,9 @@ public sealed class DietUnpacker : IDosExeUnpacker {
     return new(Describe(id), BuildExe(file, id, data, cmprLength, origLength, flags));
   }
 
+  /// <summary>Decodes a bare DIET LZ77 stream (the bytes after the header) up to its stop code.</summary>
+  internal static byte[] DecompressStream(ReadOnlySpan<byte> compressed, bool isExe) => Decompress(compressed, 0, isExe);
+
   private static byte[] Decompress(ReadOnlySpan<byte> file, long pos, bool isExe) {
     const int Mask = 8191;
     var window = new byte[Mask + 1];
