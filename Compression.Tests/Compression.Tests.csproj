@@ -12,6 +12,10 @@
     <EmbeddedResource Include="NowCompress/ReferenceVectors/*.now;NowCompress/ReferenceVectors/*.json;NowCompress/ReferenceVectors/*.txt">
       <LogicalName>NowCompressVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- DIET 1.45f data files and their originals; see ExePackers/DietDataVectors/README.md. -->
+    <EmbeddedResource Include="ExePackers/DietDataVectors/*.diet;ExePackers/DietDataVectors/*.bin">
+      <LogicalName>DietDataVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Real DOS packer output and UNP 4.11 restorations; see ExePackers/DosVectors/README.md. -->
     <EmbeddedResource Include="ExePackers/DosVectors/*.EXE;ExePackers/DosVectors/*.COM">
       <LogicalName>DosPackerVectors.%(Filename)%(Extension)</LogicalName>
