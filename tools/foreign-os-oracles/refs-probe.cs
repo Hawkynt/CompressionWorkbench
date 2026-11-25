@@ -13,7 +13,7 @@
 //   refs-probe read <image.refs> <out.json>    what our reader lists and extracts (path, size, sha256)
 //   refs-probe mutate <image.refs> <op> <out.refs> <result.json>
 //        op: rename | rename-long | rename-unicode | replace-same | replace-grow | replace-shrink | replace-grow-small | add | add-dir | remove | remove-small
-//            | add-many | add-dir-many | rename-many | replace-many | add-many-split | add-dir1-grow | create | clone | defrag
+//            | add-many | add-dir-many | rename-many | replace-many | add-many-split | add-dir1-grow | create | create-files | clone | defrag
 //
 // Every result is JSON so the PowerShell side can compare it with Get-FileHash.
 
@@ -186,16 +186,47 @@ static int Mutate(string image, string op, string output, string resultPath) {
         // A new volume over the whole partition, from scratch; then a directory made in it.
         var length = stream.Length;
         stream.SetLength(0);
-        RefsVolumeFormatter.Format(stream, new RefsFormatOptions(length, "CWB"));
+        RefsVolumeFormatter.Format(stream, new RefsFormatOptions(Math.Min(length, RefsVolumeFormatter.Geometry), "CWB"));
+        if (stream.Length < length) stream.SetLength(length);
         descriptor.Add(stream, [new ArchiveInputInfo("new-folder", "new-folder", true)]);
         expectation = new { fresh = true, added = "new-folder/" };
+        break;
+      }
+      case "create-files": {
+        // The archive writer: a new volume holding nested directories and files, created
+        // into the partition (shorter than it; the partition's tail is left as it was).
+        var length = stream.Length;
+        var inputs = new List<ArchiveInputInfo>();
+        var added = new List<object>();
+        string[] names = ["top.txt", "a/side.bin", "a/b/c/deep.bin", "a/b/second.bin", "x/y.bin"];
+        for (var i = 0; i < names.Length; ++i) {
+          var data = Pattern(i == 2 ? 200000 : 3000 + 977 * i, 60 + i);
+          inputs.Add(ArchiveInputInfo.InMemory(names[i], data));
+          added.Add(new { path = names[i], size = data.Length, sha256 = Sha256(data) });
+        }
+        inputs.Add(new ArchiveInputInfo("empty-dir", "empty-dir", true));
+        stream.SetLength(0);
+        descriptor.Create(stream, inputs, new FormatCreateOptions());
+        if (stream.Length < length) stream.SetLength(length);
+        expectation = new { fresh = true, addedMany = added };
+        break;
+      }
+      case "create-file1": {
+        // A new volume and one file in its root.
+        var length = stream.Length;
+        var data = Pattern(5000, 61);
+        stream.SetLength(0);
+        descriptor.Create(stream, [ArchiveInputInfo.InMemory("one.bin", data)], new FormatCreateOptions());
+        if (stream.Length < length) stream.SetLength(length);
+        expectation = new { fresh = true, addedMany = new[] { new { path = "one.bin", size = data.Length, sha256 = Sha256(data) } } };
         break;
       }
       case "create-plain": {
         // A new volume over the whole partition, from scratch, and nothing else.
         var length = stream.Length;
         stream.SetLength(0);
-        RefsVolumeFormatter.Format(stream, new RefsFormatOptions(length, "CWB"));
+        RefsVolumeFormatter.Format(stream, new RefsFormatOptions(Math.Min(length, RefsVolumeFormatter.Geometry), "CWB"));
+        if (stream.Length < length) stream.SetLength(length);
         expectation = new { fresh = true };
         break;
       }
@@ -220,6 +251,13 @@ static int Mutate(string image, string op, string output, string resultPath) {
         descriptor.Remove(stream, ["many/f007.txt"]);
         expectation = new { removed = "many/f007.txt" };
         break;
+      case "remove-leaf": {
+        // f002..f004 fill one leaf of "many" on the 4 KiB volumes: removing them empties it.
+        string[] gone = ["many/f002.txt", "many/f003.txt", "many/f004.txt"];
+        foreach (var name in gone) descriptor.Remove(stream, [name]);
+        expectation = new { removedMany = gone };
+        break;
+      }
       case "remove":
         descriptor.Remove(stream, ["remove-me.bin"]);
         expectation = new { removed = "remove-me.bin" };

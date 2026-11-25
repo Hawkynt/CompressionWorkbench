@@ -1,0 +1,3 @@
+ops=replace-grow
+keep=replace-grow
+variants=integrity

@@ -78,7 +78,8 @@ foreach ($name in $Variants) {
     'replace-shrink' = { param($r) Copy-Item (Join-Path $WorkDir 'replace-shrink.bin') (Join-Path $r 'replace-me.bin') -Force }
     'replace-grow-small' = { param($r) Copy-Item (Join-Path $WorkDir 'replace-grow-small.bin') (Join-Path $r 'replace-me.bin') -Force }
     'remove'       = { param($r) Remove-Item (Join-Path $r 'remove-me.bin') -Force }
-    'remove-small' = { param($r) Remove-Item (Join-Path $r 'many/f007.txt') -Force }
+    'remove-leaf'  = { param($r) foreach ($n in 'f002.txt', 'f003.txt', 'f004.txt') { Remove-Item (Join-Path $r "many/$n") -Force } }
+    'remove-small' ={ param($r) Remove-Item (Join-Path $r 'many/f007.txt') -Force }
     'add'          = { param($r) Copy-Item (Join-Path $WorkDir 'added.bin') (Join-Path $r 'added.bin') -Force }
     'add-dir'      = { param($r) New-Item -ItemType Directory -Path (Join-Path $r 'new-folder') | Out-Null }
     # "many" holds 200 files over several directory pages.
@@ -93,6 +94,8 @@ foreach ($name in $Variants) {
     # Ours formats a new volume from scratch over the partition (Windows' half changes nothing).
     'create'       = { param($r) }
     'create-plain' = { param($r) }
+    'create-files' = { param($r) }
+    'create-file1' = { param($r) }
     'rename'       = { param($r) Rename-Item (Join-Path $r 'rename-me.txt') 'renamed.txt' }
     'rename-long'  = { param($r) Rename-Item (Join-Path $r 'small.txt') 'a-much-longer-name-for-the-small-file.txt' }
     'rename-unicode' = { param($r) Rename-Item (Join-Path $r 'rename-me.txt') ([string]::new([char[]]@(0x47,0x72,0xFC,0xDF,0x65,0x2D,0x3A9,0x3BC,0x3AD,0x3B3,0x3B1,0x2D,0x65E5,0x672C)) + '.txt') }
@@ -135,7 +138,16 @@ foreach ($name in $Variants) {
         $verdict.directories = @(Get-ChildItem -LiteralPath $root -Recurse -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'System Volume Information' } | ForEach-Object { $_.FullName.Substring($root.Length) })
         $scan = Join-Path $WorkDir "$name.$op.salvage"
         New-Item -ItemType Directory -Force -Path $scan | Out-Null
-        $verdict.refsutil = ((refsutil salvage -QS $root.TrimEnd('\') $scan 2>&1) -join "`n")
+        $verdict.refsinfo = ((fsutil fsinfo refsinfo $root.TrimEnd('\') 2>&1) -join "`n")
+        # Something can still hold the volume right after the listing (a version upgrade in
+        # progress, a scanner); salvage needs it locked, so it is retried for a minute.
+        for ($try = 0; $try -lt 7; ++$try) {
+          $verdict.refsutil = ((refsutil salvage -QS $root.TrimEnd('\') $scan 2>&1) -join "`n")
+          $verdict.salvageTries = $try + 1
+          if ($verdict.refsutil -notmatch 'Failed to lock the volume') { break }
+          Start-Sleep -Seconds 10
+        }
+        $verdict.refsinfoAfter = ((fsutil fsinfo refsinfo $root.TrimEnd('\') 2>&1) -join "`n")
       } catch { $verdict.readWrite = "FAILED: $($_.Exception.Message)" }
       finally { try { Dismount-DiskImage -ImagePath $copy | Out-Null } catch {} }
       $verdict.events = @(Get-WinEvent -FilterHashtable @{ LogName = 'Microsoft-Windows-ReFS/Operational'; StartTime = $since } -ErrorAction SilentlyContinue |
