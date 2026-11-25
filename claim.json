@@ -5,7 +5,7 @@
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-12-02T17:18:30Z",
+  "expiresAt": "2026-12-02T17:18:33Z",
   "generation": 1,
   "holder": {
     "manager": "DE05PCI025-28e1",
@@ -13,8 +13,8 @@
   },
   "issue": 1034,
   "model": "Claude Opus 5.5",
-  "pausedUntil": null,
-  "renewedAt": "2026-11-25T17:18:30Z",
+  "pausedUntil": "2026-11-25T18:18:33Z",
+  "renewedAt": "2026-11-25T17:18:33Z",
   "runs": [
     {
       "active": true,
@@ -31,7 +31,8 @@
       "worker": "claude-2"
     }
   ],
-  "state": "working",
+  "state": "paused",
   "step": "implement",
-  "takeovers": 0
+  "takeovers": 0,
+  "waitReason": "blocked on this machine: The branch is complete: main is merged as d28d143d with the author's commits kept, the solution builds with 0 errors, and BcacheFs tests give 258 passed, 7 skipped. The manager's gate runs every test category, and on this machine it fails groups CI excludes from the required tier: VeraCrypt/TrueCrypt cryptsetup interop under WSL and the Python reader checks (ExternalInterop), the EndToEnd SelfRoundTrip format cases, and Performance timings. Their code and tests are identical to current origin/main, and the branch changes only bcachefs code plus the bcachefs README and catalogue rows, so main fails them here too. Fixing VeraCrypt interop or unrelated format round trips does not belong in this PR (one concern per branch). Either the gate should use CI's required-tier filter (TestCategory!=EndToEnd&TestCategory!=OsIntegration&TestCategory!=ExternalInterop&TestCategory!=ExternalFsInterop&TestCategory!=PolyglotInterop&TestCategory!=Performance), or those failures need their own issues."
 }
