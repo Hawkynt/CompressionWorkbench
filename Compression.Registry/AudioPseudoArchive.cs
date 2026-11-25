@@ -103,6 +103,30 @@ public static class AudioPseudoArchive {
   }
 
   /// <summary>
+  /// The entries of a file whose structure could not be parsed: the whole file as
+  /// <paramref name="fullName"/> plus a <c>metadata.ini</c> recording <c>parse_status = partial</c>
+  /// and the reason, so listing and extraction still succeed instead of throwing.
+  /// </summary>
+  /// <param name="fullName">The container entry name, e.g. <c>FULL.caf</c>.</param>
+  /// <param name="section">The ini section, e.g. <c>caf</c>.</param>
+  /// <param name="blob">The whole file.</param>
+  /// <param name="error">Why parsing failed.</param>
+  public static IReadOnlyList<Entry> Unparsed(string fullName, string section, byte[] blob, Exception error) {
+    ArgumentNullException.ThrowIfNull(error);
+    var reason = error.Message.Replace('\r', ' ').Replace('\n', ' ');
+    var ini = $"[{section}]\nparse_status = partial\nerror = {reason}\n";
+    return [new(fullName, "Container", blob), new("metadata.ini", "Tag", System.Text.Encoding.UTF8.GetBytes(ini))];
+  }
+
+  /// <summary>
+  /// Whether <paramref name="error"/> is a parse failure of malformed input (as opposed to an
+  /// environmental failure such as running out of memory or I/O).
+  /// </summary>
+  public static bool IsParseFailure(Exception error)
+    => error is InvalidDataException or NotSupportedException or EndOfStreamException
+      or OverflowException or ArgumentException or IndexOutOfRangeException;
+
+  /// <summary>
   /// Projects built entries into <see cref="ArchiveEntryInfo"/> rows for listing. Lazy
   /// entries report their <see cref="Entry.DeclaredSize"/> without being materialised, so
   /// listing stays fast regardless of how expensive a render would be.

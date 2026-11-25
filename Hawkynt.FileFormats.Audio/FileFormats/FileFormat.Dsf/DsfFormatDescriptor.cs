@@ -213,7 +213,12 @@ public sealed class DsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     var blob = ms.ToArray();
-    var parsed = new DsfReader().Read(blob);
+    DsfReader.ParsedDsf parsed;
+    try {
+      parsed = new DsfReader().Read(blob);
+    } catch (Exception ex) when (AudioPseudoArchive.IsParseFailure(ex)) {
+      return AudioPseudoArchive.Unparsed("FULL.dsf", "dsf", blob, ex);
+    }
 
     var entries = new List<AudioPseudoArchive.Entry> {
       new("FULL.dsf", "Container", blob),
