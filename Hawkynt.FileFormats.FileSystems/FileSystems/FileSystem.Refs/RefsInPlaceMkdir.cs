@@ -121,15 +121,45 @@ internal static class RefsInPlaceMkdir {
       throw new NotSupportedException("ReFS: the parent directory or the object table has no room for the new rows.");
     if (BinaryPrimitives.ReadUInt32LittleEndian(graph.ReadPage(objectPage).AsSpan(0x50)) != HighestObjectDescriptorEnd)
       throw new NotSupportedException("ReFS: the object table's root page does not hold its highest object number where expected.");
+    var link = PlanParentLink(graph, parentOid, oid);
 
     allocation.Claim(image, metadata, page);
     RefsPageEditor.InsertRow(graph, objectPage, objectPosition, objectKey, objectValue, template.ObjectFlags);
     RaiseHighestObject(graph, objectPage, oid);
+    RefsPageEditor.InsertRow(graph, link.Page, link.Position, link.Row, link.Row, keyInValue: true);
     RefsPageEditor.InsertRow(graph, parentPage, namePosition, nameKey, nameValue, template.NameFlags);
     tree.AdjustRowCount(graph, +1);
     // The object-table page was repacked, so the offsets of the page references it holds moved:
     // the checksums are refreshed through a graph built from the volume as it now is.
-    new RefsMetadataGraph(image, RefsMetadataReader.Open(image)).RefreshChecksumPaths([parentPage, tree.RootPage, objectPage]);
+    new RefsMetadataGraph(image, RefsMetadataReader.Open(image)).RefreshChecksumPaths([parentPage, tree.RootPage, objectPage, link.Page]);
+  }
+
+  /// <summary>
+  /// Table 3 links every directory to its parent: one 32-byte row per directory, its key stored
+  /// inside its value, [u64 0, parent object, u64 0, child object], sorted by parent then child
+  /// (0x600 → 0x520, 0x701, … on every Windows-made volume; a directory Windows makes gets one).
+  /// Windows Server 2022 mounted volumes without the row, but Windows Server 2025 upgrading such
+  /// a ReFS 3.7 volume failed every dismount. Planned (and refused) before anything is written.
+  /// </summary>
+  private static (ulong Page, int Position, byte[] Row) PlanParentLink(RefsMetadataGraph graph, ulong parentOid, ulong oid) {
+    const ulong ParentChildTable = 3;
+    var head = graph.Pages.FirstOrDefault(static p => p.TableId == ParentChildTable)?.PhysicalHead
+      ?? throw new NotSupportedException("ReFS: the volume has no parent-child table.");
+    IReadOnlyList<RefsPageEditor.LiveRow> rows;
+    try {
+      rows = RefsPageEditor.ReadRows(graph.ReadPage(head)).Rows;
+    } catch (InvalidOperationException e) {
+      throw new NotSupportedException("ReFS: the parent-child table is not one page this editor rewrites.", e);
+    }
+    if (rows.Any(static r => r.Key.Length != 32))
+      throw new NotSupportedException("ReFS: the parent-child table holds rows of a shape this editor does not write.");
+    var row = new byte[32];
+    BinaryPrimitives.WriteUInt64LittleEndian(row.AsSpan(8), parentOid);
+    BinaryPrimitives.WriteUInt64LittleEndian(row.AsSpan(24), oid);
+    var position = rows.Count(r => (BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(8)), BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(24))).CompareTo((parentOid, oid)) < 0);
+    if (!RefsPageEditor.CanInsertRow(graph, head, position, 0, 32))
+      throw new NotSupportedException("ReFS: the parent-child table has no room for the new row.");
+    return (head, position, row);
   }
 
   /// <summary>

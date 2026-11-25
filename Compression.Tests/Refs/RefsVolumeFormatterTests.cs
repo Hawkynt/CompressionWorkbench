@@ -75,13 +75,21 @@ public sealed class RefsVolumeFormatterTests {
     Assert.That(HighestObject(stream), Is.EqualTo(0x701UL), "fresh: System Volume Information");
     descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("one", "one", true)]);
     descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("two", "two", true)]);
+    descriptor.Add(stream, [new Compression.Registry.ArchiveInputInfo("one/inner", "one/inner", true)]);
     stream.Position = 0;
     var metadata = RefsMetadataReader.Open(stream);
     var objects = metadata.WalkRoot(0).Select(static r => BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(8))).ToList();
+    var graph = new RefsMetadataGraph(stream, metadata);
+    var objectTable = graph.ReadPage(graph.Pages.Single(static p => p.TableId == 2).PhysicalHead);
+    var objectCopy = graph.ReadPage(graph.Pages.Single(static p => p.TableId == 4).PhysicalHead);
+    var links = RefsPageEditor.ReadRows(graph.ReadPage(graph.Pages.Single(static p => p.TableId == 3).PhysicalHead)).Rows
+      .Select(static r => (Parent: BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(8)), Child: BinaryPrimitives.ReadUInt64LittleEndian(r.Key.AsSpan(24)))).ToList();
     Assert.Multiple(() => {
-      Assert.That(objects, Does.Contain(0x702UL).And.Contain(0x703UL));
-      Assert.That(HighestObject(stream), Is.EqualTo(0x703UL));
-      Assert.That(new RefsMetadataGraph(stream, metadata).FindStaleReferences(), Is.Empty);
+      Assert.That(objects, Does.Contain(0x702UL).And.Contain(0x703UL).And.Contain(0x704UL));
+      Assert.That(HighestObject(stream), Is.EqualTo(0x704UL));
+      Assert.That(links, Is.EqualTo(new[] { (0x600UL, 0x520UL), (0x600UL, 0x701UL), (0x600UL, 0x702UL), (0x600UL, 0x703UL), (0x702UL, 0x704UL) }), "parent-child rows, sorted");
+      Assert.That(objectCopy.AsSpan(0x50).SequenceEqual(objectTable.AsSpan(0x50)), Is.True, "the object table's copy follows it");
+      Assert.That(graph.FindStaleReferences(), Is.Empty);
     });
 
     static ulong HighestObject(MemoryStream volume) {

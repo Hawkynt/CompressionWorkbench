@@ -175,10 +175,15 @@ internal sealed class RefsMetadataGraph {
     if (pending.Count == 0) return;
     byte[]? checkpoint = null;
     var checkpointDirty = false;
+    var mirrored = false;
 
     while (pending.Count > 0) {
       var childHead = pending.MaxBy(h => this._depth.GetValueOrDefault(h, 0));
       pending.Remove(childHead);
+      if (!mirrored && this.MirrorObjectTable(childHead) is { } copyHead) {
+        mirrored = true;
+        pending.Add(copyHead);
+      }
       var childPage = this.ReadPage(childHead);
       if (!this._parents.TryGetValue(childHead, out var parents)) continue;
 
@@ -212,6 +217,29 @@ internal sealed class RefsMetadataGraph {
       checked((int)this._metadata.PageReferenceSize));
     this.WriteCheckpoint(checkpoint);
     this._stream.Flush();
+  }
+
+  /// <summary>
+  /// The object table (table 2, checkpoint root 0) has a copy, table 4, that Windows keeps row
+  /// for row identical to it, page references and their checksums included (measured on every
+  /// Windows Server 2022 and 2025 volume of the test tree). When <paramref name="changedHead"/> is
+  /// the object table's one-page root, its node is copied over the copy's page (which keeps its
+  /// own header: addresses, table id) and the copy's head is returned, so its checkpoint
+  /// reference is refreshed with it. Tables of more than one page are left alone.
+  /// </summary>
+  private ulong? MirrorObjectTable(ulong changedHead) {
+    const ulong ObjectTable = 2, ObjectTableCopy = 4;
+    if (!this._pages.TryGetValue(changedHead, out var info) || info.TableId != ObjectTable) return null;
+    var copy = this._pages.Values.FirstOrDefault(static p => p.TableId == ObjectTableCopy && p.PhysicalSlots.Count > 0);
+    if (copy == null) return null;
+    var source = this.ReadPage(changedHead);
+    var target = this.ReadPage(copy.PhysicalHead);
+    if (IsInner(source) || IsInner(target) || ReadU32(source, 0x50) != ReadU32(target, 0x50)) return null;
+    source.AsSpan(0x50).CopyTo(target.AsSpan(0x50));
+    this.WritePage(copy.PhysicalHead, target);
+    return copy.PhysicalHead;
+
+    static bool IsInner(byte[] page) => (ReadU32(page, 0x50 + checked((int)ReadU32(page, 0x50)) + 0x0C) & 0x100) != 0;
   }
 
   private void Build() {
