@@ -56,4 +56,33 @@ To regenerate: `FFMPEG=/path/to/ffmpeg PYTHON=python3 ./make-vectors.sh`.
 | `sweep.g722` | `a1f259d4365ed4320c377ce26f5c8c56dcdc9a89e7b641bfd8eabfbbeac86654` |
 | `sweep.dec.pcm` | `3e6d4e8f4f0ddf0ac7559984a466ddb5ffa627a6fc981900ad7ff1d73cd74e83` |
 
-The ITU-T G.722 Appendix II digital test sequences (§7.1 of the spec) are not included here.
+## ITU-T G.722 Appendix II test sequences
+
+`G722ItuTestSequenceTests` runs the Recommendation's digital test sequences (spec §7.1) through
+the sub-band ADPCM encoder and decoder with the QMF bypassed: both encoder sequences and all nine
+decoder runs (three code streams × decoder modes 1, 2 and 3) match word for word. The sequences
+are ITU copyright with no redistribution grant, so they are not checked in. Fetch them and point
+the test at them:
+
+```sh
+eval "$(./fetch-itu-vectors.sh)"     # writes ./itu-g722-ts-le (git-ignored)
+```
+
+The script downloads the G.722 (09/2012) software archive from itu.int
+(`T-REC-G.722-201209-I!!SOFT-ZST-E`), takes `Software/G.722_MB-testvectors/g722-ts-le/bin/`
+(Appendix II distribution v2.0, 16-bit little-endian words) and checks each file against the
+CRC-32 and size in that folder's read-me. Without `CWB_G722_ITU_VECTORS` the test is ignored.
+
+Word layout, from the Appendix II distribution: bit 0 set is a reset (state back to initial
+values, expected output word 1). Encoder input words carry the 14-bit sample in bits 15-2; the
+same value shifted right by one feeds both sub-band encoders. Code words carry the octet in
+bits 15-8. Reconstructed low-band (`.rc1`-`.rc3`, by mode) and high-band (`.rc0`) words carry
+the sub-band output shifted left by one.
+
+| Run | Input | Expected |
+| --- | --- | --- |
+| encoder | `bt1c1.xmt` | `bt2r1.cod` |
+| encoder | `bt1c2.xmt` | `bt2r2.cod` |
+| decoder | `bt2r1.cod` | low `bt3l1.rc1` / `.rc2` / `.rc3` (mode 1 / 2 / 3), high `bt3h1.rc0` |
+| decoder | `bt2r2.cod` | low `bt3l2.rc1` / `.rc2` / `.rc3`, high `bt3h2.rc0` |
+| decoder | `bt1d3.cod` | low `bt3l3.rc1` / `.rc2` / `.rc3`, high `bt3h3.rc0` |

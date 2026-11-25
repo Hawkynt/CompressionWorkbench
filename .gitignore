@@ -117,3 +117,6 @@ agent-*/
 
 ## Local Wine build output for the UI (see run-wine.sh)
 **/bin/wine-publish/
+
+## ITU-T G.722 Appendix II sequences fetched by fetch-itu-vectors.sh (ITU copyright, never committed)
+Compression.Tests/Codecs/G722/ReferenceVectors/itu-g722-ts-le/

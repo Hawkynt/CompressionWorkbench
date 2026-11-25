@@ -55,10 +55,22 @@ public static class G722Codec {
     2896, 2960, 3025, 3091, 3158, 3228, 3298, 3371, 3444, 3520, 3597, 3676, 3756, 3838, 3922, 4008,
   ];
 
-  /// <summary>4-bit low-band inverse quantiser (block 2L).</summary>
+  /// <summary>4-bit low-band inverse quantiser (block 2L; also block 5L in mode 3).</summary>
   private static readonly int[] Qm4 = [
     0, -20456, -12896, -8968, -6288, -4240, -2584, -1200,
     20456, 12896, 8968, 6288, 4240, 2584, 1200, 0,
+  ];
+
+  /// <summary>
+  /// 5-bit low-band inverse quantiser for mode-2 reconstruction (block 5L, 56 kbit/s): the
+  /// Recommendation's <c>QQ5</c> magnitudes (35 … 2919) × 8, signed by the code, indexed by
+  /// <c>IL &gt;&gt; 1</c>.
+  /// </summary>
+  private static readonly int[] Qm5 = [
+    -280, -280, -23352, -17560, -14120, -11664, -9752, -8184,
+    -6864, -5712, -4696, -3784, -2960, -2208, -1520, -880,
+    23352, 17560, 14120, 11664, 9752, 8184, 6864, 5712,
+    4696, 3784, 2960, 2208, 1520, 880, 280, -280,
   ];
 
   /// <summary>2-bit high-band inverse quantiser.</summary>
@@ -113,13 +125,7 @@ public static class G722Codec {
       var xl = (evenTaps + oddTaps) >> 14;
       var xh = (evenTaps - oddTaps) >> 14;
 
-      var il = QuantiseLow(Saturate(xl - low.S), low.Det);
-      low.Adapt(il >> 2);
-
-      var ih = QuantiseHigh(Saturate(xh - high.S), high.Det);
-      high.Adapt(ih);
-
-      output[n] = (byte)((ih << 6) | il);
+      output[n] = EncodeSubbands(low, high, xl, xh);
     }
 
     return output;
@@ -139,17 +145,7 @@ public static class G722Codec {
     delay.Clear();
 
     for (var n = 0; n < data.Length; ++n) {
-      var octet = data[n];
-      var il = octet & 0x3F;
-      var ih = (octet >> 6) & 3;
-
-      // Block 5L: reconstruct from the state before this octet's adaptation.
-      var rl = Math.Clamp(low.S + ((low.Det * Qm6[il]) >> 15), -16384, 16383);
-      low.Adapt(il >> 2);
-
-      // Block 5H.
-      var rh = Math.Clamp(high.S + ((high.Det * Qm2[ih]) >> 15), -16384, 16383);
-      high.Adapt(ih);
+      var (rl, rh) = DecodeSubbands(low, high, data[n], 1);
 
       // Receive QMF.
       PushPair(delay, rl + rh, rl - rh);
@@ -159,6 +155,51 @@ public static class G722Codec {
     }
 
     return output;
+  }
+
+  // ── Sub-band ADPCM (QMF bypassed) ────────────────────────────────────────
+
+  /// <summary>
+  /// Encodes one sub-band sample pair: the low-band sample <paramref name="xl"/> and the
+  /// high-band sample <paramref name="xh"/> (the transmit QMF outputs) become one octet,
+  /// high-band code in bits 7–6, low-band code in bits 5–0. This is the interface the ITU-T
+  /// G.722 Appendix II encoder test sequences drive; a reset is a fresh <see cref="Band"/> pair.
+  /// </summary>
+  internal static byte EncodeSubbands(Band low, Band high, int xl, int xh) {
+    var il = QuantiseLow(Saturate(xl - low.S), low.Det);
+    low.Adapt(il >> 2);
+
+    var ih = QuantiseHigh(Saturate(xh - high.S), high.Det);
+    high.Adapt(ih);
+
+    return (byte)((ih << 6) | il);
+  }
+
+  /// <summary>
+  /// Decodes one octet to the sub-band reconstructed pair (<c>RL</c>, <c>RH</c>) that feeds the
+  /// receive QMF. <paramref name="mode"/> selects the low-band reconstruction of block 5L:
+  /// 1 = 64 kbit/s (6 bits), 2 = 56 kbit/s (5 bits), 3 = 48 kbit/s (4 bits). Adaptation always
+  /// uses the four most significant low-band bits, so the mode changes only the output.
+  /// </summary>
+  internal static (int Low, int High) DecodeSubbands(Band low, Band high, int octet, int mode) {
+    var il = octet & 0x3F;
+    var ih = (octet >> 6) & 3;
+
+    // Block 5L: reconstruct from the state before this octet's adaptation.
+    var quantised = mode switch {
+      1 => Qm6[il],
+      2 => Qm5[il >> 1],
+      3 => Qm4[il >> 2],
+      _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "G.722 decoder modes are 1, 2 and 3."),
+    };
+    var rl = Math.Clamp(low.S + ((low.Det * quantised) >> 15), -16384, 16383);
+    low.Adapt(il >> 2);
+
+    // Block 5H.
+    var rh = Math.Clamp(high.S + ((high.Det * Qm2[ih]) >> 15), -16384, 16383);
+    high.Adapt(ih);
+
+    return (rl, rh);
   }
 
   // ── QMF ──────────────────────────────────────────────────────────────────
