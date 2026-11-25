@@ -81,6 +81,8 @@ internal sealed class Bzip2Decompressor {
       if (storedCombinedCrc != this._combinedCrc)
         throw new InvalidDataException(
           $"Bzip2 combined CRC mismatch: expected 0x{storedCombinedCrc:X8}, computed 0x{this._combinedCrc:X8}.");
+      // The stream is padded to a whole byte; whatever follows (another stream) starts there.
+      this._bits.AlignToByte();
       this._finished = true;
       return false;
     }

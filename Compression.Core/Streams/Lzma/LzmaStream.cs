@@ -91,10 +91,8 @@ public static class LzmaStream {
     decoder.Decode(output);
   }
 
+  /// <summary>Reads the input from its current position to its end, like every other compressor here.</summary>
   private static byte[] ReadAllBytes(Stream stream) {
-    if (stream is MemoryStream ms)
-      return ms.ToArray();
-
     using var buf = new MemoryStream();
     stream.CopyTo(buf);
     return buf.ToArray();

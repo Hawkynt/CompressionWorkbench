@@ -263,7 +263,9 @@ public sealed class XzStream : CompressionStream {
 
       InnerStream.Position = start;
       DecompressAll();
-      return this._decompressedData is { Length: > 0 };
+      // An empty stream is valid in the middle of a file too: keep looking past it.
+      if (this._decompressedData is { Length: > 0 })
+        return true;
     }
   }
 
