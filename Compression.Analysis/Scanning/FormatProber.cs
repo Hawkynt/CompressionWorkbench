@@ -13,8 +13,16 @@ public sealed class FormatProber {
   private readonly int _integrityTimeoutMs;
 
   /// <param name="maxLevel">Deepest validation level to attempt.</param>
-  /// <param name="integrityTimeoutMs">Timeout for integrity checks (default 2000ms).</param>
+  /// <param name="integrityTimeoutMs">
+  /// Time budget for the integrity check of one candidate (default 2000 ms), or
+  /// <see cref="Timeout.Infinite"/> for none. The check reads its input through a stream that
+  /// stops serving data once the budget is spent; the candidate is then reported as not
+  /// integrity-checked (<c>INTEGRITY_TIMEOUT</c>) rather than damaged.
+  /// </param>
+  /// <exception cref="ArgumentOutOfRangeException">The budget is negative and not <see cref="Timeout.Infinite"/>.</exception>
   public FormatProber(ValidationLevel maxLevel = ValidationLevel.Integrity, int integrityTimeoutMs = 2000) {
+    if (integrityTimeoutMs < 0 && integrityTimeoutMs != Timeout.Infinite)
+      throw new ArgumentOutOfRangeException(nameof(integrityTimeoutMs), integrityTimeoutMs, "Must be non-negative or Timeout.Infinite.");
     _maxLevel = maxLevel;
     _integrityTimeoutMs = integrityTimeoutMs;
   }
@@ -99,12 +107,19 @@ public sealed class FormatProber {
 
     // Level 3: Integrity validation
     if (_maxLevel >= ValidationLevel.Integrity && stream.CanSeek) {
+      DeadlineStream? budgeted = null;
       try {
         stream.Seek(offset, SeekOrigin.Begin);
         var subStream = offset > 0 ? new SubStream(stream, offset, stream.Length - offset) : stream;
-        using var cts = new CancellationTokenSource(_integrityTimeoutMs);
-        var integrityResult = validator.ValidateIntegrity(subStream);
-        MergeResult(integrityResult, ref confidence, ref health, ref highestLevel, issues, ref validEntries, ref totalEntries);
+        budgeted = new DeadlineStream(subStream, _integrityTimeoutMs);
+        var integrityResult = validator.ValidateIntegrity(budgeted);
+        // Validators turn a failing read into "damaged"; a spent budget says nothing about the data.
+        if (budgeted.Expired)
+          AddTimeoutIssue(issues, _integrityTimeoutMs);
+        else
+          MergeResult(integrityResult, ref confidence, ref health, ref highestLevel, issues, ref validEntries, ref totalEntries);
+      } catch (Exception) when (budgeted is { Expired: true }) {
+        AddTimeoutIssue(issues, _integrityTimeoutMs);
       } catch (Exception ex) {
         issues.Add(new ValidationIssue(ValidationLevel.Integrity, IssueSeverity.Warning,
           "INTEGRITY_EXCEPTION", $"Integrity validation threw: {ex.Message}"));
@@ -115,6 +130,10 @@ public sealed class FormatProber {
 
     return new ProbeResult(formatId, offset, confidence, health, highestLevel, issues, validEntries, totalEntries);
   }
+
+  private static void AddTimeoutIssue(List<ValidationIssue> issues, int timeoutMs)
+    => issues.Add(new ValidationIssue(ValidationLevel.Integrity, IssueSeverity.Info,
+      "INTEGRITY_TIMEOUT", $"Integrity validation exceeded its {timeoutMs} ms budget and was abandoned."));
 
   private ProbeResult ProbeCandidate(ReadOnlySpan<byte> data, ScanResult scan, IFormatValidator validator) {
     var issues = new List<ValidationIssue>();
@@ -160,6 +179,44 @@ public sealed class FormatProber {
     if (vr.TotalEntries.HasValue)
       totalEntries = vr.TotalEntries;
     issues.AddRange(vr.Issues);
+  }
+
+  /// <summary>
+  /// Passes reads and seeks through until the time budget is spent, then fails every further
+  /// read or seek with <see cref="TimeoutException"/>. Validators take no cancellation token, but
+  /// all of them pull their input through the stream, so this bounds them without a thread.
+  /// </summary>
+  private sealed class DeadlineStream(Stream inner, int timeoutMs) : Stream {
+    private readonly long _started = System.Diagnostics.Stopwatch.GetTimestamp();
+
+    /// <summary>True once an operation was refused because the budget was spent.</summary>
+    public bool Expired { get; private set; }
+
+    private void Check() {
+      if (timeoutMs == Timeout.Infinite) return;
+      if (this.Expired || System.Diagnostics.Stopwatch.GetElapsedTime(this._started).TotalMilliseconds >= timeoutMs) {
+        this.Expired = true;
+        throw new TimeoutException($"Integrity validation exceeded {timeoutMs} ms.");
+      }
+    }
+
+    public override bool CanRead => inner.CanRead;
+    public override bool CanSeek => inner.CanSeek;
+    public override bool CanWrite => false;
+    public override long Length => inner.Length;
+    public override long Position {
+      get => inner.Position;
+      set { this.Check(); inner.Position = value; }
+    }
+    public override int Read(byte[] buffer, int off, int count) { this.Check(); return inner.Read(buffer, off, count); }
+    public override int Read(Span<byte> buffer) { this.Check(); return inner.Read(buffer); }
+    public override int ReadByte() { this.Check(); return inner.ReadByte(); }
+    public override long Seek(long off, SeekOrigin origin) { this.Check(); return inner.Seek(off, origin); }
+    public override void Flush() { }
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int off, int count) => throw new NotSupportedException();
+    // The wrapped stream belongs to the caller.
+    protected override void Dispose(bool disposing) { }
   }
 
   /// <summary>Wraps a region of a stream as a substream for offset-based probing.</summary>

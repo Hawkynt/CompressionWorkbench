@@ -222,6 +222,48 @@ public class FormatProberTests {
 
   // ── Helpers ────────────────────────────────────────────────────
 
+  // ── Integrity timeout ─────────────────────────────────────────
+
+  [Category("Boundary")]
+  [Test]
+  public void IntegrityTimeout_GivenZeroBudget_WhenProbing_ThenIntegrityIsReportedAsTimedOutNotDamaged() {
+    var data = CreateGzip(new byte[64 * 1024]);
+    using var stream = new MemoryStream(data);
+    var result = new FormatProber(ValidationLevel.Integrity, integrityTimeoutMs: 0).ProbeFormat(stream, "Gzip");
+    Assert.That(result, Is.Not.Null);
+    Assert.That(result!.Issues, Has.Some.Matches<ValidationIssue>(i => i.Code == "INTEGRITY_TIMEOUT"));
+    Assert.That(result.Issues, Has.None.Matches<ValidationIssue>(i => i.Severity == IssueSeverity.Error));
+    Assert.That(result.Health, Is.Not.EqualTo(FormatHealth.Damaged));
+    Assert.That(result.HighestLevel, Is.EqualTo(ValidationLevel.Structure));
+  }
+
+  [Category("HappyPath")]
+  [Test]
+  public void IntegrityTimeout_GivenInfiniteBudget_WhenProbing_ThenIntegrityRunsToCompletion() {
+    var data = CreateGzip([1, 2, 3, 4, 5]);
+    using var stream = new MemoryStream(data);
+    var result = new FormatProber(ValidationLevel.Integrity, Timeout.Infinite).ProbeFormat(stream, "Gzip");
+    Assert.That(result!.HighestLevel, Is.EqualTo(ValidationLevel.Integrity));
+    Assert.That(result.Health, Is.EqualTo(FormatHealth.Perfect));
+  }
+
+  [Category("HappyPath")]
+  [Test]
+  public void IntegrityTimeout_GivenAmpleBudget_WhenCorrupt_ThenDamageIsStillReported() {
+    var data = CreateGzip([1, 2, 3, 4, 5]);
+    data[^8] ^= 0xFF; // stored CRC-32
+    using var stream = new MemoryStream(data);
+    var result = new FormatProber(ValidationLevel.Integrity, 60_000).ProbeFormat(stream, "Gzip");
+    Assert.That(result!.Health, Is.EqualTo(FormatHealth.Damaged));
+    Assert.That(result.Issues, Has.None.Matches<ValidationIssue>(i => i.Code == "INTEGRITY_TIMEOUT"));
+  }
+
+  [Category("Exception")]
+  [TestCase(-2)]
+  [TestCase(int.MinValue)]
+  public void IntegrityTimeout_GivenNegativeBudgetOtherThanInfinite_WhenConstructing_ThenItThrows(int timeoutMs)
+    => Assert.That(() => new FormatProber(ValidationLevel.Integrity, timeoutMs), Throws.InstanceOf<ArgumentOutOfRangeException>());
+
   private static byte[] CreateGzip(byte[] input) {
     using var ms = new MemoryStream();
     using (var gz = new FileFormat.Gzip.GzipStream(ms,
