@@ -15,6 +15,22 @@
   "model": "Claude Opus 5.5",
   "pausedUntil": "2026-11-26T04:28:42Z",
   "renewedAt": "2026-11-26T03:28:42Z",
+  "runs": [
+    {
+      "active": true,
+      "agent": "claude",
+      "finished": "2026-11-26T03:28:47Z",
+      "kind": "pull-request",
+      "manager": "DE05PCI025-28e1",
+      "model": "Claude Opus 5.5",
+      "models": [
+        "Claude Opus 5.5"
+      ],
+      "started": "2026-11-26T01:59:19Z",
+      "verdict": "paused",
+      "worker": "claude-2"
+    }
+  ],
   "state": "paused",
   "step": "implement",
   "takeovers": 0,
