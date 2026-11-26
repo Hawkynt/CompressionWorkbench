@@ -2,7 +2,7 @@
   "branch": "feat/bcachefs-encrypted-edits",
   "claimedAt": "2026-11-25T08:41:52Z",
   "consumedThrough": {
-    "comment": null,
+    "comment": 7137706295,
     "review": null
   },
   "expiresAt": "2026-12-03T01:54:40Z",
@@ -14,7 +14,7 @@
   "issue": 1034,
   "model": "Claude Opus 5.5",
   "pausedUntil": null,
-  "renewedAt": "2026-11-26T01:54:40Z",
+  "renewedAt": "2026-11-26T01:54:46Z",
   "runs": [
     {
       "active": true,
@@ -73,7 +73,7 @@
       "worker": "claude-2"
     }
   ],
-  "state": "working",
-  "step": "implement",
+  "state": "released",
+  "step": "needs-input",
   "takeovers": 0
 }
