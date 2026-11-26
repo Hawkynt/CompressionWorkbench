@@ -1,0 +1,21 @@
+{
+  "branch": "feat/bcachefs-multi-device",
+  "claimedAt": "2026-11-26T01:59:17Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-12-03T01:59:17Z",
+  "generation": 1,
+  "holder": {
+    "manager": "DE05PCI025-28e1",
+    "worker": "claude-2"
+  },
+  "issue": 1035,
+  "model": "Claude Opus 5.5",
+  "pausedUntil": null,
+  "renewedAt": "2026-11-26T01:59:17Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
